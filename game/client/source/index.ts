@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import {
   GameInstance,
   TICK_INTERVAL_MS,
@@ -157,6 +158,69 @@ const CAMERA_Z_OFFSET = 6;
 const CAMERA_LERP = 0.1;
 const GROUND_SIZE = 80;
 const DAMAGE_NUM_POOL_SIZE = 30;
+
+// =============================================================================
+// Asset Loader — loads GLB models
+// =============================================================================
+
+interface LoadedModels {
+  player: THREE.Group | null;
+  skeleton: THREE.Group | null;
+  zombie: THREE.Group | null;
+  ghost: THREE.Group | null;
+  boss: THREE.Group | null;
+  tombstone: THREE.Group | null;
+  tree: THREE.Group | null;
+}
+
+const gltfLoader = new GLTFLoader();
+const loadedModels: LoadedModels = {
+  player: null,
+  skeleton: null,
+  zombie: null,
+  ghost: null,
+  boss: null,
+  tombstone: null,
+  tree: null,
+};
+
+async function loadModels(): Promise<void> {
+  const modelPaths: [keyof LoadedModels, string][] = [
+    ['player', '/models/player.glb'],
+    ['skeleton', '/models/skeleton.glb'],
+    ['zombie', '/models/zombie.glb'],
+    ['ghost', '/models/ghost.glb'],
+    ['boss', '/models/boss.glb'],
+    ['tombstone', '/models/tombstone.glb'],
+    ['tree', '/models/tree.glb'],
+  ];
+
+  const promises = modelPaths.map(async ([key, path]) => {
+    try {
+      const gltf = await gltfLoader.loadAsync(path);
+      const model = gltf.scene;
+      model.name = `Model_${key}`;
+      // Ensure all meshes use MeshLambertMaterial for PS1 flat look
+      model.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const mesh = child as THREE.Mesh;
+          const oldMat = mesh.material as THREE.MeshStandardMaterial;
+          if (oldMat.map) {
+            mesh.material = new THREE.MeshLambertMaterial({ map: oldMat.map });
+          } else {
+            mesh.material = new THREE.MeshLambertMaterial({ color: oldMat.color ?? 0xcccccc });
+          }
+        }
+      });
+      loadedModels[key] = model;
+    } catch {
+      // Model not found — will use fallback geometry
+      loadedModels[key] = null;
+    }
+  });
+
+  await Promise.all(promises);
+}
 
 // =============================================================================
 // GameScene - Three.js Rendering
@@ -366,18 +430,80 @@ export class GameScene {
       wall.rotation.y = w.rot;
       this.scene.add(wall);
     }
+
+    // Scatter environment props using loaded models
+    this.addEnvironmentProps();
+  }
+
+  private addEnvironmentProps(): void {
+    const propPositions: { x: number; z: number; type: 'tombstone' | 'tree' }[] = [];
+    const half = GROUND_SIZE / 2;
+    // Generate random prop positions (avoiding center area where player spawns)
+    for (let i = 0; i < 15; i++) {
+      let x: number, z: number;
+      do {
+        x = (Math.random() - 0.5) * (GROUND_SIZE - 10);
+        z = (Math.random() - 0.5) * (GROUND_SIZE - 10);
+      } while (Math.abs(x) < 8 && Math.abs(z) < 8); // Keep center clear
+      propPositions.push({ x, z, type: Math.random() > 0.5 ? 'tombstone' : 'tree' });
+    }
+
+    for (const prop of propPositions) {
+      const model = prop.type === 'tombstone' ? loadedModels.tombstone : loadedModels.tree;
+      if (model) {
+        const clone = model.clone();
+        clone.name = `Prop_${prop.type}`;
+        clone.position.set(prop.x, 0, prop.z);
+        clone.rotation.y = Math.random() * Math.PI * 2;
+        const s = 0.8 + Math.random() * 0.4;
+        clone.scale.set(s, s, s);
+        this.scene.add(clone);
+      } else {
+        // Fallback: simple colored cylinder for trees, box for tombstones
+        if (prop.type === 'tree') {
+          const trunkGeo = new THREE.CylinderGeometry(0.2, 0.3, 2, 5);
+          const trunkMat = new THREE.MeshLambertMaterial({ color: 0x6b3a1f });
+          const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+          trunk.name = 'Prop_tree_fallback';
+          trunk.position.set(prop.x, 1, prop.z);
+          this.scene.add(trunk);
+          const foliageGeo = new THREE.ConeGeometry(1.2, 2.5, 5);
+          const foliageMat = new THREE.MeshLambertMaterial({ color: 0x2d8b3d });
+          const foliage = new THREE.Mesh(foliageGeo, foliageMat);
+          foliage.position.set(prop.x, 3, prop.z);
+          foliage.name = 'Prop_tree_foliage';
+          this.scene.add(foliage);
+        } else {
+          const stoneGeo = new THREE.BoxGeometry(0.6, 1.0, 0.2);
+          const stoneMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+          const stone = new THREE.Mesh(stoneGeo, stoneMat);
+          stone.name = 'Prop_tombstone_fallback';
+          stone.position.set(prop.x, 0.5, prop.z);
+          this.scene.add(stone);
+        }
+      }
+    }
   }
 
   private setupPlayer(): void {
-    // Chunky PS1 style player — bigger, more visible
-    const bodyGeo = new THREE.CapsuleGeometry(0.5, 1.0, 4, 8);
-    const bodyMat = new THREE.MeshLambertMaterial({ color: 0xf5d680 }); // Warm yellow/gold
-    this.playerMesh = new THREE.Mesh(bodyGeo, bodyMat);
-    this.playerMesh.name = 'Player';
-    this.playerMesh.position.y = 1.0;
-    this.scene.add(this.playerMesh);
+    // Use loaded GLB model if available, fallback to capsule
+    if (loadedModels.player) {
+      this.playerMesh = loadedModels.player.clone() as unknown as THREE.Mesh;
+      this.playerMesh.name = 'Player';
+      this.playerMesh.scale.set(1.2, 1.2, 1.2);
+      this.playerMesh.position.y = 0;
+      this.scene.add(this.playerMesh);
+    } else {
+      // Fallback — chunky PS1 capsule
+      const bodyGeo = new THREE.CapsuleGeometry(0.5, 1.0, 4, 8);
+      const bodyMat = new THREE.MeshLambertMaterial({ color: 0xf5d680 });
+      this.playerMesh = new THREE.Mesh(bodyGeo, bodyMat);
+      this.playerMesh.name = 'Player';
+      this.playerMesh.position.y = 1.0;
+      this.scene.add(this.playerMesh);
+    }
 
-    // Ground circle indicator (bright)
+    // Ground circle indicator
     const ringGeo = new THREE.RingGeometry(0.6, 0.75, 16);
     const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ff88, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
     this.playerRing = new THREE.Mesh(ringGeo, ringMat);
@@ -553,16 +679,17 @@ export class GameScene {
 
   private renderPlayer(state: GameState): void {
     const p = state.player;
-    this.playerMesh.position.set(p.x, 1.0, p.z);
+    if (loadedModels.player) {
+      this.playerMesh.position.set(p.x, 0, p.z);
+    } else {
+      this.playerMesh.position.set(p.x, 1.0, p.z);
+    }
     this.playerMesh.rotation.y = p.rotation;
     this.playerMesh.visible = p.alive;
 
     // Flash when invincible
-    const mat = this.playerMesh.material as THREE.MeshLambertMaterial;
     if (p.invincibleTimer > 0) {
-      mat.color.setHex(Math.sin(performance.now() * 0.02) > 0 ? 0xffffff : 0xf5d680);
-    } else {
-      mat.color.setHex(0xf5d680);
+      this.playerMesh.visible = Math.sin(performance.now() * 0.02) > 0;
     }
 
     this.playerRing.position.set(p.x, 0.02, p.z);
@@ -1179,6 +1306,9 @@ async function main(): Promise<void> {
   if (import.meta.env.DEV) {
     mountDevtools();
   }
+
+  // Load 3D models before showing menu
+  await loadModels();
 
   showMainMenu();
 }

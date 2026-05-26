@@ -987,7 +987,7 @@ export class GameScene {
 
     // Attempt to load and replace with GLTF model
     const loader = new GLTFLoader();
-    loader.load('/models/player_cyberpunk.gltf', (gltf) => {
+    loader.load('/models/player_george.gltf', (gltf) => {
       const model = gltf.scene;
       model.name = 'Player';
       // Calculate proper scale based on actual bounding box
@@ -1012,9 +1012,9 @@ export class GameScene {
         this.playerAnimations.set(clip.name, action);
       }
       // Play idle by default
-      this.playPlayerAnim('Idle_Neutral');
+      this.playPlayerAnim('Idle');
 
-      console.log(`[Player] GLTF loaded! size=${size.y.toFixed(3)}, scale=${autoScale.toFixed(1)}, anims=${gltf.animations.length}`);
+      console.log(`[Player] George loaded! size=${size.y.toFixed(3)}, scale=${autoScale.toFixed(1)}, anims: ${gltf.animations.map(a => a.name).join(', ')}`);
     }, undefined, (err) => {
       console.warn('[Player] GLTF failed, keeping fallback:', err);
     });
@@ -1537,13 +1537,15 @@ export class GameScene {
     } else if (p.alive) {
       // === Choose skeletal animation based on state ===
       if (p.isSliding) {
-        this.playPlayerAnim('Roll');
+        this.playPlayerAnim('Kick'); // Use Kick as slide substitute
       } else if (p.isJumping || !p.isGrounded) {
-        this.playPlayerAnim('Roll'); // Use Roll as jump substitute (no dedicated Jump clip)
-      } else if (p.currentSpeed > 0.5) {
+        this.playPlayerAnim('Jump');
+      } else if (p.currentSpeed > 2.0) {
         this.playPlayerAnim('Run');
+      } else if (p.currentSpeed > 0.5) {
+        this.playPlayerAnim('Walk');
       } else {
-        this.playPlayerAnim('Idle_Neutral');
+        this.playPlayerAnim('Idle');
       }
 
       // === Invincibility flash ===

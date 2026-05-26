@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@types/node": "20.11.0",
-    "@types/three": "0.162.0",
+    "@types/three": "^0.170.0",
     "rollup-plugin-visualizer": "^5.14.0",
     "three": "^0.170.0",
     "tsx": "4.7.0",

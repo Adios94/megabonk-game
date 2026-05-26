@@ -1180,7 +1180,8 @@ export class GameScene {
     if (loadedModels.player) {
       this.playerMesh = loadedModels.player.clone() as unknown as THREE.Mesh;
       this.playerMesh.name = 'Player';
-      this.playerMesh.scale.set(1.2, 1.2, 1.2);
+      // Normalize player model to ~1.8 units tall
+      this.playerMesh.scale.set(0.9, 0.9, 0.9);
       this.playerMesh.position.y = 0;
       this.scene.add(this.playerMesh);
     } else {
@@ -1230,7 +1231,32 @@ export class GameScene {
       'skeleton_knight', 'necromancer', 'gargoyle',
     ];
 
-    const boxGeo = new THREE.BoxGeometry(0.9, 1.2, 0.9);
+    // Map enemy types to loaded models for geometry extraction
+    const enemyModelMap: Record<string, keyof LoadedModels> = {
+      skeleton_soldier: 'skeleton',    // enemy_2legs
+      zombie: 'zombie',                // enemy_2legs_gun
+      skeleton_archer: 'zombie',       // enemy_2legs_gun (has gun)
+      ghost: 'ghost',                  // enemy_flying
+      bat: 'enemy_flying',             // enemy_flying_gun
+      skeleton_knight: 'enemy_large',  // enemy_large
+      necromancer: 'skeleton',         // enemy_2legs
+      gargoyle: 'enemy_flying',        // enemy_flying
+    };
+
+    // Scale per enemy type (adjust to proper proportions)
+    const enemyScales: Record<string, number> = {
+      skeleton_soldier: 0.8,
+      ghost: 0.7,
+      bat: 0.5,
+      zombie: 0.9,
+      skeleton_archer: 0.85,
+      skeleton_knight: 1.2,
+      necromancer: 0.9,
+      gargoyle: 1.0,
+    };
+
+    // Fallback box geometry if model not loaded
+    const fallbackGeo = new THREE.BoxGeometry(0.9, 1.2, 0.9);
 
     for (const type of enemyTypes) {
       const color = ENEMY_COLORS[type] ?? 0x888888;
@@ -1239,7 +1265,31 @@ export class GameScene {
         mat.transparent = true;
         mat.opacity = 0.65;
       }
-      const mesh = new THREE.InstancedMesh(boxGeo, mat, MAX_ENEMIES);
+
+      // Try to extract geometry from loaded model
+      let geo: THREE.BufferGeometry = fallbackGeo;
+      const modelKey = enemyModelMap[type];
+      const model = modelKey ? loadedModels[modelKey] : null;
+      if (model) {
+        // Find first mesh in the model and use its geometry
+        model.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh && geo === fallbackGeo) {
+            const meshChild = child as THREE.Mesh;
+            geo = meshChild.geometry.clone();
+            // Normalize geometry scale
+            geo.computeBoundingBox();
+            const box = geo.boundingBox!;
+            const size = box.max.clone().sub(box.min);
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const targetScale = (enemyScales[type] ?? 1.0) / maxDim;
+            geo.scale(targetScale, targetScale, targetScale);
+            // Center geometry
+            geo.center();
+          }
+        });
+      }
+
+      const mesh = new THREE.InstancedMesh(geo, mat, MAX_ENEMIES);
       mesh.name = `Enemy_${type}`;
       mesh.count = 0;
       mesh.frustumCulled = false;
@@ -1844,27 +1894,42 @@ export class GameScene {
     }
 
     if (!this.bossMesh) {
-      const geo = new THREE.BoxGeometry(2.4, 3.0, 2.4);
-      const mat = new THREE.MeshLambertMaterial({ color: 0x9933cc, emissive: 0x440066, emissiveIntensity: 0.4 });
-      this.bossMesh = new THREE.Mesh(geo, mat);
-      this.bossMesh.name = 'Boss';
-      this.scene.add(this.bossMesh);
+      // Use loaded boss model if available
+      if (loadedModels.boss) {
+        this.bossMesh = loadedModels.boss.clone() as unknown as THREE.Mesh;
+        this.bossMesh.name = 'Boss';
+        // Scale to proper boss size (large enemy)
+        this.bossMesh.scale.set(2.5, 2.5, 2.5);
+        this.scene.add(this.bossMesh);
+      } else {
+        // Fallback
+        const geo = new THREE.BoxGeometry(2.4, 3.0, 2.4);
+        const mat = new THREE.MeshLambertMaterial({ color: 0x9933cc, emissive: 0x440066, emissiveIntensity: 0.4 });
+        this.bossMesh = new THREE.Mesh(geo, mat);
+        this.bossMesh.name = 'Boss';
+        this.scene.add(this.bossMesh);
+      }
     }
 
     this.bossMesh.visible = true;
-    this.bossMesh.position.set(boss.x, 1.5, boss.z);
+    this.bossMesh.position.set(boss.x, boss.y || 0, boss.z);
 
-    const mat = this.bossMesh.material as THREE.MeshLambertMaterial;
-    if (boss.hitFlashTimer > 0) {
-      mat.color.setHex(0xffffff);
-    } else if (boss.enraged) {
-      mat.color.setHex(0xff3333);
-    } else {
-      mat.color.setHex(0x9933cc);
+    // Hit flash / enrage color (only works on fallback geometry)
+    if (!loadedModels.boss) {
+      const mat = this.bossMesh.material as THREE.MeshLambertMaterial;
+      if (boss.hitFlashTimer > 0) {
+        mat.color.setHex(0xffffff);
+      } else if (boss.enraged) {
+        mat.color.setHex(0xff3333);
+      } else {
+        mat.color.setHex(0x9933cc);
+      }
     }
 
-    const scale = boss.enraged ? 3.0 + Math.sin(performance.now() * 0.01) * 0.15 : 3.0;
-    this.bossMesh.scale.set(scale / 2.4, scale / 3.0, scale / 2.4);
+    // Scale pulse when enraged
+    const baseScale = 2.5;
+    const scale = boss.enraged ? baseScale + Math.sin(performance.now() * 0.01) * 0.15 : baseScale;
+    this.bossMesh.scale.set(scale, scale, scale);
   }
 
   private renderTeleporters(teleporters: TeleporterState[]): void {
@@ -1872,19 +1937,28 @@ export class GameScene {
 
     // Create or update teleporter meshes
     while (this.teleporterMeshes.length < teleporters.length) {
-      // Base ring (portal on ground)
-      const ringGeo = new THREE.RingGeometry(1.5, 2.0, 24);
-      const ringMat = new THREE.MeshBasicMaterial({
-        color: 0x00ccff,
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.8,
-      });
-      const ring = new THREE.Mesh(ringGeo, ringMat);
-      ring.name = 'Teleporter_Ring';
-      ring.rotation.x = -Math.PI / 2;
-      this.scene.add(ring);
-      this.teleporterMeshes.push(ring);
+      // Try using loaded teleporter model
+      if (loadedModels.teleporter) {
+        const tp = loadedModels.teleporter.clone();
+        tp.name = 'Teleporter_Model';
+        tp.scale.set(1.5, 1.5, 1.5);
+        this.scene.add(tp);
+        this.teleporterMeshes.push(tp as unknown as THREE.Mesh);
+      } else {
+        // Fallback: ring on ground
+        const ringGeo = new THREE.RingGeometry(1.5, 2.0, 24);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: 0x00ccff,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.8,
+        });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.name = 'Teleporter_Ring';
+        ring.rotation.x = -Math.PI / 2;
+        this.scene.add(ring);
+        this.teleporterMeshes.push(ring);
+      }
 
       // Glow pillar
       const pillarGeo = new THREE.CylinderGeometry(0.3, 1.5, 4, 12);

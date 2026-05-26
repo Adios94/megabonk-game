@@ -185,6 +185,9 @@ export class GameInstance {
 
     const dt = TICK_INTERVAL_MS / 1000;
 
+    // Clear damage events from PREVIOUS tick (so client can read them between ticks)
+    this.state.damageEvents = [];
+
     this.state.gameTime += dt;
     this.state.tick++;
 
@@ -238,8 +241,7 @@ export class GameInstance {
     // Check game over
     this.checkGameOver();
 
-    // Clear old damage events
-    this.state.damageEvents = [];
+    // damageEvents are kept until next tick start (so client can read them)
 
     // Cycle AI group
     this.aiGroup = (this.aiGroup + 1) % 4;

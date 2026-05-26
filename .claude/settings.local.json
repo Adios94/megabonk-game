@@ -9,7 +9,8 @@
       "Bash(npm list *)",
       "Bash(npm init *)",
       "Bash(npm install *)",
-      "Bash(node screenshot-game.mjs)"
+      "Bash(node screenshot-game.mjs)",
+      "Bash(pkill -f \"vite --host --port 5174\")"
     ]
   }
 }

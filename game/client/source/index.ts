@@ -1,6 +1,8 @@
 /// <reference types="vite/client" />
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+// @ts-ignore
+import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import {
   GameInstance,
   TICK_INTERVAL_MS,
@@ -654,7 +656,7 @@ export class GameScene {
   private placeModel(modelKey: keyof LoadedModels, x: number, y: number, z: number, rotY: number = 0, scale: number = 1): void {
     const model = loadedModels[modelKey];
     if (!model) return;
-    const clone = model.clone();
+    const clone = cloneSkeleton(model) as THREE.Object3D;
     clone.name = `Placed_${modelKey}_${x.toFixed(0)}_${z.toFixed(0)}`;
     clone.position.set(x, y, z);
     clone.rotation.y = rotY;
@@ -1644,7 +1646,7 @@ export class GameScene {
           const modelKey = enemyModelMap[enemy.type];
           const model = modelKey ? loadedModels[modelKey] : null;
           if (model) {
-            obj = model.clone();
+            obj = cloneSkeleton(model) as THREE.Object3D;
             // Setup animation mixer for cloned model
             const clips = modelKey ? loadedAnimClips.get(modelKey) : undefined;
             if (clips && clips.length > 0) {
@@ -1828,7 +1830,7 @@ export class GameScene {
     if (!this.bossMesh) {
       // Use loaded boss model if available
       if (loadedModels.boss) {
-        this.bossMesh = loadedModels.boss.clone() as unknown as THREE.Mesh;
+        this.bossMesh = cloneSkeleton(loadedModels.boss) as unknown as THREE.Mesh;
         this.bossMesh.name = 'Boss';
         // Boss model is ~0.5 units raw, scale to ~5 units tall
         this.bossMesh.scale.set(10, 10, 10);
@@ -1871,7 +1873,7 @@ export class GameScene {
     while (this.teleporterMeshes.length < teleporters.length) {
       // Try using loaded teleporter model
       if (loadedModels.teleporter) {
-        const tp = loadedModels.teleporter.clone();
+        const tp = cloneSkeleton(loadedModels.teleporter) as THREE.Object3D;
         tp.name = 'Teleporter_Model';
         tp.scale.set(1.5, 1.5, 1.5);
         this.scene.add(tp);

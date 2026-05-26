@@ -431,10 +431,21 @@ export class GameScene {
   private projectileMesh!: THREE.InstancedMesh;
   private pickupMesh!: THREE.InstancedMesh;
 
-  // Particles
-  private particles!: THREE.Points;
-  private particlePositions!: Float32Array;
-  private particleVelocities: { x: number; y: number; z: number; life: number }[] = [];
+  // VFX Particle System
+  private readonly MAX_PARTICLES = 500;
+  private vfxParticles: {
+    x: number; y: number; z: number;
+    vx: number; vy: number; vz: number;
+    size: number;
+    life: number;
+    maxLife: number;
+    r: number; g: number; b: number;
+    active: boolean;
+  }[] = [];
+  private vfxGeometry!: THREE.BufferGeometry;
+  private vfxMaterial!: THREE.ShaderMaterial;
+  private vfxPoints!: THREE.Points;
+  private vfxTexture!: THREE.Texture;
 
   // DOM overlays
   private hudContainer!: HTMLDivElement;
@@ -508,8 +519,8 @@ export class GameScene {
     // Scene
     this.scene = new THREE.Scene();
     this.scene.name = 'MainScene';
-    this.scene.background = new THREE.Color(0x1a2a3a);
-    this.scene.fog = new THREE.Fog(0x1a2a3a, 50, 100);
+    this.scene.background = new THREE.Color(0x6a7a8a);
+    this.scene.fog = new THREE.Fog(0x6a7a8a, 100, 200);
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 300);
@@ -553,7 +564,7 @@ export class GameScene {
     this.setupEnemyMeshes();
     this.setupProjectileMesh();
     this.setupPickupMesh();
-    this.setupParticles();
+    this.setupVFX();
     this.setupHUD();
     this.setupDamageNumbers();
 
@@ -600,26 +611,32 @@ export class GameScene {
   // ===========================================================================
 
   private setupLighting(): void {
-    // Clear ambient with cool blue-white tint for readability
-    const ambient = new THREE.AmbientLight(0xddeeff, 0.6);
+    // Strong ambient — scene is uniformly bright and readable
+    const ambient = new THREE.AmbientLight(0xffffff, 1.2);
     ambient.name = 'AmbientLight';
     this.scene.add(ambient);
 
-    // Warm directional light from above-right — gives depth via warm/cool contrast
-    const dir = new THREE.DirectionalLight(0xffeedd, 1.2);
+    // Warm directional sunlight from above-right
+    const dir = new THREE.DirectionalLight(0xfff0dd, 1.5);
     dir.name = 'DirectionalLight';
-    dir.position.set(10, 20, 8);
+    dir.position.set(10, 25, 8);
     this.scene.add(dir);
 
-    // Hemisphere light: blue sky + dark teal ground for color layering
-    const fill = new THREE.HemisphereLight(0x88bbff, 0x224444, 0.5);
+    // Secondary fill light from the opposite side — no dark faces
+    const fill2 = new THREE.DirectionalLight(0xddeeff, 0.8);
+    fill2.name = 'FillLight';
+    fill2.position.set(-10, 15, -8);
+    this.scene.add(fill2);
+
+    // Hemisphere light: bright sky + medium ground
+    const fill = new THREE.HemisphereLight(0xccddff, 0x667788, 0.7);
     fill.name = 'HemisphereLight';
     this.scene.add(fill);
 
-    // Soft spotlight following the player — highlights player in the scene
-    this.playerSpotLight = new THREE.SpotLight(0xffffff, 0.3, 20, Math.PI / 6, 0.5, 1);
+    // Spotlight following the player — extra brightness on player
+    this.playerSpotLight = new THREE.SpotLight(0xffffff, 0.6, 30, Math.PI / 4, 0.4, 1);
     this.playerSpotLight.name = 'PlayerSpotLight';
-    this.playerSpotLight.position.set(0, 12, 0);
+    this.playerSpotLight.position.set(0, 14, 0);
     this.scene.add(this.playerSpotLight);
     this.scene.add(this.playerSpotLight.target);
   }
@@ -628,9 +645,9 @@ export class GameScene {
     // =========================================================================
     // 1. Dark base ground under everything
     // =========================================================================
-    const baseGeo = new THREE.PlaneGeometry(130, 130);
+    const baseGeo = new THREE.PlaneGeometry(400, 400);
     baseGeo.rotateX(-Math.PI / 2);
-    const baseMat = new THREE.MeshLambertMaterial({ color: 0x1a1a2a });
+    const baseMat = new THREE.MeshLambertMaterial({ color: 0x3a3a4a });
     this.groundMesh = new THREE.Mesh(baseGeo, baseMat);
     this.groundMesh.name = 'Ground_Base';
     this.groundMesh.position.y = -0.5;
@@ -1108,16 +1125,78 @@ export class GameScene {
     this.scene.add(this.pickupMesh);
   }
 
-  private setupParticles(): void {
-    const maxParticles = 400;
-    this.particlePositions = new Float32Array(maxParticles * 3);
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(this.particlePositions, 3));
-    const mat = new THREE.PointsMaterial({ color: 0xffaa44, size: 0.25, transparent: true, opacity: 0.9 });
-    this.particles = new THREE.Points(geo, mat);
-    this.particles.name = 'Particles';
-    this.particles.frustumCulled = false;
-    this.scene.add(this.particles);
+  private setupVFX(): void {
+    // Pre-allocate particle pool
+    for (let i = 0; i < this.MAX_PARTICLES; i++) {
+      this.vfxParticles.push({
+        x: 0, y: -100, z: 0,
+        vx: 0, vy: 0, vz: 0,
+        size: 1,
+        life: 0,
+        maxLife: 1,
+        r: 1, g: 1, b: 1,
+        active: false,
+      });
+    }
+
+    // Load particle texture
+    const textureLoader = new THREE.TextureLoader();
+    this.vfxTexture = textureLoader.load('/textures/particle_circle.png');
+
+    // Create buffer geometry with per-particle attributes
+    this.vfxGeometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(this.MAX_PARTICLES * 3);
+    const sizes = new Float32Array(this.MAX_PARTICLES);
+    const lifes = new Float32Array(this.MAX_PARTICLES);
+    const colors = new Float32Array(this.MAX_PARTICLES * 3);
+
+    this.vfxGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    this.vfxGeometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+    this.vfxGeometry.setAttribute('aLife', new THREE.BufferAttribute(lifes, 1));
+    this.vfxGeometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+
+    // Custom ShaderMaterial
+    this.vfxMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uTexture: { value: this.vfxTexture },
+      },
+      vertexShader: `
+        attribute float aSize;
+        attribute float aLife;
+        attribute vec3 aColor;
+
+        varying float vLife;
+        varying vec3 vColor;
+
+        void main() {
+          vLife = aLife;
+          vColor = aColor;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = aSize * (200.0 / -mvPosition.z);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D uTexture;
+        varying float vLife;
+        varying vec3 vColor;
+
+        void main() {
+          vec4 texColor = texture2D(uTexture, gl_PointCoord);
+          float alpha = texColor.a * vLife;
+          gl_FragColor = vec4(vColor * texColor.rgb, alpha);
+          if (gl_FragColor.a < 0.01) discard;
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+
+    this.vfxPoints = new THREE.Points(this.vfxGeometry, this.vfxMaterial);
+    this.vfxPoints.name = 'VFXParticles';
+    this.vfxPoints.frustumCulled = false;
+    this.scene.add(this.vfxPoints);
   }
 
   // ===========================================================================
@@ -1278,7 +1357,7 @@ export class GameScene {
     this.renderPickups(state.pickups);
     this.renderBoss(state.boss);
     this.renderTeleporters(state.teleporters);
-    this.updateParticles(state.damageEvents, state.enemies);
+    this.updateVFX(state, dt);
     this.updateCamera(state);
 
     // Process damage events for camera effects
@@ -1504,42 +1583,28 @@ export class GameScene {
   }
 
   private spawnSlideDust(x: number, y: number, z: number): void {
-    // Spawn 1-2 light particles at player feet moving backward
     const count = 1 + Math.floor(Math.random() * 2);
     for (let i = 0; i < count; i++) {
-      this.particleVelocities.push({
-        x: x + (Math.random() - 0.5) * 0.5,
-        y: y + Math.random() * 0.2,
-        z: z + (Math.random() - 0.5) * 0.5,
-        life: 0.3,
-      });
+      this.spawnParticle(
+        x + (Math.random() - 0.5) * 0.5,
+        y + Math.random() * 0.2,
+        z + (Math.random() - 0.5) * 0.5,
+        (Math.random() - 0.5) * 1.0,
+        Math.random() * 0.5,
+        (Math.random() - 0.5) * 1.0,
+        0.4,
+        0.3,
+        0.8, 0.8, 0.7,
+      );
     }
   }
 
   private spawnDeathBurst(x: number, y: number, z: number): void {
-    // Spawn 20 particles in a burst
-    for (let i = 0; i < 20; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 1 + Math.random() * 2;
-      this.particleVelocities.push({
-        x: x + Math.cos(angle) * speed * 0.3,
-        y: y + 0.5 + Math.random() * 1.5,
-        z: z + Math.sin(angle) * speed * 0.3,
-        life: 0.6 + Math.random() * 0.4,
-      });
-    }
+    this.emitDeathBurst(x, y, z, 'generic');
   }
 
   private spawnLevelUpBurst(x: number, y: number, z: number): void {
-    // Spawn golden particles upward from player
-    for (let i = 0; i < 15; i++) {
-      this.particleVelocities.push({
-        x: x + (Math.random() - 0.5) * 1.0,
-        y: y + 0.5 + Math.random() * 2.5,
-        z: z + (Math.random() - 0.5) * 1.0,
-        life: 0.5 + Math.random() * 0.3,
-      });
-    }
+    this.emitLevelUpBurst(x, y, z);
   }
 
   private triggerScreenFlash(color: string, duration: number): void {
@@ -1945,67 +2010,247 @@ export class GameScene {
     }
   }
 
-  private updateParticles(damageEvents: DamageEvent[], enemies: EnemyState[]): void {
-    const state = this.session.getRenderState();
-    const particleMultiplier = state.finalSwarm ? 1.5 : 1.0;
+  // ===========================================================================
+  // VFX Particle System
+  // ===========================================================================
 
-    for (const event of damageEvents) {
+  private static readonly WEAPON_VFX_COLORS: Record<string, [number, number, number]> = {
+    sword: [1.0, 1.0, 1.0],
+    bone_bouncer: [0.95, 0.9, 0.8],
+    axe: [1.0, 0.6, 0.1],
+    revolver: [1.0, 0.9, 0.3],
+    bow: [0.8, 1.0, 0.3],
+    lightning_staff: [0.3, 0.8, 1.0],
+    fire_staff: [1.0, 0.4, 0.1],
+    flame_ring: [1.0, 0.5, 0.0],
+    tornado: [0.4, 1.0, 0.4],
+    shotgun: [1.0, 0.8, 0.2],
+    black_hole: [0.6, 0.2, 1.0],
+    katana: [0.9, 0.9, 1.0],
+    aura: [0.5, 0.7, 1.0],
+  };
+
+  private static readonly PICKUP_VFX_COLORS: Record<string, [number, number, number]> = {
+    xp_green: [0.2, 1.0, 0.4],
+    xp_blue: [0.2, 0.7, 1.0],
+    xp_purple: [0.8, 0.3, 1.0],
+    xp_orange: [1.0, 0.7, 0.0],
+    silver: [0.9, 0.9, 0.9],
+  };
+
+  private spawnParticle(
+    x: number, y: number, z: number,
+    vx: number, vy: number, vz: number,
+    size: number, life: number,
+    r: number, g: number, b: number,
+  ): void {
+    // Find an inactive particle in the pool
+    for (let i = 0; i < this.MAX_PARTICLES; i++) {
+      const p = this.vfxParticles[i];
+      if (!p.active) {
+        p.x = x; p.y = y; p.z = z;
+        p.vx = vx; p.vy = vy; p.vz = vz;
+        p.size = size;
+        p.life = life;
+        p.maxLife = life;
+        p.r = r; p.g = g; p.b = b;
+        p.active = true;
+        return;
+      }
+    }
+  }
+
+  private emitHitSparks(x: number, y: number, z: number, weaponType: string): void {
+    const color = GameScene.WEAPON_VFX_COLORS[weaponType] ?? [1.0, 0.9, 0.5];
+    const count = 5 + Math.floor(Math.random() * 6);
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const elevation = Math.random() * Math.PI * 0.5;
+      const speed = 2 + Math.random() * 3;
+      const vx = Math.cos(angle) * Math.cos(elevation) * speed;
+      const vy = Math.sin(elevation) * speed + 1;
+      const vz = Math.sin(angle) * Math.cos(elevation) * speed;
+      const size = 0.3 + Math.random() * 0.4;
+      const life = 0.2 + Math.random() * 0.3;
+      // Slight color variation
+      const cr = Math.min(1.0, color[0] + (Math.random() - 0.5) * 0.2);
+      const cg = Math.min(1.0, color[1] + (Math.random() - 0.5) * 0.2);
+      const cb = Math.min(1.0, color[2] + (Math.random() - 0.5) * 0.2);
+      this.spawnParticle(x, y, z, vx, vy, vz, size, life, cr, cg, cb);
+    }
+  }
+
+  private emitDeathBurst(x: number, y: number, z: number, _enemyType: string): void {
+    const count = 15 + Math.floor(Math.random() * 6);
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const elevation = (Math.random() - 0.3) * Math.PI;
+      const speed = 3 + Math.random() * 4;
+      const vx = Math.cos(angle) * Math.cos(elevation) * speed;
+      const vy = Math.abs(Math.sin(elevation)) * speed + 2;
+      const vz = Math.sin(angle) * Math.cos(elevation) * speed;
+      const size = 0.5 + Math.random() * 0.6;
+      const life = 0.4 + Math.random() * 0.5;
+      // Red/orange death particles
+      const r = 0.8 + Math.random() * 0.2;
+      const g = 0.2 + Math.random() * 0.4;
+      const b = Math.random() * 0.15;
+      this.spawnParticle(x, y + 0.5, z, vx, vy, vz, size, life, r, g, b);
+    }
+  }
+
+  private emitPickupSparkle(x: number, y: number, z: number, pickupType: string): void {
+    const color = GameScene.PICKUP_VFX_COLORS[pickupType] ?? [0.5, 1.0, 0.5];
+    const count = 3 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+      const vx = (Math.random() - 0.5) * 1.5;
+      const vy = 2 + Math.random() * 2;
+      const vz = (Math.random() - 0.5) * 1.5;
+      const size = 0.2 + Math.random() * 0.3;
+      const life = 0.3 + Math.random() * 0.3;
+      this.spawnParticle(x, y, z, vx, vy, vz, size, life, color[0], color[1], color[2]);
+    }
+  }
+
+  private emitLevelUpBurst(x: number, y: number, z: number): void {
+    const count = 30;
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      const speed = 3 + Math.random() * 2;
+      const vx = Math.cos(angle) * speed;
+      const vy = 1.5 + Math.random() * 1.5;
+      const vz = Math.sin(angle) * speed;
+      const size = 0.6 + Math.random() * 0.5;
+      const life = 0.6 + Math.random() * 0.4;
+      // Gold particles
+      const r = 1.0;
+      const g = 0.8 + Math.random() * 0.2;
+      const b = 0.1 + Math.random() * 0.2;
+      this.spawnParticle(x, y + 0.5, z, vx, vy, vz, size, life, r, g, b);
+    }
+  }
+
+  private emitFlameRingParticles(x: number, y: number, z: number, radius: number): void {
+    const count = 2 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const px = x + Math.cos(angle) * radius;
+      const pz = z + Math.sin(angle) * radius;
+      const vx = (Math.random() - 0.5) * 0.5;
+      const vy = 1 + Math.random() * 1.5;
+      const vz = (Math.random() - 0.5) * 0.5;
+      const size = 0.2 + Math.random() * 0.2;
+      const life = 0.2 + Math.random() * 0.2;
+      // Orange-red fire
+      const r = 1.0;
+      const g = 0.3 + Math.random() * 0.3;
+      const b = Math.random() * 0.1;
+      this.spawnParticle(px, y + 0.3, pz, vx, vy, vz, size, life, r, g, b);
+    }
+  }
+
+  private emitBlackHoleVortex(x: number, y: number, z: number, radius: number): void {
+    const count = 1 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = radius * (0.8 + Math.random() * 0.4);
+      const px = x + Math.cos(angle) * dist;
+      const pz = z + Math.sin(angle) * dist;
+      // Spiral inward
+      const inwardSpeed = 3 + Math.random() * 2;
+      const tangentialSpeed = 2 + Math.random();
+      const vx = -Math.cos(angle) * inwardSpeed + Math.sin(angle) * tangentialSpeed;
+      const vy = (Math.random() - 0.5) * 1.0;
+      const vz = -Math.sin(angle) * inwardSpeed - Math.cos(angle) * tangentialSpeed;
+      const size = 0.3 + Math.random() * 0.3;
+      const life = 0.3 + Math.random() * 0.2;
+      // Purple/dark blue
+      const r = 0.4 + Math.random() * 0.3;
+      const g = 0.1 + Math.random() * 0.2;
+      const b = 0.7 + Math.random() * 0.3;
+      this.spawnParticle(px, y + 0.5, pz, vx, vy, vz, size, life, r, g, b);
+    }
+  }
+
+  private updateVFX(state: GameState, dt: number): void {
+    const enemies = state.enemies;
+    const player = state.player;
+
+    // --- Emit particles based on game events ---
+
+    // Hit sparks from damage events
+    for (const event of state.damageEvents) {
       if (event.isPlayerDamage) continue;
 
-      // Death detection: check if this is a kill (damage > 0 and no enemy at that position alive)
-      // We use high particle count for crits and estimate deaths by damage
+      // Death detection
       const isDeath = event.damage > 10 && !enemies.some(e =>
         e.hp > 0 && Math.abs(e.x - event.x) < 0.5 && Math.abs(e.z - event.z) < 0.5
       );
 
-      // Improved death particles: 8-12 particles, higher velocity, bigger initial spread
-      const count = Math.round((isDeath ? (8 + Math.floor(Math.random() * 5)) : (event.isCrit ? 8 : 4)) * particleMultiplier);
-      const spread = isDeath ? 1.5 : 0.5;
-      const lifetime = isDeath ? 0.4 : (0.6 + Math.random() * 0.4);
-
-      for (let i = 0; i < count; i++) {
-        this.particleVelocities.push({
-          x: event.x + (Math.random() - 0.5) * spread,
-          y: event.y + Math.random() * spread,
-          z: event.z + (Math.random() - 0.5) * spread,
-          life: lifetime,
-        });
+      if (isDeath) {
+        this.emitDeathBurst(event.x, event.y, event.z, 'generic');
+      } else {
+        // Determine weapon type from context (use first weapon as approximation)
+        const weaponType = player.weapons.length > 0 ? player.weapons[0].type : 'sword';
+        this.emitHitSparks(event.x, event.y + 0.5, event.z, weaponType);
       }
     }
 
-    const dt = 1 / 60;
-    for (let i = this.particleVelocities.length - 1; i >= 0; i--) {
-      const p = this.particleVelocities[i];
+    // Continuous weapon effects
+    for (const weapon of player.weapons) {
+      if (weapon.type === 'flame_ring' && player.alive) {
+        this.emitFlameRingParticles(player.x, player.y, player.z, 2.5);
+      }
+      if (weapon.type === 'black_hole' && player.alive) {
+        this.emitBlackHoleVortex(player.x, player.y, player.z, 3.0);
+      }
+    }
+
+    // --- Update particle physics ---
+    const positions = this.vfxGeometry.attributes.position as THREE.BufferAttribute;
+    const sizes = this.vfxGeometry.attributes.aSize as THREE.BufferAttribute;
+    const lifes = this.vfxGeometry.attributes.aLife as THREE.BufferAttribute;
+    const colors = this.vfxGeometry.attributes.aColor as THREE.BufferAttribute;
+
+    let activeCount = 0;
+    for (let i = 0; i < this.MAX_PARTICLES; i++) {
+      const p = this.vfxParticles[i];
+      if (!p.active) continue;
+
       p.life -= dt;
       if (p.life <= 0) {
-        this.particleVelocities.splice(i, 1);
+        p.active = false;
         continue;
       }
-      p.y += 3.0 * dt; // Higher upward velocity
-      p.x += (Math.random() - 0.5) * 1.5 * dt;
-      p.z += (Math.random() - 0.5) * 1.5 * dt;
+
+      // Update position
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.z += p.vz * dt;
+      p.vy -= 3.0 * dt; // slight gravity
+
+      // Write to buffers
+      const lifeRatio = p.life / p.maxLife;
+      positions.setXYZ(activeCount, p.x, p.y, p.z);
+      sizes.setX(activeCount, p.size * lifeRatio);
+      lifes.setX(activeCount, lifeRatio);
+      colors.setXYZ(activeCount, p.r, p.g, p.b);
+      activeCount++;
     }
 
-    const maxP = this.particlePositions.length / 3;
-    for (let i = 0; i < maxP; i++) {
-      if (i < this.particleVelocities.length) {
-        const p = this.particleVelocities[i];
-        this.particlePositions[i * 3] = p.x;
-        this.particlePositions[i * 3 + 1] = p.y;
-        this.particlePositions[i * 3 + 2] = p.z;
-      } else {
-        this.particlePositions[i * 3] = 0;
-        this.particlePositions[i * 3 + 1] = -100;
-        this.particlePositions[i * 3 + 2] = 0;
-      }
+    // Fill rest with invisible positions
+    for (let i = activeCount; i < this.MAX_PARTICLES; i++) {
+      positions.setXYZ(i, 0, -100, 0);
+      sizes.setX(i, 0);
+      lifes.setX(i, 0);
+      colors.setXYZ(i, 0, 0, 0);
     }
 
-    if (this.particleVelocities.length > maxP) {
-      this.particleVelocities.length = maxP;
-    }
-
-    const attr = this.particles.geometry.getAttribute('position') as THREE.BufferAttribute;
-    attr.needsUpdate = true;
+    positions.needsUpdate = true;
+    sizes.needsUpdate = true;
+    lifes.needsUpdate = true;
+    colors.needsUpdate = true;
+    this.vfxGeometry.setDrawRange(0, activeCount);
   }
 
   private updateCamera(state: GameState): void {

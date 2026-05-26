@@ -2435,15 +2435,26 @@ export class GameScene {
     const targetY = p.y + camHeight;
     const targetZ = p.z - camBehind;
 
-    // Smooth follow — constant speed, no state switching
-    const followSpeed = 0.06;
-    this.camera.position.x += (targetX - this.camera.position.x) * followSpeed;
-    this.camera.position.y += (targetY - this.camera.position.y) * followSpeed;
-    this.camera.position.z += (targetZ - this.camera.position.z) * followSpeed;
+    // Adaptive follow speed — faster when player is far from camera center
+    // This prevents the character from drifting to screen edge during slide/dash
+    const dx = targetX - this.camera.position.x;
+    const dy = targetY - this.camera.position.y;
+    const dz = targetZ - this.camera.position.z;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    // Base 0.08, ramps up to ~0.5 when distance > 3 units
+    const followSpeed = Math.min(0.08 + dist * 0.12, 0.6);
 
-    // Look-at: also smoothed to avoid jitter when player position changes abruptly
-    this.ghostTargetX += (p.x - this.ghostTargetX) * followSpeed;
-    this.ghostTargetZ += (p.z - this.ghostTargetZ) * followSpeed;
+    this.camera.position.x += dx * followSpeed;
+    this.camera.position.y += dy * followSpeed;
+    this.camera.position.z += dz * followSpeed;
+
+    // Look-at: also adaptive speed to stay in sync with camera position
+    const lookDx = p.x - this.ghostTargetX;
+    const lookDz = p.z - this.ghostTargetZ;
+    const lookDist = Math.sqrt(lookDx * lookDx + lookDz * lookDz);
+    const lookSpeed = Math.min(0.08 + lookDist * 0.12, 0.6);
+    this.ghostTargetX += lookDx * lookSpeed;
+    this.ghostTargetZ += lookDz * lookSpeed;
     this.camera.lookAt(this.ghostTargetX, p.y + 1.5, this.ghostTargetZ + 2);
 
     // === Dynamic FOV based on enemy density (very gentle, no frequent updates) ===

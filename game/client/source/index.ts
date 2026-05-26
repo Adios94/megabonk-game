@@ -190,9 +190,6 @@ const CHARACTER_COLORS: Record<string, number> = {
   skateboard_skeleton: 0xd4a574,
 };
 
-const CAMERA_HEIGHT = 4;
-const CAMERA_Z_OFFSET = -8;
-const CAMERA_LERP = 0.1;
 const GROUND_SIZE = 120;
 const DAMAGE_NUM_POOL_SIZE = 30;
 
@@ -450,14 +447,28 @@ export class GameScene {
 
   // State
   private isPaused = false;
-  private cameraAngle = 0;
   private jumpKeyDown = false;
   private slideKeyDown = false;
-
-  // Screen shake
-  private shakeIntensity = 0;
-  private shakeDecay = 8.0;
   private lastTime = 0;
+
+  // Advanced Camera System
+  private cameraAngle = 0;
+  private ghostTargetX = 0;
+  private ghostTargetZ = 0;
+  private currentFOV = 60;
+  private targetFOV = 60;
+  private hitStopTimer = 0;
+  private shakeOffsetX = 0;
+  private shakeOffsetY = 0;
+  private shakeIntensity = 0;
+  private shakeDecay = 0;
+  private shakeFrequency = 0;
+  private shakeTime = 0;
+  private dampingSpeed = 0.06;
+  private playerLastX = 0;
+  private playerLastZ = 0;
+  private playerVelX = 0;
+  private playerVelZ = 0;
 
   constructor(session: LocalGameSession) {
     this.session = session;
@@ -481,9 +492,9 @@ export class GameScene {
     this.scene.fog = new THREE.Fog(0x1a2a3a, 60, 120);
 
     // Camera
-    this.camera = new THREE.PerspectiveCamera(65, 1, 0.1, 300);
+    this.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 300);
     this.camera.name = 'MainCamera';
-    this.camera.position.set(0, CAMERA_HEIGHT, CAMERA_Z_OFFSET);
+    this.camera.position.set(0, 4, -8);
     this.camera.lookAt(0, 0, 0);
 
     // Platform input
@@ -1160,11 +1171,17 @@ export class GameScene {
   }
 
   // ===========================================================================
-  // Screen Shake
+  // Camera Effects — Layered Shake & Hit Stop
   // ===========================================================================
 
-  private triggerShake(intensity: number): void {
-    this.shakeIntensity = Math.max(this.shakeIntensity, intensity);
+  triggerCameraShake(intensity: number, frequency: number, decay: number): void {
+    this.shakeIntensity += intensity; // additive stacking
+    this.shakeFrequency = frequency;
+    this.shakeDecay = decay;
+  }
+
+  triggerHitStop(duration: number): void {
+    this.hitStopTimer = duration;
   }
 
   // ===========================================================================
@@ -1177,6 +1194,14 @@ export class GameScene {
     const now = performance.now();
     const dt = this.lastTime > 0 ? Math.min((now - this.lastTime) / 1000, 0.05) : 1 / 60;
     this.lastTime = now;
+
+    // Hit Stop / Freeze Frame (顿帧) — skip rendering updates while timer active
+    if (this.hitStopTimer > 0) {
+      this.hitStopTimer -= dt;
+      // Still render the frozen frame
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
 
     const state = this.session.getRenderState();
 
@@ -1193,26 +1218,33 @@ export class GameScene {
     this.updateParticles(state.damageEvents, state.enemies);
     this.updateCamera(state);
 
-    // Apply screen shake after camera update
-    if (this.shakeIntensity > 0) {
-      this.camera.position.x += (Math.random() - 0.5) * this.shakeIntensity;
-      this.camera.position.y += (Math.random() - 0.5) * this.shakeIntensity * 0.5;
-      this.shakeIntensity -= this.shakeDecay * dt;
-      if (this.shakeIntensity < 0.01) this.shakeIntensity = 0;
-    }
-
-    // Trigger shake from damage events
+    // Process damage events for camera effects
     for (const evt of state.damageEvents) {
       if (evt.isPlayerDamage) {
-        this.triggerShake(0.4);
+        // Player took damage: heavy shake
+        this.triggerCameraShake(0.4, 8, 2);
+        this.triggerHitStop(0.05);
       } else if (evt.isCrit) {
-        this.triggerShake(0.15);
+        // Critical hit: medium shake + brief hit stop
+        this.triggerCameraShake(0.15, 15, 4);
+        this.triggerHitStop(0.03);
+      } else {
+        // Normal hit: light shake
+        this.triggerCameraShake(0.05, 30, 6);
       }
     }
 
     // Boss attack shake
     if (state.boss && state.boss.currentAttack !== 'idle' && state.boss.attackTimer > 0 && state.boss.attackTimer < 0.05) {
-      this.triggerShake(0.6);
+      this.triggerCameraShake(0.4, 8, 2);
+      this.triggerHitStop(0.05);
+    }
+
+    // Dynamic zoom: brief zoom-in when weapon evolves (detected via level-up with evolved weapon)
+    const hasEvolvedWeapon = state.player.weapons.some(w => w.evolved);
+    if (hasEvolvedWeapon && state.phase === 'level_up' && this.lastPhase !== 'level_up') {
+      this.targetFOV = 50;
+      // Reset to base after 0.3s equivalent via the lerp
     }
 
     this.updateHUD(state);
@@ -1866,39 +1898,175 @@ export class GameScene {
 
   private updateCamera(state: GameState): void {
     const p = state.player;
+    const dt = this.lastTime > 0 ? Math.min((performance.now() - this.lastTime + 16) / 1000, 0.05) : 1 / 60;
 
-    // Standard third-person camera (TPS):
-    // Camera stays BEHIND the player based on player facing direction.
-    // Rotates WITH the player, but with smooth damping.
-    // W always moves "forward" from camera's perspective.
+    // =========================================================================
+    // 1. State-based Dampening (状态机阻尼)
+    // =========================================================================
+    const targetDamping = p.currentSpeed > 0.5 ? 0.04 : 0.12;
+    this.dampingSpeed += (targetDamping - this.dampingSpeed) * 0.05;
 
-    // Smoothly follow player rotation (damped — not instant)
-    let targetAngle = p.rotation;
-    let diff = targetAngle - this.cameraAngle;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
+    // =========================================================================
+    // 2. Camera Angle — follows player rotation smoothly (TPS behind)
+    // =========================================================================
+    const targetAngle = p.rotation;
+    let angleDiff = targetAngle - this.cameraAngle;
+    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
     // Only rotate camera when player is actually moving
     if (p.currentSpeed > 0.5) {
-      this.cameraAngle += diff * 0.04; // Slow smooth follow
+      this.cameraAngle += angleDiff * this.dampingSpeed;
     }
 
-    // Camera offset: behind player, above shoulder
-    const behindDist = 8;
-    const camHeight = 4;
-    const lookAheadY = 1.5; // Look at upper body, not feet
+    // =========================================================================
+    // 3. Ghost Target for Enemy Lock (防眩晕平滑)
+    // =========================================================================
+    // Find nearest enemy to player
+    let nearestEnemyX = p.x;
+    let nearestEnemyZ = p.z;
+    let nearestDist = Infinity;
+    let hasNearbyEnemy = false;
 
-    // Position behind player based on camera angle
-    const camX = p.x - Math.sin(this.cameraAngle) * behindDist;
-    const camZ = p.z - Math.cos(this.cameraAngle) * behindDist;
-    const camY = p.y + camHeight;
+    for (const enemy of state.enemies) {
+      if (enemy.hp <= 0) continue;
+      const edx = enemy.x - p.x;
+      const edz = enemy.z - p.z;
+      const dist = edx * edx + edz * edz;
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestEnemyX = enemy.x;
+        nearestEnemyZ = enemy.z;
+        hasNearbyEnemy = true;
+      }
+    }
 
-    // Smooth position follow
-    this.camera.position.x += (camX - this.camera.position.x) * 0.06;
-    this.camera.position.y += (camY - this.camera.position.y) * 0.06;
-    this.camera.position.z += (camZ - this.camera.position.z) * 0.06;
+    // Boss overrides as nearest target if alive
+    if (state.boss && state.boss.hp > 0) {
+      nearestEnemyX = state.boss.x;
+      nearestEnemyZ = state.boss.z;
+      hasNearbyEnemy = true;
+    }
 
-    // Look at player upper body
-    this.camera.lookAt(p.x, p.y + lookAheadY, p.z);
+    // Smooth ghost point tracks nearest enemy (lerp 0.05)
+    if (hasNearbyEnemy) {
+      this.ghostTargetX += (nearestEnemyX - this.ghostTargetX) * 0.05;
+      this.ghostTargetZ += (nearestEnemyZ - this.ghostTargetZ) * 0.05;
+    } else {
+      // No enemy: ghost slides back to player
+      this.ghostTargetX += (p.x - this.ghostTargetX) * 0.05;
+      this.ghostTargetZ += (p.z - this.ghostTargetZ) * 0.05;
+    }
+
+    // =========================================================================
+    // 4. Dynamic Center Offset & Lead (预判偏移)
+    // =========================================================================
+    const W_FOCUS = 0.25;
+    const MAX_OFFSET = 5;
+
+    // Focus offset toward ghost enemy position
+    let focusOffsetX = (this.ghostTargetX - p.x) * W_FOCUS;
+    let focusOffsetZ = (this.ghostTargetZ - p.z) * W_FOCUS;
+    // Clamp offset magnitude
+    const focusMag = Math.sqrt(focusOffsetX * focusOffsetX + focusOffsetZ * focusOffsetZ);
+    if (focusMag > MAX_OFFSET) {
+      const scale = MAX_OFFSET / focusMag;
+      focusOffsetX *= scale;
+      focusOffsetZ *= scale;
+    }
+
+    // Movement lead: 2 units ahead in movement direction
+    // Calculate player velocity from position delta
+    this.playerVelX += (p.x - this.playerLastX - this.playerVelX) * 0.15;
+    this.playerVelZ += (p.z - this.playerLastZ - this.playerVelZ) * 0.15;
+    this.playerLastX = p.x;
+    this.playerLastZ = p.z;
+
+    const LEAD_DISTANCE = 2;
+    let leadX = 0;
+    let leadZ = 0;
+    if (p.currentSpeed > 0.5) {
+      const velMag = Math.sqrt(this.playerVelX * this.playerVelX + this.playerVelZ * this.playerVelZ);
+      if (velMag > 0.01) {
+        leadX = (this.playerVelX / velMag) * LEAD_DISTANCE;
+        leadZ = (this.playerVelZ / velMag) * LEAD_DISTANCE;
+      }
+    }
+
+    // Final look-at target: player + focus offset + movement lead
+    const lookAtX = p.x + focusOffsetX + leadX;
+    const lookAtY = p.y + 1.5;
+    const lookAtZ = p.z + focusOffsetZ + leadZ;
+
+    // =========================================================================
+    // 5. Camera Position (TPS behind player)
+    // =========================================================================
+    const BEHIND_DIST = 8;
+    const CAM_HEIGHT = 4;
+
+    const camX = p.x - Math.sin(this.cameraAngle) * BEHIND_DIST;
+    const camZ = p.z - Math.cos(this.cameraAngle) * BEHIND_DIST;
+    const camY = p.y + CAM_HEIGHT;
+
+    // Smooth position follow using dampingSpeed
+    this.camera.position.x += (camX - this.camera.position.x) * this.dampingSpeed;
+    this.camera.position.y += (camY - this.camera.position.y) * this.dampingSpeed;
+    this.camera.position.z += (camZ - this.camera.position.z) * this.dampingSpeed;
+
+    // =========================================================================
+    // 6. Dynamic Zoom (动态缩放)
+    // =========================================================================
+    const BASE_FOV = 60;
+    const enemyCount = state.enemies.length;
+
+    if (state.boss && state.boss.hp > 0) {
+      // Boss on screen: wide zoom
+      this.targetFOV = 75;
+    } else if (enemyCount > 30) {
+      // High density: zoom out
+      this.targetFOV = 70;
+    } else {
+      this.targetFOV = BASE_FOV;
+    }
+
+    // Smooth FOV transitions
+    this.currentFOV += (this.targetFOV - this.currentFOV) * 0.03;
+    this.camera.fov = this.currentFOV;
+    this.camera.updateProjectionMatrix();
+
+    // =========================================================================
+    // 7. Layered Screen Shake (层次化屏震)
+    // =========================================================================
+    this.shakeTime += dt;
+
+    if (this.shakeIntensity > 0.001) {
+      // Perlin-like noise using sin with offset (not pure random)
+      const freq = this.shakeFrequency;
+      const t1 = this.shakeTime * freq;
+      this.shakeOffsetX = Math.sin(t1 * 6.283) * this.shakeIntensity
+        + Math.sin(t1 * 3.7 + 1.3) * this.shakeIntensity * 0.5;
+      this.shakeOffsetY = Math.sin(t1 * 5.1 + 2.7) * this.shakeIntensity * 0.7
+        + Math.sin(t1 * 4.3 + 0.8) * this.shakeIntensity * 0.3;
+
+      // Exponential decay
+      this.shakeIntensity *= Math.exp(-this.shakeDecay * dt);
+      if (this.shakeIntensity < 0.001) {
+        this.shakeIntensity = 0;
+        this.shakeOffsetX = 0;
+        this.shakeOffsetY = 0;
+      }
+    } else {
+      this.shakeOffsetX = 0;
+      this.shakeOffsetY = 0;
+    }
+
+    // Apply shake offset to camera position
+    this.camera.position.x += this.shakeOffsetX;
+    this.camera.position.y += this.shakeOffsetY;
+
+    // =========================================================================
+    // 8. Final Look-At
+    // =========================================================================
+    this.camera.lookAt(lookAtX, lookAtY, lookAtZ);
   }
 
   // ===========================================================================
@@ -2134,7 +2302,7 @@ export class GameScene {
   private handlePhaseChange(state: GameState): void {
     if (state.phase === 'level_up' && state.upgradeOptions && !this.upgradePanel) {
       this.showUpgradePanel(state.upgradeOptions);
-      this.triggerShake(0.2); // Level up shake
+      this.triggerCameraShake(0.15, 15, 4); // Level up shake
     } else if (state.phase !== 'level_up' && this.upgradePanel) {
       this.hideUpgradePanel();
     }

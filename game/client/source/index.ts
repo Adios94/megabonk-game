@@ -1274,11 +1274,14 @@ export class GameScene {
     if (Math.abs(my) < 0.15) my = 0;
 
     // Fixed camera angle: WASD is world-space movement directly.
-    // W=forward(+Z), S=backward(-Z), A=left(-X), D=right(+X)
-    // No camera-relative rotation needed since camera angle is fixed.
+    // Camera looks from -Z toward +Z, so:
+    // W(up on screen/joystick) = +Z (into screen = forward)
+    // S(down) = -Z, A(left) = -X, D(right) = +X
+    // PlatformInput: moveY negative = up on joystick/W key
+    // Need to FLIP moveY so W = +Z (forward into screen)
     const input: InputState = {
       moveX: mx,
-      moveY: my,
+      moveY: -my,
       dash: false,
       skill1: raw.action3 ?? false,
       skill2: false,

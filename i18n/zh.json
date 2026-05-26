@@ -24,7 +24,8 @@
     "pause": "暂停",
     "weaponSlots": "武器: {{current}}/{{max}}",
     "teleporter": "传送门就在附近！",
-    "silver": "银币: {{count}}"
+    "silver": "银币: {{count}}",
+    "finalSwarm": "最终狂潮！"
   },
   "upgrade": {
     "title": "选择升级",

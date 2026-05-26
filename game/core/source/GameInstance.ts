@@ -96,6 +96,8 @@ export class GameInstance {
   private facingZ: number = 1;
   // Bunny hop: track time since last landing
   private landingTimer: number = 0;
+  // Mini-boss spawn timer (every 2 min after minute 3)
+  private miniBossTimer: number = 0;
 
   constructor(config: GameConfig) {
     this.config = config;
@@ -125,6 +127,7 @@ export class GameInstance {
       waveIndex: 0,
       teleporters: [],
       character: config.character,
+      finalSwarm: false,
     };
   }
 
@@ -145,6 +148,7 @@ export class GameInstance {
     this.state.waveIndex = 0;
     this.state.teleporters = [];
     this.state.character = this.config.character;
+    this.state.finalSwarm = false;
     this.state.player = this.createInitialPlayer();
     this.nextEnemyId = 1;
     this.nextProjectileId = 1;
@@ -152,6 +156,7 @@ export class GameInstance {
     this.spawnTimer = 1.0;
     this.aiGroup = 0;
     this.landingTimer = 0;
+    this.miniBossTimer = 0;
   }
 
   tick(): boolean {
@@ -613,10 +618,356 @@ export class GameInstance {
 
     for (let i = 0; i < enemies.length; i++) {
       const enemy = enemies[i];
+
+      // --- Skeleton Knight charge logic ---
+      if (enemy.type === 'skeleton_knight') {
+        this.updateChargeEnemy(enemy, player, dt);
+        continue;
+      }
+
+      // --- Gargoyle dive-bomb logic ---
+      if (enemy.type === 'gargoyle') {
+        this.updateGargoyleEnemy(enemy, player, dt);
+        continue;
+      }
+
+      // --- Necromancer summon logic ---
+      if (enemy.type === 'necromancer') {
+        enemy.summonCooldown -= dt;
+        if (enemy.summonCooldown <= 0) {
+          enemy.summonCooldown = 8.0;
+          this.necromancerSummon(enemy);
+        }
+      }
+
+      // --- Bat swarm orbit behavior ---
+      if (enemy.type === 'bat') {
+        this.updateBatSwarm(enemy, player, dt);
+        continue;
+      }
+
+      // --- Ghost phase-through (ignores obstacles, wobbles) ---
+      if (enemy.type === 'ghost') {
+        this.updateGhostMovement(enemy, player, dt);
+        continue;
+      }
+
+      // Standard AI target computation (staggered for performance)
       if ((i % 4) === this.aiGroup) {
         this.computeEnemyTarget(enemy, player);
       }
+
+      // --- Ranged enemy shooting ---
+      if (enemy.behavior === 'ranged' && enemy.attackCooldown <= 0) {
+        const dist = distanceBetween(enemy.x, enemy.z, player.x, player.z);
+        const cfg = ENEMY_CONFIGS[enemy.type];
+        const preferredRange = cfg?.preferredRange ?? 8;
+        if (dist <= preferredRange * 1.5 && dist >= preferredRange * 0.5) {
+          this.enemyRangedAttack(enemy, player);
+        }
+      }
+
       this.moveEnemy(enemy, dt);
+    }
+  }
+
+  private updateChargeEnemy(enemy: EnemyState, player: PlayerState, dt: number): void {
+    switch (enemy.chargeState) {
+      case 'idle': {
+        // Decide to charge when player is within 15 units
+        const dist = distanceBetween(enemy.x, enemy.z, player.x, player.z);
+        if (dist < 15 && enemy.attackCooldown <= 0) {
+          enemy.chargeState = 'windup';
+          enemy.chargeTimer = 0.8;
+          enemy.chargeTargetX = player.x;
+          enemy.chargeTargetZ = player.z;
+        } else {
+          // Normal chase
+          enemy.targetX = player.x;
+          enemy.targetZ = player.z;
+          this.moveEnemy(enemy, dt);
+        }
+        break;
+      }
+      case 'windup': {
+        // Stop moving, flash red
+        enemy.chargeTimer -= dt;
+        enemy.hitFlashTimer = 0.1; // pulse red during windup
+        if (enemy.chargeTimer <= 0) {
+          enemy.chargeState = 'charging';
+          enemy.chargeTimer = 0.5;
+          // Lock target position
+          enemy.chargeTargetX = player.x;
+          enemy.chargeTargetZ = player.z;
+        }
+        break;
+      }
+      case 'charging': {
+        // Rush toward locked target at 3x speed
+        enemy.chargeTimer -= dt;
+        enemy.targetX = enemy.chargeTargetX;
+        enemy.targetZ = enemy.chargeTargetZ;
+        const dx = enemy.targetX - enemy.x;
+        const dz = enemy.targetZ - enemy.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist > 0.5) {
+          const chargeSpeed = enemy.speed * 3.0 * dt;
+          const actualMove = Math.min(chargeSpeed, dist);
+          const nx = dx / dist;
+          const nz = dz / dist;
+          const halfMap = (this.config.mapSize + 10) * 0.5;
+          enemy.x = Math.max(-halfMap, Math.min(halfMap, enemy.x + nx * actualMove));
+          enemy.z = Math.max(-halfMap, Math.min(halfMap, enemy.z + nz * actualMove));
+        }
+        if (enemy.chargeTimer <= 0 || dist <= 0.5) {
+          enemy.chargeState = 'cooldown';
+          enemy.chargeTimer = 3.0;
+          enemy.attackCooldown = enemy.attackCooldownMax;
+        }
+        break;
+      }
+      case 'cooldown': {
+        enemy.chargeTimer -= dt;
+        if (enemy.chargeTimer <= 0) {
+          enemy.chargeState = 'idle';
+        }
+        // Slow chase during cooldown
+        enemy.targetX = player.x;
+        enemy.targetZ = player.z;
+        this.moveEnemy(enemy, dt);
+        break;
+      }
+    }
+  }
+
+  private updateGargoyleEnemy(enemy: EnemyState, player: PlayerState, dt: number): void {
+    switch (enemy.diveState) {
+      case 'flying': {
+        // Fly above ground at y=3, circle/approach player
+        enemy.y = 3;
+        enemy.targetX = player.x;
+        enemy.targetZ = player.z;
+        this.moveEnemy(enemy, dt);
+
+        // When attack cooldown hits 0, initiate dive
+        if (enemy.attackCooldown <= 0) {
+          enemy.diveState = 'diving';
+          enemy.diveTimer = 0.4;
+          enemy.chargeTargetX = player.x;
+          enemy.chargeTargetZ = player.z;
+        }
+        break;
+      }
+      case 'diving': {
+        // Dive toward player position at high speed
+        enemy.diveTimer -= dt;
+        const dx = enemy.chargeTargetX - enemy.x;
+        const dz = enemy.chargeTargetZ - enemy.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist > 0.3) {
+          const diveSpeed = enemy.speed * 3.0 * dt;
+          const nx = dx / dist;
+          const nz = dz / dist;
+          const halfMap = (this.config.mapSize + 10) * 0.5;
+          enemy.x = Math.max(-halfMap, Math.min(halfMap, enemy.x + nx * diveSpeed));
+          enemy.z = Math.max(-halfMap, Math.min(halfMap, enemy.z + nz * diveSpeed));
+        }
+        // Descend
+        enemy.y = Math.max(0, enemy.y - 8 * dt);
+        if (enemy.y <= 0 || enemy.diveTimer <= 0) {
+          enemy.y = 0;
+          enemy.diveState = 'landing';
+          enemy.diveTimer = 0.3;
+          // AOE damage on landing
+          this.gargoyleLandingAOE(enemy);
+        }
+        break;
+      }
+      case 'landing': {
+        // Brief pause on ground after landing
+        enemy.diveTimer -= dt;
+        if (enemy.diveTimer <= 0) {
+          enemy.diveState = 'rising';
+          enemy.diveTimer = 0.5;
+        }
+        break;
+      }
+      case 'rising': {
+        // Float back up
+        enemy.diveTimer -= dt;
+        enemy.y = Math.min(3, enemy.y + 6 * dt);
+        if (enemy.diveTimer <= 0 || enemy.y >= 3) {
+          enemy.y = 3;
+          enemy.diveState = 'flying';
+          enemy.attackCooldown = enemy.attackCooldownMax;
+        }
+        break;
+      }
+    }
+  }
+
+  private gargoyleLandingAOE(enemy: EnemyState): void {
+    const player = this.state.player;
+    const aoRadius = 3;
+
+    // Damage player if in AOE radius
+    if (player.alive && player.invincibleTimer <= 0) {
+      const dist = distanceBetween(enemy.x, enemy.z, player.x, player.z);
+      if (dist <= aoRadius) {
+        const shieldTome = player.tomes.find(t => t.type === 'shield_tome');
+        const shieldReduction = shieldTome ? shieldTome.level * 0.05 : 0;
+        const rawDamage = Math.max(1, enemy.damage - player.armor);
+        const damage = Math.max(1, Math.round(rawDamage * (1 - shieldReduction)));
+        player.hp -= damage;
+        player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;
+        this.state.stats.damageTaken += damage;
+        this.addDamageEvent(player.x, 1.5, player.z, damage, false, true);
+        if (player.hp <= 0) {
+          this.checkPlayerDeath();
+        }
+      }
+    }
+
+    // Also damage other enemies slightly (environmental impact)
+    for (const other of this.state.enemies) {
+      if (other.id === enemy.id || other.hp <= 0) continue;
+      const dist = distanceBetween(enemy.x, enemy.z, other.x, other.z);
+      if (dist <= aoRadius) {
+        this.applyKnockback(other, enemy.x, enemy.z);
+      }
+    }
+  }
+
+  private updateBatSwarm(enemy: EnemyState, player: PlayerState, dt: number): void {
+    const orbitRadius = 6;
+    const spiralTime = 3.0;
+
+    // Orbit timer counts up; after spiralTime bats rush in
+    enemy.orbitTimer += dt;
+    enemy.orbitAngle += 3.0 * dt; // orbit angular speed
+
+    if (enemy.orbitTimer >= spiralTime) {
+      // Rush toward player
+      enemy.targetX = player.x;
+      enemy.targetZ = player.z;
+      this.moveEnemy(enemy, dt);
+    } else {
+      // Orbit: gradually spiral inward
+      const progress = enemy.orbitTimer / spiralTime;
+      const currentRadius = orbitRadius * (1 - progress * 0.7); // shrink from 6 to ~1.8
+      const targetX = player.x + Math.cos(enemy.orbitAngle) * currentRadius;
+      const targetZ = player.z + Math.sin(enemy.orbitAngle) * currentRadius;
+      enemy.targetX = targetX;
+      enemy.targetZ = targetZ;
+      this.moveEnemy(enemy, dt);
+    }
+  }
+
+  private updateGhostMovement(enemy: EnemyState, player: PlayerState, dt: number): void {
+    // Ghosts move directly toward player (phase through everything)
+    // with a sine wave wobble
+    const dx = player.x - enemy.x;
+    const dz = player.z - enemy.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist < 0.1) return;
+
+    const nx = dx / dist;
+    const nz = dz / dist;
+
+    // Sine wave wobble perpendicular to movement direction
+    const time = this.state.gameTime + enemy.id * 0.7;
+    const wobbleAmount = Math.sin(time * 4) * 1.5;
+    // Perpendicular vector
+    const perpX = -nz;
+    const perpZ = nx;
+
+    let speedMult = 1.0;
+    const curseTome = this.state.player.tomes.find(t => t.type === 'curse_tome');
+    if (curseTome) {
+      speedMult *= (1 + curseTome.level * 0.1);
+    }
+
+    // Final swarm speed boost
+    if (this.state.finalSwarm) {
+      speedMult *= 1.2;
+    }
+
+    const moveSpeed = enemy.speed * speedMult * dt;
+    const actualMove = Math.min(moveSpeed, dist);
+
+    // Apply movement with wobble (no map clamping — ghosts phase through)
+    const halfMap = (this.config.mapSize + 10) * 0.5;
+    enemy.x = Math.max(-halfMap, Math.min(halfMap, enemy.x + (nx + perpX * wobbleAmount * 0.1) * actualMove));
+    enemy.z = Math.max(-halfMap, Math.min(halfMap, enemy.z + (nz + perpZ * wobbleAmount * 0.1) * actualMove));
+  }
+
+  private enemyRangedAttack(enemy: EnemyState, player: PlayerState): void {
+    if (this.state.projectiles.length >= MAX_PROJECTILES) return;
+
+    const dir = normalizeDirection(player.x - enemy.x, player.z - enemy.z);
+    let projectileSpeed = 8;
+    if (enemy.type === 'necromancer') projectileSpeed = 6;
+
+    this.state.projectiles.push({
+      id: this.nextProjectileId++,
+      weaponType: 'bow', // visual type for rendering
+      x: enemy.x,
+      y: 1.0,
+      z: enemy.z,
+      vx: dir.x * projectileSpeed,
+      vy: 0,
+      vz: dir.z * projectileSpeed,
+      damage: enemy.damage,
+      bouncesLeft: 0,
+      pierceLeft: 0,
+      lifetime: 4.0,
+      radius: 0.4,
+      fromPlayer: false,
+      hitEnemyIds: [],
+    });
+
+    enemy.attackCooldown = enemy.attackCooldownMax;
+  }
+
+  private necromancerSummon(necro: EnemyState): void {
+    const count = 2 + Math.floor(Math.random() * 2); // 2-3 skeleton_soldiers
+    const cfg = ENEMY_CONFIGS['skeleton_soldier'];
+    if (!cfg) return;
+
+    for (let i = 0; i < count; i++) {
+      if (this.state.enemies.length >= 150) break; // respect max
+      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.5;
+      const spawnDist = 2 + Math.random() * 1.5;
+      const timeScale = 1 + this.state.gameTime / 600;
+
+      this.state.enemies.push({
+        id: this.nextEnemyId++,
+        type: 'skeleton_soldier',
+        x: necro.x + Math.cos(angle) * spawnDist,
+        y: 0,
+        z: necro.z + Math.sin(angle) * spawnDist,
+        hp: Math.round(cfg.hp * timeScale),
+        maxHp: Math.round(cfg.hp * timeScale),
+        speed: cfg.speed,
+        damage: cfg.damage,
+        behavior: cfg.behavior as EnemyBehavior,
+        isElite: false,
+        isMiniBoss: false,
+        hitFlashTimer: 0,
+        attackCooldown: 0,
+        attackCooldownMax: cfg.attackCooldown,
+        targetX: this.state.player.x,
+        targetZ: this.state.player.z,
+        chargeState: 'idle',
+        chargeTimer: 0,
+        chargeTargetX: 0,
+        chargeTargetZ: 0,
+        summonCooldown: 0,
+        orbitAngle: 0,
+        orbitTimer: 0,
+        diveState: 'flying',
+        diveTimer: 0,
+      });
     }
   }
 
@@ -682,6 +1033,11 @@ export class GameInstance {
     const curseTome = this.state.player.tomes.find(t => t.type === 'curse_tome');
     if (curseTome) {
       speedMult *= (1 + curseTome.level * 0.1);
+    }
+
+    // Final Swarm speed boost (20%)
+    if (this.state.finalSwarm) {
+      speedMult *= 1.2;
     }
 
     const moveSpeed = enemy.speed * speedMult * dt;
@@ -1748,15 +2104,38 @@ export class GameInstance {
       }
     }
 
-    if (this.state.enemies.length >= wave.maxAlive) return;
-    if (this.state.enemies.length >= this.config.maxEnemies) return;
+    // --- Final Swarm Phase (time 480-540) ---
+    const isFinalSwarm = this.state.gameTime >= 480 && this.state.gameTime < BOSS_SPAWN_TIME;
+    this.state.finalSwarm = isFinalSwarm;
+
+    const maxAlive = isFinalSwarm ? 150 : wave.maxAlive;
+    const maxEnemiesLimit = isFinalSwarm ? 150 : this.config.maxEnemies;
+
+    if (this.state.enemies.length >= maxAlive) return;
+    if (this.state.enemies.length >= maxEnemiesLimit) return;
+
+    // --- Mini-boss spawning (every 2 minutes after minute 3) ---
+    if (this.state.gameTime >= 180) {
+      this.miniBossTimer += dt;
+      if (this.miniBossTimer >= 120) {
+        this.miniBossTimer = 0;
+        this.spawnMiniBoss();
+      }
+    }
 
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       // Curse tome: faster spawn rate
       const curseTome = this.state.player.tomes.find(t => t.type === 'curse_tome');
       const curseSpawnMult = curseTome ? (1 - curseTome.level * 0.1) : 1.0;
-      this.spawnTimer = wave.spawnInterval * Math.max(0.5, curseSpawnMult);
+      let spawnInterval = wave.spawnInterval * Math.max(0.5, curseSpawnMult);
+
+      // Final swarm: double spawn rate
+      if (isFinalSwarm) {
+        spawnInterval *= 0.5;
+      }
+
+      this.spawnTimer = spawnInterval;
 
       const groupMin = wave.groupSize[0];
       const groupMax = wave.groupSize[1];
@@ -1767,9 +2146,19 @@ export class GameInstance {
         groupSize = Math.round(groupSize * (1 + curseTome.level * 0.15));
       }
 
+      // Final swarm: bigger groups
+      if (isFinalSwarm) {
+        groupSize = Math.round(groupSize * 1.5);
+      }
+
+      // Choose enemy types (all types available during final swarm)
+      const availableEnemies = isFinalSwarm
+        ? Object.keys(ENEMY_CONFIGS)
+        : wave.enemies;
+
       for (let i = 0; i < groupSize; i++) {
-        if (this.state.enemies.length >= wave.maxAlive) break;
-        if (this.state.enemies.length >= this.config.maxEnemies) break;
+        if (this.state.enemies.length >= maxAlive) break;
+        if (this.state.enemies.length >= maxEnemiesLimit) break;
 
         const isEliteRoll = Math.random() < wave.eliteChance;
         let enemyType: string;
@@ -1781,16 +2170,73 @@ export class GameInstance {
           if (eliteTypes.length > 0) {
             enemyType = eliteTypes[Math.floor(Math.random() * eliteTypes.length)];
           } else {
-            enemyType = this.pickWeightedEnemy(wave.enemies);
+            enemyType = this.pickWeightedEnemy(availableEnemies);
           }
         } else {
-          enemyType = this.pickWeightedEnemy(wave.enemies);
+          enemyType = this.pickWeightedEnemy(availableEnemies);
         }
 
         if (!enemyType) continue;
-        this.spawnSingleEnemy(enemyType);
+
+        // Bat group spawn: spawn 5-8 together
+        if (enemyType === 'bat') {
+          const batCount = 5 + Math.floor(Math.random() * 4); // 5-8
+          for (let b = 0; b < batCount; b++) {
+            if (this.state.enemies.length >= maxAlive) break;
+            this.spawnSingleEnemy(enemyType);
+          }
+          // Count this as multiple from the group
+          i += Math.min(batCount - 1, groupSize - i - 1);
+        } else {
+          this.spawnSingleEnemy(enemyType);
+        }
       }
     }
+  }
+
+  private spawnMiniBoss(): void {
+    const allTypes = Object.keys(ENEMY_CONFIGS).filter(
+      t => ENEMY_CONFIGS[t].firstAppear <= this.state.gameTime
+    );
+    if (allTypes.length === 0) return;
+
+    const baseType = allTypes[Math.floor(Math.random() * allTypes.length)];
+    const cfg = ENEMY_CONFIGS[baseType];
+    if (!cfg) return;
+
+    const spawnPos = this.getSpawnPosition();
+    const timeScale = 1 + this.state.gameTime / 600;
+
+    const enemy: EnemyState = {
+      id: this.nextEnemyId++,
+      type: baseType as EnemyType,
+      x: spawnPos.x,
+      y: 0,
+      z: spawnPos.z,
+      hp: Math.round(cfg.hp * timeScale * 3), // 3x HP
+      maxHp: Math.round(cfg.hp * timeScale * 3),
+      speed: cfg.speed,
+      damage: cfg.damage * 2, // 2x damage
+      behavior: cfg.behavior as EnemyBehavior,
+      isElite: true,
+      isMiniBoss: true,
+      hitFlashTimer: 0,
+      attackCooldown: 0,
+      attackCooldownMax: cfg.attackCooldown,
+      targetX: this.state.player.x,
+      targetZ: this.state.player.z,
+      chargeState: 'idle',
+      chargeTimer: 0,
+      chargeTargetX: 0,
+      chargeTargetZ: 0,
+      summonCooldown: 8,
+      orbitAngle: Math.random() * Math.PI * 2,
+      orbitTimer: 0,
+      diveState: 'flying',
+      diveTimer: 0,
+    };
+
+    this.state.enemies.push(enemy);
   }
 
   private getCurrentWave(): typeof WAVE_CONFIGS[number] | null {
@@ -1831,23 +2277,55 @@ export class GameInstance {
     const spawnPos = this.getSpawnPosition();
     const timeScale = 1 + this.state.gameTime / 600;
 
+    // Enhanced HP scaling: after 3 minutes, +10% per minute
+    let hpScale = timeScale;
+    if (this.state.gameTime >= 180) {
+      const extraMinutes = (this.state.gameTime - 180) / 60;
+      hpScale *= (1 + extraMinutes * 0.1);
+    }
+
+    let hp = Math.round(cfg.hp * hpScale);
+    let speed = cfg.speed;
+    let damage = cfg.damage;
+    let isElite = cfg.isElite;
+
+    // Elite enemies: 50% chance of random buff (fast, tanky, or damage)
+    if (isElite && Math.random() < 0.5) {
+      const buff = Math.floor(Math.random() * 3);
+      switch (buff) {
+        case 0: speed *= 1.4; break; // fast
+        case 1: hp = Math.round(hp * 1.5); break; // tanky
+        case 2: damage = Math.round(damage * 1.5); break; // damage
+      }
+    }
+
     const enemy: EnemyState = {
       id: this.nextEnemyId++,
       type: type as EnemyType,
       x: spawnPos.x,
-      y: 0,
+      y: type === 'gargoyle' ? 3 : 0,
       z: spawnPos.z,
-      hp: Math.round(cfg.hp * timeScale),
-      maxHp: Math.round(cfg.hp * timeScale),
-      speed: cfg.speed,
-      damage: cfg.damage,
+      hp,
+      maxHp: hp,
+      speed,
+      damage,
       behavior: cfg.behavior as EnemyBehavior,
-      isElite: cfg.isElite,
+      isElite,
+      isMiniBoss: false,
       hitFlashTimer: 0,
       attackCooldown: 0,
       attackCooldownMax: cfg.attackCooldown,
       targetX: this.state.player.x,
       targetZ: this.state.player.z,
+      chargeState: 'idle',
+      chargeTimer: 0,
+      chargeTargetX: 0,
+      chargeTargetZ: 0,
+      summonCooldown: type === 'necromancer' ? 8 : 0,
+      orbitAngle: Math.random() * Math.PI * 2,
+      orbitTimer: 0,
+      diveState: 'flying',
+      diveTimer: 0,
     };
 
     this.state.enemies.push(enemy);
@@ -2015,11 +2493,21 @@ export class GameInstance {
             damage: cfg.damage,
             behavior: cfg.behavior as EnemyBehavior,
             isElite: false,
+            isMiniBoss: false,
             hitFlashTimer: 0,
             attackCooldown: 0,
             attackCooldownMax: cfg.attackCooldown,
             targetX: player.x,
             targetZ: player.z,
+            chargeState: 'idle',
+            chargeTimer: 0,
+            chargeTargetX: 0,
+            chargeTargetZ: 0,
+            summonCooldown: 0,
+            orbitAngle: Math.random() * Math.PI * 2,
+            orbitTimer: 0,
+            diveState: 'flying',
+            diveTimer: 0,
           });
         }
         break;

@@ -310,6 +310,8 @@ export class GameScene {
   private gameOverPanel: HTMLDivElement | null = null;
   private damageNums: HTMLDivElement[] = [];
   private damageNumIndex = 0;
+  private finalSwarmLabel: HTMLDivElement | null = null;
+  private finalSwarmBorder: HTMLDivElement | null = null;
 
   // State
   private isPaused = false;
@@ -420,6 +422,8 @@ export class GameScene {
     this.hudContainer?.remove();
     this.upgradePanel?.remove();
     this.gameOverPanel?.remove();
+    this.finalSwarmLabel?.remove();
+    this.finalSwarmBorder?.remove();
     for (const el of this.damageNums) el.remove();
   }
 
@@ -1370,8 +1374,8 @@ export class GameScene {
 
       let count = 0;
       for (const enemy of list) {
-        const scale = enemy.isElite ? 1.3 : 1.0;
-        this._dummy.position.set(enemy.x, 0.5 * scale, enemy.z);
+        const scale = enemy.isMiniBoss ? 1.5 : (enemy.isElite ? 1.3 : 1.0);
+        this._dummy.position.set(enemy.x, enemy.y + 0.5 * scale, enemy.z);
         this._dummy.scale.set(scale, scale, scale);
         this._dummy.rotation.set(0, 0, 0);
         this._dummy.updateMatrix();
@@ -1379,6 +1383,8 @@ export class GameScene {
 
         if (enemy.hitFlashTimer > 0) {
           this._tempColor.setHex(0xff4444);
+        } else if (enemy.isMiniBoss) {
+          this._tempColor.setHex(0xff8800); // Orange for mini-boss
         } else if (enemy.isElite) {
           this._tempColor.setHex(0xff2222);
         } else {
@@ -1401,18 +1407,20 @@ export class GameScene {
       this._dummy.position.set(proj.x, proj.y, proj.z);
 
       // Projectile visual variety: scale by weapon type
-      let scale = proj.fromPlayer ? 1.0 : 1.5;
-      switch (proj.weaponType) {
-        case 'black_hole': scale = 3.0; break;
-        case 'tornado': scale = 2.0; break;
-        case 'fire_staff': scale = 1.8; break;
-        case 'aura': scale = 2.5; break;
-        case 'axe': scale = 1.5; break;
-        case 'sword': case 'katana': scale = 1.2; break;
-        case 'revolver': case 'bow': scale = 0.6; break;
-        case 'shotgun': scale = 0.4; break;
-        case 'bone_bouncer': scale = 0.8; break;
-        default: scale = proj.fromPlayer ? 1.0 : 1.5;
+      let scale = proj.fromPlayer ? 1.0 : 1.8; // Enemy projectiles are larger
+      if (proj.fromPlayer) {
+        switch (proj.weaponType) {
+          case 'black_hole': scale = 3.0; break;
+          case 'tornado': scale = 2.0; break;
+          case 'fire_staff': scale = 1.8; break;
+          case 'aura': scale = 2.5; break;
+          case 'axe': scale = 1.5; break;
+          case 'sword': case 'katana': scale = 1.2; break;
+          case 'revolver': case 'bow': scale = 0.6; break;
+          case 'shotgun': scale = 0.4; break;
+          case 'bone_bouncer': scale = 0.8; break;
+          default: scale = 1.0;
+        }
       }
 
       // Add spinning for bone_bouncer and tornado
@@ -1445,7 +1453,12 @@ export class GameScene {
         const color = WEAPON_PROJECTILE_COLORS[proj.weaponType] ?? 0xffdd44;
         this._tempColor.setHex(color);
       } else {
-        this._tempColor.setHex(0xff4444);
+        // Enemy projectiles: red-orange pulsing color
+        const pulse = 0.7 + Math.sin(time * 3 + proj.id) * 0.3;
+        const r = 1.0;
+        const g = 0.25 + pulse * 0.2;
+        const b = 0.0;
+        this._tempColor.setRGB(r, g, b);
       }
       this.projectileMesh.setColorAt(count, this._tempColor);
       count++;
@@ -1586,6 +1599,9 @@ export class GameScene {
   }
 
   private updateParticles(damageEvents: DamageEvent[], enemies: EnemyState[]): void {
+    const state = this.session.getRenderState();
+    const particleMultiplier = state.finalSwarm ? 1.5 : 1.0;
+
     for (const event of damageEvents) {
       if (event.isPlayerDamage) continue;
 
@@ -1596,7 +1612,7 @@ export class GameScene {
       );
 
       // Improved death particles: 8-12 particles, higher velocity, bigger initial spread
-      const count = isDeath ? (8 + Math.floor(Math.random() * 5)) : (event.isCrit ? 8 : 4);
+      const count = Math.round((isDeath ? (8 + Math.floor(Math.random() * 5)) : (event.isCrit ? 8 : 4)) * particleMultiplier);
       const spread = isDeath ? 1.5 : 0.5;
       const lifetime = isDeath ? 0.4 : (0.6 + Math.random() * 0.4);
 
@@ -1702,6 +1718,40 @@ export class GameScene {
       current: String(p.weapons.length),
       max: String(p.maxWeaponSlots),
     })}\n${weaponNames}`;
+
+    // --- Final Swarm visual effects ---
+    if (state.finalSwarm) {
+      // Show pulsing red border
+      if (!this.finalSwarmBorder) {
+        this.finalSwarmBorder = document.createElement('div');
+        this.finalSwarmBorder.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:90;border:4px solid rgba(255,50,50,0.6);box-sizing:border-box;';
+        document.body.appendChild(this.finalSwarmBorder);
+      }
+      // Pulse the border opacity
+      const pulse = 0.4 + Math.sin(performance.now() * 0.005) * 0.3;
+      this.finalSwarmBorder.style.borderColor = `rgba(255,50,50,${pulse})`;
+
+      // Show "FINAL SWARM!" text
+      if (!this.finalSwarmLabel) {
+        this.finalSwarmLabel = document.createElement('div');
+        this.finalSwarmLabel.style.cssText = 'position:fixed;top:50px;left:50%;transform:translateX(-50%);color:#ff4444;font-size:22px;font-weight:bold;text-shadow:0 0 10px #ff0000,0 2px 4px rgba(0,0,0,0.8);pointer-events:none;z-index:101;letter-spacing:2px;';
+        this.finalSwarmLabel.textContent = t('hud.finalSwarm');
+        document.body.appendChild(this.finalSwarmLabel);
+      }
+      // Pulse the text
+      const textPulse = 0.7 + Math.sin(performance.now() * 0.006) * 0.3;
+      this.finalSwarmLabel.style.opacity = String(textPulse);
+    } else {
+      // Remove final swarm visuals
+      if (this.finalSwarmBorder) {
+        this.finalSwarmBorder.remove();
+        this.finalSwarmBorder = null;
+      }
+      if (this.finalSwarmLabel) {
+        this.finalSwarmLabel.remove();
+        this.finalSwarmLabel = null;
+      }
+    }
 
     // Damage numbers
     for (const evt of state.damageEvents) {

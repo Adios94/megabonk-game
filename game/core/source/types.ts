@@ -136,11 +136,25 @@ export interface EnemyState {
   damage: number;
   behavior: EnemyBehavior;
   isElite: boolean;
+  isMiniBoss: boolean;
   hitFlashTimer: number;
   attackCooldown: number;
   attackCooldownMax: number;
   targetX: number;
   targetZ: number;
+  // Charge behavior (skeleton_knight)
+  chargeState: 'idle' | 'windup' | 'charging' | 'cooldown';
+  chargeTimer: number;
+  chargeTargetX: number;
+  chargeTargetZ: number;
+  // Necromancer summon
+  summonCooldown: number;
+  // Bat swarm orbit
+  orbitAngle: number;
+  orbitTimer: number;
+  // Gargoyle dive state
+  diveState: 'flying' | 'diving' | 'landing' | 'rising';
+  diveTimer: number;
 }
 
 // --- Projectiles ---
@@ -269,6 +283,7 @@ export interface GameState {
   waveIndex: number;
   teleporters: TeleporterState[];
   character: CharacterType;
+  finalSwarm: boolean;
 }
 
 // --- Config ---

@@ -24,7 +24,8 @@
     "pause": "Pause",
     "weaponSlots": "Weapons: {{current}}/{{max}}",
     "teleporter": "Teleporter nearby!",
-    "silver": "Silver: {{count}}"
+    "silver": "Silver: {{count}}",
+    "finalSwarm": "FINAL SWARM!"
   },
   "upgrade": {
     "title": "Choose Upgrade",

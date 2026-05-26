@@ -345,21 +345,18 @@ async function loadModels(): Promise<void> {
       const gltf = await gltfLoader.loadAsync(path);
       const model = gltf.scene;
       model.name = `Model_${key}`;
-      // Keep original materials from the GLTF (preserves textures, vertex colors, etc.)
-      // Only disable expensive features for mobile performance
+      // Keep original materials — just disable shadows for performance
       model.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
           const mesh = child as THREE.Mesh;
-          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-          for (const m of mats) {
-            // Disable shadows for performance but keep visual quality
-            mesh.castShadow = false;
-            mesh.receiveShadow = false;
-          }
+          mesh.castShadow = false;
+          mesh.receiveShadow = false;
         }
       });
       loadedModels[key] = model;
-    } catch {
+      console.log(`[Assets] Loaded: ${key} (${path})`);
+    } catch (err) {
+      console.warn(`[Assets] Failed to load ${key} (${path}):`, err);
       loadedModels[key] = null;
     }
   });
@@ -875,6 +872,7 @@ export class GameScene {
     const charColor = CHARACTER_COLORS[state.character] ?? 0xf5d680;
 
     if (loadedModels.player) {
+      console.log('[Player] Using loaded GLTF model');
       this.playerMesh = loadedModels.player.clone() as unknown as THREE.Mesh;
       this.playerMesh.name = 'Player';
       // Normalize player model to ~1.8 units tall
@@ -882,6 +880,7 @@ export class GameScene {
       this.playerMesh.position.y = 0;
       this.scene.add(this.playerMesh);
     } else {
+      console.warn('[Player] Model not loaded — using fallback capsule');
       const bodyGeo = new THREE.CapsuleGeometry(0.5, 1.0, 4, 8);
       const bodyMat = new THREE.MeshLambertMaterial({ color: charColor });
       this.playerMesh = new THREE.Mesh(bodyGeo, bodyMat);
@@ -1213,9 +1212,15 @@ export class GameScene {
 
   private handleInput(): void {
     const raw = this.platformInput.getInput();
+    // Apply deadzone to prevent drift/spinning
+    let mx = raw.moveX ?? 0;
+    let my = raw.moveY ?? 0;
+    if (Math.abs(mx) < 0.15) mx = 0;
+    if (Math.abs(my) < 0.15) my = 0;
+
     const input: InputState = {
-      moveX: raw.moveX ?? 0,
-      moveY: raw.moveY ?? 0,
+      moveX: mx,
+      moveY: my,
       dash: false,
       skill1: raw.action3 ?? false,
       skill2: false,

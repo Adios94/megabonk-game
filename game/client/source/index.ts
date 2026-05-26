@@ -261,6 +261,21 @@ interface LoadedModels {
   teleporter: THREE.Group | null;
   platform: THREE.Group | null;
   pickup: THREE.Group | null;
+  // Cyberpunk platform models
+  platform_4x4: THREE.Group | null;
+  platform_4x2: THREE.Group | null;
+  platform_2x2: THREE.Group | null;
+  platform_1x1: THREE.Group | null;
+  support: THREE.Group | null;
+  support_long: THREE.Group | null;
+  rail_long: THREE.Group | null;
+  fence_platform: THREE.Group | null;
+  light_street: THREE.Group | null;
+  sign_1: THREE.Group | null;
+  sign_2: THREE.Group | null;
+  ac_unit: THREE.Group | null;
+  pipe_1: THREE.Group | null;
+  door: THREE.Group | null;
 }
 
 const gltfLoader = new GLTFLoader();
@@ -277,6 +292,21 @@ const loadedModels: LoadedModels = {
   teleporter: null,
   platform: null,
   pickup: null,
+  // Cyberpunk platform models
+  platform_4x4: null,
+  platform_4x2: null,
+  platform_2x2: null,
+  platform_1x1: null,
+  support: null,
+  support_long: null,
+  rail_long: null,
+  fence_platform: null,
+  light_street: null,
+  sign_1: null,
+  sign_2: null,
+  ac_unit: null,
+  pipe_1: null,
+  door: null,
 };
 
 async function loadModels(): Promise<void> {
@@ -293,6 +323,21 @@ async function loadModels(): Promise<void> {
     ['pickup', '/models/collectible_gear.gltf'],
     ['tombstone', '/models/tombstone.glb'],
     ['tree', '/models/tree.glb'],
+    // Cyberpunk platform kit
+    ['platform_4x4', '/models/platform_4x4_full.gltf'],
+    ['platform_4x2', '/models/platform_4x2.gltf'],
+    ['platform_2x2', '/models/platform_2x2.gltf'],
+    ['platform_1x1', '/models/platform_1x1.gltf'],
+    ['support', '/models/support.gltf'],
+    ['support_long', '/models/support_long.gltf'],
+    ['rail_long', '/models/rail_long.gltf'],
+    ['fence_platform', '/models/fence_platform.gltf'],
+    ['light_street', '/models/light_street_1.gltf'],
+    ['sign_1', '/models/sign_1.gltf'],
+    ['sign_2', '/models/sign_2.gltf'],
+    ['ac_unit', '/models/ac_unit.gltf'],
+    ['pipe_1', '/models/pipe_1.gltf'],
+    ['door', '/models/door.gltf'],
   ];
 
   const promises = modelPaths.map(async ([key, path]) => {
@@ -432,8 +477,8 @@ export class GameScene {
     // Scene
     this.scene = new THREE.Scene();
     this.scene.name = 'MainScene';
-    this.scene.background = new THREE.Color(0x6eaadc);
-    this.scene.fog = new THREE.Fog(0x6eaadc, 50, 100);
+    this.scene.background = new THREE.Color(0x0a0a1a);
+    this.scene.fog = new THREE.Fog(0x0a0a1a, 50, 100);
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(65, 1, 0.1, 300);
@@ -524,157 +569,36 @@ export class GameScene {
   // ===========================================================================
 
   private setupLighting(): void {
-    const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+    const ambient = new THREE.AmbientLight(0x8888cc, 0.4);
     ambient.name = 'AmbientLight';
     this.scene.add(ambient);
 
-    const dir = new THREE.DirectionalLight(0xfff4e0, 0.9);
+    const dir = new THREE.DirectionalLight(0xaaccff, 0.6);
     dir.name = 'DirectionalLight';
     dir.position.set(8, 15, 5);
     this.scene.add(dir);
 
-    const fill = new THREE.HemisphereLight(0x88ccff, 0x44aa44, 0.3);
+    const fill = new THREE.HemisphereLight(0x4444aa, 0x111122, 0.3);
     fill.name = 'HemisphereLight';
     this.scene.add(fill);
   }
 
   private setupGround(): void {
     // =========================================================================
-    // 1. BASE GROUND with color variation
+    // 1. Dark base ground under everything
     // =========================================================================
-    const baseGeo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE);
+    const baseGeo = new THREE.PlaneGeometry(130, 130);
     baseGeo.rotateX(-Math.PI / 2);
-    const baseMat = new THREE.MeshLambertMaterial({ color: 0x4d8c3a });
+    const baseMat = new THREE.MeshLambertMaterial({ color: 0x1a1a2a });
     this.groundMesh = new THREE.Mesh(baseGeo, baseMat);
     this.groundMesh.name = 'Ground_Base';
+    this.groundMesh.position.y = -0.5;
     this.scene.add(this.groundMesh);
 
-    // Ground variation patches - overlapping planes at ground level
-    const groundPatches: { x: number; z: number; w: number; d: number; color: number }[] = [
-      // Lighter grass patches
-      { x: -20, z: -25, w: 18, d: 14, color: 0x5dba4c },
-      { x: 30, z: 15, w: 22, d: 16, color: 0x5dba4c },
-      { x: -10, z: 35, w: 16, d: 12, color: 0x55b044 },
-      { x: 40, z: -35, w: 14, d: 18, color: 0x5dba4c },
-      { x: -40, z: 10, w: 16, d: 14, color: 0x55b044 },
-      { x: 15, z: -40, w: 20, d: 12, color: 0x5dba4c },
-      { x: -30, z: -40, w: 12, d: 10, color: 0x55b044 },
-      { x: 25, z: 40, w: 14, d: 16, color: 0x5dba4c },
-      // Dirt path strips
-      { x: 0, z: 0, w: 4, d: 80, color: 0x8b7355 },
-      { x: 0, z: 0, w: 80, d: 4, color: 0x8b7355 },
-      { x: -30, z: -30, w: 3, d: 30, color: 0x7a6648 },
-      { x: 30, z: 30, w: 3, d: 30, color: 0x7a6648 },
-      { x: -25, z: 25, w: 25, d: 3, color: 0x7a6648 },
-      { x: 25, z: -25, w: 25, d: 3, color: 0x7a6648 },
-      // Dark moss/shadow patches
-      { x: -35, z: -15, w: 8, d: 8, color: 0x3d7a30 },
-      { x: 38, z: 5, w: 10, d: 6, color: 0x3d7a30 },
-      { x: -5, z: -45, w: 12, d: 8, color: 0x3d7a30 },
-      { x: 10, z: 48, w: 8, d: 10, color: 0x3d7a30 },
-      { x: -45, z: 40, w: 10, d: 8, color: 0x3d7a30 },
-      { x: 45, z: -40, w: 8, d: 10, color: 0x3d7a30 },
-    ];
-
-    for (let i = 0; i < groundPatches.length; i++) {
-      const patch = groundPatches[i];
-      const patchGeo = new THREE.PlaneGeometry(patch.w, patch.d);
-      patchGeo.rotateX(-Math.PI / 2);
-      const patchMat = new THREE.MeshLambertMaterial({ color: patch.color });
-      const patchMesh = new THREE.Mesh(patchGeo, patchMat);
-      patchMesh.name = `Ground_Patch_${i}`;
-      patchMesh.position.set(patch.x, 0.01 + Math.random() * 0.005, patch.z);
-      patchMesh.rotation.y = Math.random() * 0.3 - 0.15;
-      this.scene.add(patchMesh);
-    }
-
     // =========================================================================
-    // 2. PLATFORMS with grass top + dirt sides
+    // 2. Build the cyberpunk arena from loaded models
     // =========================================================================
-    const platforms: [number, number, number, number, number][] = [
-      // Outer ring tall platforms
-      [-38, -35, 18, 16, 4],
-      [38, -35, 18, 16, 4],
-      [-38, 35, 18, 16, 4],
-      [38, 35, 18, 16, 4],
-      [0, -45, 16, 12, 5],
-      [0, 45, 16, 12, 5],
-      [-45, 0, 12, 18, 5],
-      [45, 0, 12, 18, 5],
-      // Middle ring medium platforms
-      [-25, -18, 12, 10, 2.5],
-      [25, -18, 12, 10, 2.5],
-      [-25, 18, 12, 10, 2.5],
-      [25, 18, 12, 10, 2.5],
-      [-18, 0, 10, 14, 2],
-      [18, 0, 10, 14, 2],
-      // Inner ring small platforms
-      [-10, -12, 8, 6, 1.5],
-      [10, -12, 8, 6, 1.5],
-      [-10, 12, 8, 6, 1.5],
-      [10, 12, 8, 6, 1.5],
-      // Center elevated area
-      [0, 0, 8, 8, 2],
-    ];
-
-    for (const [cx, cz, w, d, h] of platforms) {
-      // Dirt/earth sides
-      const sideGeo = new THREE.BoxGeometry(w, h - 0.2, d);
-      const sideMat = new THREE.MeshLambertMaterial({ color: 0x6b4f33 });
-      const side = new THREE.Mesh(sideGeo, sideMat);
-      side.name = `Platform_Side_${cx}_${cz}`;
-      side.position.set(cx, (h - 0.2) / 2, cz);
-      this.scene.add(side);
-
-      // Grass top surface
-      const topGeo = new THREE.PlaneGeometry(w + 0.4, d + 0.4);
-      topGeo.rotateX(-Math.PI / 2);
-      const topMat = new THREE.MeshLambertMaterial({ color: 0x5dba4c });
-      const top = new THREE.Mesh(topGeo, topMat);
-      top.name = `Platform_Top_${cx}_${cz}`;
-      top.position.set(cx, h, cz);
-      this.scene.add(top);
-
-      // Stone edge details on some platforms
-      if (h >= 3) {
-        const edgeGeo = new THREE.BoxGeometry(w + 0.6, 0.5, 0.5);
-        const edgeMat = new THREE.MeshLambertMaterial({ color: 0x6b6b6b });
-        // Front edge
-        const edgeFront = new THREE.Mesh(edgeGeo, edgeMat);
-        edgeFront.name = `Platform_Edge_${cx}_${cz}_f`;
-        edgeFront.position.set(cx, h - 0.25, cz + d / 2 + 0.1);
-        this.scene.add(edgeFront);
-        // Back edge
-        const edgeBack = new THREE.Mesh(edgeGeo, edgeMat);
-        edgeBack.name = `Platform_Edge_${cx}_${cz}_b`;
-        edgeBack.position.set(cx, h - 0.25, cz - d / 2 - 0.1);
-        this.scene.add(edgeBack);
-      }
-    }
-
-    // Ramp connectors
-    const ramps: { x: number; z: number; rotY: number; length: number; height: number }[] = [
-      { x: -25, z: -12, rotY: 0, length: 6, height: 2.5 },
-      { x: 25, z: -12, rotY: 0, length: 6, height: 2.5 },
-      { x: -25, z: 12, rotY: Math.PI, length: 6, height: 2.5 },
-      { x: 25, z: 12, rotY: Math.PI, length: 6, height: 2.5 },
-      { x: 0, z: -30, rotY: 0, length: 6, height: 5 },
-      { x: 0, z: 30, rotY: Math.PI, length: 6, height: 5 },
-      { x: -30, z: 0, rotY: Math.PI / 2, length: 6, height: 5 },
-      { x: 30, z: 0, rotY: -Math.PI / 2, length: 6, height: 5 },
-    ];
-
-    for (let ri = 0; ri < ramps.length; ri++) {
-      const ramp = ramps[ri];
-      const rampGeo = new THREE.BoxGeometry(4, 0.4, ramp.length);
-      const rampMat = new THREE.MeshLambertMaterial({ color: 0x8b7355 });
-      const rampMesh = new THREE.Mesh(rampGeo, rampMat);
-      rampMesh.name = `Ramp_${ri}`;
-      rampMesh.position.set(ramp.x, ramp.height / 2, ramp.z);
-      rampMesh.rotation.x = Math.atan2(ramp.height, ramp.length);
-      rampMesh.rotation.y = ramp.rotY;
-      this.scene.add(rampMesh);
-    }
+    this.buildArena();
 
     // =========================================================================
     // 3. Hidden grid lines (required by type)
@@ -686,493 +610,259 @@ export class GameScene {
     this.gridLines.name = 'GridLines';
     this.gridLines.visible = false;
     this.scene.add(this.gridLines);
-
-    // =========================================================================
-    // 4. Build the dense environment
-    // =========================================================================
-    this.addEnvironmentProps();
   }
 
-  private addEnvironmentProps(): void {
+  private placeModel(modelKey: keyof LoadedModels, x: number, y: number, z: number, rotY: number = 0, scale: number = 1): void {
+    const model = loadedModels[modelKey];
+    if (!model) return;
+    const clone = model.clone();
+    clone.name = `Placed_${modelKey}_${x.toFixed(0)}_${z.toFixed(0)}`;
+    clone.position.set(x, y, z);
+    clone.rotation.y = rotY;
+    clone.scale.set(scale, scale, scale);
+    this.scene.add(clone);
+  }
+
+  private buildArena(): void {
+    // =========================================================================
+    // A. GROUND FLOOR — 5x5 grid of platform_4x4 tiles (center ~40x40 area)
+    // Each platform_4x4 is ~4 units wide, scaled up by 2x = ~8 units
+    // =========================================================================
+    const floorScale = 2.0;
+    const tileSpacing = 8; // 4 * floorScale
+    for (let gx = -2; gx <= 2; gx++) {
+      for (let gz = -2; gz <= 2; gz++) {
+        this.placeModel('platform_4x4', gx * tileSpacing, 0, gz * tileSpacing, 0, floorScale);
+      }
+    }
+
+    // Extended floor wings (platform_4x2) along N/S/E/W
+    const wingPositions: [number, number, number][] = [
+      [-24, 0, 0], [24, 0, 0],
+      [0, 0, -24], [0, 0, 24],
+      [-24, 0, -8], [24, 0, -8],
+      [-24, 0, 8], [24, 0, 8],
+      [-8, 0, -24], [8, 0, -24],
+      [-8, 0, 24], [8, 0, 24],
+    ];
+    for (const [wx, wy, wz] of wingPositions) {
+      this.placeModel('platform_4x2', wx, wy, wz, 0, floorScale);
+    }
+
+    // =========================================================================
+    // B. ELEVATED PLATFORMS at corners (y=3) — medium platforms
+    // =========================================================================
+    const elevatedCorners: [number, number, number, number][] = [
+      [-30, 3, -30, 0],
+      [30, 3, -30, Math.PI / 2],
+      [-30, 3, 30, -Math.PI / 2],
+      [30, 3, 30, Math.PI],
+    ];
+    for (const [ex, ey, ez, er] of elevatedCorners) {
+      this.placeModel('platform_4x2', ex, ey, ez, er, 2.5);
+      // Supports underneath
+      this.placeModel('support', ex - 3, 0, ez - 3, 0, 2.0);
+      this.placeModel('support', ex + 3, 0, ez + 3, 0, 2.0);
+      this.placeModel('support', ex - 3, 0, ez + 3, 0, 2.0);
+      this.placeModel('support', ex + 3, 0, ez - 3, 0, 2.0);
+      // Rails on edges
+      this.placeModel('rail_long', ex, ey + 0.1, ez - 4, 0, 2.0);
+      this.placeModel('rail_long', ex, ey + 0.1, ez + 4, Math.PI, 2.0);
+    }
+
+    // Mid-level platforms (y=2) — between corners and center
+    const midPlatforms: [number, number, number, number][] = [
+      [-18, 2, -15, 0],
+      [18, 2, -15, 0],
+      [-18, 2, 15, 0],
+      [18, 2, 15, 0],
+      [0, 2, -30, Math.PI / 2],
+      [0, 2, 30, Math.PI / 2],
+      [-30, 2, 0, 0],
+      [30, 2, 0, 0],
+    ];
+    for (const [mx, my, mz, mr] of midPlatforms) {
+      this.placeModel('platform_2x2', mx, my, mz, mr, 2.0);
+      // Single support
+      this.placeModel('support', mx, 0, mz, 0, 1.5);
+    }
+
+    // =========================================================================
+    // C. HIGH PLATFORMS (y=5-6) — sniper/XP farming spots
+    // =========================================================================
+    const highPlatforms: [number, number, number, number][] = [
+      [-40, 6, 0, 0],
+      [40, 6, 0, Math.PI],
+      [0, 5, -40, Math.PI / 2],
+      [0, 5, 40, -Math.PI / 2],
+      [-38, 5, -38, Math.PI / 4],
+      [38, 5, 38, -Math.PI / 4],
+    ];
+    for (const [hx, hy, hz, hr] of highPlatforms) {
+      this.placeModel('platform_1x1', hx, hy, hz, hr, 2.5);
+      // Tall supports
+      this.placeModel('support_long', hx, 0, hz, 0, 2.0);
+      // Antenna on top
+      this.placeModel('pipe_1', hx, hy + 0.5, hz, 0, 1.5);
+    }
+
+    // =========================================================================
+    // D. ARENA BOUNDARY — ring of fence_platform around 120x120 edge
+    // =========================================================================
     const half = GROUND_SIZE / 2;
-    const seededRandom = this.createSeededRandom(42);
-
-    // =========================================================================
-    // A. TREE-LINE BOUNDARY (dense trees around edges instead of walls)
-    // =========================================================================
-    const boundaryTreePositions: { x: number; z: number }[] = [];
-    const boundarySpacing = 4;
-    for (let i = -half; i <= half; i += boundarySpacing) {
-      // North and south edges (2 rows deep)
-      boundaryTreePositions.push({ x: i + seededRandom() * 2, z: -half + 1 + seededRandom() * 3 });
-      boundaryTreePositions.push({ x: i + seededRandom() * 2, z: -half + 5 + seededRandom() * 2 });
-      boundaryTreePositions.push({ x: i + seededRandom() * 2, z: half - 1 - seededRandom() * 3 });
-      boundaryTreePositions.push({ x: i + seededRandom() * 2, z: half - 5 - seededRandom() * 2 });
-      // East and west edges (2 rows deep)
-      boundaryTreePositions.push({ x: -half + 1 + seededRandom() * 3, z: i + seededRandom() * 2 });
-      boundaryTreePositions.push({ x: -half + 5 + seededRandom() * 2, z: i + seededRandom() * 2 });
-      boundaryTreePositions.push({ x: half - 1 - seededRandom() * 3, z: i + seededRandom() * 2 });
-      boundaryTreePositions.push({ x: half - 5 - seededRandom() * 2, z: i + seededRandom() * 2 });
+    const fenceSpacing = 6;
+    // North and south edges
+    for (let fx = -half; fx <= half; fx += fenceSpacing) {
+      this.placeModel('fence_platform', fx, 0, -half, 0, 2.0);
+      this.placeModel('fence_platform', fx, 0, half, Math.PI, 2.0);
     }
-
-    // Boundary trees — tall, dense, chunky
-    for (let bi = 0; bi < boundaryTreePositions.length; bi++) {
-      const pos = boundaryTreePositions[bi];
-      const treeHeight = 5 + seededRandom() * 3;
-      const trunkRadius = 0.3 + seededRandom() * 0.2;
-      this.createProceduralTree(pos.x, pos.z, treeHeight, trunkRadius, `BoundaryTree_${bi}`, seededRandom);
+    // East and west edges
+    for (let fz = -half; fz <= half; fz += fenceSpacing) {
+      this.placeModel('fence_platform', -half, 0, fz, Math.PI / 2, 2.0);
+      this.placeModel('fence_platform', half, 0, fz, -Math.PI / 2, 2.0);
     }
+    // Tall supports at corners marking the boundary
+    this.placeModel('support_long', -half, 0, -half, 0, 3.0);
+    this.placeModel('support_long', half, 0, -half, 0, 3.0);
+    this.placeModel('support_long', -half, 0, half, 0, 3.0);
+    this.placeModel('support_long', half, 0, half, 0, 3.0);
 
     // =========================================================================
-    // B. INTERIOR TREES (30-40 scattered in clusters)
+    // E. STREET LIGHTS — every ~15 units along ground edges
     // =========================================================================
-    const treeClusters: { cx: number; cz: number; count: number }[] = [
-      // Middle ring clusters
-      { cx: -32, cz: -20, count: 4 },
-      { cx: 32, cz: -20, count: 4 },
-      { cx: -32, cz: 20, count: 4 },
-      { cx: 32, cz: 20, count: 4 },
-      { cx: -20, cz: -35, count: 3 },
-      { cx: 20, cz: -35, count: 3 },
-      { cx: -20, cz: 35, count: 3 },
-      { cx: 20, cz: 35, count: 3 },
-      // Scattered singles/pairs in inner areas
-      { cx: -12, cz: -28, count: 2 },
-      { cx: 12, cz: 28, count: 2 },
-      { cx: -28, cz: 8, count: 3 },
-      { cx: 28, cz: -8, count: 3 },
-      { cx: -40, cz: -40, count: 2 },
-      { cx: 40, cz: 40, count: 2 },
+    const lightPositions: [number, number, number, number][] = [
+      [-20, 0, -16, 0],
+      [20, 0, -16, Math.PI],
+      [-20, 0, 16, 0],
+      [20, 0, 16, Math.PI],
+      [-16, 0, -20, Math.PI / 2],
+      [16, 0, -20, -Math.PI / 2],
+      [-16, 0, 20, Math.PI / 2],
+      [16, 0, 20, -Math.PI / 2],
+      [0, 0, -16, 0],
+      [0, 0, 16, Math.PI],
+      [-32, 0, 0, Math.PI / 2],
+      [32, 0, 0, -Math.PI / 2],
+      [-40, 0, -20, 0],
+      [40, 0, -20, Math.PI],
+      [-40, 0, 20, 0],
+      [40, 0, 20, Math.PI],
+      [-20, 0, -40, 0],
+      [20, 0, -40, Math.PI],
+      [-20, 0, 40, 0],
+      [20, 0, 40, Math.PI],
     ];
-
-    let treeIdx = 0;
-    for (const cluster of treeClusters) {
-      for (let j = 0; j < cluster.count; j++) {
-        const tx = cluster.cx + (seededRandom() - 0.5) * 8;
-        const tz = cluster.cz + (seededRandom() - 0.5) * 8;
-        // Don't place trees in center combat area
-        if (Math.abs(tx) < 12 && Math.abs(tz) < 12) continue;
-        const treeHeight = 3 + seededRandom() * 2.5;
-        const trunkRadius = 0.2 + seededRandom() * 0.15;
-
-        if (loadedModels.tree) {
-          const clone = loadedModels.tree.clone();
-          clone.name = `Tree_${treeIdx}`;
-          clone.position.set(tx, 0, tz);
-          clone.rotation.y = seededRandom() * Math.PI * 2;
-          const s = 0.9 + seededRandom() * 0.6;
-          clone.scale.set(s, s, s);
-          this.scene.add(clone);
-        } else {
-          this.createProceduralTree(tx, tz, treeHeight, trunkRadius, `Tree_${treeIdx}`, seededRandom);
-        }
-        treeIdx++;
-      }
+    for (const [lx, ly, lz, lr] of lightPositions) {
+      this.placeModel('light_street', lx, ly, lz, lr, 1.8);
     }
 
     // =========================================================================
-    // C. ROCK FORMATIONS using InstancedMesh (20 rocks)
+    // F. NEON SIGNS — on elevated platforms
     // =========================================================================
-    const rockCount = 20;
-    const rockGeo = new THREE.IcosahedronGeometry(1, 0);
-    const rockMat = new THREE.MeshLambertMaterial({ color: 0x6b6b6b });
-    const rockInstanced = new THREE.InstancedMesh(rockGeo, rockMat, rockCount);
-    rockInstanced.name = 'Rocks_Instanced';
-    rockInstanced.frustumCulled = false;
-
-    const rockPositions: { x: number; z: number; scale: number; color: number }[] = [
-      // Scattered throughout, avoiding center
-      { x: -18, z: -25, scale: 1.8, color: 0x6b6b6b },
-      { x: 22, z: -30, scale: 1.5, color: 0x7a7a6a },
-      { x: -30, z: 15, scale: 2.0, color: 0x5a5a5a },
-      { x: 35, z: 10, scale: 1.2, color: 0x6b6b6b },
-      { x: -15, z: 30, scale: 1.6, color: 0x7a7a6a },
-      { x: 20, z: 35, scale: 1.0, color: 0x5a5a5a },
-      { x: -40, z: -25, scale: 1.4, color: 0x6b6b6b },
-      { x: 40, z: -20, scale: 1.8, color: 0x7a7a6a },
-      { x: -10, z: -40, scale: 0.8, color: 0x5a5a5a },
-      { x: 10, z: 42, scale: 1.0, color: 0x6b6b6b },
-      // Clusters near platforms
-      { x: -26, z: -20, scale: 0.6, color: 0x7a7a6a },
-      { x: -24, z: -21, scale: 0.5, color: 0x5a5a5a },
-      { x: 26, z: 20, scale: 0.7, color: 0x6b6b6b },
-      { x: 27, z: 19, scale: 0.5, color: 0x7a7a6a },
-      { x: -35, z: 38, scale: 1.3, color: 0x5a5a5a },
-      { x: 38, z: -38, scale: 1.5, color: 0x6b6b6b },
-      // Near paths
-      { x: 3, z: -20, scale: 0.6, color: 0x7a7a6a },
-      { x: -3, z: 22, scale: 0.7, color: 0x5a5a5a },
-      { x: -20, z: 3, scale: 0.5, color: 0x6b6b6b },
-      { x: 18, z: -2, scale: 0.6, color: 0x7a7a6a },
+    const signPlacements: [keyof LoadedModels, number, number, number, number, number][] = [
+      ['sign_1', -30, 4, -32, 0, 2.0],
+      ['sign_2', 30, 4, -32, Math.PI, 2.0],
+      ['sign_1', -30, 4, 32, 0, 2.0],
+      ['sign_2', 30, 4, 32, Math.PI, 2.0],
+      ['sign_1', -18, 3, -17, Math.PI / 4, 1.5],
+      ['sign_2', 18, 3, -17, -Math.PI / 4, 1.5],
+      ['sign_1', -18, 3, 17, -Math.PI / 4, 1.5],
+      ['sign_2', 18, 3, 17, Math.PI / 4, 1.5],
+      ['sign_1', -42, 7, 0, Math.PI / 2, 1.8],
+      ['sign_2', 42, 7, 0, -Math.PI / 2, 1.8],
     ];
-
-    const dummy = new THREE.Object3D();
-    const tempColor = new THREE.Color();
-    for (let ri = 0; ri < rockCount; ri++) {
-      const rock = rockPositions[ri];
-      const sy = rock.scale * (0.6 + seededRandom() * 0.4);
-      dummy.position.set(rock.x, rock.scale * 0.4, rock.z);
-      dummy.scale.set(rock.scale, sy, rock.scale * (0.8 + seededRandom() * 0.4));
-      dummy.rotation.set(seededRandom() * 0.5, seededRandom() * Math.PI, seededRandom() * 0.3);
-      dummy.updateMatrix();
-      rockInstanced.setMatrixAt(ri, dummy.matrix);
-      tempColor.setHex(rock.color);
-      rockInstanced.setColorAt(ri, tempColor);
+    for (const [sk, sx, sy, sz, sr, ss] of signPlacements) {
+      this.placeModel(sk, sx, sy, sz, sr, ss);
     }
-    rockInstanced.instanceMatrix.needsUpdate = true;
-    if (rockInstanced.instanceColor) rockInstanced.instanceColor.needsUpdate = true;
-    this.scene.add(rockInstanced);
 
     // =========================================================================
-    // D. SMALL BUSHES using InstancedMesh (40 bushes)
+    // G. AC UNITS & PIPES — on supports/pillars
     // =========================================================================
-    const bushCount = 40;
-    const bushGeo = new THREE.SphereGeometry(1, 6, 4);
-    const bushMat = new THREE.MeshLambertMaterial({ color: 0x3a7a2a });
-    const bushInstanced = new THREE.InstancedMesh(bushGeo, bushMat, bushCount);
-    bushInstanced.name = 'Bushes_Instanced';
-    bushInstanced.frustumCulled = false;
-
-    for (let bi = 0; bi < bushCount; bi++) {
-      let bx: number, bz: number;
-      do {
-        bx = (seededRandom() - 0.5) * (GROUND_SIZE - 16);
-        bz = (seededRandom() - 0.5) * (GROUND_SIZE - 16);
-      } while (Math.abs(bx) < 10 && Math.abs(bz) < 10);
-
-      const bScale = 0.4 + seededRandom() * 0.5;
-      dummy.position.set(bx, bScale * 0.35, bz);
-      dummy.scale.set(bScale * 1.2, bScale * 0.7, bScale * 1.1);
-      dummy.rotation.set(0, seededRandom() * Math.PI, 0);
-      dummy.updateMatrix();
-      bushInstanced.setMatrixAt(bi, dummy.matrix);
-
-      // Vary bush colors slightly
-      const bushColors = [0x3a7a2a, 0x2d6b22, 0x448832, 0x357028];
-      tempColor.setHex(bushColors[bi % bushColors.length]);
-      bushInstanced.setColorAt(bi, tempColor);
-    }
-    bushInstanced.instanceMatrix.needsUpdate = true;
-    if (bushInstanced.instanceColor) bushInstanced.instanceColor.needsUpdate = true;
-    this.scene.add(bushInstanced);
-
-    // =========================================================================
-    // E. MUSHROOMS using InstancedMesh (15 mushrooms)
-    // =========================================================================
-    const mushroomCount = 15;
-    const mushroomGeo = new THREE.SphereGeometry(0.3, 6, 4);
-    const mushroomMat = new THREE.MeshLambertMaterial({ color: 0xcc4444 });
-    const mushroomInstanced = new THREE.InstancedMesh(mushroomGeo, mushroomMat, mushroomCount);
-    mushroomInstanced.name = 'Mushrooms_Instanced';
-    mushroomInstanced.frustumCulled = false;
-
-    for (let mi = 0; mi < mushroomCount; mi++) {
-      const mx = (seededRandom() - 0.5) * (GROUND_SIZE - 20);
-      const mz = (seededRandom() - 0.5) * (GROUND_SIZE - 20);
-      dummy.position.set(mx, 0.2, mz);
-      dummy.scale.set(0.5 + seededRandom() * 0.4, 0.8 + seededRandom() * 0.6, 0.5 + seededRandom() * 0.4);
-      dummy.rotation.set(0, seededRandom() * Math.PI, 0);
-      dummy.updateMatrix();
-      mushroomInstanced.setMatrixAt(mi, dummy.matrix);
-
-      const mushColors = [0xcc4444, 0xdd8844, 0xeecc88, 0xaa3333];
-      tempColor.setHex(mushColors[mi % mushColors.length]);
-      mushroomInstanced.setColorAt(mi, tempColor);
-    }
-    mushroomInstanced.instanceMatrix.needsUpdate = true;
-    if (mushroomInstanced.instanceColor) mushroomInstanced.instanceColor.needsUpdate = true;
-    this.scene.add(mushroomInstanced);
-
-    // Add mushroom stems (cones under caps)
-    const stemGeo = new THREE.CylinderGeometry(0.08, 0.12, 0.3, 5);
-    const stemMat = new THREE.MeshLambertMaterial({ color: 0xeeeecc });
-    const stemInstanced = new THREE.InstancedMesh(stemGeo, stemMat, mushroomCount);
-    stemInstanced.name = 'MushroomStems_Instanced';
-    stemInstanced.frustumCulled = false;
-    // Reuse same positions, offset slightly below the cap
-    seededRandom(); // advance seed state
-    const stemSeed = this.createSeededRandom(142);
-    for (let mi = 0; mi < mushroomCount; mi++) {
-      const mx = (stemSeed() - 0.5) * (GROUND_SIZE - 20);
-      const mz = (stemSeed() - 0.5) * (GROUND_SIZE - 20);
-      dummy.position.set(mx, 0.08, mz);
-      dummy.scale.set(1, 1, 1);
-      dummy.rotation.set(0, 0, 0);
-      dummy.updateMatrix();
-      stemInstanced.setMatrixAt(mi, dummy.matrix);
-    }
-    stemInstanced.instanceMatrix.needsUpdate = true;
-    this.scene.add(stemInstanced);
-
-    // =========================================================================
-    // F. FENCE SEGMENTS along paths (12 fence pieces)
-    // =========================================================================
-    const fencePositions: { x: number; z: number; rotY: number }[] = [
-      { x: -8, z: -2, rotY: 0 },
-      { x: -8, z: 2, rotY: 0 },
-      { x: 8, z: -2, rotY: 0 },
-      { x: 8, z: 2, rotY: 0 },
-      { x: -2, z: -8, rotY: Math.PI / 2 },
-      { x: 2, z: -8, rotY: Math.PI / 2 },
-      { x: -2, z: 8, rotY: Math.PI / 2 },
-      { x: 2, z: 8, rotY: Math.PI / 2 },
-      { x: -15, z: -2, rotY: 0 },
-      { x: 15, z: 2, rotY: 0 },
-      { x: -2, z: -15, rotY: Math.PI / 2 },
-      { x: 2, z: 15, rotY: Math.PI / 2 },
+    const acPositions: [number, number, number, number][] = [
+      [-33, 1.5, -28, 0],
+      [33, 1.5, -28, Math.PI],
+      [-33, 1.5, 28, 0],
+      [33, 1.5, 28, Math.PI],
+      [-41, 3, -2, Math.PI / 2],
+      [41, 3, 2, -Math.PI / 2],
+      [-28, 1, -33, Math.PI / 4],
+      [28, 1, 33, -Math.PI / 4],
+      [-15, 1, -18, 0],
+      [15, 1, 18, Math.PI],
+      [0, 3, -42, 0],
+      [0, 3, 42, Math.PI],
     ];
+    for (const [ax, ay, az, ar] of acPositions) {
+      this.placeModel('ac_unit', ax, ay, az, ar, 1.5);
+    }
 
-    for (let fi = 0; fi < fencePositions.length; fi++) {
-      const fence = fencePositions[fi];
-      // Fence post
-      const postGeo = new THREE.BoxGeometry(0.15, 1.2, 0.15);
-      const postMat = new THREE.MeshLambertMaterial({ color: 0x8b6914 });
-      const post1 = new THREE.Mesh(postGeo, postMat);
-      post1.name = `Fence_Post_${fi}_a`;
-      post1.position.set(fence.x - Math.cos(fence.rotY) * 1, 0.6, fence.z - Math.sin(fence.rotY) * 1);
-      this.scene.add(post1);
-      const post2 = new THREE.Mesh(postGeo, postMat);
-      post2.name = `Fence_Post_${fi}_b`;
-      post2.position.set(fence.x + Math.cos(fence.rotY) * 1, 0.6, fence.z + Math.sin(fence.rotY) * 1);
-      this.scene.add(post2);
-      // Cross beam
-      const beamGeo = new THREE.BoxGeometry(2.2, 0.1, 0.1);
-      const beam = new THREE.Mesh(beamGeo, postMat);
-      beam.name = `Fence_Beam_${fi}`;
-      beam.position.set(fence.x, 0.8, fence.z);
-      beam.rotation.y = fence.rotY;
-      this.scene.add(beam);
-      // Lower beam
-      const beam2 = new THREE.Mesh(beamGeo, postMat);
-      beam2.name = `Fence_Beam2_${fi}`;
-      beam2.position.set(fence.x, 0.4, fence.z);
-      beam2.rotation.y = fence.rotY;
-      this.scene.add(beam2);
+    // Pipes along supports
+    const pipePositions: [number, number, number, number][] = [
+      [-30, 0.5, -26, 0],
+      [30, 0.5, -26, 0],
+      [-30, 0.5, 26, Math.PI],
+      [30, 0.5, 26, Math.PI],
+      [-26, 0.5, -30, Math.PI / 2],
+      [26, 0.5, -30, Math.PI / 2],
+      [-26, 0.5, 30, -Math.PI / 2],
+      [26, 0.5, 30, -Math.PI / 2],
+      [-40, 2, -1, Math.PI / 2],
+      [40, 2, 1, -Math.PI / 2],
+    ];
+    for (const [px, py, pz, pr] of pipePositions) {
+      this.placeModel('pipe_1', px, py, pz, pr, 1.8);
     }
 
     // =========================================================================
-    // G. BARREL/CRATE CLUSTERS (8 clusters)
+    // H. DOORS — on some elevated platforms (cosmetic)
     // =========================================================================
-    const cratePositions: { x: number; z: number }[] = [
-      { x: -22, z: -10 },
-      { x: 22, z: 10 },
-      { x: -10, z: -22 },
-      { x: 10, z: 22 },
-      { x: -35, z: -5 },
-      { x: 35, z: 5 },
-      { x: -5, z: 35 },
-      { x: 5, z: -35 },
+    const doorPositions: [number, number, number, number][] = [
+      [-30, 3, -27, 0],
+      [30, 3, -27, Math.PI],
+      [-30, 3, 27, Math.PI],
+      [30, 3, 27, 0],
     ];
-
-    for (let ci = 0; ci < cratePositions.length; ci++) {
-      const cpos = cratePositions[ci];
-      // Main barrel (cylinder)
-      const barrelGeo = new THREE.CylinderGeometry(0.5, 0.5, 1.0, 8);
-      const barrelMat = new THREE.MeshLambertMaterial({ color: 0x8b6914 });
-      const barrel = new THREE.Mesh(barrelGeo, barrelMat);
-      barrel.name = `Barrel_${ci}`;
-      barrel.position.set(cpos.x, 0.5, cpos.z);
-      this.scene.add(barrel);
-
-      // Crate beside barrel
-      const crateGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
-      const crateMat = new THREE.MeshLambertMaterial({ color: 0x9b7924 });
-      const crate = new THREE.Mesh(crateGeo, crateMat);
-      crate.name = `Crate_${ci}`;
-      crate.position.set(cpos.x + 0.9, 0.4, cpos.z + 0.3);
-      crate.rotation.y = seededRandom() * 0.5;
-      this.scene.add(crate);
-
-      // Small crate on top sometimes
-      if (ci % 3 === 0) {
-        const smallCrateGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-        const smallCrate = new THREE.Mesh(smallCrateGeo, crateMat);
-        smallCrate.name = `SmallCrate_${ci}`;
-        smallCrate.position.set(cpos.x + 0.9, 1.05, cpos.z + 0.3);
-        smallCrate.rotation.y = seededRandom() * 1.0;
-        this.scene.add(smallCrate);
-      }
+    for (const [dx, dy, dz, dr] of doorPositions) {
+      this.placeModel('door', dx, dy, dz, dr, 1.8);
     }
 
     // =========================================================================
-    // H. LANTERN POSTS (10 lanterns with emissive glow)
+    // I. ADDITIONAL PROPS — scattered for visual density
     // =========================================================================
-    const lanternPositions: { x: number; z: number }[] = [
-      { x: -6, z: 0 },
-      { x: 6, z: 0 },
-      { x: 0, z: -6 },
-      { x: 0, z: 6 },
-      { x: -20, z: -20 },
-      { x: 20, z: -20 },
-      { x: -20, z: 20 },
-      { x: 20, z: 20 },
-      { x: -35, z: 0 },
-      { x: 35, z: 0 },
+    // Rail guards along mid-platforms
+    const railPositions: [number, number, number, number][] = [
+      [-18, 2.1, -13, 0],
+      [18, 2.1, -13, Math.PI],
+      [-18, 2.1, 13, Math.PI],
+      [18, 2.1, 13, 0],
+      [-28, 2.1, 0, Math.PI / 2],
+      [28, 2.1, 0, -Math.PI / 2],
+      [0, 2.1, -28, 0],
+      [0, 2.1, 28, Math.PI],
     ];
+    for (const [rx, ry, rz, rr] of railPositions) {
+      this.placeModel('rail_long', rx, ry, rz, rr, 1.8);
+    }
 
-    for (let li = 0; li < lanternPositions.length; li++) {
-      const lpos = lanternPositions[li];
-      // Post (tall cylinder)
-      const postGeo = new THREE.CylinderGeometry(0.08, 0.1, 2.5, 6);
-      const postMat = new THREE.MeshLambertMaterial({ color: 0x4a4a4a });
-      const post = new THREE.Mesh(postGeo, postMat);
-      post.name = `LanternPost_${li}`;
-      post.position.set(lpos.x, 1.25, lpos.z);
-      this.scene.add(post);
-
-      // Lantern globe (emissive sphere on top)
-      const globeGeo = new THREE.SphereGeometry(0.2, 6, 4);
-      const globeMat = new THREE.MeshLambertMaterial({
-        color: 0xffcc44,
-        emissive: 0xffaa00,
-        emissiveIntensity: 0.9,
+    // Extra floor glow panels (emissive quads for cyberpunk feel)
+    const glowPositions: [number, number][] = [
+      [-8, -8], [8, -8], [-8, 8], [8, 8],
+      [0, 0], [-16, 0], [16, 0], [0, -16], [0, 16],
+    ];
+    for (let gi = 0; gi < glowPositions.length; gi++) {
+      const [gx, gz] = glowPositions[gi];
+      const glowGeo = new THREE.PlaneGeometry(2, 2);
+      glowGeo.rotateX(-Math.PI / 2);
+      const glowMat = new THREE.MeshBasicMaterial({
+        color: gi % 2 === 0 ? 0x00ffcc : 0xff00ff,
+        transparent: true,
+        opacity: 0.15,
       });
-      const globe = new THREE.Mesh(globeGeo, globeMat);
-      globe.name = `LanternGlobe_${li}`;
-      globe.position.set(lpos.x, 2.6, lpos.z);
-      this.scene.add(globe);
-
-      // Small cap on top
-      const capGeo = new THREE.ConeGeometry(0.15, 0.2, 6);
-      const capMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
-      const cap = new THREE.Mesh(capGeo, capMat);
-      cap.name = `LanternCap_${li}`;
-      cap.position.set(lpos.x, 2.85, lpos.z);
-      this.scene.add(cap);
+      const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+      glowMesh.name = `FloorGlow_${gi}`;
+      glowMesh.position.set(gx, 0.02, gz);
+      this.scene.add(glowMesh);
     }
-
-    // =========================================================================
-    // I. LOGS scattered on ground (8 logs)
-    // =========================================================================
-    const logPositions: { x: number; z: number; rotY: number }[] = [
-      { x: -28, z: -12, rotY: 0.3 },
-      { x: 28, z: 14, rotY: 1.2 },
-      { x: -14, z: -35, rotY: 0.8 },
-      { x: 14, z: 38, rotY: 2.1 },
-      { x: -38, z: 25, rotY: 1.5 },
-      { x: 38, z: -28, rotY: 0.6 },
-      { x: -5, z: -18, rotY: 1.8 },
-      { x: 8, z: 16, rotY: 2.4 },
-    ];
-
-    for (let lgi = 0; lgi < logPositions.length; lgi++) {
-      const log = logPositions[lgi];
-      const logGeo = new THREE.CylinderGeometry(0.25, 0.3, 2.5, 6);
-      const logMat = new THREE.MeshLambertMaterial({ color: 0x5c3a1e });
-      const logMesh = new THREE.Mesh(logGeo, logMat);
-      logMesh.name = `Log_${lgi}`;
-      logMesh.position.set(log.x, 0.25, log.z);
-      logMesh.rotation.z = Math.PI / 2;
-      logMesh.rotation.y = log.rotY;
-      this.scene.add(logMesh);
-    }
-
-    // =========================================================================
-    // J. TOMBSTONES / GRAVE MARKERS near outer zones (8 tombstones)
-    // =========================================================================
-    const tombPositions: { x: number; z: number }[] = [
-      { x: -42, z: -15 },
-      { x: -44, z: -18 },
-      { x: 42, z: 15 },
-      { x: 44, z: 18 },
-      { x: -15, z: -42 },
-      { x: -18, z: -44 },
-      { x: 15, z: 42 },
-      { x: 18, z: 44 },
-    ];
-
-    for (let ti = 0; ti < tombPositions.length; ti++) {
-      const tpos = tombPositions[ti];
-      if (loadedModels.tombstone) {
-        const clone = loadedModels.tombstone.clone();
-        clone.name = `Tombstone_${ti}`;
-        clone.position.set(tpos.x, 0, tpos.z);
-        clone.rotation.y = seededRandom() * Math.PI * 2;
-        const s = 0.8 + seededRandom() * 0.3;
-        clone.scale.set(s, s, s);
-        this.scene.add(clone);
-      } else {
-        const stoneGeo = new THREE.BoxGeometry(0.6, 1.0, 0.2);
-        const stoneMat = new THREE.MeshLambertMaterial({ color: 0x777777 });
-        const stone = new THREE.Mesh(stoneGeo, stoneMat);
-        stone.name = `Tombstone_${ti}`;
-        stone.position.set(tpos.x, 0.5, tpos.z);
-        stone.rotation.y = seededRandom() * 0.4 - 0.2;
-        this.scene.add(stone);
-      }
-    }
-
-    // =========================================================================
-    // K. GRASS TUFTS using InstancedMesh (60 tufts for lush ground feel)
-    // =========================================================================
-    const grassTuftCount = 60;
-    const grassGeo = new THREE.ConeGeometry(0.15, 0.5, 4);
-    const grassMat = new THREE.MeshLambertMaterial({ color: 0x4d9a3a });
-    const grassInstanced = new THREE.InstancedMesh(grassGeo, grassMat, grassTuftCount);
-    grassInstanced.name = 'GrassTufts_Instanced';
-    grassInstanced.frustumCulled = false;
-
-    for (let gi = 0; gi < grassTuftCount; gi++) {
-      const gx = (seededRandom() - 0.5) * (GROUND_SIZE - 12);
-      const gz = (seededRandom() - 0.5) * (GROUND_SIZE - 12);
-      dummy.position.set(gx, 0.2, gz);
-      const gs = 0.6 + seededRandom() * 0.8;
-      dummy.scale.set(gs, gs + seededRandom() * 0.5, gs);
-      dummy.rotation.set(0, seededRandom() * Math.PI, 0);
-      dummy.updateMatrix();
-      grassInstanced.setMatrixAt(gi, dummy.matrix);
-
-      const grassColors = [0x4d9a3a, 0x5dba4c, 0x3a7a2a, 0x55a840];
-      tempColor.setHex(grassColors[gi % grassColors.length]);
-      grassInstanced.setColorAt(gi, tempColor);
-    }
-    grassInstanced.instanceMatrix.needsUpdate = true;
-    if (grassInstanced.instanceColor) grassInstanced.instanceColor.needsUpdate = true;
-    this.scene.add(grassInstanced);
-  }
-
-  private createProceduralTree(
-    x: number,
-    z: number,
-    height: number,
-    trunkRadius: number,
-    name: string,
-    rng: () => number,
-  ): void {
-    // Trunk — brown cylinder
-    const trunkGeo = new THREE.CylinderGeometry(trunkRadius * 0.7, trunkRadius, height * 0.5, 6);
-    const trunkMat = new THREE.MeshLambertMaterial({ color: 0x5c3a1e });
-    const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-    trunk.name = `${name}_trunk`;
-    trunk.position.set(x, height * 0.25, z);
-    this.scene.add(trunk);
-
-    // Canopy — layered cones for chunky low-poly look
-    const canopyColors = [0x2d8b3d, 0x358b3d, 0x268a35, 0x2d9b3d, 0x1f7a2d];
-    const canopyColor = canopyColors[Math.floor(rng() * canopyColors.length)];
-
-    // Bottom layer (widest)
-    const canopy1Geo = new THREE.ConeGeometry(height * 0.45, height * 0.4, 6);
-    const canopyMat = new THREE.MeshLambertMaterial({ color: canopyColor });
-    const canopy1 = new THREE.Mesh(canopy1Geo, canopyMat);
-    canopy1.name = `${name}_canopy1`;
-    canopy1.position.set(x, height * 0.55, z);
-    this.scene.add(canopy1);
-
-    // Top layer (narrower)
-    const canopy2Geo = new THREE.ConeGeometry(height * 0.3, height * 0.35, 6);
-    const canopy2 = new THREE.Mesh(canopy2Geo, canopyMat);
-    canopy2.name = `${name}_canopy2`;
-    canopy2.position.set(x, height * 0.8, z);
-    this.scene.add(canopy2);
-  }
-
-  private createSeededRandom(seed: number): () => number {
-    let s = seed;
-    return () => {
-      s = (s * 1664525 + 1013904223) & 0xffffffff;
-      return (s >>> 0) / 4294967296;
-    };
   }
 
   private setupPlayer(): void {
@@ -2704,8 +2394,8 @@ function showMainMenu(): void {
 
   const scene = new THREE.Scene();
   scene.name = 'MenuScene';
-  scene.background = new THREE.Color(0x87ceeb);
-  scene.fog = new THREE.Fog(0x87ceeb, 30, 60);
+  scene.background = new THREE.Color(0x0a0a1a);
+  scene.fog = new THREE.Fog(0x0a0a1a, 30, 60);
 
   const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
   camera.name = 'MenuCamera';
@@ -2713,16 +2403,16 @@ function showMainMenu(): void {
   camera.lookAt(0, 0, 0);
 
   const groundGeo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE);
-  const groundMat = new THREE.MeshLambertMaterial({ color: 0x5dba4c });
+  const groundMat = new THREE.MeshLambertMaterial({ color: 0x1a1a2a });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.name = 'MenuGround';
   ground.rotation.x = -Math.PI / 2;
   scene.add(ground);
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+  const ambient = new THREE.AmbientLight(0x8888cc, 0.4);
   ambient.name = 'MenuAmbient';
   scene.add(ambient);
-  const dir = new THREE.DirectionalLight(0xfff4e0, 0.8);
+  const dir = new THREE.DirectionalLight(0xaaccff, 0.6);
   dir.name = 'MenuDirLight';
   dir.position.set(8, 15, 5);
   scene.add(dir);

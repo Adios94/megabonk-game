@@ -509,36 +509,45 @@ export class GameInstance {
     }
   }
 
-  /** Get terrain height at position — MegaBonk style: platforms with ramps */
+  /** Get terrain height at position — Cyberpunk arena: platforms at various heights */
   private getTerrainHeight(x: number, z: number): number {
     const platforms: [number, number, number, number, number][] = [
-      // Central arena (ground level)
-      [0, 0, 25, 25, 0],
-      // Corner elevated platforms
-      [-35, -30, 12, 10, 3],
-      [35, -30, 12, 10, 3],
-      [-35, 30, 12, 10, 3],
-      [35, 30, 12, 10, 3],
-      // Higher platforms (north/south)
-      [0, -40, 10, 8, 5],
-      [0, 40, 10, 8, 5],
-      // Medium side platforms
-      [-25, 0, 8, 12, 2],
-      [25, 0, 8, 12, 2],
-      // Small elevated spots
-      [-15, -20, 5, 5, 1.5],
-      [15, -20, 5, 5, 1.5],
-      [-15, 20, 5, 5, 1.5],
-      [15, 20, 5, 5, 1.5],
-      // Additional mid-level platforms for more vertical gameplay
-      [-40, 0, 6, 6, 4],
-      [40, 0, 6, 6, 4],
-      [0, 0, 5, 5, 2.5], // Small center elevated spot
-      // Bridge-like platforms connecting areas
-      [-20, -15, 3, 8, 1],
-      [20, -15, 3, 8, 1],
-      [-20, 15, 3, 8, 1],
-      [20, 15, 3, 8, 1],
+      // Central ground floor (5x5 grid of tiles, ~40x40 area)
+      [0, 0, 20, 20, 0],
+      // Extended floor wings
+      [-24, 0, 8, 8, 0],
+      [24, 0, 8, 8, 0],
+      [0, -24, 8, 8, 0],
+      [0, 24, 8, 8, 0],
+      [-24, -8, 8, 4, 0],
+      [24, -8, 8, 4, 0],
+      [-24, 8, 8, 4, 0],
+      [24, 8, 8, 4, 0],
+      [-8, -24, 4, 8, 0],
+      [8, -24, 4, 8, 0],
+      [-8, 24, 4, 8, 0],
+      [8, 24, 4, 8, 0],
+      // Elevated corner platforms (y=3)
+      [-30, -30, 8, 8, 3],
+      [30, -30, 8, 8, 3],
+      [-30, 30, 8, 8, 3],
+      [30, 30, 8, 8, 3],
+      // Mid-level platforms (y=2)
+      [-18, -15, 5, 5, 2],
+      [18, -15, 5, 5, 2],
+      [-18, 15, 5, 5, 2],
+      [18, 15, 5, 5, 2],
+      [0, -30, 5, 5, 2],
+      [0, 30, 5, 5, 2],
+      [-30, 0, 5, 5, 2],
+      [30, 0, 5, 5, 2],
+      // High platforms (y=5-6)
+      [-40, 0, 4, 4, 6],
+      [40, 0, 4, 4, 6],
+      [0, -40, 4, 4, 5],
+      [0, 40, 4, 4, 5],
+      [-38, -38, 4, 4, 5],
+      [38, 38, 4, 4, 5],
     ];
 
     let height = 0;

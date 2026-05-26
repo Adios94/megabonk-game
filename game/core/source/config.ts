@@ -307,6 +307,27 @@ export const ALL_TOME_TYPES: TomeType[] = [
   'knockback_tome', 'speed_tome',
 ];
 
+// === Weapon Evolution System ===
+export interface WeaponEvolution {
+  baseWeapon: WeaponType;
+  requiredTome: TomeType;
+  requiredTomeLevel: number;
+  evolvedName: string;
+  damageMultiplier: number;
+  specialEffect: string;
+}
+
+export const WEAPON_EVOLUTIONS: WeaponEvolution[] = [
+  { baseWeapon: 'sword', requiredTome: 'attack_speed_tome', requiredTomeLevel: 5, evolvedName: 'Dexecutioner', damageMultiplier: 2.5, specialEffect: 'massive_aoe' },
+  { baseWeapon: 'axe', requiredTome: 'knockback_tome', requiredTomeLevel: 3, evolvedName: 'Berserker Axe', damageMultiplier: 2.0, specialEffect: 'triple_orbit' },
+  { baseWeapon: 'bone_bouncer', requiredTome: 'luck_tome', requiredTomeLevel: 3, evolvedName: 'Bone Storm', damageMultiplier: 2.0, specialEffect: 'explode_on_hit' },
+  { baseWeapon: 'revolver', requiredTome: 'precision_tome', requiredTomeLevel: 3, evolvedName: 'Deagle', damageMultiplier: 3.0, specialEffect: 'pierce_all' },
+  { baseWeapon: 'lightning_staff', requiredTome: 'curse_tome', requiredTomeLevel: 3, evolvedName: 'Thunder God', damageMultiplier: 2.5, specialEffect: 'chain_all' },
+  { baseWeapon: 'fire_staff', requiredTome: 'thorns_tome', requiredTomeLevel: 3, evolvedName: 'Inferno', damageMultiplier: 2.0, specialEffect: 'fire_trail' },
+  { baseWeapon: 'tornado', requiredTome: 'speed_tome', requiredTomeLevel: 5, evolvedName: 'Hurricane', damageMultiplier: 2.5, specialEffect: 'multiple_tornados' },
+  { baseWeapon: 'black_hole', requiredTome: 'attraction_tome', requiredTomeLevel: 5, evolvedName: 'Singularity', damageMultiplier: 3.0, specialEffect: 'screen_pull' },
+];
+
 export const DEFAULT_GAME_CONFIG: GameConfig = {
   mapSize: MAP_SIZE,
   tickIntervalMs: TICK_INTERVAL_MS,

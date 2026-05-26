@@ -45,6 +45,7 @@ export interface WeaponState {
   type: WeaponType;
   level: number;
   cooldownTimer: number;
+  evolved: boolean;
 }
 
 // --- Tomes (passive items) ---

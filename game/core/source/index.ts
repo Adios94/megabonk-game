@@ -68,12 +68,21 @@ export {
   ALL_WEAPON_TYPES,
   ALL_TOME_TYPES,
   DEFAULT_GAME_CONFIG,
+  WEAPON_EVOLUTIONS,
 } from './config.ts';
 
-export type { EnemyConfig, WaveConfig, WeaponLevelStats } from './config.ts';
+export type { EnemyConfig, WaveConfig, WeaponLevelStats, WeaponEvolution } from './config.ts';
 
 export { applyMovement3D, distanceBetween, normalizeDirection } from './physics.ts';
 export { SpatialHash } from './spatial-hash.ts';
 export { fireWeapon, applyBounce, updateOrbitingProjectile, updateSpinningProjectile, applyGravitationalPull } from './weapons.ts';
 export { generateUpgradeOptions, xpForLevel } from './upgrades.ts';
 export { GameInstance } from './GameInstance.ts';
+
+// Progression systems
+export { loadSave, saveSave, getDefaultSave, addSilver, spendSilver, updateRunStats } from './save.ts';
+export type { SaveData } from './save.ts';
+export { SHOP_UPGRADES, getUpgradeCost, canAfford, purchaseUpgrade, getShopBonuses } from './shop.ts';
+export type { ShopUpgrade } from './shop.ts';
+export { QUESTS, checkQuestCompletion, getQuestProgress, getCompletedQuestCount } from './quests.ts';
+export type { Quest, QuestReward, QuestProgress } from './quests.ts';

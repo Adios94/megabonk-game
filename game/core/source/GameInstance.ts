@@ -65,7 +65,12 @@ import {
   CHARACTER_CONFIGS,
   MAX_WEAPONS_DEFAULT,
   MAX_WEAPONS_CAP,
+  WEAPON_EVOLUTIONS,
 } from './config.ts';
+
+import { loadSave, saveSave, updateRunStats } from './save.ts';
+import { getShopBonuses } from './shop.ts';
+import { checkQuestCompletion } from './quests.ts';
 
 import { applyMovement3D, distanceBetween, normalizeDirection } from './physics.ts';
 import { SpatialHash } from './spatial-hash.ts';
@@ -255,6 +260,7 @@ export class GameInstance {
             type: option.weaponType,
             level: 1,
             cooldownTimer: 0,
+            evolved: false,
           });
         }
         break;
@@ -286,6 +292,9 @@ export class GameInstance {
     // Clear upgrade state and resume
     this.state.upgradeOptions = null;
     this.state.phase = this.state.boss ? 'boss_fight' : 'playing';
+
+    // Check for weapon evolutions after any upgrade
+    this.checkWeaponEvolutions();
   }
 
   pause(): void {
@@ -303,12 +312,35 @@ export class GameInstance {
   }
 
   getResult(): GameResult {
+    // Calculate silver earned for this run
+    const baseSilver = Math.floor(this.state.stats.killCount * 0.5 + this.state.player.level * 5);
+    const victoryBonus = this.state.phase === 'victory' ? 100 : 0;
+    const totalSilver = baseSilver + victoryBonus + this.state.stats.silverEarned;
+
+    // Persist stats and silver
+    updateRunStats(
+      this.state.stats.killCount,
+      this.state.gameTime,
+      this.state.player.level,
+      this.state.phase === 'victory',
+      this.state.stats.damageTaken,
+    );
+
+    // Add silver to save
+    const save = loadSave();
+    save.silver += totalSilver;
+    save.totalSilverEarned += totalSilver;
+    saveSave(save);
+
+    // Check quest completions
+    checkQuestCompletion();
+
     return {
       victory: this.state.phase === 'victory',
       survivalTime: this.state.gameTime,
       killCount: this.state.stats.killCount,
       level: this.state.player.level,
-      silverEarned: this.state.stats.silverEarned,
+      silverEarned: totalSilver,
     };
   }
 
@@ -318,6 +350,11 @@ export class GameInstance {
 
   private createInitialPlayer(): PlayerState {
     const charCfg = CHARACTER_CONFIGS[this.config.character];
+    const save = loadSave();
+    const shopBonuses = getShopBonuses();
+
+    // Apply extra weapon slots from quests
+    const extraSlots = save.extraWeaponSlots;
 
     return {
       x: 0,
@@ -331,20 +368,20 @@ export class GameInstance {
       slideTimer: 0,
       slideSpeedBoost: 0,
       bunnyHopTimer: 0,
-      hp: charCfg.hp,
-      maxHp: charCfg.hp,
-      level: 1,
+      hp: charCfg.hp + (shopBonuses['maxHp'] ?? 0),
+      maxHp: charCfg.hp + (shopBonuses['maxHp'] ?? 0),
+      level: 1 + (shopBonuses['startLevel'] ?? 0),
       xp: 0,
-      xpToNext: xpForLevel(1),
-      speed: charCfg.speed,
+      xpToNext: xpForLevel(1 + (shopBonuses['startLevel'] ?? 0)),
+      speed: charCfg.speed + (shopBonuses['speed'] ?? 0),
       currentSpeed: 0,
-      damageMultiplier: charCfg.damage,
+      damageMultiplier: charCfg.damage + (shopBonuses['damage'] ?? 0),
       attackSpeedMultiplier: 1.0,
-      critChance: charCfg.critChance,
+      critChance: charCfg.critChance + (shopBonuses['critChance'] ?? 0),
       critDamage: PLAYER_BASE_CRIT_DAMAGE,
-      armor: charCfg.armor,
-      pickupRadius: PLAYER_PICKUP_RADIUS,
-      weapons: [{ type: charCfg.startingWeapon, level: 1, cooldownTimer: 0 }],
+      armor: charCfg.armor + (shopBonuses['armor'] ?? 0),
+      pickupRadius: PLAYER_PICKUP_RADIUS + (shopBonuses['pickupRadius'] ?? 0),
+      weapons: [{ type: charCfg.startingWeapon, level: 1, cooldownTimer: 0, evolved: false }],
       tomes: [],
       passives: [],
       dashCooldown: 0,
@@ -353,7 +390,7 @@ export class GameInstance {
       invincibleTimer: 0,
       alive: true,
       character: this.config.character,
-      maxWeaponSlots: charCfg.weaponSlots,
+      maxWeaponSlots: Math.min(MAX_WEAPONS_CAP, charCfg.weaponSlots + extraSlots),
     };
   }
 
@@ -1652,6 +1689,12 @@ export class GameInstance {
     if (xpGainTome) {
       xpValue = Math.floor(xpValue * (1 + xpGainTome.level * 0.15));
     }
+    // Shop xpGain bonus
+    const shopBonuses = getShopBonuses();
+    const shopXpBonus = shopBonuses['xpGain'] ?? 0;
+    if (shopXpBonus > 0) {
+      xpValue = Math.floor(xpValue * (1 + shopXpBonus));
+    }
     this.state.player.xp += xpValue;
   }
 
@@ -2100,14 +2143,15 @@ export class GameInstance {
   private recalculateTomeStats(): void {
     const player = this.state.player;
     const charCfg = CHARACTER_CONFIGS[this.config.character];
+    const shopBonuses = getShopBonuses();
 
     let speedMult = 1.0;
-    let damageMult = charCfg.damage;
+    let damageMult = charCfg.damage + (shopBonuses['damage'] ?? 0);
     let attackSpeedMult = 1.0;
-    let critChance = charCfg.critChance;
+    let critChance = charCfg.critChance + (shopBonuses['critChance'] ?? 0);
     let critDamage = PLAYER_BASE_CRIT_DAMAGE;
-    let armor = charCfg.armor;
-    let pickupRadius = PLAYER_PICKUP_RADIUS;
+    let armor = charCfg.armor + (shopBonuses['armor'] ?? 0);
+    let pickupRadius = PLAYER_PICKUP_RADIUS + (shopBonuses['pickupRadius'] ?? 0);
 
     for (const tome of player.tomes) {
       switch (tome.type) {
@@ -2132,7 +2176,7 @@ export class GameInstance {
       }
     }
 
-    player.speed = charCfg.speed * speedMult;
+    player.speed = (charCfg.speed + (shopBonuses['speed'] ?? 0)) * speedMult;
     player.damageMultiplier = damageMult;
     player.attackSpeedMultiplier = attackSpeedMult;
     player.critChance = critChance;
@@ -2142,14 +2186,58 @@ export class GameInstance {
   }
 
   // =========================================================================
+  // Private: Weapon Evolution
+  // =========================================================================
+
+  private checkWeaponEvolutions(): void {
+    const player = this.state.player;
+
+    for (const weapon of player.weapons) {
+      if (weapon.evolved) continue;
+      if (weapon.level < 8) continue;
+
+      // Check if any evolution matches this weapon
+      const evolution = WEAPON_EVOLUTIONS.find(e => e.baseWeapon === weapon.type);
+      if (!evolution) continue;
+
+      // Check if the required tome is at the required level
+      const tome = player.tomes.find(t => t.type === evolution.requiredTome);
+      if (!tome || tome.level < evolution.requiredTomeLevel) continue;
+
+      // Evolve the weapon!
+      weapon.evolved = true;
+      weapon.level = 9; // Special evolved level
+
+      // Track evolution in save stats
+      const save = loadSave();
+      save.stats.totalEvolutions += 1;
+      saveSave(save);
+    }
+  }
+
+  // =========================================================================
   // Private: Utility
   // =========================================================================
 
   private getWeaponStats(weapon: WeaponState) {
     const levelStats = WEAPON_STATS[weapon.type];
     if (!levelStats) return WEAPON_STATS['bone_bouncer'][0];
-    const idx = Math.max(0, Math.min(weapon.level - 1, levelStats.length - 1));
-    return levelStats[idx];
+    // Evolved weapons use max level stats with multiplier
+    const idx = Math.max(0, Math.min((weapon.evolved ? 7 : weapon.level - 1), levelStats.length - 1));
+    const baseStats = levelStats[idx];
+
+    if (weapon.evolved) {
+      const evolution = WEAPON_EVOLUTIONS.find(e => e.baseWeapon === weapon.type);
+      if (evolution) {
+        return {
+          ...baseStats,
+          damage: Math.round(baseStats.damage * evolution.damageMultiplier),
+          projectileCount: baseStats.projectileCount + 1,
+        };
+      }
+    }
+
+    return baseStats;
   }
 
   private findNearestEnemy(x: number, z: number, maxRange?: number): EnemyState | null {

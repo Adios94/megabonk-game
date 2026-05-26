@@ -9,6 +9,16 @@ import {
   MAX_PICKUPS,
   DEFAULT_GAME_CONFIG,
   CHARACTER_CONFIGS,
+  WEAPON_EVOLUTIONS,
+  SHOP_UPGRADES,
+  QUESTS,
+  loadSave,
+  purchaseUpgrade,
+  getUpgradeCost,
+  canAfford,
+  getQuestProgress,
+  getCompletedQuestCount,
+  checkQuestCompletion,
   type GameConfig,
   type GameState,
   type GameResult,
@@ -828,6 +838,21 @@ export class GameScene {
 
     this.playerRing.position.set(p.x, p.y + 0.02, p.z);
     this.playerRing.visible = p.alive;
+
+    // Evolved weapon glow: pulse the ring golden if player has any evolved weapon
+    const hasEvolved = p.weapons.some(w => w.evolved);
+    const ringMat = this.playerRing.material as THREE.MeshBasicMaterial;
+    if (hasEvolved) {
+      const pulse = 0.7 + Math.sin(performance.now() * 0.005) * 0.3;
+      ringMat.color.setHex(0xffcc00);
+      ringMat.opacity = pulse;
+      const ringScale = 1.0 + Math.sin(performance.now() * 0.003) * 0.15;
+      this.playerRing.scale.set(ringScale, ringScale, 1);
+    } else {
+      ringMat.color.setHex(0x00ff88);
+      ringMat.opacity = 0.7;
+      this.playerRing.scale.set(1, 1, 1);
+    }
   }
 
   private renderEnemies(enemies: EnemyState[]): void {
@@ -1168,11 +1193,18 @@ export class GameScene {
 
     this.killLabel.textContent = t('hud.kills', { count: String(state.stats.killCount) });
 
-    // Weapon slots display
-    this.weaponSlotsLabel.textContent = t('hud.weaponSlots', {
+    // Weapon slots display (show evolved weapons with star)
+    const weaponNames = p.weapons.map(w => {
+      if (w.evolved) {
+        const evo = WEAPON_EVOLUTIONS.find(e => e.baseWeapon === w.type);
+        return evo ? `★${evo.evolvedName}` : `★${w.type}`;
+      }
+      return `${w.type} Lv${w.level}`;
+    }).join(' | ');
+    this.weaponSlotsLabel.textContent = `${t('hud.weaponSlots', {
       current: String(p.weapons.length),
       max: String(p.maxWeaponSlots),
-    });
+    })}\n${weaponNames}`;
 
     // Damage numbers
     for (const evt of state.damageEvents) {
@@ -1349,6 +1381,10 @@ export class GameScene {
   private showGameOver(result: GameResult): void {
     if (this.gameOverPanel) return;
 
+    // Check quest completions after run ends
+    const newQuests = checkQuestCompletion();
+    const completedCount = getCompletedQuestCount();
+
     this.gameOverPanel = document.createElement('div');
     this.gameOverPanel.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:400;font-family:Arial,sans-serif;gap:12px;';
 
@@ -1372,12 +1408,35 @@ export class GameScene {
       t('result.silver', { count: String(result.silverEarned) }),
     ];
 
+    // Show quest completions if any
+    if (newQuests.length > 0) {
+      lines.push(t('result.quests', { count: String(newQuests.length) }));
+    }
+
     for (const line of lines) {
       const el = document.createElement('div');
       el.style.cssText = 'color:#cccccc;font-size:14px;';
       el.textContent = line;
       statsContainer.appendChild(el);
     }
+
+    // Show newly completed quest rewards
+    if (newQuests.length > 0) {
+      const questHeader = document.createElement('div');
+      questHeader.style.cssText = 'color:#ffcc00;font-size:13px;font-weight:bold;margin-top:8px;';
+      questHeader.textContent = '--- Quest Rewards ---';
+      statsContainer.appendChild(questHeader);
+
+      for (const qId of newQuests) {
+        const quest = QUESTS.find(q => q.id === qId);
+        if (!quest) continue;
+        const el = document.createElement('div');
+        el.style.cssText = 'color:#88ff88;font-size:12px;';
+        el.textContent = `${t(quest.description)} - ${t('quest.completed')}`;
+        statsContainer.appendChild(el);
+      }
+    }
+
     this.gameOverPanel.appendChild(statsContainer);
 
     const btnRow = document.createElement('div');
@@ -1582,6 +1641,13 @@ function showMainMenu(): void {
   mainMenuEl = document.createElement('div');
   mainMenuEl.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:500;font-family:Arial,sans-serif;gap:16px;';
 
+  // Silver display at top
+  const save = loadSave();
+  const silverDisplay = document.createElement('div');
+  silverDisplay.style.cssText = 'position:absolute;top:16px;right:16px;color:#eeeeee;font-size:16px;font-weight:bold;text-shadow:0 1px 3px rgba(0,0,0,0.8);background:rgba(20,20,40,0.7);padding:6px 14px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);';
+  silverDisplay.textContent = t('shop.silver', { count: String(save.silver) });
+  mainMenuEl.appendChild(silverDisplay);
+
   // Title
   const title = document.createElement('div');
   title.style.cssText = 'font-size:56px;font-weight:bold;color:#ffdd00;text-shadow:0 0 20px #ff8800,0 0 40px #ff4400,0 4px 8px rgba(0,0,0,0.6);letter-spacing:4px;-webkit-text-stroke:2px #cc6600;';
@@ -1600,9 +1666,13 @@ function showMainMenu(): void {
   });
   mainMenuEl.appendChild(charPanel);
 
+  // Button row (Start + Shop + Quests)
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:12px;margin-top:16px;flex-wrap:wrap;justify-content:center;';
+
   // Start button
   const startBtn = document.createElement('div');
-  startBtn.style.cssText = 'padding:14px 40px;background:linear-gradient(135deg,#ff6600,#ffaa00);color:#ffffff;font-size:20px;font-weight:bold;border-radius:12px;cursor:pointer;user-select:none;box-shadow:0 4px 16px rgba(255,100,0,0.4);transition:transform 0.15s;text-shadow:0 2px 4px rgba(0,0,0,0.3);margin-top:16px;';
+  startBtn.style.cssText = 'padding:14px 40px;background:linear-gradient(135deg,#ff6600,#ffaa00);color:#ffffff;font-size:20px;font-weight:bold;border-radius:12px;cursor:pointer;user-select:none;box-shadow:0 4px 16px rgba(255,100,0,0.4);transition:transform 0.15s;text-shadow:0 2px 4px rgba(0,0,0,0.3);';
   startBtn.textContent = t('menu.start');
   startBtn.addEventListener('mouseenter', () => { startBtn.style.transform = 'scale(1.05)'; });
   startBtn.addEventListener('mouseleave', () => { startBtn.style.transform = 'scale(1)'; });
@@ -1610,8 +1680,31 @@ function showMainMenu(): void {
     destroyMainMenu();
     startGame(selectedCharacter);
   });
-  mainMenuEl.appendChild(startBtn);
+  btnRow.appendChild(startBtn);
 
+  // Shop button
+  const shopBtn = document.createElement('div');
+  shopBtn.style.cssText = 'padding:14px 28px;background:linear-gradient(135deg,#4488cc,#66aaee);color:#ffffff;font-size:18px;font-weight:bold;border-radius:12px;cursor:pointer;user-select:none;box-shadow:0 4px 12px rgba(50,100,200,0.4);transition:transform 0.15s;text-shadow:0 2px 4px rgba(0,0,0,0.3);';
+  shopBtn.textContent = t('menu.shop');
+  shopBtn.addEventListener('mouseenter', () => { shopBtn.style.transform = 'scale(1.05)'; });
+  shopBtn.addEventListener('mouseleave', () => { shopBtn.style.transform = 'scale(1)'; });
+  shopBtn.addEventListener('click', () => {
+    showShopOverlay();
+  });
+  btnRow.appendChild(shopBtn);
+
+  // Quests button
+  const questBtn = document.createElement('div');
+  questBtn.style.cssText = 'padding:14px 28px;background:linear-gradient(135deg,#aa6633,#cc8844);color:#ffffff;font-size:18px;font-weight:bold;border-radius:12px;cursor:pointer;user-select:none;box-shadow:0 4px 12px rgba(150,80,30,0.4);transition:transform 0.15s;text-shadow:0 2px 4px rgba(0,0,0,0.3);';
+  questBtn.textContent = t('menu.quests');
+  questBtn.addEventListener('mouseenter', () => { questBtn.style.transform = 'scale(1.05)'; });
+  questBtn.addEventListener('mouseleave', () => { questBtn.style.transform = 'scale(1)'; });
+  questBtn.addEventListener('click', () => {
+    showQuestsOverlay();
+  });
+  btnRow.appendChild(questBtn);
+
+  mainMenuEl.appendChild(btnRow);
   document.body.appendChild(mainMenuEl);
 }
 
@@ -1624,6 +1717,263 @@ function destroyMainMenu(): void {
     menuScene.renderer.dispose();
     menuScene.renderer.domElement.remove();
     menuScene = null;
+  }
+}
+
+// =============================================================================
+// Shop Overlay
+// =============================================================================
+
+let shopOverlayEl: HTMLDivElement | null = null;
+
+function showShopOverlay(): void {
+  if (shopOverlayEl) return;
+
+  shopOverlayEl = document.createElement('div');
+  shopOverlayEl.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,20,0.92);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;z-index:600;font-family:Arial,sans-serif;overflow-y:auto;padding:20px 0;';
+
+  // Header with silver display
+  const header = document.createElement('div');
+  header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;width:90%;max-width:700px;margin-bottom:16px;';
+
+  const titleEl = document.createElement('div');
+  titleEl.style.cssText = 'font-size:28px;font-weight:bold;color:#ffcc00;text-shadow:0 2px 4px rgba(0,0,0,0.8);';
+  titleEl.textContent = t('shop.title');
+  header.appendChild(titleEl);
+
+  const silverEl = document.createElement('div');
+  silverEl.style.cssText = 'font-size:18px;color:#eeeeee;font-weight:bold;background:rgba(40,40,60,0.8);padding:6px 14px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);';
+  const save = loadSave();
+  silverEl.textContent = t('shop.silver', { count: String(save.silver) });
+  header.appendChild(silverEl);
+
+  shopOverlayEl.appendChild(header);
+
+  // Upgrade grid
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;width:90%;max-width:700px;';
+
+  for (const upgrade of SHOP_UPGRADES) {
+    const currentLevel = save.shopLevels[upgrade.id] ?? 0;
+    const isMaxed = currentLevel >= upgrade.maxLevel;
+    const cost = isMaxed ? null : upgrade.costPerLevel[currentLevel];
+    const affordable = cost !== null && save.silver >= cost;
+
+    const card = document.createElement('div');
+    card.style.cssText = `
+      background:rgba(30,30,50,0.95);border:1px solid ${isMaxed ? '#ffcc00' : (affordable ? '#44cc44' : '#555555')};
+      border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:6px;
+      ${isMaxed ? 'opacity:0.7;' : ''}
+    `;
+
+    // Name + Level
+    const nameRow = document.createElement('div');
+    nameRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;';
+
+    const nameEl = document.createElement('div');
+    nameEl.style.cssText = 'color:#ffffff;font-size:15px;font-weight:bold;';
+    nameEl.textContent = t(upgrade.nameKey);
+    nameRow.appendChild(nameEl);
+
+    const levelEl = document.createElement('div');
+    levelEl.style.cssText = 'color:#888;font-size:12px;';
+    levelEl.textContent = t('shop.level', { current: String(currentLevel), max: String(upgrade.maxLevel) });
+    nameRow.appendChild(levelEl);
+
+    card.appendChild(nameRow);
+
+    // Description
+    const descEl = document.createElement('div');
+    descEl.style.cssText = 'color:#999;font-size:12px;';
+    descEl.textContent = t(upgrade.descKey);
+    card.appendChild(descEl);
+
+    // Level bar
+    const barContainer = document.createElement('div');
+    barContainer.style.cssText = 'height:6px;background:rgba(80,80,100,0.5);border-radius:3px;overflow:hidden;margin-top:4px;';
+    const barFill = document.createElement('div');
+    const fillPercent = (currentLevel / upgrade.maxLevel) * 100;
+    barFill.style.cssText = `height:100%;width:${fillPercent}%;background:linear-gradient(90deg,#44cc44,#88ff88);border-radius:3px;transition:width 0.3s;`;
+    barContainer.appendChild(barFill);
+    card.appendChild(barContainer);
+
+    // Buy button
+    const buyRow = document.createElement('div');
+    buyRow.style.cssText = 'display:flex;justify-content:flex-end;margin-top:6px;';
+
+    if (isMaxed) {
+      const maxLabel = document.createElement('div');
+      maxLabel.style.cssText = 'color:#ffcc00;font-size:13px;font-weight:bold;';
+      maxLabel.textContent = t('shop.maxed');
+      buyRow.appendChild(maxLabel);
+    } else {
+      const buyBtn = document.createElement('div');
+      buyBtn.style.cssText = `padding:5px 14px;background:${affordable ? '#44aa44' : '#444455'};color:#ffffff;font-size:13px;font-weight:bold;border-radius:6px;cursor:${affordable ? 'pointer' : 'default'};user-select:none;${affordable ? '' : 'opacity:0.5;'}`;
+      buyBtn.textContent = `${t('shop.buy')} (${cost})`;
+      if (affordable) {
+        buyBtn.addEventListener('click', () => {
+          const success = purchaseUpgrade(upgrade.id);
+          if (success) {
+            // Refresh shop overlay
+            hideShopOverlay();
+            showShopOverlay();
+          }
+        });
+        buyBtn.addEventListener('mouseenter', () => { buyBtn.style.transform = 'scale(1.05)'; });
+        buyBtn.addEventListener('mouseleave', () => { buyBtn.style.transform = 'scale(1)'; });
+      }
+      buyRow.appendChild(buyBtn);
+    }
+
+    card.appendChild(buyRow);
+    grid.appendChild(card);
+  }
+
+  shopOverlayEl.appendChild(grid);
+
+  // Back button
+  const backBtn = document.createElement('div');
+  backBtn.style.cssText = 'margin-top:20px;padding:10px 30px;background:#555566;color:#ffffff;font-size:16px;font-weight:bold;border-radius:8px;cursor:pointer;user-select:none;';
+  backBtn.textContent = t('shop.back');
+  backBtn.addEventListener('click', () => {
+    hideShopOverlay();
+    // Refresh silver on main menu
+    if (mainMenuEl) {
+      const silverDisp = mainMenuEl.querySelector('div') as HTMLDivElement | null;
+      if (silverDisp) {
+        const freshSave = loadSave();
+        silverDisp.textContent = t('shop.silver', { count: String(freshSave.silver) });
+      }
+    }
+  });
+  shopOverlayEl.appendChild(backBtn);
+
+  document.body.appendChild(shopOverlayEl);
+}
+
+function hideShopOverlay(): void {
+  shopOverlayEl?.remove();
+  shopOverlayEl = null;
+}
+
+// =============================================================================
+// Quests Overlay
+// =============================================================================
+
+let questsOverlayEl: HTMLDivElement | null = null;
+
+function showQuestsOverlay(): void {
+  if (questsOverlayEl) return;
+
+  questsOverlayEl = document.createElement('div');
+  questsOverlayEl.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,20,0.92);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;z-index:600;font-family:Arial,sans-serif;overflow-y:auto;padding:20px 0;';
+
+  // Header
+  const header = document.createElement('div');
+  header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;width:90%;max-width:700px;margin-bottom:16px;';
+
+  const titleEl = document.createElement('div');
+  titleEl.style.cssText = 'font-size:28px;font-weight:bold;color:#ffcc00;text-shadow:0 2px 4px rgba(0,0,0,0.8);';
+  titleEl.textContent = t('quest.title');
+  header.appendChild(titleEl);
+
+  const progressEl = document.createElement('div');
+  progressEl.style.cssText = 'font-size:14px;color:#cccccc;';
+  const completedCount = getCompletedQuestCount();
+  progressEl.textContent = t('quest.progress', { current: String(completedCount), total: String(QUESTS.length) });
+  header.appendChild(progressEl);
+
+  questsOverlayEl.appendChild(header);
+
+  // Quest list
+  const questList = document.createElement('div');
+  questList.style.cssText = 'display:flex;flex-direction:column;gap:8px;width:90%;max-width:700px;';
+
+  const questProgress = getQuestProgress();
+
+  for (let i = 0; i < QUESTS.length; i++) {
+    const quest = QUESTS[i];
+    const progress = questProgress[i];
+
+    const row = document.createElement('div');
+    row.style.cssText = `
+      background:rgba(30,30,50,0.95);border:1px solid ${progress.completed ? '#44cc44' : '#444455'};
+      border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:12px;
+      ${progress.completed ? 'opacity:0.7;' : ''}
+    `;
+
+    // Status indicator
+    const statusEl = document.createElement('div');
+    statusEl.style.cssText = `width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;background:${progress.completed ? '#44cc44' : 'rgba(80,80,100,0.5)'};flex-shrink:0;`;
+    statusEl.textContent = progress.completed ? '✓' : '';
+    row.appendChild(statusEl);
+
+    // Description and progress
+    const infoEl = document.createElement('div');
+    infoEl.style.cssText = 'flex:1;';
+
+    const descEl = document.createElement('div');
+    descEl.style.cssText = 'color:#ffffff;font-size:13px;';
+    descEl.textContent = t(quest.description);
+    infoEl.appendChild(descEl);
+
+    if (!progress.completed) {
+      const progressBarContainer = document.createElement('div');
+      progressBarContainer.style.cssText = 'height:4px;background:rgba(80,80,100,0.5);border-radius:2px;overflow:hidden;margin-top:4px;';
+      const progressBar = document.createElement('div');
+      const pct = Math.min(100, (progress.current / quest.target) * 100);
+      progressBar.style.cssText = `height:100%;width:${pct}%;background:#ffaa00;border-radius:2px;`;
+      progressBarContainer.appendChild(progressBar);
+      infoEl.appendChild(progressBarContainer);
+
+      const progressText = document.createElement('div');
+      progressText.style.cssText = 'color:#888;font-size:10px;margin-top:2px;';
+      progressText.textContent = `${progress.current} / ${quest.target}`;
+      infoEl.appendChild(progressText);
+    }
+
+    row.appendChild(infoEl);
+
+    // Reward
+    const rewardEl = document.createElement('div');
+    rewardEl.style.cssText = 'color:#ffcc00;font-size:11px;text-align:right;flex-shrink:0;';
+    rewardEl.textContent = formatQuestReward(quest.reward);
+    row.appendChild(rewardEl);
+
+    questList.appendChild(row);
+  }
+
+  questsOverlayEl.appendChild(questList);
+
+  // Back button
+  const backBtn = document.createElement('div');
+  backBtn.style.cssText = 'margin-top:20px;padding:10px 30px;background:#555566;color:#ffffff;font-size:16px;font-weight:bold;border-radius:8px;cursor:pointer;user-select:none;margin-bottom:20px;';
+  backBtn.textContent = t('quest.back');
+  backBtn.addEventListener('click', () => {
+    hideQuestsOverlay();
+  });
+  questsOverlayEl.appendChild(backBtn);
+
+  document.body.appendChild(questsOverlayEl);
+}
+
+function hideQuestsOverlay(): void {
+  questsOverlayEl?.remove();
+  questsOverlayEl = null;
+}
+
+function formatQuestReward(reward: { type: string; value: string | number }): string {
+  switch (reward.type) {
+    case 'silver':
+      return `+${reward.value} Silver`;
+    case 'weapon_unlock':
+      return `Unlock: ${String(reward.value)}`;
+    case 'character_unlock':
+      return `Unlock: ${String(reward.value)}`;
+    case 'weapon_slot':
+      return '+1 Weapon Slot';
+    default:
+      return String(reward.value);
   }
 }
 

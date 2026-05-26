@@ -875,8 +875,8 @@ export class GameScene {
       console.log('[Player] Using loaded GLTF model');
       this.playerMesh = loadedModels.player.clone() as unknown as THREE.Mesh;
       this.playerMesh.name = 'Player';
-      // Normalize player model to ~1.8 units tall
-      this.playerMesh.scale.set(0.9, 0.9, 0.9);
+      // Model is very small (~0.12 units), scale up to ~1.8 units tall
+      this.playerMesh.scale.set(15, 15, 15);
       this.playerMesh.position.y = 0;
       this.scene.add(this.playerMesh);
     } else {
@@ -1486,14 +1486,14 @@ export class GameScene {
     };
 
     const enemyScales: Record<string, number> = {
-      skeleton_soldier: 0.6,
-      ghost: 0.5,
-      bat: 0.4,
-      zombie: 0.65,
-      skeleton_archer: 0.6,
-      skeleton_knight: 0.8,
-      necromancer: 0.65,
-      gargoyle: 0.7,
+      skeleton_soldier: 1.8,
+      ghost: 1.8,
+      bat: 1.2,
+      zombie: 2.0,
+      skeleton_archer: 1.8,
+      skeleton_knight: 3.0,
+      necromancer: 2.0,
+      gargoyle: 2.5,
     };
 
     // Update or create objects for each alive enemy
@@ -1654,8 +1654,8 @@ export class GameScene {
       if (loadedModels.boss) {
         this.bossMesh = loadedModels.boss.clone() as unknown as THREE.Mesh;
         this.bossMesh.name = 'Boss';
-        // Scale to proper boss size (large enemy)
-        this.bossMesh.scale.set(2.5, 2.5, 2.5);
+        // Boss model is ~0.5 units raw, scale to ~5 units tall
+        this.bossMesh.scale.set(10, 10, 10);
         this.scene.add(this.bossMesh);
       } else {
         // Fallback
@@ -1683,8 +1683,8 @@ export class GameScene {
     }
 
     // Scale pulse when enraged
-    const baseScale = 2.5;
-    const scale = boss.enraged ? baseScale + Math.sin(performance.now() * 0.01) * 0.15 : baseScale;
+    const baseScale = 10;
+    const scale = boss.enraged ? baseScale + Math.sin(performance.now() * 0.01) * 0.5 : baseScale;
     this.bossMesh.scale.set(scale, scale, scale);
   }
 

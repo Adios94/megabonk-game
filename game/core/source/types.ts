@@ -90,6 +90,7 @@ export interface PlayerState {
   xp: number;
   xpToNext: number;
   speed: number;
+  currentSpeed: number; // actual speed (lerps toward target for acceleration feel)
   damageMultiplier: number;
   attackSpeedMultiplier: number;
   critChance: number;

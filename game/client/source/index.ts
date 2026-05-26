@@ -307,6 +307,11 @@ export class GameScene {
   private jumpKeyDown = false;
   private slideKeyDown = false;
 
+  // Screen shake
+  private shakeIntensity = 0;
+  private shakeDecay = 8.0;
+  private lastTime = 0;
+
   constructor(session: LocalGameSession) {
     this.session = session;
 
@@ -631,8 +636,8 @@ export class GameScene {
   }
 
   private setupPickupMesh(): void {
-    const geo = new THREE.OctahedronGeometry(0.3, 0);
-    const mat = new THREE.MeshLambertMaterial({ color: 0x00ff66, emissive: 0x004400, emissiveIntensity: 0.5 });
+    const geo = new THREE.OctahedronGeometry(0.35, 0);
+    const mat = new THREE.MeshLambertMaterial({ color: 0x00ff66, emissive: 0x008833, emissiveIntensity: 0.8 });
     this.pickupMesh = new THREE.InstancedMesh(geo, mat, MAX_PICKUPS);
     this.pickupMesh.name = 'Pickups';
     this.pickupMesh.count = 0;
@@ -641,11 +646,11 @@ export class GameScene {
   }
 
   private setupParticles(): void {
-    const maxParticles = 200;
+    const maxParticles = 400;
     this.particlePositions = new Float32Array(maxParticles * 3);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(this.particlePositions, 3));
-    const mat = new THREE.PointsMaterial({ color: 0xffaa44, size: 0.15, transparent: true, opacity: 0.8 });
+    const mat = new THREE.PointsMaterial({ color: 0xffaa44, size: 0.25, transparent: true, opacity: 0.9 });
     this.particles = new THREE.Points(geo, mat);
     this.particles.name = 'Particles';
     this.particles.frustumCulled = false;
@@ -717,11 +722,23 @@ export class GameScene {
   }
 
   // ===========================================================================
+  // Screen Shake
+  // ===========================================================================
+
+  private triggerShake(intensity: number): void {
+    this.shakeIntensity = Math.max(this.shakeIntensity, intensity);
+  }
+
+  // ===========================================================================
   // Animate Loop
   // ===========================================================================
 
   private animate(): void {
     this.animationId = requestAnimationFrame(() => this.animate());
+
+    const now = performance.now();
+    const dt = this.lastTime > 0 ? Math.min((now - this.lastTime) / 1000, 0.05) : 1 / 60;
+    this.lastTime = now;
 
     const state = this.session.getRenderState();
 
@@ -735,8 +752,31 @@ export class GameScene {
     this.renderPickups(state.pickups);
     this.renderBoss(state.boss);
     this.renderTeleporters(state.teleporters);
-    this.updateParticles(state.damageEvents);
+    this.updateParticles(state.damageEvents, state.enemies);
     this.updateCamera(state);
+
+    // Apply screen shake after camera update
+    if (this.shakeIntensity > 0) {
+      this.camera.position.x += (Math.random() - 0.5) * this.shakeIntensity;
+      this.camera.position.y += (Math.random() - 0.5) * this.shakeIntensity * 0.5;
+      this.shakeIntensity -= this.shakeDecay * dt;
+      if (this.shakeIntensity < 0.01) this.shakeIntensity = 0;
+    }
+
+    // Trigger shake from damage events
+    for (const evt of state.damageEvents) {
+      if (evt.isPlayerDamage) {
+        this.triggerShake(0.4);
+      } else if (evt.isCrit) {
+        this.triggerShake(0.15);
+      }
+    }
+
+    // Boss attack shake
+    if (state.boss && state.boss.currentAttack !== 'idle' && state.boss.attackTimer > 0 && state.boss.attackTimer < 0.05) {
+      this.triggerShake(0.6);
+    }
+
     this.updateHUD(state);
 
     this.renderer.render(this.scene, this.camera);
@@ -834,21 +874,48 @@ export class GameScene {
 
   private renderProjectiles(projectiles: ProjectileState[]): void {
     let count = 0;
+    const time = performance.now() * 0.005;
     for (const proj of projectiles) {
       this._dummy.position.set(proj.x, proj.y, proj.z);
 
-      // Size varies by weapon type
-      let s = proj.fromPlayer ? 1.0 : 1.5;
-      if (proj.weaponType === 'black_hole') s = 2.5;
-      else if (proj.weaponType === 'tornado') s = 1.8;
-      else if (proj.weaponType === 'fire_staff') s = 1.4;
-      else if (proj.weaponType === 'axe') s = 1.2;
-      else if (proj.weaponType === 'katana') s = 0.8;
-      else if (proj.weaponType === 'shotgun') s = 0.6;
-      else if (proj.weaponType === 'revolver') s = 0.5;
-      else if (proj.weaponType === 'bow') s = 0.7;
+      // Projectile visual variety: scale by weapon type
+      let scale = proj.fromPlayer ? 1.0 : 1.5;
+      switch (proj.weaponType) {
+        case 'black_hole': scale = 3.0; break;
+        case 'tornado': scale = 2.0; break;
+        case 'fire_staff': scale = 1.8; break;
+        case 'aura': scale = 2.5; break;
+        case 'axe': scale = 1.5; break;
+        case 'sword': case 'katana': scale = 1.2; break;
+        case 'revolver': case 'bow': scale = 0.6; break;
+        case 'shotgun': scale = 0.4; break;
+        case 'bone_bouncer': scale = 0.8; break;
+        default: scale = proj.fromPlayer ? 1.0 : 1.5;
+      }
 
-      this._dummy.scale.set(s, s, s);
+      // Add spinning for bone_bouncer and tornado
+      if (proj.weaponType === 'bone_bouncer' || proj.weaponType === 'tornado' || proj.weaponType === 'axe') {
+        this._dummy.rotation.set(0, time * 4 + proj.id, time * 2);
+      } else if (proj.weaponType === 'sword' || proj.weaponType === 'katana') {
+        // Elongated slash feel (stretch on movement axis)
+        const speed = Math.sqrt(proj.vx * proj.vx + proj.vz * proj.vz);
+        if (speed > 0.1) {
+          const angle = Math.atan2(proj.vx, proj.vz);
+          this._dummy.rotation.set(0, angle, 0);
+          this._dummy.scale.set(scale * 0.5, scale * 0.4, scale * 2.0);
+        } else {
+          this._dummy.scale.set(scale, scale, scale);
+          this._dummy.rotation.set(0, 0, 0);
+        }
+      } else {
+        this._dummy.rotation.set(0, 0, 0);
+      }
+
+      // Set scale (unless sword/katana which has custom stretch)
+      if (proj.weaponType !== 'sword' && proj.weaponType !== 'katana') {
+        this._dummy.scale.set(scale, scale, scale);
+      }
+
       this._dummy.updateMatrix();
       this.projectileMesh.setMatrixAt(count, this._dummy.matrix);
 
@@ -868,12 +935,20 @@ export class GameScene {
 
   private renderPickups(pickups: PickupState[]): void {
     let count = 0;
-    const time = performance.now() * 0.003;
+    const time = performance.now() * 0.004; // Faster spin
     for (const pickup of pickups) {
-      const bob = Math.sin(time + pickup.id) * 0.15;
-      this._dummy.position.set(pickup.x, 0.3 + bob, pickup.z);
-      this._dummy.scale.set(1, 1, 1);
-      this._dummy.rotation.set(0, time + pickup.id, 0);
+      // Larger bobbing amplitude (0.3) for more visual pop
+      const bob = Math.sin(time * 1.5 + pickup.id) * 0.3;
+      this._dummy.position.set(pickup.x, 0.4 + bob, pickup.z);
+
+      // Pulsing scale when attracted for "swoosh" feel
+      let scaleVal = 1.0;
+      if (pickup.attracted) {
+        scaleVal = 0.7 + Math.sin(time * 6 + pickup.id) * 0.3;
+      }
+      this._dummy.scale.set(scaleVal, scaleVal, scaleVal);
+      // Faster spin for more visual energy
+      this._dummy.rotation.set(0, time * 2 + pickup.id, 0);
       this._dummy.updateMatrix();
       this.pickupMesh.setMatrixAt(count, this._dummy.matrix);
 
@@ -988,16 +1063,27 @@ export class GameScene {
     }
   }
 
-  private updateParticles(damageEvents: DamageEvent[]): void {
+  private updateParticles(damageEvents: DamageEvent[], enemies: EnemyState[]): void {
     for (const event of damageEvents) {
       if (event.isPlayerDamage) continue;
-      const count = event.isCrit ? 8 : 4;
+
+      // Death detection: check if this is a kill (damage > 0 and no enemy at that position alive)
+      // We use high particle count for crits and estimate deaths by damage
+      const isDeath = event.damage > 10 && !enemies.some(e =>
+        e.hp > 0 && Math.abs(e.x - event.x) < 0.5 && Math.abs(e.z - event.z) < 0.5
+      );
+
+      // Improved death particles: 8-12 particles, higher velocity, bigger initial spread
+      const count = isDeath ? (8 + Math.floor(Math.random() * 5)) : (event.isCrit ? 8 : 4);
+      const spread = isDeath ? 1.5 : 0.5;
+      const lifetime = isDeath ? 0.4 : (0.6 + Math.random() * 0.4);
+
       for (let i = 0; i < count; i++) {
         this.particleVelocities.push({
-          x: event.x + (Math.random() - 0.5) * 0.5,
-          y: event.y + Math.random() * 0.5,
-          z: event.z + (Math.random() - 0.5) * 0.5,
-          life: 0.6 + Math.random() * 0.4,
+          x: event.x + (Math.random() - 0.5) * spread,
+          y: event.y + Math.random() * spread,
+          z: event.z + (Math.random() - 0.5) * spread,
+          life: lifetime,
         });
       }
     }
@@ -1010,9 +1096,9 @@ export class GameScene {
         this.particleVelocities.splice(i, 1);
         continue;
       }
-      p.y += 2.0 * dt;
-      p.x += (Math.random() - 0.5) * 0.5 * dt;
-      p.z += (Math.random() - 0.5) * 0.5 * dt;
+      p.y += 3.0 * dt; // Higher upward velocity
+      p.x += (Math.random() - 0.5) * 1.5 * dt;
+      p.z += (Math.random() - 0.5) * 1.5 * dt;
     }
 
     const maxP = this.particlePositions.length / 3;
@@ -1112,24 +1198,35 @@ export class GameScene {
 
     let color = '#ffffff';
     if (evt.isPlayerDamage) color = '#ff4444';
-    else if (evt.isCrit) color = '#ffcc00';
+    else if (evt.isCrit) color = '#ffd700'; // gold for crits
+
+    // Damage number scaling by value
+    let fontSize = 14;
+    if (evt.damage > 50) fontSize = 24;
+    else if (evt.damage > 20) fontSize = 18;
+
+    // Crits: 1.5x size + "CRIT!" suffix
+    if (evt.isCrit) {
+      fontSize = Math.round(fontSize * 1.5);
+    }
 
     const dmgText = String(Math.round(evt.damage));
-
-    el.textContent = evt.isCrit ? `${dmgText}!` : dmgText;
+    el.textContent = evt.isCrit ? `${dmgText} CRIT!` : dmgText;
     el.style.color = color;
     el.style.left = `${screenX}px`;
     el.style.top = `${screenY}px`;
-    el.style.fontSize = evt.isCrit ? '20px' : '16px';
+    el.style.fontSize = `${fontSize}px`;
     el.style.opacity = '1';
-    el.style.transform = 'translateY(0px)';
+    el.style.transform = 'translateY(0px) scale(1)';
     el.style.transition = 'none';
 
     void el.offsetWidth;
 
-    el.style.transition = 'opacity 0.6s ease-out, transform 0.6s ease-out';
+    // Faster upward velocity for more satisfying feel
+    const flyDistance = evt.isCrit ? -60 : (evt.damage > 20 ? -50 : -40);
+    el.style.transition = 'opacity 0.5s ease-out, transform 0.5s ease-out';
     el.style.opacity = '0';
-    el.style.transform = 'translateY(-40px)';
+    el.style.transform = `translateY(${flyDistance}px) scale(${evt.isCrit ? 0.6 : 0.8})`;
   }
 
   // ===========================================================================
@@ -1139,6 +1236,7 @@ export class GameScene {
   private handlePhaseChange(state: GameState): void {
     if (state.phase === 'level_up' && state.upgradeOptions && !this.upgradePanel) {
       this.showUpgradePanel(state.upgradeOptions);
+      this.triggerShake(0.2); // Level up shake
     } else if (state.phase !== 'level_up' && this.upgradePanel) {
       this.hideUpgradePanel();
     }

@@ -337,6 +337,7 @@ export class GameInstance {
       xp: 0,
       xpToNext: xpForLevel(1),
       speed: charCfg.speed,
+      currentSpeed: 0,
       damageMultiplier: charCfg.damage,
       attackSpeedMultiplier: 1.0,
       critChance: charCfg.critChance,
@@ -432,18 +433,35 @@ export class GameInstance {
       }
     }
 
-    // --- Horizontal movement ---
+    // --- Horizontal movement with acceleration ---
     const speedMultiplier = player.isSliding ? player.slideSpeedBoost : 1.0;
-    const result = applyMovement3D(
-      player.x, player.z,
-      moveX, moveZ,
-      player.speed * speedMultiplier, dt,
-      this.config.mapSize,
-    );
+    const targetSpeed = player.speed * speedMultiplier;
+    const isMoving = moveX !== 0 || moveZ !== 0;
 
-    if (result) {
-      player.x = result.x;
-      player.z = result.z;
+    if (isMoving) {
+      // Accelerate toward target speed
+      const accelRate = 8.0;
+      player.currentSpeed += (targetSpeed - player.currentSpeed) * Math.min(1, accelRate * dt);
+    } else {
+      // Decelerate toward zero
+      const decelRate = 12.0;
+      player.currentSpeed += (0 - player.currentSpeed) * Math.min(1, decelRate * dt);
+    }
+
+    // Only move if we have meaningful speed
+    if (player.currentSpeed > 0.01 && (isMoving || player.currentSpeed > 0.1)) {
+      const result = applyMovement3D(
+        player.x, player.z,
+        isMoving ? moveX : this.facingX,
+        isMoving ? moveZ : this.facingZ,
+        player.currentSpeed, dt,
+        this.config.mapSize,
+      );
+
+      if (result) {
+        player.x = result.x;
+        player.z = result.z;
+      }
     }
   }
 
@@ -1599,9 +1617,15 @@ export class GameInstance {
       }
 
       if (pickup.attracted) {
+        // Accelerating attraction: starts slow, gets faster as gem approaches
+        // speed = PICKUP_ATTRACT_SPEED * (1 - distance/maxDist)^2
+        const maxDist = player.pickupRadius;
+        const t = Math.max(0, 1 - dist / maxDist);
+        const attractSpeed = PICKUP_ATTRACT_SPEED * (0.3 + t * t * 2.0);
+
         const dir = normalizeDirection(player.x - pickup.x, player.z - pickup.z);
-        pickup.x += dir.x * PICKUP_ATTRACT_SPEED * dt;
-        pickup.z += dir.z * PICKUP_ATTRACT_SPEED * dt;
+        pickup.x += dir.x * attractSpeed * dt;
+        pickup.z += dir.z * attractSpeed * dt;
 
         const newDist = distanceBetween(player.x, player.z, pickup.x, pickup.z);
         if (newDist < 0.5) {
@@ -2030,10 +2054,12 @@ export class GameInstance {
 
   private applyKnockback(enemy: EnemyState, fromX: number, fromZ: number): void {
     const knockbackTome = this.state.player.tomes.find(t => t.type === 'knockback_tome');
-    if (!knockbackTome || knockbackTome.level <= 0) return;
+    // Always apply a base knockback; tome multiplies it
+    const baseForce = 1.5;
+    const tomeMultiplier = knockbackTome ? (1 + knockbackTome.level * 0.3) : 1.0;
+    const force = baseForce * tomeMultiplier;
 
     const dir = normalizeDirection(enemy.x - fromX, enemy.z - fromZ);
-    const force = knockbackTome.level * 1.5;
     const halfMap = (this.config.mapSize + 10) * 0.5;
     enemy.x = Math.max(-halfMap, Math.min(halfMap, enemy.x + dir.x * force));
     enemy.z = Math.max(-halfMap, Math.min(halfMap, enemy.z + dir.z * force));

@@ -1143,6 +1143,16 @@ export class GameScene {
     if (prevAction) prevAction.fadeOut(0.15);
     newAction.reset().fadeIn(0.15).play();
     newAction.timeScale = timeScale;
+
+    // Jump: play once and freeze at the peak frame (don't loop)
+    if (name === 'Jump') {
+      newAction.setLoop(THREE.LoopOnce, 1);
+      newAction.clampWhenFinished = true;
+    } else {
+      newAction.setLoop(THREE.LoopRepeat, Infinity);
+      newAction.clampWhenFinished = false;
+    }
+
     this.currentPlayerAnim = name;
   }
 

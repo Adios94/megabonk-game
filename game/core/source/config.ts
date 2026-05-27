@@ -102,9 +102,7 @@ export interface EnemyConfig {
 
 export const ENEMY_CONFIGS: Record<string, EnemyConfig> = {
   skeleton_soldier: { hp: 15, damage: 5, speed: 3.0, behavior: 'chase', xpReward: 1, attackCooldown: 1.5, isElite: false, firstAppear: 0, spawnWeight: 40 },
-  ghost: { hp: 10, damage: 8, speed: 4.0, behavior: 'chase', xpReward: 2, attackCooldown: 2.0, isElite: false, firstAppear: 60, spawnWeight: 25 },
-  bat: { hp: 5, damage: 3, speed: 5.0, behavior: 'swarm', xpReward: 1, attackCooldown: 1.0, isElite: false, firstAppear: 30, spawnWeight: 30 },
-  zombie: { hp: 30, damage: 10, speed: 1.5, behavior: 'chase', xpReward: 3, attackCooldown: 2.5, isElite: false, firstAppear: 90, spawnWeight: 20 },
+  zombie: { hp: 30, damage: 10, speed: 1.5, behavior: 'chase', xpReward: 3, attackCooldown: 2.5, isElite: false, firstAppear: 60, spawnWeight: 25 },
   skeleton_archer: { hp: 12, damage: 7, speed: 2.5, behavior: 'ranged', xpReward: 3, attackCooldown: 3.0, isElite: false, firstAppear: 120, spawnWeight: 15, preferredRange: 8 },
   skeleton_knight: { hp: 120, damage: 20, speed: 3.5, behavior: 'charge', xpReward: 25, attackCooldown: 2.0, isElite: true, firstAppear: 180, spawnWeight: 5 },
   necromancer: { hp: 80, damage: 15, speed: 2.0, behavior: 'ranged', xpReward: 30, attackCooldown: 4.0, isElite: true, firstAppear: 240, spawnWeight: 3, preferredRange: 10 },
@@ -123,11 +121,11 @@ export interface WaveConfig {
 }
 
 export const WAVE_CONFIGS: WaveConfig[] = [
-  { timeStart: 0, timeEnd: 60, spawnInterval: 2.0, maxAlive: 30, enemies: ['skeleton_soldier', 'bat'], groupSize: [1, 3], eliteChance: 0 },
-  { timeStart: 60, timeEnd: 180, spawnInterval: 1.5, maxAlive: 50, enemies: ['skeleton_soldier', 'ghost', 'bat', 'zombie'], groupSize: [2, 4], eliteChance: 0.05 },
-  { timeStart: 180, timeEnd: 300, spawnInterval: 1.2, maxAlive: 70, enemies: ['skeleton_soldier', 'ghost', 'zombie', 'skeleton_archer'], groupSize: [3, 5], eliteChance: 0.1 },
-  { timeStart: 300, timeEnd: 420, spawnInterval: 1.0, maxAlive: 85, enemies: ['ghost', 'zombie', 'skeleton_archer', 'bat'], groupSize: [3, 6], eliteChance: 0.15 },
-  { timeStart: 420, timeEnd: 540, spawnInterval: 0.8, maxAlive: 100, enemies: ['zombie', 'skeleton_archer', 'bat', 'ghost'], groupSize: [4, 8], eliteChance: 0.2 },
+  { timeStart: 0, timeEnd: 60, spawnInterval: 2.0, maxAlive: 30, enemies: ['skeleton_soldier'], groupSize: [1, 3], eliteChance: 0 },
+  { timeStart: 60, timeEnd: 180, spawnInterval: 1.5, maxAlive: 50, enemies: ['skeleton_soldier', 'zombie'], groupSize: [2, 4], eliteChance: 0.05 },
+  { timeStart: 180, timeEnd: 300, spawnInterval: 1.2, maxAlive: 70, enemies: ['skeleton_soldier', 'zombie', 'skeleton_archer'], groupSize: [3, 5], eliteChance: 0.1 },
+  { timeStart: 300, timeEnd: 420, spawnInterval: 1.0, maxAlive: 85, enemies: ['zombie', 'skeleton_archer', 'skeleton_soldier'], groupSize: [3, 6], eliteChance: 0.15 },
+  { timeStart: 420, timeEnd: 540, spawnInterval: 0.8, maxAlive: 100, enemies: ['zombie', 'skeleton_archer', 'skeleton_soldier'], groupSize: [4, 8], eliteChance: 0.2 },
 ];
 
 // Weapon level stats

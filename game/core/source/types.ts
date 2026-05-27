@@ -116,15 +116,13 @@ export interface PlayerState {
 // --- Enemies ---
 export type EnemyType =
   | 'skeleton_soldier'
-  | 'ghost'
-  | 'bat'
   | 'zombie'
   | 'skeleton_archer'
   | 'skeleton_knight'
   | 'necromancer'
   | 'gargoyle';
 
-export type EnemyBehavior = 'chase' | 'ranged' | 'swarm' | 'charge' | 'dive';
+export type EnemyBehavior = 'chase' | 'ranged' | 'charge' | 'dive';
 
 export interface EnemyState {
   id: number;

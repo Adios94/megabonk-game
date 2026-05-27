@@ -689,18 +689,6 @@ export class GameInstance {
         }
       }
 
-      // --- Bat swarm orbit behavior ---
-      if (enemy.type === 'bat') {
-        this.updateBatSwarm(enemy, player, dt);
-        continue;
-      }
-
-      // --- Ghost phase-through (ignores obstacles, wobbles) ---
-      if (enemy.type === 'ghost') {
-        this.updateGhostMovement(enemy, player, dt);
-        continue;
-      }
-
       // Standard AI target computation (staggered for performance)
       if ((i % 4) === this.aiGroup) {
         this.computeEnemyTarget(enemy, player);
@@ -887,69 +875,6 @@ export class GameInstance {
     }
   }
 
-  private updateBatSwarm(enemy: EnemyState, player: PlayerState, dt: number): void {
-    const orbitRadius = 6;
-    const spiralTime = 3.0;
-
-    // Orbit timer counts up; after spiralTime bats rush in
-    enemy.orbitTimer += dt;
-    enemy.orbitAngle += 3.0 * dt; // orbit angular speed
-
-    if (enemy.orbitTimer >= spiralTime) {
-      // Rush toward player
-      enemy.targetX = player.x;
-      enemy.targetZ = player.z;
-      this.moveEnemy(enemy, dt);
-    } else {
-      // Orbit: gradually spiral inward
-      const progress = enemy.orbitTimer / spiralTime;
-      const currentRadius = orbitRadius * (1 - progress * 0.7); // shrink from 6 to ~1.8
-      const targetX = player.x + Math.cos(enemy.orbitAngle) * currentRadius;
-      const targetZ = player.z + Math.sin(enemy.orbitAngle) * currentRadius;
-      enemy.targetX = targetX;
-      enemy.targetZ = targetZ;
-      this.moveEnemy(enemy, dt);
-    }
-  }
-
-  private updateGhostMovement(enemy: EnemyState, player: PlayerState, dt: number): void {
-    // Ghosts move directly toward player (phase through everything)
-    // with a sine wave wobble
-    const dx = player.x - enemy.x;
-    const dz = player.z - enemy.z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist < 0.1) return;
-
-    const nx = dx / dist;
-    const nz = dz / dist;
-
-    // Sine wave wobble perpendicular to movement direction
-    const time = this.state.gameTime + enemy.id * 0.7;
-    const wobbleAmount = Math.sin(time * 4) * 1.5;
-    // Perpendicular vector
-    const perpX = -nz;
-    const perpZ = nx;
-
-    let speedMult = 1.0;
-    const curseTome = this.state.player.tomes.find(t => t.type === 'curse_tome');
-    if (curseTome) {
-      speedMult *= (1 + curseTome.level * 0.1);
-    }
-
-    // Final swarm speed boost
-    if (this.state.finalSwarm) {
-      speedMult *= 1.2;
-    }
-
-    const moveSpeed = enemy.speed * speedMult * dt;
-    const actualMove = Math.min(moveSpeed, dist);
-
-    // Apply movement with wobble (no map clamping — ghosts phase through)
-    const halfMap = (this.config.mapSize + 10) * 0.5;
-    enemy.x = Math.max(-halfMap, Math.min(halfMap, enemy.x + (nx + perpX * wobbleAmount * 0.1) * actualMove));
-    enemy.z = Math.max(-halfMap, Math.min(halfMap, enemy.z + (nz + perpZ * wobbleAmount * 0.1) * actualMove));
-  }
-
   private enemyRangedAttack(enemy: EnemyState, player: PlayerState): void {
     if (this.state.projectiles.length >= MAX_PROJECTILES) return;
 
@@ -1048,14 +973,6 @@ export class GameInstance {
         break;
       }
 
-      case 'swarm': {
-        const offsetX = (Math.random() - 0.5) * 4;
-        const offsetZ = (Math.random() - 0.5) * 4;
-        enemy.targetX = px + offsetX;
-        enemy.targetZ = pz + offsetZ;
-        break;
-      }
-
       case 'charge':
         enemy.targetX = px;
         enemy.targetZ = pz;
@@ -1099,7 +1016,7 @@ export class GameInstance {
     enemy.z = Math.max(-halfMap, Math.min(halfMap, enemy.z + nz * actualMove));
 
     // Apply terrain height to ground-based enemies (not flying types)
-    if (enemy.type !== 'gargoyle' && enemy.type !== 'bat' && enemy.type !== 'ghost') {
+    if (enemy.type !== 'gargoyle') {
       enemy.y = this.getTerrainHeight(enemy.x, enemy.z);
     }
   }
@@ -2258,19 +2175,7 @@ export class GameInstance {
         }
 
         if (!enemyType) continue;
-
-        // Bat group spawn: spawn 5-8 together
-        if (enemyType === 'bat') {
-          const batCount = 5 + Math.floor(Math.random() * 4); // 5-8
-          for (let b = 0; b < batCount; b++) {
-            if (this.state.enemies.length >= maxAlive) break;
-            this.spawnSingleEnemy(enemyType);
-          }
-          // Count this as multiple from the group
-          i += Math.min(batCount - 1, groupSize - i - 1);
-        } else {
-          this.spawnSingleEnemy(enemyType);
-        }
+        this.spawnSingleEnemy(enemyType);
       }
     }
   }
@@ -2568,7 +2473,7 @@ export class GameInstance {
           if (this.state.enemies.length >= MAX_ENEMIES) break;
           const angle = (i / count) * Math.PI * 2;
           const spawnDist = 5;
-          const enemyType = boss.phase >= 2 ? 'ghost' : 'skeleton_soldier';
+          const enemyType = boss.phase >= 2 ? 'zombie' : 'skeleton_soldier';
           const cfg = ENEMY_CONFIGS[enemyType];
           if (!cfg) continue;
 

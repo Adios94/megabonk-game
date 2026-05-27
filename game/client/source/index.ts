@@ -532,6 +532,7 @@ export class GameScene {
   private jumpKeyDown = false;
   private slideKeyDown = false;
   private lastTime = 0;
+  private frameDt = 1 / 60;
 
   // Dying enemies (death animation tracking)
   private dyingEnemies: Map<number, { obj: THREE.Object3D; timer: number; type: string }> = new Map();
@@ -579,7 +580,7 @@ export class GameScene {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.toneMappingExposure = 1.3;
     this.renderer.domElement.style.display = 'block';
     this.container.appendChild(this.renderer.domElement);
 
@@ -593,8 +594,8 @@ export class GameScene {
     // Scene
     this.scene = new THREE.Scene();
     this.scene.name = 'MainScene';
-    this.scene.background = new THREE.Color('#C8D8E8');
-    this.scene.fog = new THREE.Fog('#C8D8E8', 30, 100);
+    this.scene.background = new THREE.Color('#87CEEB');
+    this.scene.fog = new THREE.Fog('#87CEEB', 40, 120);
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 300);
@@ -686,13 +687,13 @@ export class GameScene {
   // ===========================================================================
 
   private setupLighting(): void {
-    // Soft ambient for dark areas — natural earth tone palette
-    const ambient = new THREE.AmbientLight('#404060', 0.4);
+    // Bright ambient — lifts overall scene brightness
+    const ambient = new THREE.AmbientLight('#ffffff', 0.9);
     ambient.name = 'AmbientLight';
     this.scene.add(ambient);
 
-    // Warm directional sunlight with shadows
-    const dir = new THREE.DirectionalLight('#FFF5E0', 1.5);
+    // Strong warm directional sunlight with shadows
+    const dir = new THREE.DirectionalLight('#FFF5E0', 2.0);
     dir.name = 'DirectionalLight';
     dir.position.set(5, 10, 5);
     dir.castShadow = true;
@@ -707,12 +708,12 @@ export class GameScene {
     this.scene.add(dir);
 
     // Sky/ground hemisphere bounce light
-    const hemi = new THREE.HemisphereLight('#87CEEB', '#8B7355', 0.8);
+    const hemi = new THREE.HemisphereLight('#87CEEB', '#8B7355', 1.2);
     hemi.name = 'HemisphereLight';
     this.scene.add(hemi);
 
     // Secondary hemisphere for extra sky/ground bounce
-    const hemi2 = new THREE.HemisphereLight('#87CEEB', '#8B7355', 0.3);
+    const hemi2 = new THREE.HemisphereLight('#87CEEB', '#8B7355', 0.5);
     hemi2.name = 'HemisphereLight_Bounce';
     this.scene.add(hemi2);
 
@@ -730,7 +731,7 @@ export class GameScene {
     // =========================================================================
     const baseGeo = new THREE.PlaneGeometry(400, 400);
     baseGeo.rotateX(-Math.PI / 2);
-    const baseMat = new THREE.MeshToonMaterial({ color: '#8B7355', gradientMap: toonGradientMap });
+    const baseMat = new THREE.MeshToonMaterial({ color: '#4A7FB5', gradientMap: toonGradientMap });
     this.groundMesh = new THREE.Mesh(baseGeo, baseMat);
     this.groundMesh.name = 'Ground_Base';
     this.groundMesh.receiveShadow = true;
@@ -1122,14 +1123,26 @@ export class GameScene {
     this.scene.add(this.playerAuraMesh);
   }
 
-  private playPlayerAnim(name: string): void {
-    if (this.currentPlayerAnim === name) return;
+  private playPlayerAnim(name: string, timeScale: number = 1.0): void {
+    if (this.currentPlayerAnim === name) {
+      // Update speed of current animation without restarting
+      const action = this.playerAnimations.get(name);
+      if (action) action.timeScale = timeScale;
+      return;
+    }
     const prevAction = this.playerAnimations.get(this.currentPlayerAnim);
     const newAction = this.playerAnimations.get(name);
-    if (prevAction) prevAction.fadeOut(0.2);
-    if (newAction) {
-      newAction.reset().fadeIn(0.2).play();
+    if (!newAction) {
+      // Fallback: if animation doesn't exist (e.g. Run_Holding on Leela), use Run
+      if (name === 'Run_Holding') {
+        this.playPlayerAnim('Run', timeScale);
+        return;
+      }
+      return;
     }
+    if (prevAction) prevAction.fadeOut(0.15);
+    newAction.reset().fadeIn(0.15).play();
+    newAction.timeScale = timeScale;
     this.currentPlayerAnim = name;
   }
 
@@ -1483,6 +1496,7 @@ export class GameScene {
     const now = performance.now();
     const dt = this.lastTime > 0 ? Math.min((now - this.lastTime) / 1000, 0.05) : 1 / 60;
     this.lastTime = now;
+    this.frameDt = dt;
 
     // Hit Stop / Freeze Frame (顿帧) — skip rendering updates while timer active
     if (this.hitStopTimer > 0) {
@@ -1572,9 +1586,9 @@ export class GameScene {
     const p = state.player;
     const time = performance.now() * 0.001;
 
-    // === Update animation mixer each frame ===
+    // === Update animation mixer with real delta time ===
     if (this.playerMixer) {
-      this.playerMixer.update(1 / 60);
+      this.playerMixer.update(this.frameDt);
     }
 
     // === Position (y=0 for loaded model, y=1.0 for fallback capsule) ===
@@ -1588,7 +1602,9 @@ export class GameScene {
       let angleDiff = p.rotation - this.playerMesh.rotation.y;
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
       while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-      this.playerMesh.rotation.y += angleDiff * 0.15;
+      // Faster rotation at low speed (immediate turn), slower at high speed (smooth arc)
+      const rotSpeed = p.currentSpeed > 3.0 ? 0.12 : 0.2;
+      this.playerMesh.rotation.y += angleDiff * rotSpeed;
     }
     this.playerMesh.visible = p.alive;
 
@@ -1612,15 +1628,19 @@ export class GameScene {
     } else if (p.alive) {
       // === Choose skeletal animation based on state ===
       if (p.isSliding) {
-        this.playPlayerAnim('Kick'); // Use Kick as slide substitute
+        this.playPlayerAnim('Run_Holding', 1.5); // Crouched run = slide visual, sped up
       } else if (p.isJumping || !p.isGrounded) {
-        this.playPlayerAnim('Jump');
-      } else if (p.currentSpeed > 2.0) {
-        this.playPlayerAnim('Run');
-      } else if (p.currentSpeed > 0.5) {
-        this.playPlayerAnim('Walk');
+        this.playPlayerAnim('Jump', 1.0);
+      } else if (p.currentSpeed > 3.0) {
+        // Run — scale animation speed with movement speed
+        const runScale = Math.min(p.currentSpeed / 4.0, 1.4);
+        this.playPlayerAnim('Run', runScale);
+      } else if (p.currentSpeed > 0.3) {
+        // Walk — scale animation speed with movement speed
+        const walkScale = Math.min(p.currentSpeed / 2.0, 1.3);
+        this.playPlayerAnim('Walk', walkScale);
       } else {
-        this.playPlayerAnim('Idle');
+        this.playPlayerAnim('Idle', 1.0);
       }
 
       // === Invincibility flash ===

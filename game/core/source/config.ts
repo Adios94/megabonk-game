@@ -7,7 +7,7 @@ export const MAX_PROJECTILES = 200;
 export const MAX_PICKUPS = 300;
 
 export const PLAYER_BASE_HP = 100;
-export const PLAYER_BASE_SPEED = 5.0;
+export const PLAYER_BASE_SPEED = 4.0;
 export const PLAYER_BASE_CRIT_CHANCE = 0.05;
 export const PLAYER_BASE_CRIT_DAMAGE = 1.5;
 export const PLAYER_PICKUP_RADIUS = 2.0;
@@ -18,13 +18,13 @@ export const DASH_DURATION = 0.2;
 export const DASH_COOLDOWN = 5;
 
 // Jump & Slide (MegaBonk movement)
-export const JUMP_FORCE = 8.0;
-export const GRAVITY = 20.0;
-export const SLIDE_DURATION = 0.6;
-export const SLIDE_SPEED_MULTIPLIER = 1.8;
+export const JUMP_FORCE = 6.0;
+export const GRAVITY = 18.0;
+export const SLIDE_DURATION = 0.5;
+export const SLIDE_SPEED_MULTIPLIER = 1.6;
 export const SLIDE_COOLDOWN = 0.3;
 export const BUNNY_HOP_WINDOW = 0.15; // seconds after landing to chain jump
-export const BUNNY_HOP_BONUS = 1.3; // extra jump height multiplier for bunny hops
+export const BUNNY_HOP_BONUS = 1.2; // extra jump height multiplier for bunny hops
 
 export const MAX_LEVEL = 40;
 export const MAX_WEAPONS_DEFAULT = 2; // Start with 2 weapon slots (MegaBonk progression)
@@ -57,7 +57,7 @@ export const CHARACTER_CONFIGS: Record<CharacterType, CharacterConfig> = {
   megachad: {
     type: 'megachad',
     hp: 100,
-    speed: 5.0,
+    speed: 4.0,
     damage: 1.2,
     armor: 0,
     critChance: 0.08,
@@ -67,7 +67,7 @@ export const CHARACTER_CONFIGS: Record<CharacterType, CharacterConfig> = {
   roberto: {
     type: 'roberto',
     hp: 150,
-    speed: 4.0,
+    speed: 3.2,
     damage: 1.0,
     armor: 3,
     critChance: 0.05,
@@ -77,7 +77,7 @@ export const CHARACTER_CONFIGS: Record<CharacterType, CharacterConfig> = {
   skateboard_skeleton: {
     type: 'skateboard_skeleton',
     hp: 70,
-    speed: 6.5,
+    speed: 5.0,
     damage: 0.9,
     armor: 0,
     critChance: 0.1,

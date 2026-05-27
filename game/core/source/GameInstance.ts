@@ -487,12 +487,12 @@ export class GameInstance {
     const isMoving = moveX !== 0 || moveZ !== 0;
 
     if (isMoving) {
-      // Accelerate toward target speed
-      const accelRate = 8.0;
+      // Quick acceleration — responsive controls
+      const accelRate = 12.0;
       player.currentSpeed += (targetSpeed - player.currentSpeed) * Math.min(1, accelRate * dt);
     } else {
-      // Decelerate toward zero
-      const decelRate = 12.0;
+      // Fast deceleration — no sliding when releasing input
+      const decelRate = 16.0;
       player.currentSpeed += (0 - player.currentSpeed) * Math.min(1, decelRate * dt);
     }
 

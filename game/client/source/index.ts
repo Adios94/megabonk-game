@@ -242,37 +242,6 @@ function convertToToonMaterials(root: THREE.Object3D): void {
   });
 }
 
-/**
- * Flat toon conversion: strips textures entirely, uses only base color + gradientMap.
- * Creates a clean cel-shaded look that matches the scene style.
- */
-function convertToFlatToonMaterials(root: THREE.Object3D): void {
-  root.traverse((child) => {
-    if (!(child as THREE.Mesh).isMesh) return;
-    const mesh = child as THREE.Mesh;
-    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    const toonMats = materials.map((mat) => {
-      if (mat instanceof THREE.MeshToonMaterial && !mat.map) return mat;
-      const oldMat = mat as THREE.MeshStandardMaterial | THREE.MeshPhongMaterial | THREE.MeshLambertMaterial;
-      // Sample average color from texture if possible, otherwise use base color
-      let baseColor = oldMat.color ?? new THREE.Color(0xffffff);
-      // Slightly saturate the color for cartoon pop
-      const hsl = { h: 0, s: 0, l: 0 };
-      baseColor.getHSL(hsl);
-      baseColor = new THREE.Color().setHSL(hsl.h, Math.min(hsl.s * 1.3, 1.0), hsl.l);
-      const toon = new THREE.MeshToonMaterial({
-        color: baseColor,
-        gradientMap: toonGradientMap,
-        side: oldMat.side ?? THREE.FrontSide,
-        // No map, no normalMap — pure flat color
-      });
-      toon.name = oldMat.name || 'FlatToonMat';
-      return toon;
-    });
-    mesh.material = toonMats.length === 1 ? toonMats[0] : toonMats;
-  });
-}
-
 const WEAPON_ICONS: Record<string, string> = {
   sword: '⚔️',
   bone_bouncer: '🦴',
@@ -419,8 +388,8 @@ async function loadModels(): Promise<void> {
       const gltf = await gltfLoader.loadAsync(path);
       const model = gltf.scene;
       model.name = `Model_${key}`;
-      // Convert all materials to flat cel-shading toon style (no textures)
-      convertToFlatToonMaterials(model);
+      // Convert all materials to cel-shading toon style
+      convertToToonMaterials(model);
       model.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
           const mesh = child as THREE.Mesh;
@@ -1094,8 +1063,8 @@ export class GameScene {
     loader.load(modelPath, (gltf) => {
       const model = gltf.scene;
       model.name = 'Player';
-      // Convert to flat toon materials (no textures, pure color cel-shading)
-      convertToFlatToonMaterials(model);
+      // Convert to toon materials
+      convertToToonMaterials(model);
       // Calculate proper scale based on actual bounding box
       const box = new THREE.Box3().setFromObject(model);
       const size = box.getSize(new THREE.Vector3());

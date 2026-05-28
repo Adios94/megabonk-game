@@ -2149,7 +2149,7 @@ export class GameScene {
         }
         axeObj.position.set(proj.x, proj.y, proj.z);
         // Axe lies flat (horizontal), fixed orientation, no rotation
-        axeObj.rotation.set(Math.PI, 0, 0);
+        axeObj.rotation.set(Math.PI / 2, 0, 0);
         axeObj.visible = true;
         continue;
       }

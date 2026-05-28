@@ -2148,7 +2148,8 @@ export class GameScene {
           this.axeObjects.set(proj.id, axeObj);
         }
         axeObj.position.set(proj.x, proj.y, proj.z);
-        axeObj.rotation.set(time * 2, time * 4 + proj.id, 0);
+        // Flat horizontal spin: axe lies flat (X=90° tilt), spins around Y axis
+        axeObj.rotation.set(Math.PI / 2, time * 6 + proj.id, 0);
         axeObj.visible = true;
         continue;
       }

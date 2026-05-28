@@ -424,7 +424,7 @@ async function loadModels(): Promise<void> {
 let crystalGeometry: THREE.BufferGeometry | null = null;
 let heartGeometry: THREE.BufferGeometry | null = null;
 let boneGeometry: THREE.BufferGeometry | null = null;
-let axeGeometry: THREE.BufferGeometry | null = null;
+let axeModel: THREE.Group | null = null; // Full model with materials
 let chestClosedObj: THREE.Group | null = null;
 let chestOpenObj: THREE.Group | null = null;
 
@@ -461,12 +461,33 @@ async function loadObjItems(): Promise<void> {
     }
   };
 
-  [crystalGeometry, heartGeometry, boneGeometry, axeGeometry] = await Promise.all([
+  [crystalGeometry, heartGeometry, boneGeometry] = await Promise.all([
     loadAndNormalize('/models/items/Crystal1.obj', 0.4),
     loadAndNormalize('/models/items/Heart.obj', 0.5),
     loadAndNormalize('/models/items/Bone.obj', 0.5),
-    loadAndNormalize('/models/items/Axe_small.obj', 0.6),
   ]);
+
+  // Load axe with materials
+  try {
+    const mtlLoader = new MTLLoader();
+    const axeMtl = await mtlLoader.loadAsync('/models/items/Axe_small.mtl');
+    axeMtl.preload();
+    const axeObjLoader = new OBJLoader();
+    axeObjLoader.setMaterials(axeMtl);
+    const axeObj = await axeObjLoader.loadAsync('/models/items/Axe_small.obj') as THREE.Group;
+    axeObj.name = 'AxeModel';
+    convertToToonMaterials(axeObj);
+    // Normalize size
+    const box = new THREE.Box3().setFromObject(axeObj);
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z, 0.01);
+    const s = 0.6 / maxDim;
+    axeObj.scale.set(s, s, s);
+    axeModel = axeObj;
+    console.log('[OBJ] Loaded axe model with materials');
+  } catch (err) {
+    console.warn('[OBJ] Failed to load axe:', err);
+  }
 
   // Load chest models with materials (MTL + OBJ)
   try {
@@ -558,7 +579,7 @@ export class GameScene {
   private enemyAnimStates: Map<number, string> = new Map(); // id → current anim name
   private enemyAnimActions: Map<number, Map<string, THREE.AnimationAction>> = new Map(); // id → actions map
   private projectileMesh!: THREE.InstancedMesh;
-  private axeProjectileMesh!: THREE.InstancedMesh;
+  private axeObjects: Map<number, THREE.Object3D> = new Map(); // axe projectile id → cloned model
   private pickupMesh!: THREE.InstancedMesh;
 
   // VFX Particle System
@@ -1380,15 +1401,6 @@ export class GameScene {
     this.projectileMesh.count = 0;
     this.projectileMesh.frustumCulled = false;
     this.scene.add(this.projectileMesh);
-
-    // Axe-specific InstancedMesh (uses loaded axe geometry)
-    const axeGeo = axeGeometry ?? new THREE.ConeGeometry(0.3, 0.6, 4);
-    const axeMat = new THREE.MeshToonMaterial({ color: 0x888888, gradientMap: toonGradientMap });
-    this.axeProjectileMesh = new THREE.InstancedMesh(axeGeo, axeMat, 20);
-    this.axeProjectileMesh.name = 'AxeProjectiles';
-    this.axeProjectileMesh.count = 0;
-    this.axeProjectileMesh.frustumCulled = false;
-    this.scene.add(this.axeProjectileMesh);
   }
 
   private setupPickupMesh(): void {
@@ -2115,25 +2127,36 @@ export class GameScene {
 
   private renderProjectiles(projectiles: ProjectileState[]): void {
     let count = 0;
-    let axeCount = 0;
     const time = performance.now() * 0.005;
+    const activeAxeIds = new Set<number>();
+
     for (const proj of projectiles) {
-      // Axe projectiles go to dedicated axe mesh
+      // Axe projectiles: use cloned full model with materials
       if (proj.weaponType === 'axe') {
-        this._dummy.position.set(proj.x, proj.y, proj.z);
-        // Spinning axe
-        this._dummy.rotation.set(0, time * 4 + proj.id, time * 2);
-        this._dummy.scale.set(1.5, 1.5, 1.5);
-        this._dummy.updateMatrix();
-        this.axeProjectileMesh.setMatrixAt(axeCount, this._dummy.matrix);
-        axeCount++;
+        activeAxeIds.add(proj.id);
+        let axeObj = this.axeObjects.get(proj.id);
+        if (!axeObj) {
+          if (axeModel) {
+            axeObj = axeModel.clone();
+          } else {
+            const geo = new THREE.ConeGeometry(0.3, 0.6, 4);
+            const mat = new THREE.MeshToonMaterial({ color: 0x666688, gradientMap: toonGradientMap });
+            axeObj = new THREE.Mesh(geo, mat);
+          }
+          axeObj.name = `Axe_${proj.id}`;
+          this.scene.add(axeObj);
+          this.axeObjects.set(proj.id, axeObj);
+        }
+        axeObj.position.set(proj.x, proj.y, proj.z);
+        axeObj.rotation.set(time * 2, time * 4 + proj.id, 0);
+        axeObj.visible = true;
         continue;
       }
 
       this._dummy.position.set(proj.x, proj.y, proj.z);
 
       // Projectile visual variety: scale by weapon type
-      let scale = proj.fromPlayer ? 1.0 : 1.8; // Enemy projectiles are larger
+      let scale = proj.fromPlayer ? 1.0 : 1.8;
       if (proj.fromPlayer) {
         switch (proj.weaponType) {
           case 'black_hole': scale = 3.0; break;
@@ -2152,7 +2175,6 @@ export class GameScene {
       if (proj.weaponType === 'bone_bouncer' || proj.weaponType === 'tornado') {
         this._dummy.rotation.set(0, time * 4 + proj.id, time * 2);
       } else if (proj.weaponType === 'sword' || proj.weaponType === 'katana') {
-        // Elongated slash feel (stretch on movement axis)
         const speed = Math.sqrt(proj.vx * proj.vx + proj.vz * proj.vz);
         if (speed > 0.1) {
           const angle = Math.atan2(proj.vx, proj.vz);
@@ -2166,7 +2188,6 @@ export class GameScene {
         this._dummy.rotation.set(0, 0, 0);
       }
 
-      // Set scale (unless sword/katana which has custom stretch)
       if (proj.weaponType !== 'sword' && proj.weaponType !== 'katana') {
         this._dummy.scale.set(scale, scale, scale);
       }
@@ -2178,23 +2199,24 @@ export class GameScene {
         const color = WEAPON_PROJECTILE_COLORS[proj.weaponType] ?? 0xffdd44;
         this._tempColor.setHex(color);
       } else {
-        // Enemy projectiles: red-orange pulsing color
         const pulse = 0.7 + Math.sin(time * 3 + proj.id) * 0.3;
-        const r = 1.0;
-        const g = 0.25 + pulse * 0.2;
-        const b = 0.0;
-        this._tempColor.setRGB(r, g, b);
+        this._tempColor.setRGB(1.0, 0.25 + pulse * 0.2, 0.0);
       }
       this.projectileMesh.setColorAt(count, this._tempColor);
       count++;
     }
+
     this.projectileMesh.count = count;
     this.projectileMesh.instanceMatrix.needsUpdate = true;
     if (this.projectileMesh.instanceColor) this.projectileMesh.instanceColor.needsUpdate = true;
 
-    // Update axe mesh
-    this.axeProjectileMesh.count = axeCount;
-    this.axeProjectileMesh.instanceMatrix.needsUpdate = true;
+    // Remove axe objects that are no longer active
+    for (const [id, obj] of this.axeObjects) {
+      if (!activeAxeIds.has(id)) {
+        this.scene.remove(obj);
+        this.axeObjects.delete(id);
+      }
+    }
   }
 
   private renderPickups(pickups: PickupState[]): void {

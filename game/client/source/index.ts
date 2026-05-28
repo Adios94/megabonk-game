@@ -2148,8 +2148,13 @@ export class GameScene {
           this.axeObjects.set(proj.id, axeObj);
         }
         axeObj.position.set(proj.x, proj.y, proj.z);
-        // Axe lies flat (horizontal), fixed orientation, no rotation
-        axeObj.rotation.set(Math.PI / 2, 0, 0);
+        // Axe blade always faces outward: lay flat on XZ plane, then rotate Y to face away from player
+        const state = this.session.getRenderState();
+        const angleFromPlayer = Math.atan2(proj.x - state.player.x, proj.z - state.player.z);
+        axeObj.rotation.set(0, 0, 0);
+        axeObj.rotation.order = 'YXZ';
+        axeObj.rotation.x = Math.PI / 2;  // Lay flat (blade horizontal)
+        axeObj.rotation.y = angleFromPlayer; // Face outward from player
         axeObj.visible = true;
         continue;
       }
@@ -3183,6 +3188,8 @@ export class GameScene {
 
     card.addEventListener('click', () => {
       this.session.selectUpgrade(option.id);
+      // Immediately hide panel (don't wait for next game_update cycle)
+      this.hideUpgradePanel();
     });
 
     return card;

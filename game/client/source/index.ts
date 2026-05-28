@@ -422,9 +422,26 @@ async function loadModels(): Promise<void> {
 
 // OBJ geometry cache for pickups/projectiles
 let crystalGeometry: THREE.BufferGeometry | null = null;
+let crystal2Geometry: THREE.BufferGeometry | null = null;
+let crystal3Geometry: THREE.BufferGeometry | null = null;
+let crystal4Geometry: THREE.BufferGeometry | null = null;
+let crystal5Geometry: THREE.BufferGeometry | null = null;
 let heartGeometry: THREE.BufferGeometry | null = null;
 let boneGeometry: THREE.BufferGeometry | null = null;
+let coinGeometry: THREE.BufferGeometry | null = null;
 let axeModel: THREE.Group | null = null; // Full model with materials
+let swordModel: THREE.Group | null = null;
+let katanaModel: THREE.Group | null = null;
+let bowModel: THREE.Group | null = null;
+let daggerModel: THREE.Group | null = null;
+let hammerModel: THREE.Group | null = null;
+let dartModel: THREE.Group | null = null;
+// Evolved (golden) variants
+let swordGoldenModel: THREE.Group | null = null;
+let axeGoldenModel: THREE.Group | null = null;
+let bowGoldenModel: THREE.Group | null = null;
+let daggerGoldenModel: THREE.Group | null = null;
+let katanaGoldenModel: THREE.Group | null = null;
 let chestClosedObj: THREE.Group | null = null;
 let chestOpenObj: THREE.Group | null = null;
 
@@ -461,33 +478,68 @@ async function loadObjItems(): Promise<void> {
     }
   };
 
-  [crystalGeometry, heartGeometry, boneGeometry] = await Promise.all([
+  [crystalGeometry, heartGeometry, boneGeometry, crystal2Geometry, crystal3Geometry, crystal4Geometry, crystal5Geometry, coinGeometry] = await Promise.all([
     loadAndNormalize('/models/items/Crystal1.obj', 0.4),
     loadAndNormalize('/models/items/Heart.obj', 0.5),
     loadAndNormalize('/models/items/Bone.obj', 0.5),
+    loadAndNormalize('/models/items/Crystal2.obj', 0.4),
+    loadAndNormalize('/models/items/Crystal3.obj', 0.4),
+    loadAndNormalize('/models/items/Crystal4.obj', 0.4),
+    loadAndNormalize('/models/items/Crystal5.obj', 0.4),
+    loadAndNormalize('/models/items/Coin.obj', 0.3),
   ]);
 
-  // Load axe with materials
-  try {
-    const mtlLoader = new MTLLoader();
-    const axeMtl = await mtlLoader.loadAsync('/models/items/Axe_small.mtl');
-    axeMtl.preload();
-    const axeObjLoader = new OBJLoader();
-    axeObjLoader.setMaterials(axeMtl);
-    const axeObj = await axeObjLoader.loadAsync('/models/items/Axe_small.obj') as THREE.Group;
-    axeObj.name = 'AxeModel';
-    convertToToonMaterials(axeObj);
-    // Normalize size
-    const box = new THREE.Box3().setFromObject(axeObj);
-    const size = box.getSize(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z, 0.01);
-    const s = 0.6 / maxDim;
-    axeObj.scale.set(s, s, s);
-    axeModel = axeObj;
-    console.log('[OBJ] Loaded axe model with materials');
-  } catch (err) {
-    console.warn('[OBJ] Failed to load axe:', err);
-  }
+  // Helper: load full model with materials (MTL + OBJ)
+  const loadFullModel = async (name: string, mtlPath: string, objPath: string, targetSize: number): Promise<THREE.Group | null> => {
+    try {
+      const mtlLoader = new MTLLoader();
+      const mtl = await mtlLoader.loadAsync(mtlPath);
+      mtl.preload();
+      const loader = new OBJLoader();
+      loader.setMaterials(mtl);
+      const obj = await loader.loadAsync(objPath) as THREE.Group;
+      obj.name = name;
+      convertToToonMaterials(obj);
+      const box = new THREE.Box3().setFromObject(obj);
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z, 0.01);
+      const s = targetSize / maxDim;
+      obj.scale.set(s, s, s);
+      console.log(`[OBJ] Loaded ${name} model`);
+      return obj;
+    } catch (err) {
+      console.warn(`[OBJ] Failed to load ${name}:`, err);
+      return null;
+    }
+  };
+
+  // Load all weapon models in parallel
+  const [ax, sw, kat, bow, dag, ham, dar, swG, axG, bowG, dagG, katG] = await Promise.all([
+    loadFullModel('AxeModel', '/models/items/Axe_small.mtl', '/models/items/Axe_small.obj', 0.6),
+    loadFullModel('SwordModel', '/models/items/Sword.mtl', '/models/items/Sword.obj', 0.8),
+    loadFullModel('KatanaModel', '/models/items/Sword_big.mtl', '/models/items/Sword_big.obj', 0.9),
+    loadFullModel('BowModel', '/models/items/Bow_Wooden.mtl', '/models/items/Bow_Wooden.obj', 0.7),
+    loadFullModel('DaggerModel', '/models/items/Dagger.mtl', '/models/items/Dagger.obj', 0.4),
+    loadFullModel('HammerModel', '/models/items/Hammer_Double.mtl', '/models/items/Hammer_Double.obj', 0.7),
+    loadFullModel('DartModel', '/models/items/Dart.mtl', '/models/items/Dart.obj', 0.4),
+    loadFullModel('SwordGolden', '/models/items/Sword_Golden.mtl', '/models/items/Sword_Golden.obj', 0.8),
+    loadFullModel('AxeGolden', '/models/items/Axe_Double_Golden.mtl', '/models/items/Axe_Double_Golden.obj', 0.7),
+    loadFullModel('BowGolden', '/models/items/Bow_Golden.mtl', '/models/items/Bow_Golden.obj', 0.7),
+    loadFullModel('DaggerGolden', '/models/items/Dagger_Golden.mtl', '/models/items/Dagger_Golden.obj', 0.4),
+    loadFullModel('KatanaGolden', '/models/items/Sword_big_Golden.mtl', '/models/items/Sword_big_Golden.obj', 0.9),
+  ]);
+  axeModel = ax;
+  swordModel = sw;
+  katanaModel = kat;
+  bowModel = bow;
+  daggerModel = dag;
+  hammerModel = ham;
+  dartModel = dar;
+  swordGoldenModel = swG;
+  axeGoldenModel = axG;
+  bowGoldenModel = bowG;
+  daggerGoldenModel = dagG;
+  katanaGoldenModel = katG;
 
   // Load chest models with materials (MTL + OBJ)
   try {
@@ -580,6 +632,7 @@ export class GameScene {
   private enemyAnimActions: Map<number, Map<string, THREE.AnimationAction>> = new Map(); // id → actions map
   private projectileMesh!: THREE.InstancedMesh;
   private axeObjects: Map<number, THREE.Object3D> = new Map(); // axe projectile id → cloned model
+  private weaponObjects: Map<number, THREE.Object3D> = new Map(); // other weapon projectiles → cloned model
   private pickupMesh!: THREE.InstancedMesh;
 
   // VFX Particle System
@@ -2129,15 +2182,46 @@ export class GameScene {
     let count = 0;
     const time = performance.now() * 0.005;
     const activeAxeIds = new Set<number>();
+    const activeWeaponIds = new Set<number>();
+
+    // Helper: get the model for a weapon type (handles evolved variants)
+    const getWeaponModel = (weaponType: string, evolved: boolean): THREE.Group | null => {
+      if (evolved) {
+        switch (weaponType) {
+          case 'sword': return swordGoldenModel ?? swordModel;
+          case 'axe': return axeGoldenModel ?? axeModel;
+          case 'bow': return bowGoldenModel ?? bowModel;
+          case 'katana': return katanaGoldenModel ?? katanaModel;
+          default: return null;
+        }
+      }
+      switch (weaponType) {
+        case 'axe': return axeModel;
+        case 'sword': return swordModel;
+        case 'katana': return katanaModel;
+        case 'bow': return dartModel; // bow shoots arrows (dart model)
+        case 'bone_bouncer': return null; // uses InstancedMesh still
+        case 'revolver': return null; // uses InstancedMesh (bullet)
+        case 'shotgun': return null; // uses InstancedMesh (pellets)
+        case 'hammer': return hammerModel;
+        case 'dagger': return daggerModel;
+        case 'dart': return dartModel;
+        default: return null;
+      }
+    };
+
+    // Weapon types that use individual model clones (not InstancedMesh)
+    const modelWeaponTypes = new Set(['axe', 'sword', 'katana', 'hammer', 'dagger', 'dart', 'bow']);
 
     for (const proj of projectiles) {
-      // Axe projectiles: use cloned full model with materials
+      // Axe projectiles: orbiting, blade faces outward
       if (proj.weaponType === 'axe') {
         activeAxeIds.add(proj.id);
         let axeObj = this.axeObjects.get(proj.id);
         if (!axeObj) {
-          if (axeModel) {
-            axeObj = axeModel.clone();
+          const model = getWeaponModel('axe', false);
+          if (model) {
+            axeObj = model.clone();
           } else {
             const geo = new THREE.ConeGeometry(0.3, 0.6, 4);
             const mat = new THREE.MeshToonMaterial({ color: 0x666688, gradientMap: toonGradientMap });
@@ -2148,17 +2232,72 @@ export class GameScene {
           this.axeObjects.set(proj.id, axeObj);
         }
         axeObj.position.set(proj.x, proj.y, proj.z);
-        // Axe blade always faces outward: lay flat on XZ plane, then rotate Y to face away from player
         const state = this.session.getRenderState();
         const angleFromPlayer = Math.atan2(proj.x - state.player.x, proj.z - state.player.z);
         axeObj.rotation.set(0, 0, 0);
         axeObj.rotation.order = 'YXZ';
-        axeObj.rotation.x = Math.PI / 2;  // Lay flat (blade horizontal)
-        axeObj.rotation.y = angleFromPlayer; // Face outward from player
+        axeObj.rotation.x = Math.PI / 2;
+        axeObj.rotation.y = angleFromPlayer;
         axeObj.visible = true;
         continue;
       }
 
+      // Hammer: orbiting like axe, head faces outward
+      if ((proj.weaponType as string) === 'hammer' && proj.fromPlayer) {
+        activeWeaponIds.add(proj.id);
+        let obj = this.weaponObjects.get(proj.id);
+        if (!obj) {
+          const model = hammerModel;
+          if (model) {
+            obj = model.clone();
+          } else {
+            const geo = new THREE.BoxGeometry(0.4, 0.4, 0.6);
+            const mat = new THREE.MeshToonMaterial({ color: 0x888888, gradientMap: toonGradientMap });
+            obj = new THREE.Mesh(geo, mat);
+          }
+          obj.name = `Hammer_${proj.id}`;
+          this.scene.add(obj);
+          this.weaponObjects.set(proj.id, obj);
+        }
+        obj.position.set(proj.x, proj.y, proj.z);
+        const state = this.session.getRenderState();
+        const angleFromPlayer = Math.atan2(proj.x - state.player.x, proj.z - state.player.z);
+        obj.rotation.set(0, 0, 0);
+        obj.rotation.order = 'YXZ';
+        obj.rotation.x = Math.PI / 2;
+        obj.rotation.y = angleFromPlayer;
+        obj.visible = true;
+        continue;
+      }
+
+      // Sword/Katana/Dagger/Dart/Bow(arrow): directional, tip faces movement direction
+      if (modelWeaponTypes.has(proj.weaponType as string) && proj.fromPlayer && (proj.weaponType as string) !== 'axe' && (proj.weaponType as string) !== 'hammer') {
+        activeWeaponIds.add(proj.id);
+        let obj = this.weaponObjects.get(proj.id);
+        if (!obj) {
+          const model = getWeaponModel(proj.weaponType, false);
+          if (model) {
+            obj = model.clone();
+          } else {
+            const geo = new THREE.ConeGeometry(0.15, 0.5, 6);
+            const mat = new THREE.MeshToonMaterial({ color: 0xcccccc, gradientMap: toonGradientMap });
+            obj = new THREE.Mesh(geo, mat);
+          }
+          obj.name = `Weapon_${proj.weaponType}_${proj.id}`;
+          this.scene.add(obj);
+          this.weaponObjects.set(proj.id, obj);
+        }
+        obj.position.set(proj.x, proj.y, proj.z);
+        // Point in movement direction
+        const moveAngle = Math.atan2(proj.vx, proj.vz);
+        obj.rotation.set(0, 0, 0);
+        obj.rotation.order = 'YXZ';
+        obj.rotation.y = moveAngle;
+        obj.visible = true;
+        continue;
+      }
+
+      // All other projectiles: use InstancedMesh (spheres)
       this._dummy.position.set(proj.x, proj.y, proj.z);
 
       // Projectile visual variety: scale by weapon type
@@ -2221,6 +2360,13 @@ export class GameScene {
       if (!activeAxeIds.has(id)) {
         this.scene.remove(obj);
         this.axeObjects.delete(id);
+      }
+    }
+    // Remove weapon objects that are no longer active
+    for (const [id, obj] of this.weaponObjects) {
+      if (!activeWeaponIds.has(id)) {
+        this.scene.remove(obj);
+        this.weaponObjects.delete(id);
       }
     }
   }
@@ -3912,6 +4058,7 @@ function startGame(character: CharacterType = 'megachad'): void {
   const session = new LocalGameSession(config);
   const scene = new GameScene(session);
   activeScene = scene;
+  setGMSession(session);
   scene.start();
   session.start();
 
@@ -3949,3 +4096,143 @@ export function bootGameClient(): void {
     console.error('[MegaBonk] Boot failed:', error);
   });
 }
+
+// =============================================================================
+// GM Tool (Debug Panel) — press ` (backtick) to toggle
+// =============================================================================
+
+let gmPanel: HTMLDivElement | null = null;
+let gmSession: LocalGameSession | null = null;
+
+function setupGMTool(): void {
+  window.addEventListener('keydown', (e) => {
+    if (e.key === '`' || e.key === '~') {
+      toggleGMPanel();
+    }
+  });
+
+  // Expose to console
+  (window as any).__gm = {
+    get state() { return gmSession?.getRenderState(); },
+    levelUp() { gmLevelUp(); },
+    addXp(amount: number = 999) { gmAddXp(amount); },
+    heal() { gmHeal(); },
+    kill() { gmKillAllEnemies(); },
+    silver(amount: number = 1000) { gmAddSilver(amount); },
+    spawnBoss() { gmSpawnBoss(); },
+    godMode() { gmGodMode(); },
+    skipTo(minutes: number) { gmSkipTime(minutes); },
+    help() {
+      console.log(`
+GM Commands (window.__gm):
+  .state         — 当前游戏状态
+  .levelUp()     — 直接升级
+  .addXp(999)    — 加经验
+  .heal()        — 满血
+  .kill()        — 杀死所有敌人
+  .silver(1000)  — 加银币
+  .spawnBoss()   — 召唤Boss
+  .godMode()     — 无敌模式
+  .skipTo(5)     — 跳到第5分钟
+      `);
+    },
+  };
+}
+
+function setGMSession(session: LocalGameSession): void {
+  gmSession = session;
+}
+
+function gmLevelUp(): void {
+  if (!gmSession) return;
+  const state = gmSession.getRenderState();
+  state.player.xp = state.player.xpToNext;
+}
+
+function gmAddXp(amount: number): void {
+  if (!gmSession) return;
+  const state = gmSession.getRenderState();
+  state.player.xp += amount;
+}
+
+function gmHeal(): void {
+  if (!gmSession) return;
+  const state = gmSession.getRenderState();
+  state.player.hp = state.player.maxHp;
+}
+
+function gmKillAllEnemies(): void {
+  if (!gmSession) return;
+  const state = gmSession.getRenderState();
+  for (const enemy of state.enemies) {
+    enemy.hp = 0;
+  }
+}
+
+function gmAddSilver(amount: number): void {
+  if (!gmSession) return;
+  const state = gmSession.getRenderState();
+  state.stats.silverEarned += amount;
+}
+
+function gmSpawnBoss(): void {
+  if (!gmSession) return;
+  const state = gmSession.getRenderState();
+  (state as any).gameTime = 540; // Force boss spawn time
+}
+
+function gmGodMode(): void {
+  if (!gmSession) return;
+  const state = gmSession.getRenderState();
+  state.player.maxHp = 99999;
+  state.player.hp = 99999;
+  state.player.invincibleTimer = 99999;
+}
+
+function gmSkipTime(minutes: number): void {
+  if (!gmSession) return;
+  const state = gmSession.getRenderState();
+  (state as any).gameTime = minutes * 60;
+}
+
+function toggleGMPanel(): void {
+  if (gmPanel) {
+    gmPanel.remove();
+    gmPanel = null;
+    return;
+  }
+
+  gmPanel = document.createElement('div');
+  gmPanel.style.cssText = 'position:fixed;top:60px;left:10px;background:rgba(0,0,0,0.85);color:#0f0;font-family:monospace;font-size:12px;padding:10px;border-radius:8px;z-index:9999;display:flex;flex-direction:column;gap:6px;max-width:160px;border:1px solid #0f0;';
+
+  const title = document.createElement('div');
+  title.style.cssText = 'color:#ff0;font-weight:bold;font-size:13px;margin-bottom:4px;';
+  title.textContent = 'GM TOOL (`)';
+  gmPanel.appendChild(title);
+
+  const buttons: [string, () => void][] = [
+    ['升级 +1', gmLevelUp],
+    ['加 XP ×999', () => gmAddXp(999)],
+    ['满血', gmHeal],
+    ['杀全部敌人', gmKillAllEnemies],
+    ['加 1000 银币', () => gmAddSilver(1000)],
+    ['召唤 Boss', gmSpawnBoss],
+    ['无敌模式', gmGodMode],
+    ['跳到 5 分钟', () => gmSkipTime(5)],
+    ['跳到 8 分钟', () => gmSkipTime(8)],
+  ];
+
+  for (const [label, fn] of buttons) {
+    const btn = document.createElement('button');
+    btn.style.cssText = 'background:#222;color:#0f0;border:1px solid #0f0;padding:4px 8px;border-radius:4px;cursor:pointer;font-family:monospace;font-size:11px;text-align:left;';
+    btn.textContent = label;
+    btn.addEventListener('click', fn);
+    btn.addEventListener('mouseenter', () => { btn.style.background = '#0f0'; btn.style.color = '#000'; });
+    btn.addEventListener('mouseleave', () => { btn.style.background = '#222'; btn.style.color = '#0f0'; });
+    gmPanel.appendChild(btn);
+  }
+
+  document.body.appendChild(gmPanel);
+}
+
+setupGMTool();

@@ -2148,11 +2148,8 @@ export class GameScene {
           this.axeObjects.set(proj.id, axeObj);
         }
         axeObj.position.set(proj.x, proj.y, proj.z);
-        // Axe lies flat (horizontal, like on a table), blade faces outward from player
-        const state = this.session.getRenderState();
-        const angleToPlayer = Math.atan2(proj.x - state.player.x, proj.z - state.player.z);
-        // X=90° tilts handle horizontal, Y rotates blade direction outward
-        axeObj.rotation.set(Math.PI / 2, 0, angleToPlayer);
+        // Axe lies flat (horizontal), fixed orientation, no rotation
+        axeObj.rotation.set(Math.PI / 2, 0, 0);
         axeObj.visible = true;
         continue;
       }

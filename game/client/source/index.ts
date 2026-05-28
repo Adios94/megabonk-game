@@ -2516,42 +2516,49 @@ export class GameScene {
   private renderChests(chests: ChestState[]): void {
     for (const chest of chests) {
       let obj = this.chestObjects.get(chest.id);
-      if (!obj) {
-        // Create chest object
-        const sourceModel = chest.opened ? chestOpenObj : chestClosedObj;
-        if (sourceModel) {
-          obj = cloneSkeleton(sourceModel) as THREE.Object3D;
-        } else {
-          // Fallback: simple box
-          const geo = new THREE.BoxGeometry(1.0, 0.7, 0.6);
-          const mat = new THREE.MeshToonMaterial({ color: 0x8B4513, gradientMap: toonGradientMap });
-          obj = new THREE.Mesh(geo, mat);
+
+      if (chest.opened) {
+        // Opened: remove from scene and spawn particles (once)
+        if (obj) {
+          this.scene.remove(obj);
+          this.chestObjects.delete(chest.id);
+          this.spawnPickupBurst(chest.x, 0.6, chest.z, 0xffdd00);
         }
-        obj.name = `Chest_${chest.id}`;
-        // Normalize chest size
-        const box = new THREE.Box3().setFromObject(obj);
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z, 0.01);
-        const scale = 1.2 / maxDim;
-        obj.scale.set(scale, scale, scale);
-        obj.position.set(chest.x, 0, chest.z);
-        this.scene.add(obj);
-        this.chestObjects.set(chest.id, obj);
+        continue;
       }
 
-      // Swap to open model when opened
-      if (chest.opened && obj.name.includes('Closed')) {
-        // Replace with open model
-        this.scene.remove(obj);
-        const openModel = chestOpenObj ? cloneSkeleton(chestOpenObj) as THREE.Object3D : obj;
-        openModel.name = `Chest_${chest.id}_Open`;
-        openModel.position.copy(obj.position);
-        openModel.scale.copy(obj.scale);
-        this.scene.add(openModel);
-        this.chestObjects.set(chest.id, openModel);
-        // Spawn gold particles
-        this.spawnPickupBurst(chest.x, 0.5, chest.z, 0xffdd00);
+      if (!obj) {
+        // Create chest: brown box body + golden lid
+        const group = new THREE.Group();
+        group.name = `Chest_${chest.id}`;
+        // Body
+        const bodyGeo = new THREE.BoxGeometry(1.0, 0.6, 0.7);
+        const bodyMat = new THREE.MeshToonMaterial({ color: 0x6B3A2A, gradientMap: toonGradientMap });
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.position.y = 0.3;
+        group.add(body);
+        // Lid
+        const lidGeo = new THREE.BoxGeometry(1.05, 0.25, 0.75);
+        const lidMat = new THREE.MeshToonMaterial({ color: 0xDAA520, gradientMap: toonGradientMap });
+        const lid = new THREE.Mesh(lidGeo, lidMat);
+        lid.position.y = 0.72;
+        group.add(lid);
+        // Lock
+        const lockGeo = new THREE.BoxGeometry(0.15, 0.2, 0.1);
+        const lockMat = new THREE.MeshToonMaterial({ color: 0xFFD700, gradientMap: toonGradientMap });
+        const lock = new THREE.Mesh(lockGeo, lockMat);
+        lock.position.set(0, 0.5, 0.36);
+        group.add(lock);
+
+        group.position.set(chest.x, 0, chest.z);
+        this.scene.add(group);
+        this.chestObjects.set(chest.id, group);
+        obj = group;
       }
+
+      // Gentle hover animation
+      const time = performance.now() * 0.001;
+      obj.position.y = Math.sin(time * 1.5 + chest.id) * 0.05;
     }
   }
 

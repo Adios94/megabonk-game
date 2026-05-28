@@ -45,7 +45,7 @@ export const HEALTH_SMALL_DROP_CHANCE = 0.08; // 8% chance for half heart (25 HP
 
 // Chest settings
 export const CHEST_COUNT = 4;                 // Number of chests per game
-export const CHEST_INTERACT_RADIUS = 2.0;
+export const CHEST_INTERACT_RADIUS = 2.5;
 export const CHEST_SILVER_MIN = 50;
 export const CHEST_SILVER_MAX = 200;
 

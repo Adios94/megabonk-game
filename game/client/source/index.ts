@@ -287,90 +287,6 @@ const TIER_COLORS: Record<number, string> = {
 };
 
 // =============================================================================
-// Geometry extraction from loaded models
-// =============================================================================
-
-/** Extract merged BufferGeometry from a loaded model, normalized to fit in a unit sphere */
-function extractGeometry(model: THREE.Group | null, targetSize: number = 1.0): THREE.BufferGeometry {
-  if (!model) return new THREE.SphereGeometry(targetSize * 0.5, 6, 4);
-  const geos: THREE.BufferGeometry[] = [];
-  model.traverse((child) => {
-    if ((child as THREE.Mesh).isMesh) {
-      const mesh = child as THREE.Mesh;
-      const geo = mesh.geometry.clone();
-      // Apply mesh world transform to geometry
-      geo.applyMatrix4(mesh.matrixWorld);
-      geos.push(geo);
-    }
-  });
-  if (geos.length === 0) return new THREE.SphereGeometry(targetSize * 0.5, 6, 4);
-
-  // Merge all geometries
-  const merged = geos.length === 1 ? geos[0] : mergeBufferGeometries(geos);
-
-  // Normalize to targetSize
-  merged.computeBoundingBox();
-  const box = merged.boundingBox!;
-  const size = box.getSize(new THREE.Vector3());
-  const maxDim = Math.max(size.x, size.y, size.z, 0.01);
-  const scale = targetSize / maxDim;
-  merged.scale(scale, scale, scale);
-  // Center
-  merged.computeBoundingBox();
-  const center = merged.boundingBox!.getCenter(new THREE.Vector3());
-  merged.translate(-center.x, -center.y, -center.z);
-
-  return merged;
-}
-
-/** Simple geometry merge (positions + normals only, for InstancedMesh) */
-function mergeBufferGeometries(geometries: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  let totalVerts = 0;
-  let totalIndices = 0;
-  for (const g of geometries) {
-    totalVerts += g.getAttribute('position').count;
-    if (g.index) totalIndices += g.index.count;
-    else totalIndices += g.getAttribute('position').count;
-  }
-  const positions = new Float32Array(totalVerts * 3);
-  const normals = new Float32Array(totalVerts * 3);
-  const indices = new Uint32Array(totalIndices);
-  let vOffset = 0;
-  let iOffset = 0;
-  for (const g of geometries) {
-    const pos = g.getAttribute('position');
-    const norm = g.getAttribute('normal');
-    for (let i = 0; i < pos.count; i++) {
-      positions[(vOffset + i) * 3] = pos.getX(i);
-      positions[(vOffset + i) * 3 + 1] = pos.getY(i);
-      positions[(vOffset + i) * 3 + 2] = pos.getZ(i);
-      if (norm) {
-        normals[(vOffset + i) * 3] = norm.getX(i);
-        normals[(vOffset + i) * 3 + 1] = norm.getY(i);
-        normals[(vOffset + i) * 3 + 2] = norm.getZ(i);
-      }
-    }
-    if (g.index) {
-      for (let i = 0; i < g.index.count; i++) {
-        indices[iOffset + i] = g.index.array[i] + vOffset;
-      }
-      iOffset += g.index.count;
-    } else {
-      for (let i = 0; i < pos.count; i++) {
-        indices[iOffset + i] = vOffset + i;
-      }
-      iOffset += pos.count;
-    }
-    vOffset += pos.count;
-  }
-  const merged = new THREE.BufferGeometry();
-  merged.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  merged.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-  merged.setIndex(new THREE.BufferAttribute(indices, 1));
-  return merged;
-}
-
-// =============================================================================
 // Asset Loader — loads GLB models
 // =============================================================================
 
@@ -385,17 +301,6 @@ interface LoadedModels {
   teleporter: THREE.Group | null;
   platform: THREE.Group | null;
   pickup: THREE.Group | null;
-  // RPG Item models (projectiles & pickups)
-  item_sword: THREE.Group | null;
-  item_axe: THREE.Group | null;
-  item_bone: THREE.Group | null;
-  item_arrow: THREE.Group | null;
-  item_dart: THREE.Group | null;
-  item_dart_golden: THREE.Group | null;
-  item_dagger: THREE.Group | null;
-  item_crystal: THREE.Group | null;
-  item_coin: THREE.Group | null;
-  item_heart: THREE.Group | null;
   // Cyberpunk platform models
   platform_4x4: THREE.Group | null;
   platform_4x2: THREE.Group | null;
@@ -425,17 +330,6 @@ const loadedModels: LoadedModels = {
   teleporter: null,
   platform: null,
   pickup: null,
-  // RPG Item models
-  item_sword: null,
-  item_axe: null,
-  item_bone: null,
-  item_arrow: null,
-  item_dart: null,
-  item_dart_golden: null,
-  item_dagger: null,
-  item_crystal: null,
-  item_coin: null,
-  item_heart: null,
   // Cyberpunk platform models
   platform_4x4: null,
   platform_4x2: null,
@@ -468,17 +362,6 @@ async function loadModels(): Promise<void> {
     ['pickup', '/models/collectible_gear.gltf'],
     ['tombstone', '/models/tombstone.glb'],
     ['tree', '/models/tree.glb'],
-    // RPG Item models (for projectiles & pickups)
-    ['item_sword', '/models/items/Sword_big.glb'],
-    ['item_axe', '/models/items/Axe_Double.glb'],
-    ['item_bone', '/models/items/Bone.glb'],
-    ['item_arrow', '/models/items/Arrow.glb'],
-    ['item_dart', '/models/items/Dart.glb'],
-    ['item_dart_golden', '/models/items/Dart_Golden.glb'],
-    ['item_dagger', '/models/items/Dagger.glb'],
-    ['item_crystal', '/models/items/Crystal1.glb'],
-    ['item_coin', '/models/items/Coin.glb'],
-    ['item_heart', '/models/items/Heart.glb'],
     // Cyberpunk platform kit
     ['platform_4x4', '/models/platform_4x4_full.gltf'],
     ['platform_4x2', '/models/platform_4x2.gltf'],
@@ -1400,9 +1283,7 @@ export class GameScene {
   }
 
   private setupProjectileMesh(): void {
-    // Use extracted geometry from RPG item models based on weapon type
-    // For InstancedMesh we need one shared geometry — use sword as default
-    const geo = extractGeometry(loadedModels.item_dart, 0.5);
+    const geo = new THREE.SphereGeometry(0.25, 6, 4);
     const mat = new THREE.MeshToonMaterial({ color: 0xffee44, gradientMap: toonGradientMap });
     this.projectileMesh = new THREE.InstancedMesh(geo, mat, MAX_PROJECTILES);
     this.projectileMesh.name = 'Projectiles';
@@ -1412,8 +1293,7 @@ export class GameScene {
   }
 
   private setupPickupMesh(): void {
-    // Use crystal geometry from RPG items for XP pickups
-    const geo = extractGeometry(loadedModels.item_crystal, 0.5);
+    const geo = new THREE.OctahedronGeometry(0.35, 0);
     const mat = new THREE.MeshToonMaterial({ color: 0x00ff66, gradientMap: toonGradientMap });
     this.pickupMesh = new THREE.InstancedMesh(geo, mat, MAX_PICKUPS);
     this.pickupMesh.name = 'Pickups';

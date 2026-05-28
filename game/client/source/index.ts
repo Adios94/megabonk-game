@@ -2148,8 +2148,12 @@ export class GameScene {
           this.axeObjects.set(proj.id, axeObj);
         }
         axeObj.position.set(proj.x, proj.y, proj.z);
-        // Flat horizontal spin: axe lies flat (X=90° tilt), spins around Y axis
-        axeObj.rotation.set(Math.PI / 2, time * 6 + proj.id, 0);
+        // No self-spin: axe faces outward from player, blade pointing away
+        // Calculate angle from player to axe position
+        const state = this.session.getRenderState();
+        const angleToPlayer = Math.atan2(proj.x - state.player.x, proj.z - state.player.z);
+        // Axe model: Y=handle axis, so rotate around Y to face outward, tilt flat on X
+        axeObj.rotation.set(0, angleToPlayer, 0);
         axeObj.visible = true;
         continue;
       }

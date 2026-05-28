@@ -37,7 +37,6 @@ export const QUESTS: Quest[] = [
   { id: 'q7', description: 'quest.survive_2min', type: 'survive', target: 120, reward: { type: 'weapon_unlock', value: 'revolver' } },
   { id: 'q8', description: 'quest.survive_5min', type: 'survive', target: 300, reward: { type: 'weapon_unlock', value: 'lightning_staff' } },
   { id: 'q9', description: 'quest.survive_7min', type: 'survive', target: 420, reward: { type: 'silver', value: 200 } },
-  { id: 'q10', description: 'quest.survive_9min', type: 'survive', target: 540, reward: { type: 'weapon_unlock', value: 'black_hole' } },
 
   // Level quests
   { id: 'q11', description: 'quest.reach_level_10', type: 'level', target: 10, reward: { type: 'silver', value: 100 } },

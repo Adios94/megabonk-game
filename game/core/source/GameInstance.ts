@@ -83,7 +83,7 @@ import { checkQuestCompletion } from './quests.ts';
 import { applyMovement3D, distanceBetween, normalizeDirection } from './physics.ts';
 import { SpatialHash } from './spatial-hash.ts';
 import { generateUpgradeOptions, xpForLevel } from './upgrades.ts';
-import { updateOrbitingProjectile, updateSpinningProjectile, applyGravitationalPull } from './weapons.ts';
+import { updateOrbitingProjectile, updateSpinningProjectile } from './weapons.ts';
 
 export class GameInstance {
   private config: GameConfig;
@@ -1085,9 +1085,6 @@ export class GameInstance {
       case 'shotgun':
         this.fireShotgun(stats);
         break;
-      case 'black_hole':
-        this.fireBlackHole(stats);
-        break;
       case 'katana':
         this.fireKatana(stats);
         break;
@@ -1501,45 +1498,6 @@ export class GameInstance {
     }
   }
 
-  private fireBlackHole(stats: typeof WEAPON_STATS['black_hole'][0]): void {
-    const player = this.state.player;
-    const count = stats.projectileCount;
-
-    for (let i = 0; i < count; i++) {
-      if (this.state.projectiles.length >= MAX_PROJECTILES) break;
-
-      const target = this.findNearestEnemy(player.x, player.z);
-      let px: number, pz: number;
-      if (target) {
-        px = target.x;
-        pz = target.z;
-      } else {
-        const angle = player.rotation + (i / count) * Math.PI * 2;
-        px = player.x + Math.sin(angle) * 8;
-        pz = player.z + Math.cos(angle) * 8;
-      }
-
-      const isCrit = Math.random() < player.critChance;
-      const damage = Math.round(stats.damage * player.damageMultiplier * (isCrit ? player.critDamage : 1));
-
-      this.state.projectiles.push({
-        id: this.nextProjectileId++,
-        weaponType: 'black_hole',
-        x: px, y: 0.5, z: pz,
-        vx: 0, vy: 0, vz: 0,
-        damage,
-        bouncesLeft: 0,
-        pierceLeft: 999,
-        lifetime: 4.0,
-        radius: stats.aoeRadius,
-        fromPlayer: true,
-        hitEnemyIds: [],
-        gravitational: true,
-        gravityStrength: 8.0,
-      });
-    }
-  }
-
   private fireKatana(stats: typeof WEAPON_STATS['katana'][0]): void {
     const player = this.state.player;
     const count = stats.projectileCount;
@@ -1633,10 +1591,6 @@ export class GameInstance {
         updateSpinningProjectile(proj, dt);
         proj.x += proj.vx * dt;
         proj.z += proj.vz * dt;
-      }
-      // Handle gravitational (black hole) — doesn't move but pulls enemies
-      else if (proj.gravitational) {
-        applyGravitationalPull(proj, this.state.enemies, dt);
       }
       // Normal movement
       else {
@@ -2502,7 +2456,7 @@ export class GameInstance {
           const dir = normalizeDirection(player.x - boss.x, player.z - boss.z);
           this.state.projectiles.push({
             id: this.nextProjectileId++,
-            weaponType: 'black_hole',
+            weaponType: 'fire_staff',
             x: boss.x, y: 1.0, z: boss.z,
             vx: dir.x * 10, vy: 0, vz: dir.z * 10,
             damage: 20,
@@ -2578,7 +2532,7 @@ export class GameInstance {
           const oz = (Math.random() - 0.5) * 12;
           this.state.projectiles.push({
             id: this.nextProjectileId++,
-            weaponType: 'black_hole',
+            weaponType: 'fire_staff',
             x: player.x + ox, y: 10, z: player.z + oz,
             vx: 0, vy: -12, vz: 0,
             damage: 15,

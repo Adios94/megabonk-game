@@ -252,16 +252,6 @@ export const WEAPON_STATS: Record<string, WeaponLevelStats[]> = {
     { damage: 18, cooldown: 0.8, projectileCount: 8, bounces: 0, chains: 0, range: 18, aoeRadius: 0, pierce: 1, speed: 21 },
     { damage: 22, cooldown: 0.7, projectileCount: 9, bounces: 0, chains: 0, range: 20, aoeRadius: 0, pierce: 2, speed: 22 },
   ],
-  black_hole: [
-    { damage: 5, cooldown: 4.0, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 4.0, pierce: 999, speed: 0 },
-    { damage: 6, cooldown: 3.8, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 4.5, pierce: 999, speed: 0 },
-    { damage: 7, cooldown: 3.6, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 5.0, pierce: 999, speed: 0 },
-    { damage: 8, cooldown: 3.4, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 5.5, pierce: 999, speed: 0 },
-    { damage: 10, cooldown: 3.2, projectileCount: 2, bounces: 0, chains: 0, range: 0, aoeRadius: 6.0, pierce: 999, speed: 0 },
-    { damage: 12, cooldown: 3.0, projectileCount: 2, bounces: 0, chains: 0, range: 0, aoeRadius: 6.5, pierce: 999, speed: 0 },
-    { damage: 14, cooldown: 2.8, projectileCount: 2, bounces: 0, chains: 0, range: 0, aoeRadius: 7.0, pierce: 999, speed: 0 },
-    { damage: 18, cooldown: 2.5, projectileCount: 3, bounces: 0, chains: 0, range: 0, aoeRadius: 8.0, pierce: 999, speed: 0 },
-  ],
   katana: [
     { damage: 16, cooldown: 0.5, projectileCount: 1, bounces: 0, chains: 0, range: 3.0, aoeRadius: 1.5, pierce: 2, speed: 18 },
     { damage: 19, cooldown: 0.48, projectileCount: 1, bounces: 0, chains: 0, range: 3.2, aoeRadius: 1.5, pierce: 2, speed: 19 },
@@ -305,7 +295,7 @@ export const PASSIVE_MAX_LEVELS: Record<string, number> = TOME_MAX_LEVELS;
 export const ALL_WEAPON_TYPES: WeaponType[] = [
   'sword', 'bone_bouncer', 'axe', 'revolver', 'bow',
   'lightning_staff', 'fire_staff', 'flame_ring', 'tornado',
-  'shotgun', 'black_hole', 'katana', 'aura',
+  'shotgun', 'katana', 'aura',
 ];
 
 // All tome types available in the game
@@ -333,7 +323,6 @@ export const WEAPON_EVOLUTIONS: WeaponEvolution[] = [
   { baseWeapon: 'lightning_staff', requiredTome: 'curse_tome', requiredTomeLevel: 3, evolvedName: 'Thunder God', damageMultiplier: 2.5, specialEffect: 'chain_all' },
   { baseWeapon: 'fire_staff', requiredTome: 'thorns_tome', requiredTomeLevel: 3, evolvedName: 'Inferno', damageMultiplier: 2.0, specialEffect: 'fire_trail' },
   { baseWeapon: 'tornado', requiredTome: 'speed_tome', requiredTomeLevel: 5, evolvedName: 'Hurricane', damageMultiplier: 2.5, specialEffect: 'multiple_tornados' },
-  { baseWeapon: 'black_hole', requiredTome: 'attraction_tome', requiredTomeLevel: 5, evolvedName: 'Singularity', damageMultiplier: 3.0, specialEffect: 'screen_pull' },
 ];
 
 export const DEFAULT_GAME_CONFIG: GameConfig = {

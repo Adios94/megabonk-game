@@ -22,7 +22,15 @@
       "Bash(git status *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(cp '/Users/liusheng/Downloads/Ultimate RPG Items Pack - Aug 2019/OBJ/Sword.obj' '/Users/liusheng/Downloads/Ultimate RPG Items Pack - Aug 2019/OBJ/Sword.mtl' /Users/liusheng/Documents/megabonk-game/public/models/items/)",
+      "Bash(cp '/Users/liusheng/Downloads/Ultimate RPG Items Pack - Aug 2019/OBJ/Sword_big.obj' '/Users/liusheng/Downloads/Ultimate RPG Items Pack - Aug 2019/OBJ/Sword_big.mtl' /Users/liusheng/Documents/megabonk-game/public/models/items/)",
+      "Bash(cp '/Users/liusheng/Downloads/Ultimate RPG Items Pack - Aug 2019/OBJ/Bow_Wooden.obj' '/Users/liusheng/Downloads/Ultimate RPG Items Pack - Aug 2019/OBJ/Bow_Wooden.mtl' /Users/liusheng/Documents/megabonk-game/public/models/items/)",
+      "Bash(cp '/Users/liusheng/Downloads/Ultimate RPG Items Pack - Aug 2019/OBJ/Dagger.obj' '/Users/liusheng/Downloads/Ultimate RPG Items Pack - Aug 2019/OBJ/Dagger.mtl' /Users/liusheng/Documents/megabonk-game/public/models/items/)",
+      "Bash(cp '/Users/liusheng/Downloads/Ultimate RPG Items Pack - Aug 2019/OBJ/Hammer_Double.obj' '/Users/liusheng/Downloads/Ultimate RPG Items Pack - Aug 2019/OBJ/Hammer_Double.mtl' /Users/liusheng/Documents/megabonk-game/public/models/items/)",
+      "WebSearch",
+      "WebFetch(domain:poly.pizza)",
+      "WebFetch(domain:quaternius.com)"
     ]
   }
 }

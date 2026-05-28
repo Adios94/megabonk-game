@@ -51,8 +51,6 @@
       "tornado_desc": "Spinning projectile that pierces all",
       "shotgun": "Shotgun",
       "shotgun_desc": "Spread shot in facing direction",
-      "black_hole": "Black Hole",
-      "black_hole_desc": "Gravitational pull that damages enemies",
       "katana": "Katana",
       "katana_desc": "Fast forward slash attack",
       "aura": "Aura",
@@ -113,7 +111,6 @@
     "lightning_staff": "Thunder God",
     "fire_staff": "Inferno",
     "tornado": "Hurricane",
-    "black_hole": "Singularity"
   },
   "shop": {
     "title": "Permanent Upgrades",

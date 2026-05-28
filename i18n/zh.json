@@ -51,8 +51,6 @@
       "tornado_desc": "旋转穿透所有敌人的投射物",
       "shotgun": "霰弹枪",
       "shotgun_desc": "面前方向扇形散射",
-      "black_hole": "黑洞",
-      "black_hole_desc": "引力场拉拽并伤害敌人",
       "katana": "武士刀",
       "katana_desc": "快速前方斩击",
       "aura": "光环",
@@ -113,7 +111,6 @@
     "lightning_staff": "雷神",
     "fire_staff": "地狱火",
     "tornado": "飓风",
-    "black_hole": "奇点"
   },
   "shop": {
     "title": "永久升级",

@@ -171,7 +171,6 @@ const WEAPON_PROJECTILE_COLORS: Record<string, number> = {
   flame_ring: 0xff6600,
   tornado: 0x88ccaa,
   shotgun: 0xffee44,
-  black_hole: 0x220044,
   katana: 0xeeeeff,
   aura: 0x44ffaa,
 };
@@ -256,7 +255,6 @@ const WEAPON_ICONS: Record<string, string> = {
   flame_ring: '🔥',
   tornado: '🌪️',
   shotgun: '💥',
-  black_hole: '🕳️',
   katana: '⚔️',
   aura: '✨',
 };
@@ -2304,7 +2302,6 @@ export class GameScene {
       let scale = proj.fromPlayer ? 1.0 : 1.8;
       if (proj.fromPlayer) {
         switch (proj.weaponType) {
-          case 'black_hole': scale = 3.0; break;
           case 'tornado': scale = 2.0; break;
           case 'fire_staff': scale = 1.8; break;
           case 'aura': scale = 2.5; break;
@@ -2582,7 +2579,6 @@ export class GameScene {
     flame_ring: [1.0, 0.5, 0.0],
     tornado: [0.4, 1.0, 0.4],
     shotgun: [1.0, 0.8, 0.2],
-    black_hole: [0.6, 0.2, 1.0],
     katana: [0.9, 0.9, 1.0],
     aura: [0.5, 0.7, 1.0],
   };
@@ -2824,9 +2820,6 @@ export class GameScene {
     for (const weapon of player.weapons) {
       if (weapon.type === 'flame_ring' && player.alive) {
         this.emitFlameRingParticles(player.x, player.y, player.z, 2.5);
-      }
-      if (weapon.type === 'black_hole' && player.alive) {
-        this.emitBlackHoleVortex(player.x, player.y, player.z, 3.0);
       }
     }
 

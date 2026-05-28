@@ -37,7 +37,6 @@ export type WeaponType =
   | 'flame_ring'
   | 'tornado'
   | 'shotgun'
-  | 'black_hole'
   | 'katana'
   | 'aura';
 

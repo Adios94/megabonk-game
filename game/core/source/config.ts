@@ -39,6 +39,16 @@ export const BOSS_INTRO_DURATION = 2.0;
 export const PICKUP_LIFETIME = 30;
 export const PICKUP_ATTRACT_SPEED = 12;
 
+// Health drop chances (on enemy death)
+export const HEALTH_DROP_CHANCE = 0.03;       // 3% chance for full heart (50 HP)
+export const HEALTH_SMALL_DROP_CHANCE = 0.08; // 8% chance for half heart (25 HP)
+
+// Chest settings
+export const CHEST_COUNT = 4;                 // Number of chests per game
+export const CHEST_INTERACT_RADIUS = 2.0;
+export const CHEST_SILVER_MIN = 50;
+export const CHEST_SILVER_MAX = 200;
+
 // Teleporter settings
 export const TELEPORTER_ACTIVATION_DURATION = 3.0; // seconds to activate
 export const TELEPORTER_APPEAR_TIME = 300; // when teleporter spawns (5 min)

@@ -186,7 +186,7 @@ export interface ProjectileState {
 }
 
 // --- Pickups ---
-export type PickupType = 'xp_green' | 'xp_blue' | 'xp_purple' | 'xp_orange' | 'silver';
+export type PickupType = 'xp_green' | 'xp_blue' | 'xp_purple' | 'xp_orange' | 'silver' | 'health' | 'health_small';
 
 export interface PickupState {
   id: number;
@@ -197,6 +197,15 @@ export interface PickupState {
   value: number;
   lifetime: number;
   attracted: boolean;
+}
+
+// --- Chest ---
+export interface ChestState {
+  id: number;
+  x: number;
+  z: number;
+  opened: boolean;
+  reward: number; // silver amount
 }
 
 // --- Teleporter ---
@@ -276,6 +285,7 @@ export interface GameState {
   enemies: EnemyState[];
   projectiles: ProjectileState[];
   pickups: PickupState[];
+  chests: ChestState[];
   boss: BossState | null;
   upgradeOptions: UpgradeOption[] | null;
   damageEvents: DamageEvent[];

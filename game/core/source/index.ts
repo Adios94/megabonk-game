@@ -19,6 +19,7 @@ export type {
   PickupState,
   TeleporterPhase,
   TeleporterState,
+  ChestState,
   UpgradeRarity,
   UpgradeKind,
   UpgradeOption,

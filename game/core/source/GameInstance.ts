@@ -28,6 +28,7 @@ import type {
   CharacterType,
   TeleporterState,
   TomeState,
+  ChestState,
 } from './types.ts';
 
 import {
@@ -55,6 +56,12 @@ import {
   BOSS_INTRO_DURATION,
   PICKUP_LIFETIME,
   PICKUP_ATTRACT_SPEED,
+  HEALTH_DROP_CHANCE,
+  HEALTH_SMALL_DROP_CHANCE,
+  CHEST_COUNT,
+  CHEST_INTERACT_RADIUS,
+  CHEST_SILVER_MIN,
+  CHEST_SILVER_MAX,
   TELEPORTER_ACTIVATION_DURATION,
   TELEPORTER_APPEAR_TIME,
   TELEPORTER_RADIUS,
@@ -127,6 +134,7 @@ export class GameInstance {
       stats: { killCount: 0, damageDealt: 0, damageTaken: 0, silverEarned: 0 },
       waveIndex: 0,
       teleporters: [],
+      chests: [],
       character: config.character,
       finalSwarm: false,
     };
@@ -148,6 +156,7 @@ export class GameInstance {
     this.state.stats = { killCount: 0, damageDealt: 0, damageTaken: 0, silverEarned: 0 };
     this.state.waveIndex = 0;
     this.state.teleporters = [];
+    this.state.chests = this.generateChests();
     this.state.character = this.config.character;
     this.state.finalSwarm = false;
     this.state.player = this.createInitialPlayer();
@@ -226,6 +235,9 @@ export class GameInstance {
 
     // Update teleporters
     this.updateTeleporters(dt);
+
+    // Update chests
+    this.updateChests();
 
     // Check boss spawn
     this.checkBossSpawn();
@@ -1979,6 +1991,34 @@ export class GameInstance {
         attracted: false,
       });
     }
+
+    // Random health drops
+    if (this.state.pickups.length < MAX_PICKUPS) {
+      const roll = Math.random();
+      if (roll < HEALTH_DROP_CHANCE) {
+        this.state.pickups.push({
+          id: this.nextPickupId++,
+          type: 'health',
+          x: enemy.x + (Math.random() - 0.5),
+          y: 0.2,
+          z: enemy.z + (Math.random() - 0.5),
+          value: 50,
+          lifetime: PICKUP_LIFETIME,
+          attracted: false,
+        });
+      } else if (roll < HEALTH_DROP_CHANCE + HEALTH_SMALL_DROP_CHANCE) {
+        this.state.pickups.push({
+          id: this.nextPickupId++,
+          type: 'health_small',
+          x: enemy.x + (Math.random() - 0.5),
+          y: 0.2,
+          z: enemy.z + (Math.random() - 0.5),
+          value: 25,
+          lifetime: PICKUP_LIFETIME,
+          attracted: false,
+        });
+      }
+    }
   }
 
   private updatePickups(dt: number): void {
@@ -2028,6 +2068,13 @@ export class GameInstance {
       if (luckTome) {
         this.state.stats.silverEarned += luckTome.level;
       }
+      return;
+    }
+
+    // Health pickup — restore HP
+    if (pickup.type === 'health' || pickup.type === 'health_small') {
+      const player = this.state.player;
+      player.hp = Math.min(player.maxHp, player.hp + pickup.value);
       return;
     }
 
@@ -2696,6 +2743,40 @@ export class GameInstance {
       const save = loadSave();
       save.stats.totalEvolutions += 1;
       saveSave(save);
+    }
+  }
+
+  // =========================================================================
+  // Private: Chests
+  // =========================================================================
+
+  private generateChests(): ChestState[] {
+    const chests: ChestState[] = [];
+    const halfMap = this.config.mapSize * 0.4;
+    for (let i = 0; i < CHEST_COUNT; i++) {
+      const angle = (i / CHEST_COUNT) * Math.PI * 2 + Math.random() * 0.5;
+      const dist = 15 + Math.random() * halfMap * 0.5;
+      chests.push({
+        id: i + 1,
+        x: Math.cos(angle) * dist,
+        z: Math.sin(angle) * dist,
+        opened: false,
+        reward: CHEST_SILVER_MIN + Math.floor(Math.random() * (CHEST_SILVER_MAX - CHEST_SILVER_MIN)),
+      });
+    }
+    return chests;
+  }
+
+  private updateChests(): void {
+    const player = this.state.player;
+    if (!player.alive) return;
+    for (const chest of this.state.chests) {
+      if (chest.opened) continue;
+      const dist = distanceBetween(player.x, player.z, chest.x, chest.z);
+      if (dist < CHEST_INTERACT_RADIUS) {
+        chest.opened = true;
+        this.state.stats.silverEarned += chest.reward;
+      }
     }
   }
 

@@ -5,6 +5,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 // @ts-ignore
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
+// @ts-ignore
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import {
   GameInstance,
   TICK_INTERVAL_MS,
@@ -40,6 +42,7 @@ import {
   type UpgradeRarity,
   type CharacterType,
   type TeleporterState,
+  type ChestState,
   type DifficultyTier,
 } from '@minigame/core';
 import { PlatformInput } from '@minigame/platform';
@@ -177,6 +180,8 @@ const PICKUP_COLORS: Record<string, number> = {
   xp_purple: 0xcc44ff,
   xp_orange: 0xffaa00,
   silver: 0xeeeeee,
+  health: 0xff2222,
+  health_small: 0xff6666,
 };
 
 const RARITY_COLORS: Record<string, string> = {
@@ -408,6 +413,72 @@ async function loadModels(): Promise<void> {
   });
 
   await Promise.all(promises);
+
+  // Load OBJ item models for pickups/projectiles
+  await loadObjItems();
+}
+
+// OBJ geometry cache for pickups/projectiles
+let crystalGeometry: THREE.BufferGeometry | null = null;
+let heartGeometry: THREE.BufferGeometry | null = null;
+let boneGeometry: THREE.BufferGeometry | null = null;
+let chestClosedObj: THREE.Group | null = null;
+let chestOpenObj: THREE.Group | null = null;
+
+async function loadObjItems(): Promise<void> {
+  const objLoader = new OBJLoader();
+
+  const loadAndNormalize = async (path: string, targetSize: number): Promise<THREE.BufferGeometry> => {
+    try {
+      const obj = await objLoader.loadAsync(path) as THREE.Group;
+      let foundGeo: THREE.BufferGeometry | null = null;
+      obj.traverse((child: THREE.Object3D) => {
+        if (!foundGeo && (child as THREE.Mesh).isMesh) {
+          foundGeo = (child as THREE.Mesh).geometry;
+        }
+      });
+      if (!foundGeo) return new THREE.OctahedronGeometry(targetSize, 0);
+      const geo: THREE.BufferGeometry = foundGeo;
+      // Normalize size
+      geo.computeBoundingBox();
+      const box = geo.boundingBox!;
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z, 0.01);
+      const scale = targetSize / maxDim;
+      geo.scale(scale, scale, scale);
+      // Center
+      geo.computeBoundingBox();
+      const center = geo.boundingBox!.getCenter(new THREE.Vector3());
+      geo.translate(-center.x, -center.y, -center.z);
+      console.log(`[OBJ] Loaded: ${path} (${(geo.getAttribute('position') as THREE.BufferAttribute).count} verts)`);
+      return geo;
+    } catch (err) {
+      console.warn(`[OBJ] Failed: ${path}`, err);
+      return new THREE.OctahedronGeometry(targetSize, 0);
+    }
+  };
+
+  [crystalGeometry, heartGeometry, boneGeometry] = await Promise.all([
+    loadAndNormalize('/models/items/Crystal1.obj', 0.4),
+    loadAndNormalize('/models/items/Heart.obj', 0.5),
+    loadAndNormalize('/models/items/Bone.obj', 0.5),
+  ]);
+
+  // Load chest models (full objects, not just geometry)
+  try {
+    const chestClosed = await objLoader.loadAsync('/models/items/Chest_Closed.obj') as THREE.Group;
+    chestClosed.name = 'ChestClosed';
+    convertToToonMaterials(chestClosed);
+    chestClosedObj = chestClosed;
+
+    const chestOpen = await objLoader.loadAsync('/models/items/Chest_Open.obj') as THREE.Group;
+    chestOpen.name = 'ChestOpen';
+    convertToToonMaterials(chestOpen);
+    chestOpenObj = chestOpen;
+    console.log('[OBJ] Loaded chest models');
+  } catch (err) {
+    console.warn('[OBJ] Failed to load chests:', err);
+  }
 }
 
 // =============================================================================
@@ -459,6 +530,9 @@ export class GameScene {
   // Teleporter meshes
   private teleporterMeshes: THREE.Mesh[] = [];
   private teleporterGlowMeshes: THREE.Mesh[] = [];
+
+  // Chest rendering
+  private chestObjects: Map<number, THREE.Object3D> = new Map();
 
   // InstancedMeshes
   // Enemy rendering — individual cloned models (preserves full materials)
@@ -1293,7 +1367,8 @@ export class GameScene {
   }
 
   private setupPickupMesh(): void {
-    const geo = new THREE.OctahedronGeometry(0.35, 0);
+    // Use Crystal OBJ geometry if loaded, otherwise fallback to octahedron
+    const geo = crystalGeometry ?? new THREE.OctahedronGeometry(0.35, 0);
     const mat = new THREE.MeshToonMaterial({ color: 0x00ff66, gradientMap: toonGradientMap });
     this.pickupMesh = new THREE.InstancedMesh(geo, mat, MAX_PICKUPS);
     this.pickupMesh.name = 'Pickups';
@@ -1551,6 +1626,7 @@ export class GameScene {
     this.renderPickups(state.pickups);
     this.renderBoss(state.boss);
     this.renderTeleporters(state.teleporters);
+    this.renderChests(state.chests);
     this.updateVFX(state, dt);
     this.updateCamera(state);
 
@@ -2434,6 +2510,65 @@ export class GameScene {
       const g = 0.1 + Math.random() * 0.2;
       const b = 0.7 + Math.random() * 0.3;
       this.spawnParticle(px, y + 0.5, pz, vx, vy, vz, size, life, r, g, b);
+    }
+  }
+
+  private renderChests(chests: ChestState[]): void {
+    for (const chest of chests) {
+      let obj = this.chestObjects.get(chest.id);
+      if (!obj) {
+        // Create chest object
+        const sourceModel = chest.opened ? chestOpenObj : chestClosedObj;
+        if (sourceModel) {
+          obj = cloneSkeleton(sourceModel) as THREE.Object3D;
+        } else {
+          // Fallback: simple box
+          const geo = new THREE.BoxGeometry(1.0, 0.7, 0.6);
+          const mat = new THREE.MeshToonMaterial({ color: 0x8B4513, gradientMap: toonGradientMap });
+          obj = new THREE.Mesh(geo, mat);
+        }
+        obj.name = `Chest_${chest.id}`;
+        // Normalize chest size
+        const box = new THREE.Box3().setFromObject(obj);
+        const size = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z, 0.01);
+        const scale = 1.2 / maxDim;
+        obj.scale.set(scale, scale, scale);
+        obj.position.set(chest.x, 0, chest.z);
+        this.scene.add(obj);
+        this.chestObjects.set(chest.id, obj);
+      }
+
+      // Swap to open model when opened
+      if (chest.opened && obj.name.includes('Closed')) {
+        // Replace with open model
+        this.scene.remove(obj);
+        const openModel = chestOpenObj ? cloneSkeleton(chestOpenObj) as THREE.Object3D : obj;
+        openModel.name = `Chest_${chest.id}_Open`;
+        openModel.position.copy(obj.position);
+        openModel.scale.copy(obj.scale);
+        this.scene.add(openModel);
+        this.chestObjects.set(chest.id, openModel);
+        // Spawn gold particles
+        this.spawnPickupBurst(chest.x, 0.5, chest.z, 0xffdd00);
+      }
+    }
+  }
+
+  private spawnPickupBurst(x: number, y: number, z: number, color: number): void {
+    const c = new THREE.Color(color);
+    for (let i = 0; i < 8; i++) {
+      const p = this.vfxParticles.find(pp => !pp.active);
+      if (!p) break;
+      p.active = true;
+      p.x = x; p.y = y; p.z = z;
+      p.vx = (Math.random() - 0.5) * 3;
+      p.vy = 2 + Math.random() * 3;
+      p.vz = (Math.random() - 0.5) * 3;
+      p.r = c.r; p.g = c.g; p.b = c.b;
+      p.size = 3 + Math.random() * 2;
+      p.life = 0.8;
+      p.maxLife = 0.8;
     }
   }
 

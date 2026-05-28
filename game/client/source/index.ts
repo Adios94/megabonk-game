@@ -7,6 +7,8 @@ import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.j
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 // @ts-ignore
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+// @ts-ignore
+import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import {
   GameInstance,
   TICK_INTERVAL_MS,
@@ -464,18 +466,29 @@ async function loadObjItems(): Promise<void> {
     loadAndNormalize('/models/items/Bone.obj', 0.5),
   ]);
 
-  // Load chest models (full objects, not just geometry)
+  // Load chest models with materials (MTL + OBJ)
   try {
-    const chestClosed = await objLoader.loadAsync('/models/items/Chest_Closed.obj') as THREE.Group;
+    const mtlLoader = new MTLLoader();
+
+    const closedMtl = await mtlLoader.loadAsync('/models/items/Chest_Closed.mtl');
+    closedMtl.preload();
+    const closedObjLoader = new OBJLoader();
+    closedObjLoader.setMaterials(closedMtl);
+    const chestClosed = await closedObjLoader.loadAsync('/models/items/Chest_Closed.obj') as THREE.Group;
     chestClosed.name = 'ChestClosed';
     convertToToonMaterials(chestClosed);
     chestClosedObj = chestClosed;
 
-    const chestOpen = await objLoader.loadAsync('/models/items/Chest_Open.obj') as THREE.Group;
+    const openMtl = await mtlLoader.loadAsync('/models/items/Chest_Open.mtl');
+    openMtl.preload();
+    const openObjLoader = new OBJLoader();
+    openObjLoader.setMaterials(openMtl);
+    const chestOpen = await openObjLoader.loadAsync('/models/items/Chest_Open.obj') as THREE.Group;
     chestOpen.name = 'ChestOpen';
     convertToToonMaterials(chestOpen);
     chestOpenObj = chestOpen;
-    console.log('[OBJ] Loaded chest models');
+
+    console.log('[OBJ] Loaded chest models with materials');
   } catch (err) {
     console.warn('[OBJ] Failed to load chests:', err);
   }
@@ -2528,37 +2541,39 @@ export class GameScene {
       }
 
       if (!obj) {
-        // Create chest: brown box body + golden lid
-        const group = new THREE.Group();
-        group.name = `Chest_${chest.id}`;
-        // Body
-        const bodyGeo = new THREE.BoxGeometry(1.0, 0.6, 0.7);
-        const bodyMat = new THREE.MeshToonMaterial({ color: 0x6B3A2A, gradientMap: toonGradientMap });
-        const body = new THREE.Mesh(bodyGeo, bodyMat);
-        body.position.y = 0.3;
-        group.add(body);
-        // Lid
-        const lidGeo = new THREE.BoxGeometry(1.05, 0.25, 0.75);
-        const lidMat = new THREE.MeshToonMaterial({ color: 0xDAA520, gradientMap: toonGradientMap });
-        const lid = new THREE.Mesh(lidGeo, lidMat);
-        lid.position.y = 0.72;
-        group.add(lid);
-        // Lock
-        const lockGeo = new THREE.BoxGeometry(0.15, 0.2, 0.1);
-        const lockMat = new THREE.MeshToonMaterial({ color: 0xFFD700, gradientMap: toonGradientMap });
-        const lock = new THREE.Mesh(lockGeo, lockMat);
-        lock.position.set(0, 0.5, 0.36);
-        group.add(lock);
-
-        group.position.set(chest.x, 0, chest.z);
-        this.scene.add(group);
-        this.chestObjects.set(chest.id, group);
-        obj = group;
+        // Use loaded chest model
+        if (chestClosedObj) {
+          obj = cloneSkeleton(chestClosedObj) as THREE.Object3D;
+        } else {
+          // Fallback: brown+gold box
+          const group = new THREE.Group();
+          const bodyGeo = new THREE.BoxGeometry(1.0, 0.6, 0.7);
+          const bodyMat = new THREE.MeshToonMaterial({ color: 0x6B3A2A, gradientMap: toonGradientMap });
+          const body = new THREE.Mesh(bodyGeo, bodyMat);
+          body.position.y = 0.3;
+          group.add(body);
+          const lidGeo = new THREE.BoxGeometry(1.05, 0.25, 0.75);
+          const lidMat = new THREE.MeshToonMaterial({ color: 0xDAA520, gradientMap: toonGradientMap });
+          const lid = new THREE.Mesh(lidGeo, lidMat);
+          lid.position.y = 0.72;
+          group.add(lid);
+          obj = group;
+        }
+        obj.name = `Chest_${chest.id}`;
+        // Normalize to ~1.2 units
+        const box = new THREE.Box3().setFromObject(obj);
+        const size = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z, 0.01);
+        const scale = 1.2 / maxDim;
+        obj.scale.set(scale, scale, scale);
+        obj.position.set(chest.x, 0.1, chest.z);
+        this.scene.add(obj);
+        this.chestObjects.set(chest.id, obj);
       }
 
       // Gentle hover animation
       const time = performance.now() * 0.001;
-      obj.position.y = Math.sin(time * 1.5 + chest.id) * 0.05;
+      obj.position.y = 0.1 + Math.sin(time * 1.5 + chest.id) * 0.05;
     }
   }
 

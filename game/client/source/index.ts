@@ -424,6 +424,7 @@ async function loadModels(): Promise<void> {
 let crystalGeometry: THREE.BufferGeometry | null = null;
 let heartGeometry: THREE.BufferGeometry | null = null;
 let boneGeometry: THREE.BufferGeometry | null = null;
+let axeGeometry: THREE.BufferGeometry | null = null;
 let chestClosedObj: THREE.Group | null = null;
 let chestOpenObj: THREE.Group | null = null;
 
@@ -460,10 +461,11 @@ async function loadObjItems(): Promise<void> {
     }
   };
 
-  [crystalGeometry, heartGeometry, boneGeometry] = await Promise.all([
+  [crystalGeometry, heartGeometry, boneGeometry, axeGeometry] = await Promise.all([
     loadAndNormalize('/models/items/Crystal1.obj', 0.4),
     loadAndNormalize('/models/items/Heart.obj', 0.5),
     loadAndNormalize('/models/items/Bone.obj', 0.5),
+    loadAndNormalize('/models/items/Axe_small.obj', 0.6),
   ]);
 
   // Load chest models with materials (MTL + OBJ)
@@ -556,6 +558,7 @@ export class GameScene {
   private enemyAnimStates: Map<number, string> = new Map(); // id → current anim name
   private enemyAnimActions: Map<number, Map<string, THREE.AnimationAction>> = new Map(); // id → actions map
   private projectileMesh!: THREE.InstancedMesh;
+  private axeProjectileMesh!: THREE.InstancedMesh;
   private pickupMesh!: THREE.InstancedMesh;
 
   // VFX Particle System
@@ -1377,6 +1380,15 @@ export class GameScene {
     this.projectileMesh.count = 0;
     this.projectileMesh.frustumCulled = false;
     this.scene.add(this.projectileMesh);
+
+    // Axe-specific InstancedMesh (uses loaded axe geometry)
+    const axeGeo = axeGeometry ?? new THREE.ConeGeometry(0.3, 0.6, 4);
+    const axeMat = new THREE.MeshToonMaterial({ color: 0x888888, gradientMap: toonGradientMap });
+    this.axeProjectileMesh = new THREE.InstancedMesh(axeGeo, axeMat, 20);
+    this.axeProjectileMesh.name = 'AxeProjectiles';
+    this.axeProjectileMesh.count = 0;
+    this.axeProjectileMesh.frustumCulled = false;
+    this.scene.add(this.axeProjectileMesh);
   }
 
   private setupPickupMesh(): void {
@@ -2103,8 +2115,21 @@ export class GameScene {
 
   private renderProjectiles(projectiles: ProjectileState[]): void {
     let count = 0;
+    let axeCount = 0;
     const time = performance.now() * 0.005;
     for (const proj of projectiles) {
+      // Axe projectiles go to dedicated axe mesh
+      if (proj.weaponType === 'axe') {
+        this._dummy.position.set(proj.x, proj.y, proj.z);
+        // Spinning axe
+        this._dummy.rotation.set(0, time * 4 + proj.id, time * 2);
+        this._dummy.scale.set(1.5, 1.5, 1.5);
+        this._dummy.updateMatrix();
+        this.axeProjectileMesh.setMatrixAt(axeCount, this._dummy.matrix);
+        axeCount++;
+        continue;
+      }
+
       this._dummy.position.set(proj.x, proj.y, proj.z);
 
       // Projectile visual variety: scale by weapon type
@@ -2115,7 +2140,6 @@ export class GameScene {
           case 'tornado': scale = 2.0; break;
           case 'fire_staff': scale = 1.8; break;
           case 'aura': scale = 2.5; break;
-          case 'axe': scale = 1.5; break;
           case 'sword': case 'katana': scale = 1.2; break;
           case 'revolver': case 'bow': scale = 0.6; break;
           case 'shotgun': scale = 0.4; break;
@@ -2125,7 +2149,7 @@ export class GameScene {
       }
 
       // Add spinning for bone_bouncer and tornado
-      if (proj.weaponType === 'bone_bouncer' || proj.weaponType === 'tornado' || proj.weaponType === 'axe') {
+      if (proj.weaponType === 'bone_bouncer' || proj.weaponType === 'tornado') {
         this._dummy.rotation.set(0, time * 4 + proj.id, time * 2);
       } else if (proj.weaponType === 'sword' || proj.weaponType === 'katana') {
         // Elongated slash feel (stretch on movement axis)
@@ -2167,6 +2191,10 @@ export class GameScene {
     this.projectileMesh.count = count;
     this.projectileMesh.instanceMatrix.needsUpdate = true;
     if (this.projectileMesh.instanceColor) this.projectileMesh.instanceColor.needsUpdate = true;
+
+    // Update axe mesh
+    this.axeProjectileMesh.count = axeCount;
+    this.axeProjectileMesh.instanceMatrix.needsUpdate = true;
   }
 
   private renderPickups(pickups: PickupState[]): void {

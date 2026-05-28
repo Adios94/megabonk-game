@@ -1400,9 +1400,9 @@ export class GameScene {
   }
 
   private setupProjectileMesh(): void {
-    // Elongated diamond shape for projectiles (looks like a dart/bullet)
-    const geo = new THREE.ConeGeometry(0.15, 0.6, 6);
-    geo.rotateX(Math.PI / 2); // Point forward (along Z)
+    // Use extracted geometry from RPG item models based on weapon type
+    // For InstancedMesh we need one shared geometry — use sword as default
+    const geo = extractGeometry(loadedModels.item_dart, 0.5);
     const mat = new THREE.MeshToonMaterial({ color: 0xffee44, gradientMap: toonGradientMap });
     this.projectileMesh = new THREE.InstancedMesh(geo, mat, MAX_PROJECTILES);
     this.projectileMesh.name = 'Projectiles';
@@ -1412,8 +1412,8 @@ export class GameScene {
   }
 
   private setupPickupMesh(): void {
-    // Diamond/gem shape for pickups (two cones = classic RPG crystal)
-    const geo = new THREE.OctahedronGeometry(0.3, 0);
+    // Use crystal geometry from RPG items for XP pickups
+    const geo = extractGeometry(loadedModels.item_crystal, 0.5);
     const mat = new THREE.MeshToonMaterial({ color: 0x00ff66, gradientMap: toonGradientMap });
     this.pickupMesh = new THREE.InstancedMesh(geo, mat, MAX_PICKUPS);
     this.pickupMesh.name = 'Pickups';

@@ -209,6 +209,7 @@ export function fireWeapon(
         damageEvents.push({
           x: target.x, y: 1.0, z: target.z,
           damage: finalDamage, isCrit, isPlayerDamage: false,
+          weaponType: 'lightning_staff',
         });
       }
       break;

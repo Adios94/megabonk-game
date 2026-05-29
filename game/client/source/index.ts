@@ -164,7 +164,7 @@ const WEAPON_PROJECTILE_COLORS: Record<string, number> = {
   sword: 0xcccccc,
   bone_bouncer: 0xf5f5dc,
   axe: 0x888888,
-  bow: 0x8b4513,
+  bow: 0xffcc44, // displayed as Revolver — gold/brass bullet
   lightning_staff: 0x44aaff,
   flame_ring: 0xff6600,
   tornado: 0x88ccaa,
@@ -237,6 +237,45 @@ function convertToToonMaterials(root: THREE.Object3D): void {
       return toon;
     });
     mesh.material = toonMats.length === 1 ? toonMats[0] : toonMats;
+  });
+}
+
+/**
+ * Lift weapon materials so they don't collapse to near-black under our 3-step
+ * toon ramp. Applies a gamma curve (darks brighten more than brights) plus a
+ * small emissive floor so the shadow side stays readable.
+ *
+ * IMPORTANT: only call this on weapon meshes. Chests, scenery, and player
+ * models intentionally keep their original tones.
+ */
+function brightenWeaponMaterials(root: THREE.Object3D): void {
+  const gamma = 0.55;
+  const emissiveFloor = 0.18;
+  root.traverse((child) => {
+    if (!(child as THREE.Mesh).isMesh) return;
+    const mesh = child as THREE.Mesh;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const lifted = mats.map((mat) => {
+      const m = mat as THREE.MeshToonMaterial;
+      const original = (m.color ?? new THREE.Color(0xffffff)).clone();
+      const c = new THREE.Color(
+        Math.pow(original.r, gamma),
+        Math.pow(original.g, gamma),
+        Math.pow(original.b, gamma),
+      );
+      const newMat = new THREE.MeshToonMaterial({
+        color: c,
+        emissive: c.clone().multiplyScalar(emissiveFloor),
+        map: m.map ?? null,
+        gradientMap: m.gradientMap ?? toonGradientMap,
+        side: m.side ?? THREE.FrontSide,
+        transparent: m.transparent ?? false,
+        opacity: m.opacity ?? 1,
+      });
+      newMat.name = m.name || 'WeaponToon';
+      return newMat;
+    });
+    mesh.material = lifted.length === 1 ? lifted[0] : lifted;
   });
 }
 
@@ -426,6 +465,7 @@ let bowModel: THREE.Group | null = null;
 let daggerModel: THREE.Group | null = null;
 let hammerModel: THREE.Group | null = null;
 let dartModel: THREE.Group | null = null;
+let dartGoldenModel: THREE.Group | null = null; // Used for shotgun pellets
 // Evolved (golden) variants
 let swordGoldenModel: THREE.Group | null = null;
 let axeGoldenModel: THREE.Group | null = null;
@@ -480,7 +520,15 @@ async function loadObjItems(): Promise<void> {
   ]);
 
   // Helper: load full model with materials (MTL + OBJ)
-  const loadFullModel = async (name: string, mtlPath: string, objPath: string, targetSize: number): Promise<THREE.Group | null> => {
+  // brighten=true also lifts dark Kd values so the model isn't a black blob
+  // under our 3-step toon ramp. Use it for weapons; chests stay original.
+  const loadFullModel = async (
+    name: string,
+    mtlPath: string,
+    objPath: string,
+    targetSize: number,
+    brighten = false,
+  ): Promise<THREE.Group | null> => {
     try {
       const mtlLoader = new MTLLoader();
       const mtl = await mtlLoader.loadAsync(mtlPath);
@@ -490,6 +538,7 @@ async function loadObjItems(): Promise<void> {
       const obj = await loader.loadAsync(objPath) as THREE.Group;
       obj.name = name;
       convertToToonMaterials(obj);
+      if (brighten) brightenWeaponMaterials(obj);
       const box = new THREE.Box3().setFromObject(obj);
       const size = box.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z, 0.01);
@@ -503,20 +552,49 @@ async function loadObjItems(): Promise<void> {
     }
   };
 
-  // Load all weapon models in parallel
-  const [ax, sw, kat, bow, dag, ham, dar, swG, axG, bowG, dagG, katG] = await Promise.all([
-    loadFullModel('AxeModel', '/models/items/Axe_small.mtl', '/models/items/Axe_small.obj', 0.6),
-    loadFullModel('SwordModel', '/models/items/Sword.mtl', '/models/items/Sword.obj', 0.8),
-    loadFullModel('KatanaModel', '/models/items/Sword_big.mtl', '/models/items/Sword_big.obj', 0.9),
-    loadFullModel('BowModel', '/models/items/Bow_Wooden.mtl', '/models/items/Bow_Wooden.obj', 0.7),
-    loadFullModel('DaggerModel', '/models/items/Dagger.mtl', '/models/items/Dagger.obj', 0.4),
-    loadFullModel('HammerModel', '/models/items/Hammer_Double.mtl', '/models/items/Hammer_Double.obj', 0.7),
-    loadFullModel('DartModel', '/models/items/Dart.mtl', '/models/items/Dart.obj', 0.4),
-    loadFullModel('SwordGolden', '/models/items/Sword_Golden.mtl', '/models/items/Sword_Golden.obj', 0.8),
-    loadFullModel('AxeGolden', '/models/items/Axe_Double_Golden.mtl', '/models/items/Axe_Double_Golden.obj', 0.7),
-    loadFullModel('BowGolden', '/models/items/Bow_Golden.mtl', '/models/items/Bow_Golden.obj', 0.7),
-    loadFullModel('DaggerGolden', '/models/items/Dagger_Golden.mtl', '/models/items/Dagger_Golden.obj', 0.4),
-    loadFullModel('KatanaGolden', '/models/items/Sword_big_Golden.mtl', '/models/items/Sword_big_Golden.obj', 0.9),
+  // Helper: load full GLB weapon model (with embedded materials)
+  // Used for weapons that ship as .glb instead of .obj/.mtl pair.
+  const loadGlbWeaponModel = async (
+    name: string,
+    glbPath: string,
+    targetSize: number,
+    brighten = false,
+  ): Promise<THREE.Group | null> => {
+    try {
+      const gltf = await gltfLoader.loadAsync(glbPath);
+      const obj = gltf.scene as THREE.Group;
+      obj.name = name;
+      convertToToonMaterials(obj);
+      if (brighten) brightenWeaponMaterials(obj);
+      const box = new THREE.Box3().setFromObject(obj);
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z, 0.01);
+      const s = targetSize / maxDim;
+      obj.scale.set(s, s, s);
+      console.log(`[GLB] Loaded ${name} model`);
+      return obj;
+    } catch (err) {
+      console.warn(`[GLB] Failed to load ${name}:`, err);
+      return null;
+    }
+  };
+
+  // Load all weapon models in parallel — pass brighten=true for weapons only
+  const [ax, sw, kat, bow, dag, ham, dar, darG, swG, axG, bowG, dagG, katG] = await Promise.all([
+    loadFullModel('AxeModel', '/models/items/Axe_small.mtl', '/models/items/Axe_small.obj', 0.6, true),
+    loadFullModel('SwordModel', '/models/items/Sword.mtl', '/models/items/Sword.obj', 0.8, true),
+    loadFullModel('KatanaModel', '/models/items/Sword_big.mtl', '/models/items/Sword_big.obj', 0.9, true),
+    // "bow" weapon is displayed in-game as the Revolver — use the GLB pistol model
+    loadGlbWeaponModel('BowModel', '/models/items/Revolver.glb', 0.7, true),
+    loadFullModel('DaggerModel', '/models/items/Dagger.mtl', '/models/items/Dagger.obj', 0.4, true),
+    loadFullModel('HammerModel', '/models/items/Hammer_Double.mtl', '/models/items/Hammer_Double.obj', 0.7, true),
+    loadFullModel('DartModel', '/models/items/Dart.mtl', '/models/items/Dart.obj', 0.4, true),
+    loadFullModel('DartGoldenModel', '/models/items/Dart_Golden.mtl', '/models/items/Dart_Golden.obj', 0.45, true),
+    loadFullModel('SwordGolden', '/models/items/Sword_Golden.mtl', '/models/items/Sword_Golden.obj', 0.8, true),
+    loadFullModel('AxeGolden', '/models/items/Axe_Double_Golden.mtl', '/models/items/Axe_Double_Golden.obj', 0.7, true),
+    loadFullModel('BowGolden', '/models/items/Bow_Golden.mtl', '/models/items/Bow_Golden.obj', 0.7, true),
+    loadFullModel('DaggerGolden', '/models/items/Dagger_Golden.mtl', '/models/items/Dagger_Golden.obj', 0.4, true),
+    loadFullModel('KatanaGolden', '/models/items/Sword_big_Golden.mtl', '/models/items/Sword_big_Golden.obj', 0.9, true),
   ]);
   axeModel = ax;
   swordModel = sw;
@@ -525,6 +603,7 @@ async function loadObjItems(): Promise<void> {
   daggerModel = dag;
   hammerModel = ham;
   dartModel = dar;
+  dartGoldenModel = darG;
   swordGoldenModel = swG;
   axeGoldenModel = axG;
   bowGoldenModel = bowG;
@@ -588,9 +667,27 @@ export class GameScene {
   private bossMesh: THREE.Mesh | null = null;
   private playerSpotLight!: THREE.SpotLight;
 
-  // Weapon orbs
+  // Weapon orbs (legacy — disabled, kept to avoid breaking older saves)
   private weaponOrbMesh!: THREE.InstancedMesh;
   private readonly MAX_WEAPON_ORBS = 6;
+
+  // Weapon floaters — physical weapons orbit the player as visual indicator
+  // Magic weapons (lightning_staff / flame_ring / tornado) use VFX only
+  private weaponFloaters: Map<string, THREE.Object3D> = new Map();
+  private static readonly FLOATER_WEAPON_TYPES: ReadonlyArray<string> = [
+    'sword', 'bone_bouncer', 'axe', 'bow', 'shotgun',
+  ];
+
+  // Transient mesh-based VFX (slash arcs, lightning columns)
+  private slashEffects: Array<{ mesh: THREE.Mesh; life: number; maxLife: number }> = [];
+  private lightningBolts: Array<{ mesh: THREE.Mesh; life: number; maxLife: number }> = [];
+  // Persistent flame_ring disk centered on player while equipped
+  private flameRingDisk: THREE.Mesh | null = null;
+  private flameRingTime = 0;
+  // Tornado vortex meshes per projectile id
+  private tornadoMeshes: Map<number, THREE.Group> = new Map();
+  // Edge-detect weapon firing for one-shot VFX
+  private lastWeaponCooldown: Map<string, number> = new Map();
 
   // Animation state
   private deathAnimTimer = 0;
@@ -1906,8 +2003,10 @@ export class GameScene {
       this.playerAuraMesh.visible = false;
     }
 
-    // === Weapon orbs ===
+    // === Weapon orbs (legacy stub) ===
     this.renderWeaponOrbs(state);
+    // === Floating weapon display (physical weapons hover near player) ===
+    this.renderWeaponFloaters(state);
   }
 
   private renderWeaponOrbs(state: GameState): void {
@@ -1937,6 +2036,258 @@ export class GameScene {
     this.weaponOrbMesh.count = state.player.alive ? count : 0;
     this.weaponOrbMesh.instanceMatrix.needsUpdate = true;
     if (this.weaponOrbMesh.instanceColor) this.weaponOrbMesh.instanceColor.needsUpdate = true;
+  }
+
+  // Build a base 3D model for the given physical weapon type to float near
+  // the player. Always returns base (unevolved) model — upgrades are reflected
+  // through stats/effects, not floater geometry.
+  private buildFloaterModel(weaponType: string): THREE.Object3D | null {
+    switch (weaponType) {
+      case 'sword':    return swordModel ? swordModel.clone(true) : null;
+      case 'axe':      return axeModel ? axeModel.clone(true) : null;
+      case 'bow':      return bowModel ? bowModel.clone(true) : null; // Revolver model
+      case 'shotgun':  return dartGoldenModel ? dartGoldenModel.clone(true) : null;
+      case 'bone_bouncer': {
+        if (!boneGeometry) return null;
+        const mat = new THREE.MeshToonMaterial({ color: 0xf5f5dc, gradientMap: toonGradientMap });
+        return new THREE.Mesh(boneGeometry.clone(), mat);
+      }
+      default: return null;
+    }
+  }
+
+  // Renders physical weapons (sword/axe/bone/bow/shotgun) as visual
+  // floaters that orbit the player. Magic weapons render no floater —
+  // they express themselves entirely through VFX (see updateVFX).
+  private renderWeaponFloaters(state: GameState): void {
+    const player = state.player;
+    if (!player.alive) {
+      for (const obj of this.weaponFloaters.values()) obj.visible = false;
+      return;
+    }
+
+    const time = performance.now() * 0.001;
+
+    // Equipped physical weapon types (preserve weapons[] order so each
+    // floater keeps a stable orbit slot)
+    const equipped: string[] = [];
+    for (const w of player.weapons) {
+      if (GameScene.FLOATER_WEAPON_TYPES.includes(w.type)) equipped.push(w.type);
+    }
+    const equippedSet = new Set(equipped);
+
+    // Hide unequipped floaters
+    for (const [type, obj] of this.weaponFloaters) {
+      if (!equippedSet.has(type)) obj.visible = false;
+    }
+
+    if (equipped.length === 0) return;
+
+    const orbitRadius = 1.4;
+    const orbitSpeed = 0.6; // rad/sec
+    const slotCount = equipped.length;
+
+    for (let i = 0; i < slotCount; i++) {
+      const type = equipped[i];
+      let obj = this.weaponFloaters.get(type);
+      if (!obj) {
+        const built = this.buildFloaterModel(type);
+        if (!built) continue;
+        obj = built;
+        obj.name = `Floater_${type}`;
+        this.scene.add(obj);
+        this.weaponFloaters.set(type, obj);
+      }
+
+      // Distribute around player
+      const slotAngle = (i / slotCount) * Math.PI * 2;
+      const angle = time * orbitSpeed + slotAngle;
+      const orbX = player.x + Math.cos(angle) * orbitRadius;
+      const orbZ = player.z + Math.sin(angle) * orbitRadius;
+      const bobY = player.y + 1.5 + Math.sin(time * 2.0 + i * 1.3) * 0.18;
+      obj.position.set(orbX, bobY, orbZ);
+
+      // Per-weapon self-rotation: each weapon has a recognizable idle pose
+      obj.rotation.order = 'YXZ';
+      switch (type) {
+        case 'axe':
+          // Spin like a discus: blade axis points outward from player
+          obj.rotation.set(Math.PI / 2, angle + Math.PI / 2, time * 6);
+          break;
+        case 'sword':
+          // Tip up, slow yaw spin
+          obj.rotation.set(0, time * 1.4, 0);
+          break;
+        case 'bow':
+        case 'shotgun':
+          // Dart points along orbit tangent (forward direction of travel)
+          obj.rotation.set(Math.sin(time * 2 + i) * 0.15, angle + Math.PI / 2, 0);
+          break;
+        case 'bone_bouncer':
+          // Tumbling bone
+          obj.rotation.set(time * 1.6 + i, time * 2.2 + i * 0.7, time * 1.0);
+          break;
+      }
+      obj.visible = true;
+    }
+  }
+
+  // === Magic weapon VFX ===
+
+  // Sword slash arc: a horizontal ring-segment plane that flashes on cooldown reset
+  private spawnSlashArc(x: number, y: number, z: number, angle: number): void {
+    // 120° arc, inner 1.0 → outer 1.9
+    const geo = new THREE.RingGeometry(1.0, 1.9, 24, 1, -Math.PI / 3, (Math.PI * 2) / 3);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xddffff,
+      transparent: true,
+      opacity: 0.9,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    // Lay flat on horizontal plane
+    mesh.rotation.x = -Math.PI / 2;
+    // Aim the arc opening toward the target direction
+    mesh.rotation.z = -angle + Math.PI / 2;
+    mesh.position.set(x, y, z);
+    this.scene.add(mesh);
+    this.slashEffects.push({ mesh, life: 0.18, maxLife: 0.18 });
+  }
+
+  // Lightning bolt: tall thin column that flashes once at impact, plus sparks
+  private spawnLightningBolt(x: number, y: number, z: number): void {
+    const height = 8;
+    const geo = new THREE.CylinderGeometry(0.08, 0.22, height, 6, 1, true);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xaaddff,
+      transparent: true,
+      opacity: 1.0,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, y + height * 0.5, z);
+    // Slight random twist so adjacent bolts don't look identical
+    mesh.rotation.y = Math.random() * Math.PI;
+    this.scene.add(mesh);
+    this.lightningBolts.push({ mesh, life: 0.22, maxLife: 0.22 });
+
+    // Spark burst at impact — light blue/white
+    const sparkCount = 14;
+    for (let i = 0; i < sparkCount; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const speed = 3 + Math.random() * 4;
+      const sg = 0.7 + Math.random() * 0.3;
+      const sb = 1.0;
+      const sr = 0.5 + Math.random() * 0.4;
+      this.spawnParticle(
+        x, y + 0.5, z,
+        Math.cos(a) * speed, 4 + Math.random() * 3, Math.sin(a) * speed,
+        1.4 + Math.random() * 0.6,
+        0.3 + Math.random() * 0.2,
+        sr, sg, sb,
+      );
+    }
+  }
+
+  // Persistent flame ring disk — created lazily, follows player while equipped
+  private ensureFlameRingDisk(): THREE.Mesh {
+    if (this.flameRingDisk) return this.flameRingDisk;
+    const geo = new THREE.RingGeometry(1.7, 2.7, 48);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xff5511,
+      transparent: true,
+      opacity: 0.45,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.name = 'FlameRingDisk';
+    this.scene.add(mesh);
+    this.flameRingDisk = mesh;
+    return mesh;
+  }
+
+  // Tornado vortex shape: stacked cones for funnel + dark core
+  private buildTornadoShape(): THREE.Group {
+    const group = new THREE.Group();
+
+    // Outer cone (wide at top, narrow at bottom — inverted cone)
+    const outerGeo = new THREE.ConeGeometry(1.4, 3.2, 18, 6, true);
+    const outerMat = new THREE.MeshBasicMaterial({
+      color: 0xb6f0c8,
+      transparent: true,
+      opacity: 0.55,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const outer = new THREE.Mesh(outerGeo, outerMat);
+    // Default cone has tip at +Y, base at -Y. We want narrow tip at bottom → flip.
+    outer.rotation.x = Math.PI;
+    outer.position.y = 1.6;
+    outer.name = 'TornadoOuter';
+    group.add(outer);
+
+    // Inner darker core
+    const innerGeo = new THREE.ConeGeometry(0.55, 2.6, 14, 4, true);
+    const innerMat = new THREE.MeshBasicMaterial({
+      color: 0x4a8866,
+      transparent: true,
+      opacity: 0.7,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const inner = new THREE.Mesh(innerGeo, innerMat);
+    inner.rotation.x = Math.PI;
+    inner.position.y = 1.3;
+    inner.name = 'TornadoInner';
+    group.add(inner);
+
+    return group;
+  }
+
+  // Drive transient meshes (slash arcs, lightning bolts): fade and dispose
+  private updateTransientEffects(dt: number): void {
+    // Slash arcs: scale up + fade
+    for (let i = this.slashEffects.length - 1; i >= 0; i--) {
+      const e = this.slashEffects[i];
+      e.life -= dt;
+      if (e.life <= 0) {
+        this.scene.remove(e.mesh);
+        e.mesh.geometry.dispose();
+        (e.mesh.material as THREE.Material).dispose();
+        this.slashEffects.splice(i, 1);
+        continue;
+      }
+      const t = e.life / e.maxLife;     // 1 → 0
+      const grow = 1 + (1 - t) * 0.45;
+      e.mesh.scale.set(grow, grow, 1);
+      (e.mesh.material as THREE.MeshBasicMaterial).opacity = 0.9 * t;
+    }
+
+    // Lightning bolts: brief flash, fade quickly with slight scale jitter
+    for (let i = this.lightningBolts.length - 1; i >= 0; i--) {
+      const e = this.lightningBolts[i];
+      e.life -= dt;
+      if (e.life <= 0) {
+        this.scene.remove(e.mesh);
+        e.mesh.geometry.dispose();
+        (e.mesh.material as THREE.Material).dispose();
+        this.lightningBolts.splice(i, 1);
+        continue;
+      }
+      const t = e.life / e.maxLife;
+      const jitter = 0.85 + Math.random() * 0.3;
+      e.mesh.scale.set(jitter, 1, jitter);
+      (e.mesh.material as THREE.MeshBasicMaterial).opacity = t * t; // sharper fade
+    }
   }
 
   private spawnSlideDust(x: number, y: number, z: number): void {
@@ -2173,6 +2524,7 @@ export class GameScene {
     const time = performance.now() * 0.005;
     const activeAxeIds = new Set<number>();
     const activeWeaponIds = new Set<number>();
+    const activeTornadoIds = new Set<number>();
 
     // Helper: get the model for a weapon type (handles evolved variants)
     const getWeaponModel = (weaponType: string, evolved: boolean): THREE.Group | null => {
@@ -2180,7 +2532,7 @@ export class GameScene {
         switch (weaponType) {
           case 'sword': return swordGoldenModel ?? swordModel;
           case 'axe': return axeGoldenModel ?? axeModel;
-          case 'bow': return bowGoldenModel ?? bowModel;
+          case 'bow': return null; // revolver-style bullets via InstancedMesh
           case 'katana': return katanaGoldenModel ?? katanaModel;
           default: return null;
         }
@@ -2189,10 +2541,10 @@ export class GameScene {
         case 'axe': return axeModel;
         case 'sword': return swordModel;
         case 'katana': return katanaModel;
-        case 'bow': return dartModel; // bow shoots arrows (dart model)
+        case 'bow': return null; // displayed as Revolver — fires bullets via InstancedMesh
         case 'bone_bouncer': return null; // handled with boneGeometry fallback below
         case 'revolver': return null; // uses InstancedMesh (bullet)
-        case 'shotgun': return null; // uses InstancedMesh (pellets)
+        case 'shotgun': return dartGoldenModel; // golden dart pellets
         case 'hammer': return hammerModel;
         case 'dagger': return daggerModel;
         case 'dart': return dartModel;
@@ -2201,7 +2553,8 @@ export class GameScene {
     };
 
     // Weapon types that use individual model clones (not InstancedMesh)
-    const modelWeaponTypes = new Set(['axe', 'sword', 'katana', 'hammer', 'dagger', 'dart', 'bow', 'bone_bouncer', 'revolver']);
+    // Note: 'bow' is NOT included — it's the in-game Revolver and uses bullet InstancedMesh
+    const modelWeaponTypes = new Set(['axe', 'sword', 'katana', 'hammer', 'dagger', 'dart', 'bone_bouncer', 'revolver', 'shotgun']);
 
     for (const proj of projectiles) {
       // Axe projectiles: orbiting, blade faces outward
@@ -2296,6 +2649,25 @@ export class GameScene {
         continue;
       }
 
+      // Tornado: tall vortex cone shape, fast spin around vertical axis
+      if (proj.weaponType === 'tornado' && proj.fromPlayer) {
+        activeTornadoIds.add(proj.id);
+        let mesh = this.tornadoMeshes.get(proj.id);
+        if (!mesh) {
+          mesh = this.buildTornadoShape();
+          mesh.name = `Tornado_${proj.id}`;
+          this.scene.add(mesh);
+          this.tornadoMeshes.set(proj.id, mesh);
+        }
+        mesh.position.set(proj.x, proj.y, proj.z);
+        mesh.rotation.y = time * 18 + proj.id;
+        // Subtle scale pulse to read as alive/swirling
+        const pulse = 1.0 + Math.sin(time * 6 + proj.id) * 0.06;
+        mesh.scale.set(pulse, 1.0, pulse);
+        mesh.visible = true;
+        continue;
+      }
+
       // All other projectiles: use InstancedMesh (spheres)
       this._dummy.position.set(proj.x, proj.y, proj.z);
 
@@ -2312,8 +2684,8 @@ export class GameScene {
         }
       }
 
-      // Add spinning for bone_bouncer and tornado
-      if (proj.weaponType === 'bone_bouncer' || proj.weaponType === 'tornado') {
+      // Add spinning for bone_bouncer (tornado is rendered separately above)
+      if (proj.weaponType === 'bone_bouncer') {
         this._dummy.rotation.set(0, time * 4 + proj.id, time * 2);
       } else if (proj.weaponType === 'sword') {
         const speed = Math.sqrt(proj.vx * proj.vx + proj.vz * proj.vz);
@@ -2363,6 +2735,20 @@ export class GameScene {
       if (!activeWeaponIds.has(id)) {
         this.scene.remove(obj);
         this.weaponObjects.delete(id);
+      }
+    }
+    // Remove tornado meshes whose projectile expired
+    for (const [id, mesh] of this.tornadoMeshes) {
+      if (!activeTornadoIds.has(id)) {
+        this.scene.remove(mesh);
+        mesh.traverse(obj => {
+          if ((obj as THREE.Mesh).isMesh) {
+            const m = obj as THREE.Mesh;
+            m.geometry.dispose();
+            (m.material as THREE.Material).dispose();
+          }
+        });
+        this.tornadoMeshes.delete(id);
       }
     }
   }
@@ -2805,39 +3191,87 @@ export class GameScene {
       if (isDeath) {
         this.emitDeathBurst(event.x, event.y, event.z, 'generic');
       } else {
-        // Determine weapon type from context (use first weapon as approximation)
-        const weaponType = player.weapons.length > 0 ? player.weapons[0].type : 'sword';
+        // Prefer the event's source weapon for spark color; fall back to first equipped weapon
+        const weaponType = event.weaponType
+          ?? (player.weapons.length > 0 ? player.weapons[0].type : 'sword');
         this.emitHitSparks(event.x, event.y + 0.5, event.z, weaponType);
+      }
+
+      // Lightning staff: drop a column at each strike
+      if (event.weaponType === 'lightning_staff') {
+        this.spawnLightningBolt(event.x, 0, event.z);
       }
     }
 
     // Continuous weapon effects
+    let hasFlameRing = false;
     for (const weapon of player.weapons) {
       if (weapon.type === 'flame_ring' && player.alive) {
         this.emitFlameRingParticles(player.x, player.y, player.z, 2.5);
+        hasFlameRing = true;
       }
+    }
+
+    // Flame ring persistent disk (lazy-create + follow player)
+    if (hasFlameRing && player.alive) {
+      const disk = this.ensureFlameRingDisk();
+      disk.visible = true;
+      disk.position.set(player.x, 0.05, player.z);
+      this.flameRingTime += dt;
+      const pulse = 0.35 + Math.sin(this.flameRingTime * 4) * 0.15;
+      (disk.material as THREE.MeshBasicMaterial).opacity = pulse;
+      disk.rotation.z = this.flameRingTime * 0.8;
+    } else if (this.flameRingDisk) {
+      this.flameRingDisk.visible = false;
     }
 
     // === Weapon Trail VFX (#12) ===
     // Projectile trails for player weapons
     for (const proj of state.projectiles) {
       if (!proj.fromPlayer) continue;
-      // Every 2 ticks spawn a trail particle
+
+      // Tornado emits an upward spiral every tick (more dramatic than a single trail dot)
+      if (proj.weaponType === 'tornado') {
+        if (state.tick % 1 === 0) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = 0.4 + Math.random() * 0.7;
+          const px = proj.x + Math.cos(angle) * dist;
+          const pz = proj.z + Math.sin(angle) * dist;
+          this.spawnParticle(
+            px, proj.y + 0.2, pz,
+            -Math.sin(angle) * 2.5, 3 + Math.random() * 2, Math.cos(angle) * 2.5,
+            0.6 + Math.random() * 0.3,
+            0.25 + Math.random() * 0.15,
+            0.55 + Math.random() * 0.2, 0.95, 0.65,
+          );
+        }
+        continue;
+      }
+
+      // Other player projectiles: short trail dot every 2 ticks
       if (state.tick % 2 === 0) {
         const color = GameScene.WEAPON_VFX_COLORS[proj.weaponType] ?? [1, 1, 1];
+        // Shotgun: brighter, larger trail to read as buckshot
+        const isShotgun = proj.weaponType === 'shotgun';
         this.spawnParticle(
           proj.x, proj.y, proj.z,
-          0, 0, 0, // trail stays in place
-          0.4,     // small size
-          0.2,     // short lifetime
-          color[0] * 0.7, color[1] * 0.7, color[2] * 0.7, // slightly dimmer
+          0, 0, 0,
+          isShotgun ? 0.6 : 0.4,
+          isShotgun ? 0.25 : 0.2,
+          color[0] * (isShotgun ? 1.0 : 0.7),
+          color[1] * (isShotgun ? 1.0 : 0.7),
+          color[2] * (isShotgun ? 1.0 : 0.7),
         );
       }
     }
 
-    // Melee weapon slash arc (sword) — emit arc particles toward nearest enemy
+    // Sword slash arc — fires once on each swing (edge-detect cooldown reset)
     for (const weapon of player.weapons) {
-      if (weapon.type === 'sword' && weapon.cooldownTimer > 0 && weapon.cooldownTimer < 0.1 && player.alive) {
+      if (weapon.type !== 'sword') continue;
+      const prev = this.lastWeaponCooldown.get('sword') ?? Infinity;
+      const curr = weapon.cooldownTimer;
+      // cooldownTimer just jumped UP → weapon fired this frame
+      if (curr > prev + 0.05 && player.alive) {
         // Find nearest enemy for slash direction
         let slashAngle = player.rotation;
         let nearestDist = Infinity;
@@ -2852,23 +3286,29 @@ export class GameScene {
           }
         }
 
-        // Spawn 6 particles in an arc toward the target
-        const baseAngle = slashAngle;
-        for (let i = 0; i < 6; i++) {
-          const arcAngle = baseAngle + (i - 2.5) * 0.25;
-          const dist = 1.5 + Math.random() * 0.5;
+        // Big horizontal arc plane that flashes & fades
+        this.spawnSlashArc(player.x, player.y + 0.6, player.z, slashAngle);
+
+        // 12 lightweight particles streaking along the arc for extra punch
+        for (let i = 0; i < 12; i++) {
+          const arcAngle = slashAngle + (i - 5.5) * 0.18;
+          const dist = 1.5 + Math.random() * 0.6;
           const px = player.x + Math.sin(arcAngle) * dist;
           const pz = player.z + Math.cos(arcAngle) * dist;
           this.spawnParticle(
             px, player.y + 1.0, pz,
-            Math.sin(arcAngle) * 2, 0.5, Math.cos(arcAngle) * 2,
+            Math.sin(arcAngle) * 1.8, 0.8 + Math.random() * 0.6, Math.cos(arcAngle) * 1.8,
             0.5,
-            0.15,
-            0.95, 0.95, 1.0,
+            0.18,
+            0.95, 0.97, 1.0,
           );
         }
       }
+      this.lastWeaponCooldown.set('sword', curr);
     }
+
+    // Drive transient mesh effects (slash arcs, lightning bolts)
+    this.updateTransientEffects(dt);
 
     // --- Update particle physics ---
     const positions = this.vfxGeometry.attributes.position as THREE.BufferAttribute;

@@ -257,6 +257,8 @@ export interface DamageEvent {
   damage: number;
   isCrit: boolean;
   isPlayerDamage: boolean;
+  /** Optional source weapon — used by client to drive weapon-specific VFX. */
+  weaponType?: WeaponType;
 }
 
 // --- Game State ---

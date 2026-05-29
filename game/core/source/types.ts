@@ -30,15 +30,11 @@ export type WeaponType =
   | 'sword'
   | 'bone_bouncer'
   | 'axe'
-  | 'revolver'
   | 'bow'
   | 'lightning_staff'
-  | 'fire_staff'
   | 'flame_ring'
   | 'tornado'
-  | 'shotgun'
-  | 'katana'
-  | 'aura';
+  | 'shotgun';
 
 export interface WeaponState {
   type: WeaponType;

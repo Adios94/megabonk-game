@@ -4,16 +4,11 @@
  * - Sword: melee damage arc in front of player
  * - Bone Bouncer: bouncing projectile
  * - Axe: orbiting projectiles around player (Vampire Survivors style)
- * - Revolver: fast aimed shots at nearest enemy
  * - Bow: forward arrow (high speed, single target)
  * - Lightning Staff: chain lightning (instant)
- * - Fire Staff: slow fireball with AOE on hit
  * - Flame Ring: constant AOE around player
  * - Tornado: slow spinning projectile, infinite pierce, curves
  * - Shotgun: spread shot forward
- * - Black Hole: gravitational pull area
- * - Katana: fast forward slash projectile
- * - Aura: expanding damage ring around player
  */
 
 import type { EnemyState, PlayerState, ProjectileState, WeaponType, DamageEvent } from './types.ts';
@@ -22,7 +17,7 @@ import { distanceBetween, normalizeDirection } from './physics.ts';
 
 /**
  * Fire a weapon, returning new projectiles to add.
- * For instant-hit weapons (lightning_staff, sword, flame_ring, aura), damage events are pushed directly.
+ * For instant-hit weapons (lightning_staff, sword, flame_ring), damage events are pushed directly.
  */
 export function fireWeapon(
   weaponType: WeaponType,
@@ -153,40 +148,6 @@ export function fireWeapon(
       break;
     }
 
-    case 'revolver': {
-      // Auto-aimed fast shots at nearest enemy
-      const count = stats.projectileCount;
-      for (let i = 0; i < count; i++) {
-        const target = findNearestEnemyInRange(playerState.x, playerState.z, enemies, stats.range);
-        let vx: number, vz: number;
-
-        if (target) {
-          const dir = normalizeDirection(target.x - playerState.x, target.z - playerState.z);
-          vx = dir.x * stats.speed;
-          vz = dir.z * stats.speed;
-        } else {
-          vx = Math.sin(playerState.rotation) * stats.speed;
-          vz = Math.cos(playerState.rotation) * stats.speed;
-        }
-
-        const { finalDamage } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
-        projectiles.push({
-          id: currentId++,
-          weaponType: 'revolver',
-          x: playerState.x, y: 1.0, z: playerState.z,
-          vx, vy: 0, vz,
-          damage: finalDamage,
-          bouncesLeft: 0,
-          pierceLeft: stats.pierce,
-          lifetime: 2.0,
-          radius: 0.2,
-          fromPlayer: true,
-          hitEnemyIds: [],
-        });
-      }
-      break;
-    }
-
     case 'bow': {
       // Forward arrow (high speed, single target, long range)
       const count = stats.projectileCount;
@@ -227,58 +188,27 @@ export function fireWeapon(
     }
 
     case 'lightning_staff': {
-      // Orbiting lightning orbs around player
-      const count = stats.projectileCount;
-      for (let i = 0; i < count; i++) {
-        const startAngle = (i / count) * Math.PI * 2;
-        const { finalDamage } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
-        projectiles.push({
-          id: currentId++,
-          weaponType: 'lightning_staff',
-          x: playerState.x + Math.cos(startAngle) * stats.range,
-          y: 1.0,
-          z: playerState.z + Math.sin(startAngle) * stats.range,
-          vx: 0, vy: 0, vz: 0,
-          damage: finalDamage,
-          bouncesLeft: 0,
-          pierceLeft: stats.pierce,
-          lifetime: 3.0,
-          radius: 0.6,
-          fromPlayer: true,
-          hitEnemyIds: [],
-          orbiting: true,
-          orbitAngle: startAngle,
-          orbitRadius: stats.range,
-          orbitSpeed: stats.speed * 0.8,
-        });
+      // Strike random enemies within range (instant hit, no projectile movement)
+      const hitCount = stats.projectileCount + (stats.chains ?? 0);
+      const inRange: typeof enemies = [];
+      for (const enemy of enemies) {
+        if (enemy.hp <= 0) continue;
+        const dist = distanceBetween(playerState.x, playerState.z, enemy.x, enemy.z);
+        if (dist <= stats.range) inRange.push(enemy);
       }
-      break;
-    }
-
-    case 'fire_staff': {
-      // Orbiting fireballs around player (wider radius, slower)
-      const count = stats.projectileCount;
-      for (let i = 0; i < count; i++) {
-        const startAngle = (i / count) * Math.PI * 2;
-        const { finalDamage } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
-        projectiles.push({
-          id: currentId++,
-          weaponType: 'fire_staff',
-          x: playerState.x + Math.cos(startAngle) * (stats.range + 1),
-          y: 0.8,
-          z: playerState.z + Math.sin(startAngle) * (stats.range + 1),
-          vx: 0, vy: 0, vz: 0,
-          damage: finalDamage,
-          bouncesLeft: 0,
-          pierceLeft: stats.pierce,
-          lifetime: 4.0,
-          radius: stats.aoeRadius,
-          fromPlayer: true,
-          hitEnemyIds: [],
-          orbiting: true,
-          orbitAngle: startAngle,
-          orbitRadius: stats.range + 1,
-          orbitSpeed: stats.speed * 0.5,
+      // Shuffle and pick up to hitCount
+      for (let i = inRange.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [inRange[i], inRange[j]] = [inRange[j], inRange[i]];
+      }
+      const targets = inRange.slice(0, hitCount);
+      for (const target of targets) {
+        const { finalDamage, isCrit } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
+        target.hp -= finalDamage;
+        target.hitFlashTimer = 0.15;
+        damageEvents.push({
+          x: target.x, y: 1.0, z: target.z,
+          damage: finalDamage, isCrit, isPlayerDamage: false,
         });
       }
       break;
@@ -286,11 +216,6 @@ export function fireWeapon(
 
     case 'flame_ring': {
       // Handled directly in game tick as AOE — returns nothing
-      break;
-    }
-
-    case 'aura': {
-      // Expanding damage ring — handled like flame_ring but grows outward
       break;
     }
 
@@ -353,44 +278,6 @@ export function fireWeapon(
       break;
     }
 
-    case 'katana': {
-      // Fast forward slash projectile
-      const count = stats.projectileCount;
-      for (let i = 0; i < count; i++) {
-        let angle = playerState.rotation;
-        if (count > 1) {
-          angle += ((i - (count - 1) / 2) * 0.2);
-        }
-
-        // Aim at nearest enemy
-        const target = findNearestEnemyInRange(playerState.x, playerState.z, enemies, stats.range);
-        let vx: number, vz: number;
-        if (target) {
-          const dir = normalizeDirection(target.x - playerState.x, target.z - playerState.z);
-          vx = dir.x * stats.speed;
-          vz = dir.z * stats.speed;
-        } else {
-          vx = Math.sin(angle) * stats.speed;
-          vz = Math.cos(angle) * stats.speed;
-        }
-
-        const { finalDamage } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
-        projectiles.push({
-          id: currentId++,
-          weaponType: 'katana',
-          x: playerState.x, y: 1.0, z: playerState.z,
-          vx, vy: 0, vz,
-          damage: finalDamage,
-          bouncesLeft: 0,
-          pierceLeft: stats.pierce,
-          lifetime: 0.8,
-          radius: stats.aoeRadius,
-          fromPlayer: true,
-          hitEnemyIds: [],
-        });
-      }
-      break;
-    }
   }
 
   return { projectiles, nextId: currentId };

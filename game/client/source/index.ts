@@ -164,15 +164,11 @@ const WEAPON_PROJECTILE_COLORS: Record<string, number> = {
   sword: 0xcccccc,
   bone_bouncer: 0xf5f5dc,
   axe: 0x888888,
-  revolver: 0xffdd00,
   bow: 0x8b4513,
   lightning_staff: 0x44aaff,
-  fire_staff: 0xff4400,
   flame_ring: 0xff6600,
   tornado: 0x88ccaa,
   shotgun: 0xffee44,
-  katana: 0xeeeeff,
-  aura: 0x44ffaa,
 };
 
 const PICKUP_COLORS: Record<string, number> = {
@@ -245,18 +241,14 @@ function convertToToonMaterials(root: THREE.Object3D): void {
 }
 
 const WEAPON_ICONS: Record<string, string> = {
-  sword: '⚔️',
+  sword: '🗡️',
   bone_bouncer: '🦴',
   axe: '🪓',
-  revolver: '🔫',
-  bow: '🏹',
+  bow: '🔫',
   lightning_staff: '⚡',
-  fire_staff: '🔥',
   flame_ring: '🔥',
   tornado: '🌪️',
   shotgun: '💥',
-  katana: '⚔️',
-  aura: '✨',
 };
 
 const TOME_ICONS: Record<string, string> = {
@@ -2198,7 +2190,7 @@ export class GameScene {
         case 'sword': return swordModel;
         case 'katana': return katanaModel;
         case 'bow': return dartModel; // bow shoots arrows (dart model)
-        case 'bone_bouncer': return null; // uses InstancedMesh still
+        case 'bone_bouncer': return null; // handled with boneGeometry fallback below
         case 'revolver': return null; // uses InstancedMesh (bullet)
         case 'shotgun': return null; // uses InstancedMesh (pellets)
         case 'hammer': return hammerModel;
@@ -2209,7 +2201,7 @@ export class GameScene {
     };
 
     // Weapon types that use individual model clones (not InstancedMesh)
-    const modelWeaponTypes = new Set(['axe', 'sword', 'katana', 'hammer', 'dagger', 'dart', 'bow']);
+    const modelWeaponTypes = new Set(['axe', 'sword', 'katana', 'hammer', 'dagger', 'dart', 'bow', 'bone_bouncer', 'revolver']);
 
     for (const proj of projectiles) {
       // Axe projectiles: orbiting, blade faces outward
@@ -2276,6 +2268,9 @@ export class GameScene {
           const model = getWeaponModel(proj.weaponType, false);
           if (model) {
             obj = model.clone();
+          } else if (proj.weaponType === 'bone_bouncer' && boneGeometry) {
+            const mat = new THREE.MeshToonMaterial({ color: 0xf5f5dc, gradientMap: toonGradientMap });
+            obj = new THREE.Mesh(boneGeometry.clone(), mat);
           } else {
             const geo = new THREE.ConeGeometry(0.15, 0.5, 6);
             const mat = new THREE.MeshToonMaterial({ color: 0xcccccc, gradientMap: toonGradientMap });
@@ -2286,11 +2281,17 @@ export class GameScene {
           this.weaponObjects.set(proj.id, obj);
         }
         obj.position.set(proj.x, proj.y, proj.z);
-        // Point in movement direction
-        const moveAngle = Math.atan2(proj.vx, proj.vz);
-        obj.rotation.set(0, 0, 0);
-        obj.rotation.order = 'YXZ';
-        obj.rotation.y = moveAngle;
+        // Rotation based on weapon type
+        if (proj.weaponType === 'bone_bouncer') {
+          // Bone tumbles/spins while bouncing
+          obj.rotation.set(time * 4 + proj.id, time * 6 + proj.id * 0.7, time * 3);
+        } else {
+          // Point in movement direction
+          const moveAngle = Math.atan2(proj.vx, proj.vz);
+          obj.rotation.set(0, 0, 0);
+          obj.rotation.order = 'YXZ';
+          obj.rotation.y = moveAngle;
+        }
         obj.visible = true;
         continue;
       }
@@ -2303,10 +2304,8 @@ export class GameScene {
       if (proj.fromPlayer) {
         switch (proj.weaponType) {
           case 'tornado': scale = 2.0; break;
-          case 'fire_staff': scale = 1.8; break;
-          case 'aura': scale = 2.5; break;
-          case 'sword': case 'katana': scale = 1.2; break;
-          case 'revolver': case 'bow': scale = 0.6; break;
+          case 'sword': scale = 1.2; break;
+          case 'bow': scale = 0.6; break;
           case 'shotgun': scale = 0.4; break;
           case 'bone_bouncer': scale = 0.8; break;
           default: scale = 1.0;
@@ -2316,7 +2315,7 @@ export class GameScene {
       // Add spinning for bone_bouncer and tornado
       if (proj.weaponType === 'bone_bouncer' || proj.weaponType === 'tornado') {
         this._dummy.rotation.set(0, time * 4 + proj.id, time * 2);
-      } else if (proj.weaponType === 'sword' || proj.weaponType === 'katana') {
+      } else if (proj.weaponType === 'sword') {
         const speed = Math.sqrt(proj.vx * proj.vx + proj.vz * proj.vz);
         if (speed > 0.1) {
           const angle = Math.atan2(proj.vx, proj.vz);
@@ -2330,7 +2329,7 @@ export class GameScene {
         this._dummy.rotation.set(0, 0, 0);
       }
 
-      if (proj.weaponType !== 'sword' && proj.weaponType !== 'katana') {
+      if (proj.weaponType !== 'sword') {
         this._dummy.scale.set(scale, scale, scale);
       }
 
@@ -2572,15 +2571,11 @@ export class GameScene {
     sword: [1.0, 1.0, 1.0],
     bone_bouncer: [0.95, 0.9, 0.8],
     axe: [1.0, 0.6, 0.1],
-    revolver: [1.0, 0.9, 0.3],
     bow: [0.8, 1.0, 0.3],
     lightning_staff: [0.3, 0.8, 1.0],
-    fire_staff: [1.0, 0.4, 0.1],
     flame_ring: [1.0, 0.5, 0.0],
     tornado: [0.4, 1.0, 0.4],
     shotgun: [1.0, 0.8, 0.2],
-    katana: [0.9, 0.9, 1.0],
-    aura: [0.5, 0.7, 1.0],
   };
 
   private static readonly PICKUP_VFX_COLORS: Record<string, [number, number, number]> = {
@@ -2840,9 +2835,9 @@ export class GameScene {
       }
     }
 
-    // Melee weapon slash arc (sword/katana) — emit arc particles toward nearest enemy
+    // Melee weapon slash arc (sword) — emit arc particles toward nearest enemy
     for (const weapon of player.weapons) {
-      if ((weapon.type === 'sword' || weapon.type === 'katana') && weapon.cooldownTimer > 0 && weapon.cooldownTimer < 0.1 && player.alive) {
+      if (weapon.type === 'sword' && weapon.cooldownTimer > 0 && weapon.cooldownTimer < 0.1 && player.alive) {
         // Find nearest enemy for slash direction
         let slashAngle = player.rotation;
         let nearestDist = Infinity;

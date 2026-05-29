@@ -1064,17 +1064,11 @@ export class GameInstance {
       case 'axe':
         this.fireAxe(stats);
         break;
-      case 'revolver':
-        this.fireRevolver(stats);
-        break;
       case 'bow':
         this.fireBow(stats);
         break;
       case 'lightning_staff':
         this.fireLightningStaff(stats);
-        break;
-      case 'fire_staff':
-        this.fireFireStaff(stats);
         break;
       case 'flame_ring':
         this.fireFlameRing(stats);
@@ -1084,12 +1078,6 @@ export class GameInstance {
         break;
       case 'shotgun':
         this.fireShotgun(stats);
-        break;
-      case 'katana':
-        this.fireKatana(stats);
-        break;
-      case 'aura':
-        this.fireAura(stats);
         break;
     }
   }
@@ -1224,44 +1212,6 @@ export class GameInstance {
     }
   }
 
-  private fireRevolver(stats: typeof WEAPON_STATS['revolver'][0]): void {
-    const player = this.state.player;
-    const count = stats.projectileCount;
-
-    for (let i = 0; i < count; i++) {
-      if (this.state.projectiles.length >= MAX_PROJECTILES) break;
-
-      const target = this.findNearestEnemy(player.x, player.z, stats.range);
-      let vx: number, vz: number;
-
-      if (target) {
-        const dir = normalizeDirection(target.x - player.x, target.z - player.z);
-        vx = dir.x * stats.speed;
-        vz = dir.z * stats.speed;
-      } else {
-        vx = Math.sin(player.rotation) * stats.speed;
-        vz = Math.cos(player.rotation) * stats.speed;
-      }
-
-      const isCrit = Math.random() < player.critChance;
-      const damage = Math.round(stats.damage * player.damageMultiplier * (isCrit ? player.critDamage : 1));
-
-      this.state.projectiles.push({
-        id: this.nextProjectileId++,
-        weaponType: 'revolver',
-        x: player.x, y: 1.0, z: player.z,
-        vx, vy: 0, vz,
-        damage,
-        bouncesLeft: 0,
-        pierceLeft: stats.pierce,
-        lifetime: 2.0,
-        radius: 0.2,
-        fromPlayer: true,
-        hitEnemyIds: [],
-      });
-    }
-  }
-
   private fireBow(stats: typeof WEAPON_STATS['bow'][0]): void {
     const player = this.state.player;
     const count = stats.projectileCount;
@@ -1362,45 +1312,6 @@ export class GameInstance {
     }
   }
 
-  private fireFireStaff(stats: typeof WEAPON_STATS['fire_staff'][0]): void {
-    const player = this.state.player;
-    const count = stats.projectileCount;
-
-    for (let i = 0; i < count; i++) {
-      if (this.state.projectiles.length >= MAX_PROJECTILES) break;
-
-      const target = this.findNearestEnemy(player.x, player.z);
-      let vx: number, vz: number;
-
-      if (target) {
-        const dir = normalizeDirection(target.x - player.x, target.z - player.z);
-        vx = dir.x * stats.speed;
-        vz = dir.z * stats.speed;
-      } else {
-        const angle = player.rotation + (count > 1 ? (i - (count - 1) / 2) * 0.4 : 0);
-        vx = Math.sin(angle) * stats.speed;
-        vz = Math.cos(angle) * stats.speed;
-      }
-
-      const isCrit = Math.random() < player.critChance;
-      const damage = Math.round(stats.damage * player.damageMultiplier * (isCrit ? player.critDamage : 1));
-
-      this.state.projectiles.push({
-        id: this.nextProjectileId++,
-        weaponType: 'fire_staff',
-        x: player.x, y: 1.0, z: player.z,
-        vx, vy: 0, vz,
-        damage,
-        bouncesLeft: 0,
-        pierceLeft: 0,
-        lifetime: 4.0,
-        radius: stats.aoeRadius,
-        fromPlayer: true,
-        hitEnemyIds: [],
-      });
-    }
-  }
-
   private fireFlameRing(stats: typeof WEAPON_STATS['flame_ring'][0]): void {
     const player = this.state.player;
     const px = player.x;
@@ -1498,79 +1409,6 @@ export class GameInstance {
     }
   }
 
-  private fireKatana(stats: typeof WEAPON_STATS['katana'][0]): void {
-    const player = this.state.player;
-    const count = stats.projectileCount;
-
-    for (let i = 0; i < count; i++) {
-      if (this.state.projectiles.length >= MAX_PROJECTILES) break;
-
-      const target = this.findNearestEnemy(player.x, player.z, stats.range);
-      let vx: number, vz: number;
-
-      if (target) {
-        const dir = normalizeDirection(target.x - player.x, target.z - player.z);
-        vx = dir.x * stats.speed;
-        vz = dir.z * stats.speed;
-      } else {
-        const angle = player.rotation + (count > 1 ? (i - (count - 1) / 2) * 0.2 : 0);
-        vx = Math.sin(angle) * stats.speed;
-        vz = Math.cos(angle) * stats.speed;
-      }
-
-      const isCrit = Math.random() < player.critChance;
-      const damage = Math.round(stats.damage * player.damageMultiplier * (isCrit ? player.critDamage : 1));
-
-      this.state.projectiles.push({
-        id: this.nextProjectileId++,
-        weaponType: 'katana',
-        x: player.x, y: 1.0, z: player.z,
-        vx, vy: 0, vz,
-        damage,
-        bouncesLeft: 0,
-        pierceLeft: stats.pierce,
-        lifetime: 0.8,
-        radius: stats.aoeRadius,
-        fromPlayer: true,
-        hitEnemyIds: [],
-      });
-    }
-  }
-
-  private fireAura(stats: typeof WEAPON_STATS['aura'][0]): void {
-    // Expanding damage ring — similar to flame_ring but with knockback
-    const player = this.state.player;
-    const px = player.x;
-    const pz = player.z;
-
-    for (const enemy of this.state.enemies) {
-      if (enemy.hp <= 0) continue;
-      const dist = distanceBetween(px, pz, enemy.x, enemy.z);
-      if (dist <= stats.aoeRadius) {
-        const isCrit = Math.random() < player.critChance;
-        const damage = Math.round(stats.damage * player.damageMultiplier * (isCrit ? player.critDamage : 1));
-        enemy.hp -= damage;
-        enemy.hitFlashTimer = 0.1;
-        this.state.stats.damageDealt += damage;
-        this.addDamageEvent(enemy.x, 1.0, enemy.z, damage, isCrit, false);
-        // Aura pushes enemies away
-        this.applyKnockback(enemy, px, pz);
-      }
-    }
-
-    if (this.state.boss && this.state.boss.hp > 0) {
-      const dist = distanceBetween(px, pz, this.state.boss.x, this.state.boss.z);
-      if (dist <= stats.aoeRadius) {
-        const isCrit = Math.random() < player.critChance;
-        const damage = Math.round(stats.damage * player.damageMultiplier * (isCrit ? player.critDamage : 1));
-        this.state.boss.hp -= damage;
-        this.state.boss.hitFlashTimer = 0.15;
-        this.state.stats.damageDealt += damage;
-        this.addDamageEvent(this.state.boss.x, 2, this.state.boss.z, damage, isCrit, false);
-      }
-    }
-  }
-
   // =========================================================================
   // Private: Projectiles
   // =========================================================================
@@ -1607,10 +1445,6 @@ export class GameInstance {
 
       proj.lifetime -= dt;
       if (proj.lifetime <= 0) {
-        // Fire staff AOE explosion on expiry
-        if (proj.weaponType === 'fire_staff' && proj.fromPlayer) {
-          this.fireStaffExplosion(proj);
-        }
         projectiles.splice(i, 1);
         continue;
       }
@@ -1619,21 +1453,6 @@ export class GameInstance {
       const halfMap = (this.config.mapSize + 20) * 0.5;
       if (Math.abs(proj.x) > halfMap || Math.abs(proj.z) > halfMap) {
         projectiles.splice(i, 1);
-      }
-    }
-  }
-
-  private fireStaffExplosion(proj: ProjectileState): void {
-    // AOE damage at fireball's final position
-    for (const enemy of this.state.enemies) {
-      if (enemy.hp <= 0) continue;
-      const dist = distanceBetween(proj.x, proj.z, enemy.x, enemy.z);
-      if (dist <= proj.radius) {
-        const damage = Math.round(proj.damage * 0.5); // 50% splash
-        enemy.hp -= damage;
-        enemy.hitFlashTimer = 0.15;
-        this.state.stats.damageDealt += damage;
-        this.addDamageEvent(enemy.x, 1.0, enemy.z, damage, false, false);
       }
     }
   }
@@ -1737,10 +1556,6 @@ export class GameInstance {
       }
 
       if (consumed) {
-        // Fire staff AOE on impact
-        if (proj.weaponType === 'fire_staff') {
-          this.fireStaffExplosion(proj);
-        }
         this.state.projectiles.splice(i, 1);
       }
     }
@@ -2456,7 +2271,7 @@ export class GameInstance {
           const dir = normalizeDirection(player.x - boss.x, player.z - boss.z);
           this.state.projectiles.push({
             id: this.nextProjectileId++,
-            weaponType: 'fire_staff',
+            weaponType: 'flame_ring',
             x: boss.x, y: 1.0, z: boss.z,
             vx: dir.x * 10, vy: 0, vz: dir.z * 10,
             damage: 20,
@@ -2532,7 +2347,7 @@ export class GameInstance {
           const oz = (Math.random() - 0.5) * 12;
           this.state.projectiles.push({
             id: this.nextProjectileId++,
-            weaponType: 'fire_staff',
+            weaponType: 'flame_ring',
             x: player.x + ox, y: 10, z: player.z + oz,
             vx: 0, vy: -12, vz: 0,
             damage: 15,

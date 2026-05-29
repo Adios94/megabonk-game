@@ -227,70 +227,58 @@ export function fireWeapon(
     }
 
     case 'lightning_staff': {
-      // Lightning bolt projectile: fast, pierces multiple enemies
+      // Orbiting lightning orbs around player
       const count = stats.projectileCount;
       for (let i = 0; i < count; i++) {
-        const target = findNearestEnemyInRange(playerState.x, playerState.z, enemies, stats.range);
-        let vx: number, vz: number;
-
-        if (target) {
-          const dir = normalizeDirection(target.x - playerState.x, target.z - playerState.z);
-          vx = dir.x * stats.speed * 1.5;
-          vz = dir.z * stats.speed * 1.5;
-        } else {
-          const angle = playerState.rotation + (i - (count - 1) / 2) * 0.3;
-          vx = Math.sin(angle) * stats.speed * 1.5;
-          vz = Math.cos(angle) * stats.speed * 1.5;
-        }
-
+        const startAngle = (i / count) * Math.PI * 2;
         const { finalDamage } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
         projectiles.push({
           id: currentId++,
           weaponType: 'lightning_staff',
-          x: playerState.x, y: 1.0, z: playerState.z,
-          vx, vy: 0, vz,
+          x: playerState.x + Math.cos(startAngle) * stats.range,
+          y: 1.0,
+          z: playerState.z + Math.sin(startAngle) * stats.range,
+          vx: 0, vy: 0, vz: 0,
           damage: finalDamage,
           bouncesLeft: 0,
-          pierceLeft: stats.chains ?? 3,
-          lifetime: 1.5,
-          radius: 0.4,
+          pierceLeft: stats.pierce,
+          lifetime: 3.0,
+          radius: 0.6,
           fromPlayer: true,
           hitEnemyIds: [],
+          orbiting: true,
+          orbitAngle: startAngle,
+          orbitRadius: stats.range,
+          orbitSpeed: stats.speed * 0.8,
         });
       }
       break;
     }
 
     case 'fire_staff': {
-      // Slow fireball with AOE on hit
+      // Orbiting fireballs around player (wider radius, slower)
       const count = stats.projectileCount;
       for (let i = 0; i < count; i++) {
-        const target = findNearestEnemy(playerState.x, playerState.z, enemies, -1);
-        let vx: number, vz: number;
-
-        if (target) {
-          const dir = normalizeDirection(target.x - playerState.x, target.z - playerState.z);
-          vx = dir.x * stats.speed;
-          vz = dir.z * stats.speed;
-        } else {
-          const angle = playerState.rotation + (count > 1 ? (i - (count - 1) / 2) * 0.4 : 0);
-          vx = Math.sin(angle) * stats.speed;
-          vz = Math.cos(angle) * stats.speed;
-        }
-
+        const startAngle = (i / count) * Math.PI * 2;
         const { finalDamage } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
         projectiles.push({
           id: currentId++,
           weaponType: 'fire_staff',
-          x: playerState.x, y: 1.0, z: playerState.z,
-          vx, vy: 0, vz,
+          x: playerState.x + Math.cos(startAngle) * (stats.range + 1),
+          y: 0.8,
+          z: playerState.z + Math.sin(startAngle) * (stats.range + 1),
+          vx: 0, vy: 0, vz: 0,
           damage: finalDamage,
           bouncesLeft: 0,
-          pierceLeft: 0,
+          pierceLeft: stats.pierce,
           lifetime: 4.0,
           radius: stats.aoeRadius,
           fromPlayer: true,
           hitEnemyIds: [],
+          orbiting: true,
+          orbitAngle: startAngle,
+          orbitRadius: stats.range + 1,
+          orbitSpeed: stats.speed * 0.5,
         });
       }
       break;
@@ -307,28 +295,29 @@ export function fireWeapon(
     }
 
     case 'tornado': {
-      // Slow spinning projectile, infinite pierce, curves
+      // Orbiting tornado vortices around player (large radius, fast spin)
       const count = stats.projectileCount;
       for (let i = 0; i < count; i++) {
-        const angle = playerState.rotation + (i / count) * Math.PI * 2;
-        const vx = Math.sin(angle) * stats.speed;
-        const vz = Math.cos(angle) * stats.speed;
-
+        const startAngle = (i / count) * Math.PI * 2;
         const { finalDamage } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
         projectiles.push({
           id: currentId++,
           weaponType: 'tornado',
-          x: playerState.x, y: 0.5, z: playerState.z,
-          vx, vy: 0, vz,
+          x: playerState.x + Math.cos(startAngle) * (stats.range + 2),
+          y: 0.5,
+          z: playerState.z + Math.sin(startAngle) * (stats.range + 2),
+          vx: 0, vy: 0, vz: 0,
           damage: finalDamage,
           bouncesLeft: 0,
           pierceLeft: stats.pierce,
-          lifetime: 8.0,
+          lifetime: 6.0,
           radius: stats.aoeRadius,
           fromPlayer: true,
           hitEnemyIds: [],
-          spinning: true,
-          spinAngle: angle,
+          orbiting: true,
+          orbitAngle: startAngle,
+          orbitRadius: stats.range + 2,
+          orbitSpeed: stats.speed * 0.6,
         });
       }
       break;

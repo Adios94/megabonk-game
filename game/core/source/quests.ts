@@ -64,7 +64,7 @@ export const QUESTS: Quest[] = [
   // Silver collection quests
   { id: 'q26', description: 'quest.collect_500_silver', type: 'collect', target: 500, reward: { type: 'silver', value: 100 } },
   { id: 'q27', description: 'quest.collect_2000_silver', type: 'collect', target: 2000, reward: { type: 'silver', value: 250 } },
-  { id: 'q28', description: 'quest.collect_5000_silver', type: 'collect', target: 5000, reward: { type: 'weapon_unlock', value: 'tornado' } },
+  { id: 'q28', description: 'quest.collect_5000_silver', type: 'collect', target: 5000, reward: { type: 'silver', value: 500 } },
   { id: 'q29', description: 'quest.collect_10000_silver', type: 'collect', target: 10000, reward: { type: 'silver', value: 1000 } },
   { id: 'q30', description: 'quest.collect_25000_silver', type: 'collect', target: 25000, reward: { type: 'weapon_slot', value: 1 } },
 ];

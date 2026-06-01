@@ -33,7 +33,6 @@ export type WeaponType =
   | 'bow'
   | 'lightning_staff'
   | 'flame_ring'
-  | 'tornado'
   | 'shotgun';
 
 export interface WeaponState {
@@ -176,8 +175,6 @@ export interface ProjectileState {
   orbitSpeed?: number;
   gravitational?: boolean;
   gravityStrength?: number;
-  spinning?: boolean;
-  spinAngle?: number;
 }
 
 // --- Pickups ---

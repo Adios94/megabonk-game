@@ -212,16 +212,6 @@ export const WEAPON_STATS: Record<string, WeaponLevelStats[]> = {
     { damage: 9, cooldown: 0.3, projectileCount: 0, bounces: 0, chains: 0, range: 6.5, aoeRadius: 6.5, pierce: 0, speed: 0 },
     { damage: 12, cooldown: 0.3, projectileCount: 0, bounces: 0, chains: 0, range: 8.0, aoeRadius: 8.0, pierce: 0, speed: 0 },
   ],
-  tornado: [
-    { damage: 6, cooldown: 2.5, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 1.5, pierce: 999, speed: 4 },
-    { damage: 7, cooldown: 2.4, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 1.6, pierce: 999, speed: 4.5 },
-    { damage: 8, cooldown: 2.3, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 1.8, pierce: 999, speed: 5 },
-    { damage: 10, cooldown: 2.2, projectileCount: 2, bounces: 0, chains: 0, range: 0, aoeRadius: 2.0, pierce: 999, speed: 5 },
-    { damage: 12, cooldown: 2.0, projectileCount: 2, bounces: 0, chains: 0, range: 0, aoeRadius: 2.2, pierce: 999, speed: 5.5 },
-    { damage: 14, cooldown: 1.8, projectileCount: 2, bounces: 0, chains: 0, range: 0, aoeRadius: 2.5, pierce: 999, speed: 6 },
-    { damage: 16, cooldown: 1.6, projectileCount: 3, bounces: 0, chains: 0, range: 0, aoeRadius: 2.8, pierce: 999, speed: 6 },
-    { damage: 20, cooldown: 1.4, projectileCount: 3, bounces: 0, chains: 0, range: 0, aoeRadius: 3.0, pierce: 999, speed: 7 },
-  ],
   shotgun: [
     { damage: 8, cooldown: 1.4, projectileCount: 5, bounces: 0, chains: 0, range: 12, aoeRadius: 0, pierce: 0, speed: 16 },
     { damage: 9, cooldown: 1.3, projectileCount: 5, bounces: 0, chains: 0, range: 13, aoeRadius: 0, pierce: 0, speed: 17 },
@@ -254,7 +244,7 @@ export const PASSIVE_MAX_LEVELS: Record<string, number> = TOME_MAX_LEVELS;
 // All weapon types available in the game
 export const ALL_WEAPON_TYPES: WeaponType[] = [
   'sword', 'bone_bouncer', 'axe', 'bow',
-  'lightning_staff', 'flame_ring', 'tornado',
+  'lightning_staff', 'flame_ring',
   'shotgun',
 ];
 
@@ -281,7 +271,6 @@ export const WEAPON_EVOLUTIONS: WeaponEvolution[] = [
   { baseWeapon: 'bone_bouncer', requiredTome: 'luck_tome', requiredTomeLevel: 3, evolvedName: 'Bone Storm', damageMultiplier: 2.0, specialEffect: 'explode_on_hit' },
   { baseWeapon: 'bow', requiredTome: 'precision_tome', requiredTomeLevel: 3, evolvedName: 'Deagle', damageMultiplier: 3.0, specialEffect: 'pierce_all' },
   { baseWeapon: 'lightning_staff', requiredTome: 'curse_tome', requiredTomeLevel: 3, evolvedName: 'Thunder God', damageMultiplier: 2.5, specialEffect: 'chain_all' },
-  { baseWeapon: 'tornado', requiredTome: 'speed_tome', requiredTomeLevel: 5, evolvedName: 'Hurricane', damageMultiplier: 2.5, specialEffect: 'multiple_tornados' },
 ];
 
 export const DEFAULT_GAME_CONFIG: GameConfig = {

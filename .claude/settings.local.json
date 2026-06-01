@@ -30,7 +30,11 @@
       "Bash(cp '/Users/liusheng/Downloads/Ultimate RPG Items Pack - Aug 2019/OBJ/Hammer_Double.obj' '/Users/liusheng/Downloads/Ultimate RPG Items Pack - Aug 2019/OBJ/Hammer_Double.mtl' /Users/liusheng/Documents/megabonk-game/public/models/items/)",
       "WebSearch",
       "WebFetch(domain:poly.pizza)",
-      "WebFetch(domain:quaternius.com)"
+      "WebFetch(domain:quaternius.com)",
+      "Bash(pnpm dev *)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:1513/)",
+      "Bash(curl -s http://localhost:1513/)",
+      "Bash(pnpm exec *)"
     ]
   }
 }

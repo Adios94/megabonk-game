@@ -86,6 +86,19 @@ import { SpatialHash } from './spatial-hash.ts';
 import { generateUpgradeOptions, xpForLevel } from './upgrades.ts';
 import { updateOrbitingProjectile } from './weapons.ts';
 import { computeWeaponDamage } from './stats/index.ts';
+import { createWorld, type GameWorld } from './world.ts';
+import { tryFireWeaponEcs } from './systems/weaponFiring.ts';
+import type { BehaviorEffects } from './behaviors/types.ts';
+
+/**
+ * Phase 2-3 ECS 武器迁移期间的默认开关。
+ * - true: 已迁移到 data/weapons.ts + behaviors/ 的武器走 ECS 路径
+ * - false: 全部走旧 GameInstance.fireWeapon switch
+ *
+ * 测试期可通过 instance.useEcsWeapons = false 临时翻转（见 __tests__/parity.test.ts）。
+ * Phase 3 完成（所有武器迁移）后，本常量 + useEcsWeapons 字段 + 旧 fireWeapon switch 一起删除。
+ */
+const USE_ECS_WEAPONS_DEFAULT = true;
 
 export class GameInstance {
   private config: GameConfig;
@@ -109,6 +122,11 @@ export class GameInstance {
   // Mini-boss spawn timer (every 2 min after minute 3)
   private miniBossTimer: number = 0;
 
+  /** Phase 2-3 ECS 武器路径开关。Phase 3 完成后随旧 switch 一起删除。 */
+  useEcsWeapons: boolean = USE_ECS_WEAPONS_DEFAULT;
+  private world: GameWorld;
+  private effects: BehaviorEffects;
+
   constructor(config: GameConfig) {
     this.config = config;
     this.currentInput = { moveX: 0, moveY: 0, dash: false, skill1: false, skill2: false, jump: false, slide: false };
@@ -118,6 +136,20 @@ export class GameInstance {
     this.spatialHash = new SpatialHash(4);
     this.spawnTimer = 1.0;
     this.aiGroup = 0;
+
+    this.world = createWorld();
+    this.effects = {
+      addDamageEvent: (x, y, z, d, c, p, w) => this.addDamageEvent(x, y, z, d, c, p, w),
+      applyKnockback: (e, fx, fz) => this.applyKnockback(e, fx, fz),
+      addDamageDealt: (n) => { this.state.stats.damageDealt += n; },
+    };
+
+    this.world = createWorld();
+    this.effects = {
+      addDamageEvent: (x, y, z, d, c, p, w) => this.addDamageEvent(x, y, z, d, c, p, w),
+      applyKnockback: (e, fx, fz) => this.applyKnockback(e, fx, fz),
+      addDamageDealt: (n) => { this.state.stats.damageDealt += n; },
+    };
 
     this.state = {
       tick: 0,
@@ -1048,6 +1080,16 @@ export class GameInstance {
       if (weapon.cooldownTimer <= 0) {
         const stats = this.getWeaponStats(weapon);
         weapon.cooldownTimer = stats.cooldown;
+
+        // Phase 2: 已迁移到 ECS 路径的武器走新流程, 否则 fall back 到旧 switch
+        if (this.useEcsWeapons) {
+          const handled = tryFireWeaponEcs(
+            this.world, weapon, stats,
+            player, this.state.enemies, this.state.boss,
+            this.effects,
+          );
+          if (handled) continue;
+        }
         this.fireWeapon(weapon, stats);
       }
     }

@@ -85,6 +85,7 @@ import { applyMovement3D, distanceBetween, normalizeDirection } from './physics.
 import { SpatialHash } from './spatial-hash.ts';
 import { generateUpgradeOptions, xpForLevel } from './upgrades.ts';
 import { updateOrbitingProjectile } from './weapons.ts';
+import { computeWeaponDamage } from './stats/index.ts';
 
 export class GameInstance {
   private config: GameConfig;
@@ -1105,7 +1106,7 @@ export class GameInstance {
 
         if (Math.abs(angleDiff) <= arcAngle / 2) {
           const isCrit = Math.random() < player.critChance;
-          const damage = Math.round(stats.damage * player.damageMultiplier * (isCrit ? player.critDamage : 1));
+          const damage = computeWeaponDamage(stats.damage, player, ['sword', 'melee', 'physical'], isCrit);
           enemy.hp -= damage;
           enemy.hitFlashTimer = 0.15;
           this.state.stats.damageDealt += damage;
@@ -1120,7 +1121,7 @@ export class GameInstance {
       const dist = distanceBetween(player.x, player.z, this.state.boss.x, this.state.boss.z);
       if (dist <= stats.range) {
         const isCrit = Math.random() < player.critChance;
-        const damage = Math.round(stats.damage * player.damageMultiplier * (isCrit ? player.critDamage : 1));
+        const damage = computeWeaponDamage(stats.damage, player, ['sword', 'melee', 'physical'], isCrit);
         this.state.boss.hp -= damage;
         this.state.boss.hitFlashTimer = 0.15;
         this.state.stats.damageDealt += damage;

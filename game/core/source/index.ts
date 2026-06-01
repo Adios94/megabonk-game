@@ -78,7 +78,7 @@ export type { EnemyConfig, WaveConfig, WeaponLevelStats, WeaponEvolution, TierCo
 
 export { applyMovement3D, distanceBetween, normalizeDirection } from './physics.ts';
 export { SpatialHash } from './spatial-hash.ts';
-export { fireWeapon, applyBounce, updateOrbitingProjectile, updateSpinningProjectile, applyGravitationalPull } from './weapons.ts';
+export { fireWeapon, applyBounce, updateOrbitingProjectile, applyGravitationalPull } from './weapons.ts';
 export { generateUpgradeOptions, xpForLevel } from './upgrades.ts';
 export { GameInstance } from './GameInstance.ts';
 

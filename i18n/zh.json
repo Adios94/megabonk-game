@@ -43,8 +43,6 @@
       "lightning_staff_desc": "释放连锁闪电攻击",
       "flame_ring": "烈焰环",
       "flame_ring_desc": "周围持续火焰伤害",
-      "tornado": "龙卷风",
-      "tornado_desc": "旋转穿透所有敌人的投射物",
       "shotgun": "霰弹枪",
       "shotgun_desc": "面前方向扇形散射"
     },
@@ -100,8 +98,7 @@
     "axe": "狂战士之斧",
     "bone_bouncer": "骨暴风",
     "bow": "沙漠之鹰",
-    "lightning_staff": "雷神",
-    "tornado": "飓风"
+    "lightning_staff": "雷神"
   },
   "shop": {
     "title": "永久升级",

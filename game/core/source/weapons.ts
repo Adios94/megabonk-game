@@ -7,7 +7,6 @@
  * - Bow: forward arrow (high speed, single target)
  * - Lightning Staff: chain lightning (instant)
  * - Flame Ring: constant AOE around player
- * - Tornado: slow spinning projectile, infinite pierce, curves
  * - Shotgun: spread shot forward
  */
 
@@ -220,35 +219,6 @@ export function fireWeapon(
       break;
     }
 
-    case 'tornado': {
-      // Orbiting tornado vortices around player (large radius, fast spin)
-      const count = stats.projectileCount;
-      for (let i = 0; i < count; i++) {
-        const startAngle = (i / count) * Math.PI * 2;
-        const { finalDamage } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
-        projectiles.push({
-          id: currentId++,
-          weaponType: 'tornado',
-          x: playerState.x + Math.cos(startAngle) * (stats.range + 2),
-          y: 0.5,
-          z: playerState.z + Math.sin(startAngle) * (stats.range + 2),
-          vx: 0, vy: 0, vz: 0,
-          damage: finalDamage,
-          bouncesLeft: 0,
-          pierceLeft: stats.pierce,
-          lifetime: 6.0,
-          radius: stats.aoeRadius,
-          fromPlayer: true,
-          hitEnemyIds: [],
-          orbiting: true,
-          orbitAngle: startAngle,
-          orbitRadius: stats.range + 2,
-          orbitSpeed: stats.speed * 0.6,
-        });
-      }
-      break;
-    }
-
     case 'shotgun': {
       // Spread shot in facing direction
       const count = stats.projectileCount;
@@ -325,22 +295,6 @@ export function updateOrbitingProjectile(
   proj.orbitAngle += proj.orbitSpeed * dt;
   proj.x = playerX + Math.cos(proj.orbitAngle) * proj.orbitRadius;
   proj.z = playerZ + Math.sin(proj.orbitAngle) * proj.orbitRadius;
-}
-
-/**
- * Update spinning/curving projectiles (tornado).
- */
-export function updateSpinningProjectile(proj: ProjectileState, dt: number): void {
-  if (!proj.spinning || proj.spinAngle === undefined) return;
-  // Slowly curve the trajectory
-  proj.spinAngle += 1.2 * dt;
-  const speed = Math.sqrt(proj.vx * proj.vx + proj.vz * proj.vz);
-  if (speed > 0) {
-    const currentAngle = Math.atan2(proj.vx, proj.vz);
-    const newAngle = currentAngle + 0.8 * dt;
-    proj.vx = Math.sin(newAngle) * speed;
-    proj.vz = Math.cos(newAngle) * speed;
-  }
 }
 
 /**

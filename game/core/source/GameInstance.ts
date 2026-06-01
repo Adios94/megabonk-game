@@ -83,7 +83,7 @@ import { checkQuestCompletion } from './quests.ts';
 import { applyMovement3D, distanceBetween, normalizeDirection } from './physics.ts';
 import { SpatialHash } from './spatial-hash.ts';
 import { generateUpgradeOptions, xpForLevel } from './upgrades.ts';
-import { updateOrbitingProjectile, updateSpinningProjectile } from './weapons.ts';
+import { updateOrbitingProjectile } from './weapons.ts';
 
 export class GameInstance {
   private config: GameConfig;
@@ -215,7 +215,7 @@ export class GameInstance {
     // Fire weapons
     this.fireWeapons(dt);
 
-    // Update projectiles (including orbiting, spinning, gravitational)
+    // Update projectiles (including orbiting, gravitational)
     this.updateProjectiles(dt);
 
     // Collision detection
@@ -1073,9 +1073,6 @@ export class GameInstance {
       case 'flame_ring':
         this.fireFlameRing(stats);
         break;
-      case 'tornado':
-        this.fireTornado(stats);
-        break;
       case 'shotgun':
         this.fireShotgun(stats);
         break;
@@ -1343,38 +1340,6 @@ export class GameInstance {
     }
   }
 
-  private fireTornado(stats: typeof WEAPON_STATS['tornado'][0]): void {
-    const player = this.state.player;
-    const count = stats.projectileCount;
-
-    for (let i = 0; i < count; i++) {
-      if (this.state.projectiles.length >= MAX_PROJECTILES) break;
-
-      const angle = player.rotation + (i / count) * Math.PI * 2;
-      const vx = Math.sin(angle) * stats.speed;
-      const vz = Math.cos(angle) * stats.speed;
-
-      const isCrit = Math.random() < player.critChance;
-      const damage = Math.round(stats.damage * player.damageMultiplier * (isCrit ? player.critDamage : 1));
-
-      this.state.projectiles.push({
-        id: this.nextProjectileId++,
-        weaponType: 'tornado',
-        x: player.x, y: 0.5, z: player.z,
-        vx, vy: 0, vz,
-        damage,
-        bouncesLeft: 0,
-        pierceLeft: stats.pierce,
-        lifetime: 8.0,
-        radius: stats.aoeRadius,
-        fromPlayer: true,
-        hitEnemyIds: [],
-        spinning: true,
-        spinAngle: angle,
-      });
-    }
-  }
-
   private fireShotgun(stats: typeof WEAPON_STATS['shotgun'][0]): void {
     const player = this.state.player;
     const count = stats.projectileCount;
@@ -1423,12 +1388,6 @@ export class GameInstance {
       // Handle orbiting projectiles (axe)
       if (proj.orbiting) {
         updateOrbitingProjectile(proj, player.x, player.z, dt);
-      }
-      // Handle spinning/curving projectiles (tornado)
-      else if (proj.spinning) {
-        updateSpinningProjectile(proj, dt);
-        proj.x += proj.vx * dt;
-        proj.z += proj.vz * dt;
       }
       // Normal movement
       else {

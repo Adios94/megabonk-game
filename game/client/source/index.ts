@@ -167,7 +167,6 @@ const WEAPON_PROJECTILE_COLORS: Record<string, number> = {
   bow: 0xffcc44, // displayed as Revolver — gold/brass bullet
   lightning_staff: 0x44aaff,
   flame_ring: 0xff6600,
-  tornado: 0x88ccaa,
   shotgun: 0xffee44,
 };
 
@@ -286,7 +285,6 @@ const WEAPON_ICONS: Record<string, string> = {
   bow: '🔫',
   lightning_staff: '⚡',
   flame_ring: '🔥',
-  tornado: '🌪️',
   shotgun: '💥',
 };
 
@@ -672,7 +670,7 @@ export class GameScene {
   private readonly MAX_WEAPON_ORBS = 6;
 
   // Weapon floaters — physical weapons orbit the player as visual indicator
-  // Magic weapons (lightning_staff / flame_ring / tornado) use VFX only
+  // Magic weapons (lightning_staff / flame_ring) use VFX only
   private weaponFloaters: Map<string, THREE.Object3D> = new Map();
   private static readonly FLOATER_WEAPON_TYPES: ReadonlyArray<string> = [
     'sword', 'bone_bouncer', 'axe', 'bow', 'shotgun',
@@ -684,8 +682,6 @@ export class GameScene {
   // Persistent flame_ring disk centered on player while equipped
   private flameRingDisk: THREE.Mesh | null = null;
   private flameRingTime = 0;
-  // Tornado vortex meshes per projectile id
-  private tornadoMeshes: Map<number, THREE.Group> = new Map();
   // Edge-detect weapon firing for one-shot VFX
   private lastWeaponCooldown: Map<string, number> = new Map();
 
@@ -2213,46 +2209,6 @@ export class GameScene {
     return mesh;
   }
 
-  // Tornado vortex shape: stacked cones for funnel + dark core
-  private buildTornadoShape(): THREE.Group {
-    const group = new THREE.Group();
-
-    // Outer cone (wide at top, narrow at bottom — inverted cone)
-    const outerGeo = new THREE.ConeGeometry(1.4, 3.2, 18, 6, true);
-    const outerMat = new THREE.MeshBasicMaterial({
-      color: 0xb6f0c8,
-      transparent: true,
-      opacity: 0.55,
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const outer = new THREE.Mesh(outerGeo, outerMat);
-    // Default cone has tip at +Y, base at -Y. We want narrow tip at bottom → flip.
-    outer.rotation.x = Math.PI;
-    outer.position.y = 1.6;
-    outer.name = 'TornadoOuter';
-    group.add(outer);
-
-    // Inner darker core
-    const innerGeo = new THREE.ConeGeometry(0.55, 2.6, 14, 4, true);
-    const innerMat = new THREE.MeshBasicMaterial({
-      color: 0x4a8866,
-      transparent: true,
-      opacity: 0.7,
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const inner = new THREE.Mesh(innerGeo, innerMat);
-    inner.rotation.x = Math.PI;
-    inner.position.y = 1.3;
-    inner.name = 'TornadoInner';
-    group.add(inner);
-
-    return group;
-  }
-
   // Drive transient meshes (slash arcs, lightning bolts): fade and dispose
   private updateTransientEffects(dt: number): void {
     // Slash arcs: scale up + fade
@@ -2524,7 +2480,6 @@ export class GameScene {
     const time = performance.now() * 0.005;
     const activeAxeIds = new Set<number>();
     const activeWeaponIds = new Set<number>();
-    const activeTornadoIds = new Set<number>();
 
     // Helper: get the model for a weapon type (handles evolved variants)
     const getWeaponModel = (weaponType: string, evolved: boolean): THREE.Group | null => {
@@ -2649,25 +2604,6 @@ export class GameScene {
         continue;
       }
 
-      // Tornado: tall vortex cone shape, fast spin around vertical axis
-      if (proj.weaponType === 'tornado' && proj.fromPlayer) {
-        activeTornadoIds.add(proj.id);
-        let mesh = this.tornadoMeshes.get(proj.id);
-        if (!mesh) {
-          mesh = this.buildTornadoShape();
-          mesh.name = `Tornado_${proj.id}`;
-          this.scene.add(mesh);
-          this.tornadoMeshes.set(proj.id, mesh);
-        }
-        mesh.position.set(proj.x, proj.y, proj.z);
-        mesh.rotation.y = time * 18 + proj.id;
-        // Subtle scale pulse to read as alive/swirling
-        const pulse = 1.0 + Math.sin(time * 6 + proj.id) * 0.06;
-        mesh.scale.set(pulse, 1.0, pulse);
-        mesh.visible = true;
-        continue;
-      }
-
       // All other projectiles: use InstancedMesh (spheres)
       this._dummy.position.set(proj.x, proj.y, proj.z);
 
@@ -2675,7 +2611,6 @@ export class GameScene {
       let scale = proj.fromPlayer ? 1.0 : 1.8;
       if (proj.fromPlayer) {
         switch (proj.weaponType) {
-          case 'tornado': scale = 2.0; break;
           case 'sword': scale = 1.2; break;
           case 'bow': scale = 0.6; break;
           case 'shotgun': scale = 0.4; break;
@@ -2684,7 +2619,7 @@ export class GameScene {
         }
       }
 
-      // Add spinning for bone_bouncer (tornado is rendered separately above)
+      // Add spinning for bone_bouncer
       if (proj.weaponType === 'bone_bouncer') {
         this._dummy.rotation.set(0, time * 4 + proj.id, time * 2);
       } else if (proj.weaponType === 'sword') {
@@ -2735,20 +2670,6 @@ export class GameScene {
       if (!activeWeaponIds.has(id)) {
         this.scene.remove(obj);
         this.weaponObjects.delete(id);
-      }
-    }
-    // Remove tornado meshes whose projectile expired
-    for (const [id, mesh] of this.tornadoMeshes) {
-      if (!activeTornadoIds.has(id)) {
-        this.scene.remove(mesh);
-        mesh.traverse(obj => {
-          if ((obj as THREE.Mesh).isMesh) {
-            const m = obj as THREE.Mesh;
-            m.geometry.dispose();
-            (m.material as THREE.Material).dispose();
-          }
-        });
-        this.tornadoMeshes.delete(id);
       }
     }
   }
@@ -2960,7 +2881,6 @@ export class GameScene {
     bow: [0.8, 1.0, 0.3],
     lightning_staff: [0.3, 0.8, 1.0],
     flame_ring: [1.0, 0.5, 0.0],
-    tornado: [0.4, 1.0, 0.4],
     shotgun: [1.0, 0.8, 0.2],
   };
 
@@ -3229,24 +3149,6 @@ export class GameScene {
     // Projectile trails for player weapons
     for (const proj of state.projectiles) {
       if (!proj.fromPlayer) continue;
-
-      // Tornado emits an upward spiral every tick (more dramatic than a single trail dot)
-      if (proj.weaponType === 'tornado') {
-        if (state.tick % 1 === 0) {
-          const angle = Math.random() * Math.PI * 2;
-          const dist = 0.4 + Math.random() * 0.7;
-          const px = proj.x + Math.cos(angle) * dist;
-          const pz = proj.z + Math.sin(angle) * dist;
-          this.spawnParticle(
-            px, proj.y + 0.2, pz,
-            -Math.sin(angle) * 2.5, 3 + Math.random() * 2, Math.cos(angle) * 2.5,
-            0.6 + Math.random() * 0.3,
-            0.25 + Math.random() * 0.15,
-            0.55 + Math.random() * 0.2, 0.95, 0.65,
-          );
-        }
-        continue;
-      }
 
       // Other player projectiles: short trail dot every 2 ticks
       if (state.tick % 2 === 0) {

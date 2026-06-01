@@ -43,8 +43,6 @@
       "lightning_staff_desc": "Chain lightning attack",
       "flame_ring": "Flame Ring",
       "flame_ring_desc": "Continuous fire damage around you",
-      "tornado": "Tornado",
-      "tornado_desc": "Spinning projectile that pierces all",
       "shotgun": "Shotgun",
       "shotgun_desc": "Spread shot in facing direction"
     },
@@ -100,8 +98,7 @@
     "axe": "Berserker Axe",
     "bone_bouncer": "Bone Storm",
     "bow": "Deagle",
-    "lightning_staff": "Thunder God",
-    "tornado": "Hurricane"
+    "lightning_staff": "Thunder God"
   },
   "shop": {
     "title": "Permanent Upgrades",

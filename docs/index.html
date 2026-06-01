@@ -661,6 +661,9 @@
   <div class="brand">MegaBonk · 3D</div>
   <div class="brand-sub">Three.js Roguelike Survivor</div>
   <nav class="nav" id="nav">
+    <h4 style="color: var(--bad); margin-top: 0;">⚠️ 框架契约</h4>
+    <a data-tab="contract" style="color: var(--bad); font-weight: 700;">必读 · 不可违反</a>
+
     <h4>概览</h4>
     <a data-tab="overview">项目总览</a>
     <a data-tab="timeline">单局节奏</a>
@@ -690,6 +693,178 @@
 </aside>
 
 <main>
+
+<!-- ============= FRAMEWORK CONTRACT ============= -->
+<section id="contract">
+  <div class="hero" style="background: var(--bad-soft); border: 2px solid var(--bad); border-radius: 12px; padding: 24px;">
+    <h1 style="color: var(--bad); margin: 0 0 8px;">⚠️ 框架契约 Framework Contract</h1>
+    <div class="tagline" style="color: #7f1d1d;">本页是项目所有协作者（人 + AI）的强制规范。违反会导致构建失败、KUBEE 模板下游集成中断或运行时崩溃。</div>
+    <div style="margin-top: 14px;">
+      <span class="pill" style="border-color: var(--bad); color: var(--bad); background: white;">v1.0.0</span>
+      <span class="pill" style="border-color: var(--bad); color: var(--bad); background: white;">harness 强制</span>
+      <span class="pill" style="border-color: var(--bad); color: var(--bad); background: white;">最后更新 2026-06-01</span>
+    </div>
+  </div>
+
+  <div class="note bad" style="margin-top: 20px;">
+    <b>修改契约的唯一流程：</b>开 Issue → 标题以 <code>[CONTRACT]</code> 开头 → Maintainer 评审 → 同步修改 <code>docs/contract.md</code> + 本页 + <code>.claude/hooks/guard-contract.sh</code>。
+  </div>
+
+  <h2>一、🔒 锁定文件（绝对不得修改）</h2>
+  <p>通过 <code>.claude/hooks/guard-contract.sh</code> 在 Claude Code <code>PreToolUse</code> hook 强制阻断。Edit / Write / MultiEdit 命中以下文件会被 <code>exit 2</code> 直接拒绝。</p>
+  <div class="grid cols-2">
+    <div class="card">
+      <h4>构建与模板基础设施</h4>
+      <table>
+        <tr><th>文件</th><th>原因</th></tr>
+        <tr><td><code>index.html</code></td><td>入口写死 <code>/game/client/main.ts</code></td></tr>
+        <tr><td><code>vite.config.ts</code></td><td><code>external: ['three']</code> + manualChunks + i18n 插件</td></tr>
+        <tr><td><code>tsconfig.json</code></td><td>include 路径与 workspace 绑定</td></tr>
+        <tr><td><code>pnpm-workspace.yaml</code></td><td>五包路径定义</td></tr>
+        <tr><td><code>package.json</code>（根）</td><td>启动脚本 + workspace 依赖</td></tr>
+        <tr><td><code>template.yml</code></td><td>KUBEE 模板元数据</td></tr>
+        <tr><td><code>kubee.json</code></td><td>KUBEE 发布配置</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h4>workspace 与共享代码</h4>
+      <table>
+        <tr><th>文件</th><th>原因</th></tr>
+        <tr><td><code>game/core/package.json</code></td><td>包名 <code>@minigame/core</code></td></tr>
+        <tr><td><code>game/client/package.json</code></td><td>包名 <code>@minigame/client</code></td></tr>
+        <tr><td><code>packages/&lt;name&gt;/package.json</code></td><td>各包名定义</td></tr>
+        <tr><td><code>packages/i18n/source/**</code></td><td>i18n 共享运行时</td></tr>
+        <tr><td><code>packages/platform/source/**</code></td><td>跨平台输入</td></tr>
+        <tr><td><code>packages/render-adapter/source/**</code></td><td>HiDPI 适配</td></tr>
+        <tr><td><code>game/client/main.ts</code></td><td>必须保持 <code>bootGameClient()</code> 两行</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h2>二、📐 锁定签名（文件可改，但导出契约不变）</h2>
+  <p>这些文件允许重构（必然会动），但<b>导出名称、签名、类型形状</b>必须保留。通过 <code>.claude/skills/check-contract</code> skill 手动校验。</p>
+
+  <div class="card">
+    <h4>1. <code>@minigame/core</code> 公开 API（<code>game/core/source/index.ts</code>）</h4>
+    <p>下列导出<b>必须始终存在</b>：</p>
+<pre><code>// 类
+export { GameInstance } from './GameInstance.ts'
+
+// 类型（client 渲染依赖）
+export type { GameState, GameConfig, GameResult, InputState } from './types.ts'
+
+// 常量
+export {
+  TICK_INTERVAL_MS,
+  DEFAULT_GAME_CONFIG,
+} from './config.ts'</code></pre>
+    <p style="color: var(--dim); font-size: 13px;">其他导出（<code>WEAPON_STATS</code> / <code>fireWeapon</code> 等）属于内部协作 API，重构期间可以删改。</p>
+  </div>
+
+  <div class="card" style="margin-top: 12px;">
+    <h4>2. <code>GameInstance</code> 类签名</h4>
+<pre><code>export class GameInstance {
+  constructor(config: GameConfig)                  // 单参数
+  start(): void
+  tick(): boolean                                  // true = 本局结束
+  applyAction(input: InputState): void             // 单参数（无 playerId）
+  getState(): GameState
+  getResult(): GameResult
+}</code></pre>
+    <p style="color: var(--dim); font-size: 13px;">本项目是 single-player（KUBEE <code>threejs-3d-singleplayer</code> 模板）。重构期间 <code>GameInstance</code> 应当退化为薄 facade，方法体内部委托给 <code>world</code> + <code>systems</code>，但<b>外部接口不得改变</b>。</p>
+  </div>
+
+  <div class="card" style="margin-top: 12px;">
+    <h4>3. <code>GameState</code> 形状（client 渲染依赖）</h4>
+    <table>
+      <tr><th>字段</th><th>类型</th><th>必须存在</th></tr>
+      <tr><td><code>tick</code></td><td>number</td><td>✅</td></tr>
+      <tr><td><code>running</code></td><td>boolean</td><td>✅</td></tr>
+      <tr><td><code>finished</code></td><td>boolean</td><td>✅</td></tr>
+      <tr><td><code>player / enemies / projectiles ...</code></td><td>项目自有</td><td>—</td></tr>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top: 12px;">
+    <h4>4. i18n 必需键</h4>
+    <p><code>i18n/en.json</code> 与 <code>i18n/zh.json</code> 必须同时存在，且包含 client 用到的所有键。增减 i18n 键时<b>两份文件同步</b>。</p>
+  </div>
+
+  <h2>三、♻️ 自由区（鼓励大改）</h2>
+  <p>下面这些区域，请放心重构、原子化、模块化：</p>
+  <div class="card">
+    <ul>
+      <li><code>game/core/source/</code> 下<b>除 <code>index.ts</code> 之外</b>的所有文件</li>
+      <li>新增任意子目录：<code>data/</code> <code>components/</code> <code>systems/</code> <code>behaviors/</code> <code>factories/</code> <code>stats/</code> <code>ai/</code> <code>world.ts</code></li>
+      <li><code>GameInstance.ts</code> <b>内部实现</b>（保持类签名即可）</li>
+      <li><code>game/client/source/index.ts</code> 内部渲染逻辑（保持 <code>bootGameClient</code> 导出）</li>
+      <li><code>game/client/source/session/**</code> 整个 session 目录</li>
+      <li><code>i18n/*.json</code> 增减键（同步即可）</li>
+      <li>新增 npm 依赖（推荐：<code>miniplex</code> 用于 ECS）</li>
+    </ul>
+  </div>
+
+  <h2>四、新增内容的标准流程</h2>
+  <div class="grid cols-2">
+    <div class="card">
+      <h4>加一把武器</h4>
+      <ol>
+        <li>在 <code>game/core/source/data/weapons.ts</code> 新增 <code>WeaponDef</code></li>
+        <li>如需新行为，在 <code>game/core/source/behaviors/</code> 加 <code>.ts</code></li>
+        <li>完成</li>
+      </ol>
+      <p style="color: var(--dim); font-size: 13px;"><b>不再需要：</b>改 <code>GameInstance.ts</code>、加 <code>fireXxx</code> 方法、改 switch。</p>
+    </div>
+    <div class="card">
+      <h4>加一个敌人</h4>
+      <ol>
+        <li>在 <code>data/enemies.ts</code> 新增 <code>EnemyDef</code></li>
+        <li>如需新 AI 状态，在 <code>ai/Brain.ts</code> 的 tagged-union 加一种</li>
+        <li>完成</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h4>加一个被动 / Tome / 升级</h4>
+      <ol>
+        <li>在 <code>data/upgrades.ts</code> 新增 <code>UpgradeDef</code>（类型 / 数值 / tag）</li>
+        <li>stats 管线自动处理 base / added / increased / more 四层叠加</li>
+        <li>完成</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h4>加 i18n 文本</h4>
+      <ol>
+        <li><code>i18n/en.json</code> 加键</li>
+        <li><code>i18n/zh.json</code> 加键</li>
+        <li>代码用 <code>t('your.key')</code></li>
+      </ol>
+    </div>
+  </div>
+
+  <h2>五、违反契约的后果</h2>
+  <div class="card">
+    <table>
+      <tr><th>违反</th><th>后果</th></tr>
+      <tr><td>改了锁定文件</td><td>Claude Code hook 直接拒绝 Edit/Write</td></tr>
+      <tr><td>改了锁定签名</td><td><code>pnpm build</code> tsc 类型检查失败</td></tr>
+      <tr><td>改了 i18n 必需键</td><td>运行时 <code>t()</code> 返回 key 字符串，UI 异常</td></tr>
+      <tr><td>改了 <code>template.yml</code> / <code>kubee.json</code></td><td>KUBEE 模板分发链路中断</td></tr>
+      <tr><td>改了 <code>packages/</code></td><td>模板再下载时被覆盖，本地修改丢失</td></tr>
+    </table>
+  </div>
+
+  <h2>六、相关文件</h2>
+  <div class="card">
+    <table>
+      <tr><th>路径</th><th>作用</th></tr>
+      <tr><td><code>docs/contract.md</code></td><td>本契约的 markdown 源（与本页同步）</td></tr>
+      <tr><td><code>.claude/settings.json</code></td><td>项目级 harness 配置（hook 注册）</td></tr>
+      <tr><td><code>.claude/hooks/guard-contract.sh</code></td><td>PreToolUse 守卫脚本</td></tr>
+      <tr><td><code>.claude/skills/check-contract/SKILL.md</code></td><td>校验 skill</td></tr>
+      <tr><td><code>CLAUDE.md</code> / <code>AGENTS.md</code></td><td>AI agent 入口（指向本页）</td></tr>
+    </table>
+  </div>
+</section>
 
 <!-- ============= OVERVIEW ============= -->
 <section id="overview">

@@ -9,7 +9,7 @@
  * **不引入事件总线** —— YAGNI，直接 mutate enemies/boss 的 hp 是 Phase 2-3 期间的合理近路。
  *   Phase 4 enemies 迁移到 ECS 时再用 component mutation 替代。
  */
-import type { PlayerState, EnemyState, BossState, WeaponState, WeaponType } from '../types.ts';
+import type { PlayerState, EnemyState, BossState, WeaponState, WeaponType, ProjectileState } from '../types.ts';
 import type { WeaponLevelStats } from '../config.ts';
 import type { WeaponDef } from '../data/weapons.ts';
 import type { GameWorld } from '../world.ts';
@@ -27,6 +27,14 @@ export interface BehaviorEffects {
   applyKnockback(enemy: EnemyState, fromX: number, fromZ: number): void;
   /** 累加 state.stats.damageDealt */
   addDamageDealt(amount: number): void;
+  /**
+   * 推一个玩家投射物到 state.projectiles[]。返回分配的 id；
+   * 达 MAX_PROJECTILES 上限时返回 null（行为应优雅 break / continue）。
+   *
+   * Defaults 由实现填充: id 自增, fromPlayer: true, hitEnemyIds: [].
+   * caller 提供其它所有字段。
+   */
+  spawnProjectile(p: Omit<ProjectileState, 'id' | 'fromPlayer' | 'hitEnemyIds'>): number | null;
 }
 
 export interface BehaviorContext {

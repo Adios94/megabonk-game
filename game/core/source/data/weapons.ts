@@ -17,14 +17,19 @@ export interface WeaponDef {
 }
 
 /**
- * 武器注册表（仅含已迁移到 ECS 路径的武器）。
+ * 武器注册表 (Phase 3a: 全部 7 把武器都已迁移到 ECS 行为路径)。
  *
- * 不在表里的武器自动 fall back 到 `GameInstance.fireWeapon` 的旧 switch，
- * 直到 Phase 3 全部迁移完。
+ * 加一把武器 = 在 WEAPONS 加一行 +（如需新行为）在 behaviors/ 加一个 .ts。
+ *
+ * tag 划分是 Phase 5 的种子（升级如 "+10% 火焰伤害" 通过 tag superset-AND 过滤生效）。
+ * Phase 3 还没有 tagged modifier，tag 此刻不影响数值；Phase 5 接入后零行为代码改动直接生效。
  */
 export const WEAPONS: Partial<Record<WeaponType, WeaponDef>> = {
-  sword: {
-    tags: ['sword', 'melee', 'physical'],
-    behavior: 'sweepArc',
-  },
+  sword:           { tags: ['sword', 'melee', 'physical'],                          behavior: 'sweepArc' },
+  bone_bouncer:    { tags: ['bone_bouncer', 'projectile', 'bouncing'],              behavior: 'bouncingShot' },
+  axe:             { tags: ['axe', 'projectile', 'orbiting', 'melee'],              behavior: 'orbitingAxe' },
+  bow:             { tags: ['bow', 'projectile', 'physical', 'piercing'],           behavior: 'forwardArrow' },
+  lightning_staff: { tags: ['lightning_staff', 'spell', 'lightning', 'chain'],      behavior: 'lightningChain' },
+  flame_ring:      { tags: ['flame_ring', 'spell', 'fire', 'aoe'],                  behavior: 'flameAura' },
+  shotgun:         { tags: ['shotgun', 'projectile', 'spread'],                     behavior: 'spreadShot' },
 };

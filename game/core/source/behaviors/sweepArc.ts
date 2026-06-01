@@ -12,9 +12,9 @@
  */
 import { distanceBetween } from '../physics.ts';
 import { computeWeaponDamage } from '../stats/index.ts';
+import { findNearestEnemy } from './queries.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
-import type { EnemyState } from '../types.ts';
 
 export function sweepArc(_world: GameWorld, ctx: BehaviorContext): void {
   const { player, enemies, boss, def, stats, effects } = ctx;
@@ -22,7 +22,7 @@ export function sweepArc(_world: GameWorld, ctx: BehaviorContext): void {
   const swipeCount = stats.projectileCount;
 
   // 自动瞄准最近 enemy
-  const target = findNearestEnemyInRange(player.x, player.z, enemies, stats.range * 1.5);
+  const target = findNearestEnemy(player.x, player.z, enemies, stats.range * 1.5);
   const aimAngle = target
     ? Math.atan2(target.x - player.x, target.z - player.z)
     : player.rotation;
@@ -63,22 +63,4 @@ export function sweepArc(_world: GameWorld, ctx: BehaviorContext): void {
       effects.addDamageEvent(boss.x, 2, boss.z, damage, isCrit, false, 'sword');
     }
   }
-}
-
-function findNearestEnemyInRange(
-  x: number, z: number,
-  enemies: EnemyState[],
-  range: number,
-): EnemyState | null {
-  let nearest: EnemyState | null = null;
-  let nearestDist = range;
-  for (const enemy of enemies) {
-    if (enemy.hp <= 0) continue;
-    const dist = distanceBetween(x, z, enemy.x, enemy.z);
-    if (dist < nearestDist) {
-      nearestDist = dist;
-      nearest = enemy;
-    }
-  }
-  return nearest;
 }

@@ -142,13 +142,17 @@ export class GameInstance {
       addDamageEvent: (x, y, z, d, c, p, w) => this.addDamageEvent(x, y, z, d, c, p, w),
       applyKnockback: (e, fx, fz) => this.applyKnockback(e, fx, fz),
       addDamageDealt: (n) => { this.state.stats.damageDealt += n; },
-    };
-
-    this.world = createWorld();
-    this.effects = {
-      addDamageEvent: (x, y, z, d, c, p, w) => this.addDamageEvent(x, y, z, d, c, p, w),
-      applyKnockback: (e, fx, fz) => this.applyKnockback(e, fx, fz),
-      addDamageDealt: (n) => { this.state.stats.damageDealt += n; },
+      spawnProjectile: (p) => {
+        if (this.state.projectiles.length >= MAX_PROJECTILES) return null;
+        const id = this.nextProjectileId++;
+        this.state.projectiles.push({
+          id,
+          fromPlayer: true,
+          hitEnemyIds: [],
+          ...p,
+        });
+        return id;
+      },
     };
 
     this.state = {

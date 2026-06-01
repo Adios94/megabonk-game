@@ -678,7 +678,20 @@ export class GameScene {
 
   // Transient mesh-based VFX (slash arcs, lightning columns)
   private slashEffects: Array<{ mesh: THREE.Mesh; life: number; maxLife: number }> = [];
-  private lightningBolts: Array<{ mesh: THREE.Mesh; life: number; maxLife: number }> = [];
+  // Procedural multi-layer lightning: jagged path + glow/core tubes + impact light + ground ring
+  private lightningBolts: Array<{
+    core: THREE.Mesh;
+    glow: THREE.Mesh;
+    light: THREE.PointLight;
+    ring: THREE.Mesh;
+    endX: number;
+    endY: number;
+    endZ: number;
+    height: number;
+    life: number;
+    maxLife: number;
+    flickerTimer: number;
+  }> = [];
   // Persistent flame_ring disk centered on player while equipped
   private flameRingDisk: THREE.Mesh | null = null;
   private flameRingTime = 0;
@@ -1767,6 +1780,11 @@ export class GameScene {
     this.hitStopTimer = duration;
   }
 
+  // GM debug: 强制在指定坐标劈一道闪电（测试用）
+  debugSpawnLightning(x: number, y: number, z: number): void {
+    this.spawnLightningBolt(x, y, z);
+  }
+
   // ===========================================================================
   // Animate Loop
   // ===========================================================================
@@ -2152,41 +2170,108 @@ export class GameScene {
     this.slashEffects.push({ mesh, life: 0.18, maxLife: 0.18 });
   }
 
-  // Lightning bolt: tall thin column that flashes once at impact, plus sparks
+  // Lightning bolt: procedural jagged path with double-layer glow, impact light, ground ring
   private spawnLightningBolt(x: number, y: number, z: number): void {
     const height = 8;
-    const geo = new THREE.CylinderGeometry(0.08, 0.22, height, 6, 1, true);
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0xaaddff,
+    const segments = 12;
+    const jitter = 0.4;
+    const maxLife = 0.25;       // 适中寿命，不长不短
+
+    // ---- Jagged path ----
+    const path = this.buildLightningPath(x, y, z, height, segments, jitter);
+
+    // ---- Outer glow tube: thick, light blue, low opacity ----
+    const glowGeo = new THREE.TubeGeometry(path, segments * 2, 0.45, 6, false);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0x66bbff,
+      transparent: true,
+      opacity: 0.5,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    glow.name = 'LightningGlow';
+
+    // ---- Inner core tube: thin, white, full bright ----
+    const coreGeo = new THREE.TubeGeometry(path, segments * 2, 0.11, 6, false);
+    const coreMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
       transparent: true,
       opacity: 1.0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const core = new THREE.Mesh(coreGeo, coreMat);
+    core.name = 'LightningCore';
+
+    // ---- Impact point light: lights up nearby ground/enemies for one flash ----
+    const light = new THREE.PointLight(0x88ccff, 6, 10, 2);
+    light.position.set(x, y + 0.5, z);
+    light.name = 'LightningLight';
+
+    // ---- Ground impact ring: expands outward and fades ----
+    const ringGeo = new THREE.RingGeometry(0.3, 0.5, 32);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xaaddff,
+      transparent: true,
+      opacity: 0.7,
       side: THREE.DoubleSide,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x, y + height * 0.5, z);
-    // Slight random twist so adjacent bolts don't look identical
-    mesh.rotation.y = Math.random() * Math.PI;
-    this.scene.add(mesh);
-    this.lightningBolts.push({ mesh, life: 0.22, maxLife: 0.22 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(x, y + 0.02, z);
+    ring.name = 'LightningRing';
+
+    this.scene.add(glow);
+    this.scene.add(core);
+    this.scene.add(light);
+    this.scene.add(ring);
+
+    this.lightningBolts.push({
+      core, glow, light, ring,
+      endX: x, endY: y, endZ: z, height,
+      life: maxLife, maxLife,
+      flickerTimer: 0.05,
+    });
 
     // Spark burst at impact — light blue/white
     const sparkCount = 14;
     for (let i = 0; i < sparkCount; i++) {
       const a = Math.random() * Math.PI * 2;
-      const speed = 3 + Math.random() * 4;
-      const sg = 0.7 + Math.random() * 0.3;
+      const speed = 4 + Math.random() * 4;
+      const sg = 0.85 + Math.random() * 0.15;
       const sb = 1.0;
-      const sr = 0.5 + Math.random() * 0.4;
+      const sr = 0.6 + Math.random() * 0.4;
       this.spawnParticle(
-        x, y + 0.5, z,
+        x, y + 0.4, z,
         Math.cos(a) * speed, 4 + Math.random() * 3, Math.sin(a) * speed,
         1.4 + Math.random() * 0.6,
         0.3 + Math.random() * 0.2,
         sr, sg, sb,
       );
     }
+  }
+
+  // Generate a jagged top-down lightning path. Endpoints are anchored; middle vertices jitter.
+  private buildLightningPath(
+    x: number, y: number, z: number,
+    height: number, segments: number, jitter: number,
+  ): THREE.CatmullRomCurve3 {
+    const points: THREE.Vector3[] = [];
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      const damp = (i === 0 || i === segments) ? 0 : 1;
+      const dx = (Math.random() - 0.5) * 2 * jitter * damp;
+      const dz = (Math.random() - 0.5) * 2 * jitter * damp;
+      points.push(new THREE.Vector3(
+        x + dx,
+        y + height * (1 - t),
+        z + dz,
+      ));
+    }
+    return new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.5);
   }
 
   // Persistent flame ring disk — created lazily, follows player while equipped
@@ -2228,21 +2313,53 @@ export class GameScene {
       (e.mesh.material as THREE.MeshBasicMaterial).opacity = 0.9 * t;
     }
 
-    // Lightning bolts: brief flash, fade quickly with slight scale jitter
+    // Lightning bolts: jagged path flickers (regenerates every ~60ms), tubes/light/ring fade together
     for (let i = this.lightningBolts.length - 1; i >= 0; i--) {
       const e = this.lightningBolts[i];
       e.life -= dt;
+      e.flickerTimer -= dt;
+
       if (e.life <= 0) {
-        this.scene.remove(e.mesh);
-        e.mesh.geometry.dispose();
-        (e.mesh.material as THREE.Material).dispose();
+        this.scene.remove(e.core);
+        this.scene.remove(e.glow);
+        this.scene.remove(e.light);
+        this.scene.remove(e.ring);
+        e.core.geometry.dispose();
+        (e.core.material as THREE.Material).dispose();
+        e.glow.geometry.dispose();
+        (e.glow.material as THREE.Material).dispose();
+        e.ring.geometry.dispose();
+        (e.ring.material as THREE.Material).dispose();
         this.lightningBolts.splice(i, 1);
         continue;
       }
+
       const t = e.life / e.maxLife;
-      const jitter = 0.85 + Math.random() * 0.3;
-      e.mesh.scale.set(jitter, 1, jitter);
-      (e.mesh.material as THREE.MeshBasicMaterial).opacity = t * t; // sharper fade
+      const inv = 1 - t;
+      // 标准二次衰减
+      const fade = t * t;
+
+      // 1. Flicker: regenerate path every ~60ms
+      if (e.flickerTimer <= 0) {
+        e.flickerTimer = 0.06;
+        const newPath = this.buildLightningPath(e.endX, e.endY, e.endZ, e.height, 12, 0.4);
+        e.core.geometry.dispose();
+        e.glow.geometry.dispose();
+        e.core.geometry = new THREE.TubeGeometry(newPath, 24, 0.11, 6, false);
+        e.glow.geometry = new THREE.TubeGeometry(newPath, 24, 0.45, 6, false);
+      }
+
+      // 2. Opacity
+      (e.core.material as THREE.MeshBasicMaterial).opacity = fade;
+      (e.glow.material as THREE.MeshBasicMaterial).opacity = 0.5 * fade;
+
+      // 3. Point light intensity decays
+      e.light.intensity = 6 * fade;
+
+      // 4. Ground ring: expand and fade
+      const ringScale = 0.3 + inv * 5;
+      e.ring.scale.set(ringScale, ringScale, 1);
+      (e.ring.material as THREE.MeshBasicMaterial).opacity = 0.7 * fade;
     }
   }
 
@@ -2934,16 +3051,17 @@ export class GameScene {
   }
 
   private emitDeathBurst(x: number, y: number, z: number, _enemyType: string): void {
-    const count = 25 + Math.floor(Math.random() * 10);
+    // 极简死亡爆点：稀疏粒子、超短寿命、近距扩散，避免叠加产生半透糊感
+    const count = 5 + Math.floor(Math.random() * 3);    // 5–7（原 12–15）
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const elevation = (Math.random() - 0.3) * Math.PI;
-      const speed = 5 + Math.random() * 7;
+      const speed = 2 + Math.random() * 1.5;            // 2–3.5（原 3–6）
       const vx = Math.cos(angle) * Math.cos(elevation) * speed;
-      const vy = Math.abs(Math.sin(elevation)) * speed + 3;
+      const vy = Math.abs(Math.sin(elevation)) * speed + 1.5;
       const vz = Math.sin(angle) * Math.cos(elevation) * speed;
-      const size = 1.5 + Math.random() * 2.0;
-      const life = 0.4 + Math.random() * 0.5;
+      const size = 2.2 + Math.random() * 1.3;           // 2.2–3.5（原 2.4–4.2）
+      const life = 0.14 + Math.random() * 0.1;          // 0.14–0.24s（原 0.25–0.45s）
       // Red/orange death particles
       const r = 0.8 + Math.random() * 0.2;
       const g = 0.2 + Math.random() * 0.4;
@@ -4452,18 +4570,25 @@ function setupGMTool(): void {
     spawnBoss() { gmSpawnBoss(); },
     godMode() { gmGodMode(); },
     skipTo(minutes: number) { gmSkipTime(minutes); },
+    giveWeapon(type: string, level: number = 1) { gmGiveWeapon(type, level); },
+    giveAllWeapons() { gmGiveAllWeapons(); },
+    testLightning() { gmTestLightning(); },
     help() {
       console.log(`
 GM Commands (window.__gm):
-  .state         — 当前游戏状态
-  .levelUp()     — 直接升级
-  .addXp(999)    — 加经验
-  .heal()        — 满血
-  .kill()        — 杀死所有敌人
-  .silver(1000)  — 加银币
-  .spawnBoss()   — 召唤Boss
-  .godMode()     — 无敌模式
-  .skipTo(5)     — 跳到第5分钟
+  .state              — 当前游戏状态
+  .levelUp()          — 直接升级
+  .addXp(999)         — 加经验
+  .heal()             — 满血
+  .kill()             — 杀死所有敌人
+  .silver(1000)       — 加银币
+  .spawnBoss()        — 召唤Boss
+  .godMode()          — 无敌模式
+  .skipTo(5)          — 跳到第5分钟
+  .giveWeapon(type, level=1)
+                      — 加指定武器（type: sword/bone_bouncer/axe/bow/
+                        lightning_staff/flame_ring/shotgun）
+  .giveAllWeapons()   — 一键塞满全部武器
       `);
     },
   };
@@ -4525,6 +4650,72 @@ function gmSkipTime(minutes: number): void {
   (state as any).gameTime = minutes * 60;
 }
 
+const ALL_WEAPON_TYPES = [
+  'sword',
+  'bone_bouncer',
+  'axe',
+  'bow',
+  'lightning_staff',
+  'flame_ring',
+  'shotgun',
+] as const;
+
+function gmGiveWeapon(type: string, level: number = 1): void {
+  if (!gmSession) return;
+  if (!ALL_WEAPON_TYPES.includes(type as typeof ALL_WEAPON_TYPES[number])) {
+    console.warn(`[GM] Unknown weapon type: ${type}. Valid: ${ALL_WEAPON_TYPES.join(', ')}`);
+    return;
+  }
+  const state = gmSession.getRenderState();
+  const player = state.player;
+  const existing = player.weapons.find((w) => w.type === type);
+  if (existing) {
+    existing.level = Math.max(existing.level, level);
+    console.log(`[GM] ${type} → level ${existing.level}`);
+    return;
+  }
+  if (player.weapons.length >= player.maxWeaponSlots) {
+    console.warn(`[GM] Weapon slots full (${player.weapons.length}/${player.maxWeaponSlots})`);
+    return;
+  }
+  player.weapons.push({
+    type: type as typeof ALL_WEAPON_TYPES[number],
+    level,
+    cooldownTimer: 0,
+    evolved: false,
+  });
+  console.log(`[GM] +${type} (level ${level})`);
+}
+
+function gmGiveAllWeapons(): void {
+  if (!gmSession) return;
+  const state = gmSession.getRenderState();
+  const player = state.player;
+  // Bump slot cap so all 7 fit
+  if (player.maxWeaponSlots < ALL_WEAPON_TYPES.length) {
+    player.maxWeaponSlots = ALL_WEAPON_TYPES.length;
+  }
+  for (const type of ALL_WEAPON_TYPES) {
+    const existing = player.weapons.find((w) => w.type === type);
+    if (!existing) {
+      player.weapons.push({ type, level: 1, cooldownTimer: 0, evolved: false });
+    }
+  }
+  console.log(`[GM] All weapons granted (${player.weapons.length}/${player.maxWeaponSlots})`);
+}
+
+function gmTestLightning(): void {
+  if (!gmSession || !activeScene) {
+    console.warn('[GM] No active scene');
+    return;
+  }
+  const state = gmSession.getRenderState();
+  const p = state.player;
+  // 在玩家头顶劈一道（不依赖敌人，纯视觉测试）
+  activeScene.debugSpawnLightning(p.x, 0, p.z);
+  console.log(`[GM] 强制劈电 @ (${p.x.toFixed(1)}, 0, ${p.z.toFixed(1)})`);
+}
+
 function toggleGMPanel(): void {
   if (gmPanel) {
     gmPanel.remove();
@@ -4550,6 +4741,11 @@ function toggleGMPanel(): void {
     ['无敌模式', gmGodMode],
     ['跳到 5 分钟', () => gmSkipTime(5)],
     ['跳到 8 分钟', () => gmSkipTime(8)],
+    ['+闪电法杖 (Lv5)', () => gmGiveWeapon('lightning_staff', 5)],
+    ['+剑 (Lv5)', () => gmGiveWeapon('sword', 5)],
+    ['+火焰环 (Lv5)', () => gmGiveWeapon('flame_ring', 5)],
+    ['给我所有武器', gmGiveAllWeapons],
+    ['⚡测试闪电特效⚡', gmTestLightning],
   ];
 
   for (const [label, fn] of buttons) {

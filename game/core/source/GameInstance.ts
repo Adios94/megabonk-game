@@ -21,6 +21,7 @@ import type {
   EnemyType,
   EnemyBehavior,
   WeaponState,
+  WeaponType,
   GameStats,
   BossPhase,
   BossAttack,
@@ -1108,7 +1109,7 @@ export class GameInstance {
           enemy.hp -= damage;
           enemy.hitFlashTimer = 0.15;
           this.state.stats.damageDealt += damage;
-          this.addDamageEvent(enemy.x, 1.0, enemy.z, damage, isCrit, false);
+          this.addDamageEvent(enemy.x, 1.0, enemy.z, damage, isCrit, false, 'sword');
           this.applyKnockback(enemy, player.x, player.z);
         }
       }
@@ -1123,7 +1124,7 @@ export class GameInstance {
         this.state.boss.hp -= damage;
         this.state.boss.hitFlashTimer = 0.15;
         this.state.stats.damageDealt += damage;
-        this.addDamageEvent(this.state.boss.x, 2, this.state.boss.z, damage, isCrit, false);
+        this.addDamageEvent(this.state.boss.x, 2, this.state.boss.z, damage, isCrit, false, 'sword');
       }
     }
   }
@@ -1259,7 +1260,7 @@ export class GameInstance {
     target.hp -= damage;
     target.hitFlashTimer = 0.15;
     this.state.stats.damageDealt += damage;
-    this.addDamageEvent(target.x, 1.5, target.z, damage, isCrit, false);
+    this.addDamageEvent(target.x, 1.5, target.z, damage, isCrit, false, 'lightning_staff');
 
     // Chain to nearby enemies
     const hitIds = new Set<number>([target.id]);
@@ -1287,7 +1288,7 @@ export class GameInstance {
       nearestEnemy.hp -= chainDmg;
       nearestEnemy.hitFlashTimer = 0.15;
       this.state.stats.damageDealt += chainDmg;
-      this.addDamageEvent(nearestEnemy.x, 1.5, nearestEnemy.z, chainDmg, chainCrit, false);
+      this.addDamageEvent(nearestEnemy.x, 1.5, nearestEnemy.z, chainDmg, chainCrit, false, 'lightning_staff');
 
       hitIds.add(nearestEnemy.id);
       currentX = nearestEnemy.x;
@@ -1304,7 +1305,7 @@ export class GameInstance {
         this.state.boss.hp -= bossDmg;
         this.state.boss.hitFlashTimer = 0.15;
         this.state.stats.damageDealt += bossDmg;
-        this.addDamageEvent(this.state.boss.x, 2, this.state.boss.z, bossDmg, bossCrit, false);
+        this.addDamageEvent(this.state.boss.x, 2, this.state.boss.z, bossDmg, bossCrit, false, 'lightning_staff');
       }
     }
   }
@@ -1323,7 +1324,7 @@ export class GameInstance {
         enemy.hp -= damage;
         enemy.hitFlashTimer = 0.1;
         this.state.stats.damageDealt += damage;
-        this.addDamageEvent(enemy.x, 1.0, enemy.z, damage, isCrit, false);
+        this.addDamageEvent(enemy.x, 1.0, enemy.z, damage, isCrit, false, 'flame_ring');
       }
     }
 
@@ -1335,7 +1336,7 @@ export class GameInstance {
         this.state.boss.hp -= damage;
         this.state.boss.hitFlashTimer = 0.15;
         this.state.stats.damageDealt += damage;
-        this.addDamageEvent(this.state.boss.x, 2, this.state.boss.z, damage, isCrit, false);
+        this.addDamageEvent(this.state.boss.x, 2, this.state.boss.z, damage, isCrit, false, 'flame_ring');
       }
     }
   }
@@ -1458,7 +1459,7 @@ export class GameInstance {
           this.state.boss.hp -= proj.damage;
           this.state.boss.hitFlashTimer = 0.15;
           this.state.stats.damageDealt += proj.damage;
-          this.addDamageEvent(this.state.boss.x, 2, this.state.boss.z, proj.damage, false, false);
+          this.addDamageEvent(this.state.boss.x, 2, this.state.boss.z, proj.damage, false, false, proj.weaponType);
           proj.hitEnemyIds.push(id);
 
           if (proj.pierceLeft > 0) {
@@ -1478,7 +1479,7 @@ export class GameInstance {
         enemy.hp -= proj.damage;
         enemy.hitFlashTimer = 0.15;
         this.state.stats.damageDealt += proj.damage;
-        this.addDamageEvent(enemy.x, 1.0, enemy.z, proj.damage, false, false);
+        this.addDamageEvent(enemy.x, 1.0, enemy.z, proj.damage, false, false, proj.weaponType);
         proj.hitEnemyIds.push(id);
 
         // Knockback from knockback tome
@@ -2571,7 +2572,7 @@ export class GameInstance {
     return null;
   }
 
-  private addDamageEvent(x: number, y: number, z: number, damage: number, isCrit: boolean, isPlayerDamage: boolean): void {
-    this.state.damageEvents.push({ x, y, z, damage, isCrit, isPlayerDamage });
+  private addDamageEvent(x: number, y: number, z: number, damage: number, isCrit: boolean, isPlayerDamage: boolean, weaponType?: WeaponType): void {
+    this.state.damageEvents.push({ x, y, z, damage, isCrit, isPlayerDamage, weaponType });
   }
 }

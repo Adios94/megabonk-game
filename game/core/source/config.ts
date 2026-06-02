@@ -35,6 +35,12 @@ export const XP_GROWTH = 0.35;
 export const BOSS_SPAWN_TIME = 540;
 export const BOSS_HP = 2000;
 export const BOSS_INTRO_DURATION = 2.0;
+/**
+ * 常规生存期（秒）。超过这个时间且玩家未进传送门 → 进入 overtime。
+ * 与 BOSS_SPAWN_TIME 数值相同，但语义不同：BOSS_SPAWN_TIME 是历史遗留的硬编码触发时间，
+ * 现在已不再用作 Boss 触发条件，仅供测试 / 兼容引用。
+ */
+export const REGULAR_GAME_DURATION = 540;
 
 export const PICKUP_LIFETIME = 30;
 export const PICKUP_ATTRACT_SPEED = 12;
@@ -49,10 +55,42 @@ export const CHEST_INTERACT_RADIUS = 2.5;
 export const CHEST_SILVER_MIN = 50;
 export const CHEST_SILVER_MAX = 200;
 
-// Teleporter settings
-export const TELEPORTER_ACTIVATION_DURATION = 3.0; // seconds to activate
-export const TELEPORTER_APPEAR_TIME = 300; // when teleporter spawns (5 min)
-export const TELEPORTER_RADIUS = 2.0; // player must be within this range to activate
+// Altar (formerly Teleporter) settings
+/** 召唤 Boss 的读条秒数（防误触）。 */
+export const ALTAR_SUMMON_DURATION = 1.0;
+/** 玩家与祭坛 / 传送门交互的触发半径。 */
+export const ALTAR_INTERACT_RADIUS = 2.0;
+/** 祭坛距出生点的最小距离（要求玩家探索才能找到）。 */
+export const ALTAR_MIN_DISTANCE = 25;
+/** 祭坛距地图中心的最大相对距离（halfMap 系数）。避免出图边。 */
+export const ALTAR_MAX_DISTANCE_RATIO = 0.6;
+
+/**
+ * @deprecated 旧 teleporter 系统的常量，保留为 alias 以减少破坏。新代码用 ALTAR_*。
+ */
+export const TELEPORTER_ACTIVATION_DURATION = ALTAR_SUMMON_DURATION;
+/**
+ * @deprecated 旧 teleporter 出现时间。新设计开局即生成；本常量仅留兼容。
+ */
+export const TELEPORTER_APPEAR_TIME = 0;
+/**
+ * @deprecated 使用 ALTAR_INTERACT_RADIUS。
+ */
+export const TELEPORTER_RADIUS = ALTAR_INTERACT_RADIUS;
+
+// Charge Shrine settings
+/** 一局生成多少个充能圣殿。 */
+export const SHRINE_COUNT = 3;
+/** 玩家进入充能圈的半径。 */
+export const SHRINE_RADIUS = 2.5;
+/** 充满 / 解锁需要的站立秒数。 */
+export const SHRINE_CHARGE_DURATION = 4.0;
+/** 解锁后的奖励选项数量（megabonk 充能圣殿固定为 4 选 1）。 */
+export const SHRINE_REWARD_COUNT = 4;
+/** 护盾每秒回满的速率（玩家护盾比 HP 恢复快得多）。 */
+export const SHIELD_REGEN_RATE = 5.0;
+/** 离开战斗多久护盾才开始回（其它情况护盾不回）。 */
+export const SHIELD_REGEN_DELAY = 3.0;
 
 // XP values for pickup types
 export const XP_VALUES: Record<string, number> = {
@@ -270,12 +308,24 @@ export interface TierConfig {
   enemySpeedMultiplier: number;
   xpMultiplier: number;
   silverMultiplier: number;
+  /**
+   * 本档生成的祭坛 / 传送门数量。当前设计统一 = 1。
+   * （字段保留旧名 `teleporterCount` 以减少破坏；新代码可读作"祭坛数量"。）
+   */
   teleporterCount: number;
   bossHpMultiplier: number;
 }
 
 export const TIER_CONFIGS: Record<DifficultyTier, TierConfig> = {
-  1: { tier: 1, name: 'Normal', enemyHpMultiplier: 1.0, enemyDamageMultiplier: 1.0, enemySpeedMultiplier: 1.0, xpMultiplier: 1.0, silverMultiplier: 1.0, teleporterCount: 0, bossHpMultiplier: 1.0 },
+  1: { tier: 1, name: 'Normal', enemyHpMultiplier: 1.0, enemyDamageMultiplier: 1.0, enemySpeedMultiplier: 1.0, xpMultiplier: 1.0, silverMultiplier: 1.0, teleporterCount: 1, bossHpMultiplier: 1.0 },
   2: { tier: 2, name: 'Hard', enemyHpMultiplier: 1.5, enemyDamageMultiplier: 1.3, enemySpeedMultiplier: 1.1, xpMultiplier: 1.5, silverMultiplier: 2.0, teleporterCount: 1, bossHpMultiplier: 1.5 },
-  3: { tier: 3, name: 'Nightmare', enemyHpMultiplier: 2.5, enemyDamageMultiplier: 1.8, enemySpeedMultiplier: 1.2, xpMultiplier: 2.0, silverMultiplier: 3.0, teleporterCount: 2, bossHpMultiplier: 2.5 },
+  3: { tier: 3, name: 'Nightmare', enemyHpMultiplier: 2.5, enemyDamageMultiplier: 1.8, enemySpeedMultiplier: 1.2, xpMultiplier: 2.0, silverMultiplier: 3.0, teleporterCount: 1, bossHpMultiplier: 2.5 },
 };
+
+// === Overtime 难度系数 ===
+/** Overtime 系数每多少秒升一档。 */
+export const OVERTIME_STEP_SECONDS = 30;
+/** Overtime 每档给敌人 HP 与伤害的增量（线性）。 */
+export const OVERTIME_HP_DAMAGE_PER_STEP = 0.10;
+/** Overtime 每档给敌人速度的增量（更温和，避免风筝失灵）。 */
+export const OVERTIME_SPEED_PER_STEP = 0.04;

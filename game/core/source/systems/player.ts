@@ -63,6 +63,21 @@ export function createInitialPlayer(config: GameConfig): PlayerState {
     alive: true, character: config.character,
     maxWeaponSlots: Math.min(MAX_WEAPONS_CAP, charCfg.weaponSlots + extraSlots),
     comboCount: 0, comboTimer: 0,
+    // Shrine bonuses (默认值；charge shrine 奖励会累计到这些字段上)
+    shield: 0,
+    maxShield: 0,
+    shieldRegenAccum: 0,
+    hpRegenRate: 0,
+    hpRegenAccum: 0,
+    projectileBonus: 0,
+    knockbackMult: 1,
+    eliteDamageMult: 1,
+    lifestealPct: 0,
+    jumpHeightMult: 1,
+    durationMult: 1,
+    powerupMult: 1,
+    difficultyMult: 1,
+    luckBonus: 0,
   };
 }
 

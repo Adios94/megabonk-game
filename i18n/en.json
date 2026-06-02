@@ -31,7 +31,11 @@
     "teleporter": "Teleporter nearby!",
     "silver": "Silver: {{count}}",
     "finalSwarm": "FINAL SWARM!",
-    "combo": "COMBO x{{count}}"
+    "combo": "COMBO x{{count}}",
+    "compass": {
+      "altar": "Altar",
+      "portal": "Portal"
+    }
   },
   "upgrade": {
     "title": "Choose Upgrade",
@@ -179,6 +183,7 @@
     "2": "Hard",
     "3": "Nightmare",
     "select": "Select Difficulty",
+    "transition": "Tier {{value}}",
     "stat": {
       "enemyHp": "Enemy HP: {{value}}x",
       "enemyDamage": "Enemy damage: {{value}}x",
@@ -189,6 +194,61 @@
     "found": "Teleporter Found!",
     "activating": "Activating...",
     "activated": "Boss Summoned!"
+  },
+  "altar": {
+    "summoning": "Summoning Boss...",
+    "prompt": {
+      "summon": "[E] Summon Boss",
+      "enterPortal": "[E] Enter Portal"
+    }
+  },
+  "overtime": {
+    "banner": "Overtime"
+  },
+  "shrine": {
+    "title": "Charge Shrine Rewards",
+    "indicator_far": "Charge Shrine: {{dist}}m",
+    "indicator_charging": "Charging... {{percent}}%",
+    "rarity": {
+      "common": "Common",
+      "uncommon": "Uncommon",
+      "rare": "Rare",
+      "legendary": "Legendary"
+    },
+    "reward": {
+      "damage_name": "Damage",
+      "damage_desc": "Gain {{percent}}% Damage. Increase the amount of damage you deal.",
+      "shield_name": "Shield",
+      "shield_desc": "Gain +{{value}} Shield. Shields take damage before your Health, and regenerate much faster than HP.",
+      "pickup_range_name": "Pickup Range",
+      "pickup_range_desc": "Gain {{percent}}% Pickup Range. Increase the distance from which you can pick up XP.",
+      "crit_damage_name": "Crit Damage",
+      "crit_damage_desc": "Gain {{percent}}% Crit Damage. Increase the amount of critical damage you deal.",
+      "luck_name": "Luck",
+      "luck_desc": "Gain {{percent}}% Luck. Increases the chance of higher rarity items.",
+      "projectile_count_name": "+{{value}} Projectile",
+      "projectile_count_desc": "Each weapon with a projectile count gains an extra projectile.",
+      "hp_regen_name": "HP Regen",
+      "hp_regen_desc": "Gain +{{value}} HP Regen. Increase the amount of Health you regenerate over time.",
+      "knockback_name": "Knockback",
+      "knockback_desc": "Gain {{percent}}% Knockback.",
+      "attack_speed_name": "Attack Speed",
+      "attack_speed_desc": "Gain {{percent}}% Attack Speed.",
+      "difficulty_name": "Difficulty",
+      "difficulty_desc": "Gain {{percent}}% Difficulty.",
+      "lifesteal_name": "Lifesteal",
+      "lifesteal_desc": "Gain {{percent}}% Lifesteal.",
+      "powerup_multiplier_name": "Powerup Multiplier",
+      "powerup_multiplier_desc": "Gain {{percent}}% Powerup Multiplier.",
+      "elite_damage_name": "Elite Damage",
+      "elite_damage_desc": "Gain {{percent}}% Damage to Elites. Increase damage to elite enemies (Minibosses, Bosses).",
+      "duration_name": "Duration",
+      "duration_desc": "Gain {{percent}}% Duration.",
+      "jump_height_name": "Jump Height",
+      "jump_height_desc": "Gain {{percent}}% Jump Height.",
+      "movement_speed_name": "Movement Speed",
+      "movement_speed_desc": "Gain {{percent}}% Movement Speed."
+    }
   },
   "result": {
     "victory": "Victory!",

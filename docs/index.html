@@ -682,7 +682,8 @@
 
     <h4>系统</h4>
     <a data-tab="quests">任务 / 银币</a>
-    <a data-tab="teleporter">传送门 / 存档</a>
+    <a data-tab="teleporter">祭坛 / Boss / 超时</a>
+    <a data-tab="shrine">充能神殿</a>
 
     <h4>技术</h4>
     <a data-tab="architecture">架构</a>
@@ -873,7 +874,7 @@ export {
 <section id="overview">
   <div class="hero">
     <h1>MegaBonk Three.js</h1>
-    <div class="tagline">3D Roguelike Survivor · 单局 9 分钟 · 移动端优先 · 7 种武器 · 10 种典籍 · 5 条进化路径</div>
+    <div class="tagline">3D Roguelike Survivor · 探索找祭坛召 Boss · 通关跳关递进 · 移动端优先 · 7 种武器 · 10 种典籍 · 5 条进化路径</div>
 
     <div>
       <span class="pill cyan">Three.js 0.170</span>
@@ -892,7 +893,7 @@ export {
       <div class="stat-card"><div class="num">3</div><div class="lbl">角色</div></div>
       <div class="stat-card"><div class="num">6</div><div class="lbl">敌人</div></div>
       <div class="stat-card"><div class="num">29</div><div class="lbl">任务</div></div>
-      <div class="stat-card"><div class="num">540s</div><div class="lbl">单局长度</div></div>
+      <div class="stat-card"><div class="num">540s</div><div class="lbl">常规生存期</div></div>
     </div>
   </div>
 
@@ -972,18 +973,18 @@ export {
 
 <!-- ============= TIMELINE ============= -->
 <section id="timeline">
-  <h2>单局节奏（540 秒 = 9 分钟）</h2>
-  <p class="sub">来源：<code>WAVE_CONFIGS</code> 与 <code>spawnEnemies()</code></p>
+  <h2>单局节奏（常规生存期 540s + Overtime 无上限）</h2>
+  <p class="sub">来源：<code>WAVE_CONFIGS</code> 与 <code>spawnEnemies()</code>。Boss 战由玩家在祭坛主动触发，与时间无关；540s 后若未进入传送门，进入 Overtime 难度递增。详见 <a data-tab="teleporter">祭坛 / Boss / 超时</a>。</p>
 
   <div class="timeline-wrap">
     <div class="timeline">
-      <div class="tl-marker" style="left: 0%"><span class="lbl">0s</span><span class="ev">骷髅步兵<br>2.0s 刷新</span></div>
+      <div class="tl-marker" style="left: 0%"><span class="lbl">0s</span><span class="ev">骷髅步兵<br>祭坛 + 宝箱已生成</span></div>
       <div class="tl-marker" style="left: 11.1%"><span class="lbl">60s</span><span class="ev">+ 僵尸<br>5% 精英</span></div>
       <div class="tl-marker" style="left: 33.3%"><span class="lbl">180s</span><span class="ev">+ 弓手<br>Mini-Boss 启动</span></div>
-      <div class="tl-marker" style="left: 55.5%"><span class="lbl">300s</span><span class="ev">+ 传送门<br>15% 精英</span></div>
+      <div class="tl-marker" style="left: 55.5%"><span class="lbl">300s</span><span class="ev">15% 精英</span></div>
       <div class="tl-marker" style="left: 77.7%"><span class="lbl">420s</span><span class="ev">最后冲刺<br>20% 精英</span></div>
       <div class="tl-marker" style="left: 88.8%"><span class="lbl">480s</span><span class="ev">FINAL SWARM<br>同屏 150 / 敌速 +20%</span></div>
-      <div class="tl-marker" style="left: 100%"><span class="lbl">540s</span><span class="ev">BOSS<br>3 阶段</span></div>
+      <div class="tl-marker" style="left: 100%"><span class="lbl">540s+</span><span class="ev">⏱ Overtime<br>难度按 30s 一档递增</span></div>
     </div>
   </div>
 
@@ -1002,7 +1003,8 @@ export {
     <tr><td>300–420s</td><td>已全开</td><td class="num">1.0s</td><td class="num">85</td><td>3–6</td><td>15%</td></tr>
     <tr><td>420–480s</td><td>已全开</td><td class="num">0.8s</td><td class="num">100</td><td>4–8</td><td>20%</td></tr>
     <tr style="background: var(--warn-soft);"><td>480–540s</td><td><span class="hl">FINAL SWARM</span> 双倍刷新</td><td class="num">0.4s</td><td class="num">150</td><td>4–8</td><td>20%</td></tr>
-    <tr style="background: var(--bad-soft);"><td>540s</td><td><span class="hl">Boss 战</span></td><td colspan="3">Tier 1 自动 / Tier 2/3 须激活完传送门</td></tr>
+    <tr style="background: var(--bad-soft);"><td>≥ 540s</td><td><span class="hl">Overtime</span> 仅当未进传送门</td><td colspan="3">敌人 HP/伤害每 30s +10%、速度 +4%；死亡 → defeat</td></tr>
+    <tr style="background: var(--accent-2-soft);"><td>任意时刻</td><td><span class="hl">Boss 战</span> 由玩家召唤</td><td colspan="3">走到祭坛 + 按 [E] / 移动端按钮 → 1.0s 读条 → Boss 进场</td></tr>
   </table>
 </section>
 
@@ -1020,7 +1022,7 @@ export {
       <div class="tier-row"><span class="k">XP 奖励</span><span class="v">1.0×</span></div>
       <div class="tier-row"><span class="k">银币奖励</span><span class="v">1.0×</span></div>
       <div class="tier-row"><span class="k">Boss HP</span><span class="v">1.0× (2000)</span></div>
-      <div class="tier-row"><span class="k">传送门</span><span class="v">0（Boss 自动出现）</span></div>
+      <div class="tier-row"><span class="k">祭坛</span><span class="v">1 个（按 [E] 召唤）</span></div>
     </div>
     <div class="tier t2">
       <h3>Tier 2 <span class="badge" style="color: var(--warn); border-color: var(--warn); background: var(--warn-soft);">困难</span></h3>
@@ -1030,7 +1032,7 @@ export {
       <div class="tier-row"><span class="k">XP 奖励</span><span class="v">1.5×</span></div>
       <div class="tier-row"><span class="k">银币奖励</span><span class="v">2.0×</span></div>
       <div class="tier-row"><span class="k">Boss HP</span><span class="v">1.5×</span></div>
-      <div class="tier-row"><span class="k">传送门</span><span class="v">1 个</span></div>
+      <div class="tier-row"><span class="k">祭坛</span><span class="v">1 个（按 [E] 召唤）</span></div>
     </div>
     <div class="tier t3">
       <h3>Tier 3 <span class="badge" style="color: var(--bad); border-color: var(--bad); background: var(--bad-soft);">噩梦</span></h3>
@@ -1040,7 +1042,7 @@ export {
       <div class="tier-row"><span class="k">XP 奖励</span><span class="v">2.0×</span></div>
       <div class="tier-row"><span class="k">银币奖励</span><span class="v">3.0×</span></div>
       <div class="tier-row"><span class="k">Boss HP</span><span class="v">2.5×</span></div>
-      <div class="tier-row"><span class="k">传送门</span><span class="v">2 个（须全激活）</span></div>
+      <div class="tier-row"><span class="k">祭坛</span><span class="v">1 个（按 [E] 召唤）</span></div>
     </div>
   </div>
 </section>
@@ -1316,7 +1318,7 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
 <!-- ============= BOSS ============= -->
 <section id="boss">
   <h2>Boss 战</h2>
-  <p class="sub">触发：540s · 基础 HP 2000（再 × <code>tier.bossHpMultiplier</code>）· 来源：<code>ai/bosses/skeletonKing.ts</code>（phase 表 + 7 attacks）+ <code>systems/bossAi.ts</code> 调度</p>
+  <p class="sub">触发：玩家走到祭坛旁按 <code>[E]</code> / 移动端按钮，1.0s 读条完成后进场（不再依赖 540s 时间触发）· 基础 HP 2000（再 × <code>tier.bossHpMultiplier</code>）· 来源：<code>ai/bosses/skeletonKing.ts</code>（phase 表 + 7 attacks）+ <code>systems/bossAi.ts</code> 调度。Boss 死亡后祭坛变传送门，详见 <a data-tab="teleporter">祭坛 / Boss / 超时</a>。</p>
 
   <div class="hpbar">
     <div class="seg p1">P1 · 100% – 60% HP</div>
@@ -1399,16 +1401,71 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
 
 <!-- ============= TELEPORTER ============= -->
 <section id="teleporter">
-  <h2>传送门 / 银币 / 存档</h2>
+  <h2>祭坛 / Boss / 传送门 / Overtime</h2>
+  <p class="sub">设计文档：<code>docs/boss-loop-redesign.md</code> · 实现：<code>systems/altars.ts</code> · <code>systems/overtime.ts</code> · <code>systems/tierTransition.ts</code></p>
 
-  <h3>传送门 <span class="badge">仅 Tier 2/3</span></h3>
+  <div class="note" style="margin-top: 14px;">
+    <b>核心循环</b>：开局生成 1 个祭坛 → 玩家探索找到 → 按 <code>[E]</code> / 移动端按钮召唤 → Boss 战 → 击败后祭坛变传送门 → 玩家选择进入下一关（tier++）或留下打 Overtime。
+  </div>
+
+  <h3>祭坛状态机（5 阶段）</h3>
+  <pre><code>ready          玩家在交互半径内 → UI 显示 [E] 召唤 Boss
+  ↓ 按 interact
+summoning      读条 1.0s（防误触）；走出半径 → 回 ready
+  ↓ 读条满
+boss_active    Boss 已生成；祭坛锁住、不可再交互
+  ↓ Boss 死亡
+portal_ready   祭坛变传送门；UI 显示 [E] 进入下一关
+  ↓ 按 interact
+portal_used    终态；tier 推进流程消费它（清场 + 重生新祭坛）</code></pre>
+
+  <h3>祭坛常量（<code>config.ts</code>）</h3>
   <table>
-    <tr><th>常量</th><th>值</th></tr>
-    <tr><td><code>TELEPORTER_APPEAR_TIME</code></td><td>300s（5 分钟）</td></tr>
-    <tr><td><code>TELEPORTER_RADIUS</code></td><td>2.0 单位</td></tr>
-    <tr><td><code>TELEPORTER_ACTIVATION_DURATION</code></td><td>3.0 秒（持续靠近）</td></tr>
-    <tr><td>数量</td><td>Tier 1 = 0 · Tier 2 = 1 · Tier 3 = 2（须全激活）</td></tr>
+    <tr><th>常量</th><th>值</th><th>说明</th></tr>
+    <tr><td><code>ALTAR_SUMMON_DURATION</code></td><td>1.0s</td><td>召唤读条秒数（仅防误触，可被走出半径打断）</td></tr>
+    <tr><td><code>ALTAR_INTERACT_RADIUS</code></td><td>2.0</td><td>玩家与祭坛 / 传送门交互的半径</td></tr>
+    <tr><td><code>ALTAR_MIN_DISTANCE</code></td><td>25</td><td>祭坛距出生点最小距离（要求探索）</td></tr>
+    <tr><td><code>ALTAR_MAX_DISTANCE_RATIO</code></td><td>0.6</td><td>祭坛距地图中心的最大相对距离 (× halfMap)</td></tr>
+    <tr><td>数量</td><td>每 tier 都 1 个</td><td>统一玩法，差异化交给数值</td></tr>
   </table>
+
+  <h3>Overtime 系统</h3>
+  <p>玩家击败 Boss 后若<b>不</b>进入传送门：当 <code>gameTime ≥ REGULAR_GAME_DURATION (540s)</code>，<code>state.overtimeSeconds</code> 开始累加，敌人按时长升档。</p>
+  <table>
+    <tr><th>常量</th><th>值</th><th>含义</th></tr>
+    <tr><td><code>REGULAR_GAME_DURATION</code></td><td>540s</td><td>常规生存期，超过后进入 overtime 计算</td></tr>
+    <tr><td><code>OVERTIME_STEP_SECONDS</code></td><td>30s</td><td>每多少秒升一档系数</td></tr>
+    <tr><td><code>OVERTIME_HP_DAMAGE_PER_STEP</code></td><td>+10%</td><td>每档敌人 HP / 伤害线性加成</td></tr>
+    <tr><td><code>OVERTIME_SPEED_PER_STEP</code></td><td>+4%</td><td>每档敌人速度增量（更温和，避免风筝失灵）</td></tr>
+  </table>
+  <p style="color: var(--dim);">公式（<code>factories/spawnEnemy.ts</code>）：<code>step = floor(overtimeSeconds / 30)</code> → <code>hp ×= 1 + 0.1 × step</code>，<code>speed ×= 1 + 0.04 × step</code>。仅在 <code>wave</code> / <code>miniBoss</code> 模式下叠加；<code>necromancerSummon</code> / <code>bossSummon</code> 不受影响。</p>
+
+  <h3>Tier 推进（进入传送门）</h3>
+  <p>玩家在 <code>portal_ready</code> 阶段按 <code>[E]</code> → 祭坛切到 <code>portal_used</code> → <code>tickTierTransition</code> 在本帧末尾消费它：</p>
+  <ul>
+    <li><code>config.tier++</code>（最高 3，已是 3 时只重置时间）</li>
+    <li>清场：<code>enemies / projectiles / pickups / boss / damageEvents / waveIndex / finalSwarm / overtimeSeconds = 0</code></li>
+    <li><code>gameTime = 0</code>（进入新一关的"常规生存期"）</li>
+    <li>重新生成祭坛 + 宝箱</li>
+    <li><b>保留</b>：玩家 HP / 武器 / 典籍 / 等级 / XP / silver</li>
+    <li><code>phase = 'playing'</code></li>
+  </ul>
+
+  <h3>结算条件</h3>
+  <table>
+    <tr><th>结束时机</th><th>触发</th><th>结算</th></tr>
+    <tr><td>Boss 战死亡</td><td><code>player.alive=false</code> 且 <code>phase='boss_fight'</code></td><td>defeat，无 victory bonus</td></tr>
+    <tr><td>Overtime 死亡</td><td>死时 <code>overtimeSeconds &gt; 0</code></td><td>defeat（结算时可读 overtimeSeconds 区分死法）</td></tr>
+    <tr><td>Tier 3 通关后再进传送门</td><td>真正的多关内容上线后再细化</td><td>victory（保留 enum，目前未达到）</td></tr>
+  </table>
+
+  <h3>UI / 输入</h3>
+  <ul>
+    <li><b>PC</b>：<code>KeyE</code> 边缘触发（<code>InputState.interact</code>），按下当帧为 true，发完即清零（防长按反复召唤）</li>
+    <li><b>Mobile</b>：交互半径内出现屏幕中下方圆形按钮，文案随阶段切换：<code>altar.prompt.summon</code> ↔ <code>altar.prompt.enterPortal</code></li>
+    <li><b>HUD</b>：屏幕中上方指南针文字 + 距离；Overtime 时屏幕顶部黄色横幅显示 <code>mm:ss</code></li>
+    <li><b>3D 表现</b>：祭坛底色按阶段切换（青蓝 ready / 金黄 summoning / 红 boss_active / 紫 portal_ready）</li>
+  </ul>
 
   <h3>银币来源（关卡内）</h3>
   <table>
@@ -1416,6 +1473,7 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
     <tr><td>银币拾取</td><td><code>pickup.value</code></td></tr>
     <tr><td>幸运典籍每级附赠</td><td>+ luckTome.level / 拾取</td></tr>
     <tr><td>宝箱（4 个 / 局）</td><td>50 ~ 200 随机</td></tr>
+    <tr><td>击败 Boss</td><td>+50（即时进 <code>stats.silverEarned</code>）</td></tr>
     <tr><td>任务 q26 / q27 / q29</td><td>100 / 250 / 1000</td></tr>
   </table>
 
@@ -1434,6 +1492,154 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
   };
 }</code></pre>
   <p style="color: var(--dim);">localStorage key: <code>megabonk_save</code></p>
+</section>
+
+<!-- ============= CHARGE SHRINE ============= -->
+<section id="shrine">
+  <h2>充能神殿（Charge Shrine）</h2>
+  <p class="sub">灵感来自原 megabonk 的 Charge Shrine —— 站立读条解锁 → 4 选 1 永久增益。开局即可触发，与 Boss / 传送门流程独立。</p>
+
+  <div class="note" style="margin-top: 14px;">
+    <b>核心循环</b>：开局生成 3 座圣殿 → 玩家连续站满 4 秒 → 主循环暂停弹出 4 张奖励卡 → 玩家点选一张 → 永久写入 PlayerState → 圣殿变灰。
+  </div>
+
+  <h3>1. 配置常量 <code>config.ts</code></h3>
+  <table>
+    <tr><th>常量</th><th>值</th><th>含义</th></tr>
+    <tr><td><code>SHRINE_COUNT</code></td><td>3</td><td>一局生成的圣殿数量</td></tr>
+    <tr><td><code>SHRINE_RADIUS</code></td><td>2.5</td><td>玩家进入读条圈的半径（单位）</td></tr>
+    <tr><td><code>SHRINE_CHARGE_DURATION</code></td><td>4.0</td><td>充满 / 解锁需站立的连续秒数</td></tr>
+    <tr><td><code>SHRINE_REWARD_COUNT</code></td><td>4</td><td>解锁后的奖励选项数</td></tr>
+    <tr><td><code>SHIELD_REGEN_RATE</code></td><td>5.0</td><td>护盾每秒回复速率（远快于 HP）</td></tr>
+    <tr><td><code>SHIELD_REGEN_DELAY</code></td><td>3.0</td><td>离开战斗几秒后护盾才开始回</td></tr>
+  </table>
+
+  <h3>2. 状态机 <code>ShrinePhase</code></h3>
+  <pre><code>inactive ─(开局)─▶ charging ─(站满 4s)─▶ ready ─(玩家选完)─▶ consumed
+                       ▲                  │
+                       └─(玩家离开归零)──┘</code></pre>
+  <ul>
+    <li><b>charging</b>：玩家在 2.5m 内累计 <code>chargeTimer</code>；离开<b>立即归零</b>（须连续）</li>
+    <li><b>ready</b>：4 个奖励选项 roll 出来；<code>GameState.phase = 'shrine_reward'</code>，主循环全暂停（与 <code>level_up</code> 同语义）</li>
+    <li><b>consumed</b>：玩家选完，永久消耗，圣殿变灰</li>
+  </ul>
+  <p style="color: var(--dim);">同一时刻只允许一座圣殿处于 <code>ready</code> / <code>shrine_reward</code>，避免 phase 冲突；其他充满的圣殿排队等待。</p>
+
+  <h3>3. 奖励池（16 种）<code>data/shrineRewards.ts</code></h3>
+  <p>截图原游戏数值一一对应。<code>%</code> 表示百分比小数（0.12 = +12%）。</p>
+
+  <h4 style="margin-top: 14px;"><span class="pill" style="border-color: var(--c-common); color: var(--c-common); background: white;">Common 通用</span></h4>
+  <table>
+    <tr><th>类型</th><th>数值</th><th>描述</th></tr>
+    <tr><td><code>damage</code></td><td>0.12 / 0.10</td><td>+12% / +10% 伤害</td></tr>
+    <tr><td><code>shield</code></td><td>5</td><td>+5 护盾上限（先于 HP 受伤）</td></tr>
+    <tr><td><code>pickup_range</code></td><td>0.20</td><td>+20% 拾取范围</td></tr>
+    <tr><td><code>crit_damage</code></td><td>0.10</td><td>+10% 暴击伤害</td></tr>
+    <tr><td><code>luck</code></td><td>0.05</td><td>+5% 幸运值（提升后续稀有度滚点）</td></tr>
+    <tr><td><code>projectile_count</code></td><td>1</td><td>+1 投射物（所有带弹数武器）</td></tr>
+    <tr><td><code>hp_regen</code></td><td>20</td><td>+20 HP / 秒 回复</td></tr>
+    <tr><td><code>knockback</code></td><td>0.10</td><td>+10% 击退</td></tr>
+    <tr><td><code>attack_speed</code></td><td>0.072</td><td>+7.2% 攻速</td></tr>
+    <tr><td><code>difficulty</code></td><td>0.08</td><td>+8% 难度（仅记录，未实装）</td></tr>
+    <tr><td><code>lifesteal</code></td><td>0.06</td><td>+6% 生命偷取</td></tr>
+    <tr><td><code>powerup_multiplier</code></td><td>0.10</td><td>+10% Powerup（仅记录）</td></tr>
+    <tr><td><code>elite_damage</code></td><td>0.10</td><td>+10% 对精英伤害</td></tr>
+    <tr><td><code>duration</code></td><td>0.08</td><td>+8% 持续时间（仅记录）</td></tr>
+    <tr><td><code>jump_height</code></td><td>0.10</td><td>+10% 跳跃高度（仅记录）</td></tr>
+    <tr><td><code>movement_speed</code></td><td>0.08</td><td>+8% 移动速度</td></tr>
+  </table>
+
+  <h4 style="margin-top: 14px;"><span class="pill" style="border-color: var(--c-uncommon); color: var(--c-uncommon); background: white;">Uncommon 罕见</span></h4>
+  <table>
+    <tr><th>类型</th><th>数值</th><th>描述</th></tr>
+    <tr><td><code>knockback</code></td><td>0.12</td><td>+12% 击退</td></tr>
+    <tr><td><code>attack_speed</code></td><td>0.072</td><td>+7.2% 攻速</td></tr>
+    <tr><td><code>damage</code></td><td>0.16</td><td>+16% 伤害</td></tr>
+    <tr><td><code>shield</code></td><td>8</td><td>+8 护盾上限</td></tr>
+    <tr><td><code>lifesteal</code></td><td>0.10</td><td>+10% 生命偷取</td></tr>
+  </table>
+
+  <h4 style="margin-top: 14px;"><span class="pill" style="border-color: var(--c-rare); color: var(--c-rare); background: white;">Rare 稀有</span></h4>
+  <table>
+    <tr><th>类型</th><th>数值</th><th>描述</th></tr>
+    <tr><td><code>attack_speed</code></td><td>0.084</td><td>+8.4% 攻速</td></tr>
+    <tr><td><code>damage</code></td><td>0.22</td><td>+22% 伤害</td></tr>
+    <tr><td><code>projectile_count</code></td><td>1</td><td>+1 投射物</td></tr>
+    <tr><td><code>shield</code></td><td>12</td><td>+12 护盾上限</td></tr>
+  </table>
+
+  <h3>4. 数值滚点 <code>rollShrineOptions</code></h3>
+  <pre><code>基础稀有度权重: common 60 / uncommon 28 / rare 10 / legendary 2
+
+luck 偏移（每 5% luck = +1 等级）:
+  common    权重 -= 2 * luckLevel * 5  (下限 20)
+  rare      权重 += luckLevel * 5
+  legendary 权重 += luckLevel * 5
+
+luck 来源 = luck_tome.level + floor(player.luckBonus * 100)</code></pre>
+  <p>每选定 1 个稀有度，再在该稀有度池里<b>加权随机</b>抽取一条；同一个圣殿内<b>不重复</b>奖励类型。</p>
+
+  <h3>5. 应用逻辑 <code>applyShrineReward</code></h3>
+  <table>
+    <tr><th>实装路径</th><th>字段</th></tr>
+    <tr>
+      <td>直接写 stat 字段<br><span style="color: var(--warn);">⚠️ 会被下次 tome 升级 recompute 重置 — TODO Phase 8 拆 ShrineBonus 二次合并</span></td>
+      <td>
+        <code>damage</code> → <code>damageMultiplier *= 1+v</code><br>
+        <code>attack_speed</code> → <code>attackSpeedMultiplier *= 1+v</code><br>
+        <code>movement_speed</code> → <code>speed *= 1+v</code><br>
+        <code>pickup_range</code> → <code>pickupRadius *= 1+v</code><br>
+        <code>crit_damage</code> → <code>critDamage += v</code>
+      </td>
+    </tr>
+    <tr>
+      <td>累加到玩家专属字段<br>（不被 recompute 触碰）</td>
+      <td>
+        <code>shield</code> → <code>maxShield += v</code>，补满 <code>shield</code><br>
+        <code>hp_regen</code> → <code>hpRegenRate += v</code><br>
+        <code>projectile_count</code> → <code>projectileBonus += v</code><br>
+        <code>knockback</code> → <code>knockbackMult *= 1+v</code><br>
+        <code>elite_damage</code> → <code>eliteDamageMult *= 1+v</code><br>
+        <code>lifesteal</code> → <code>lifestealPct += v</code> (capped 1.0)<br>
+        <code>luck</code> → <code>luckBonus += v</code>
+      </td>
+    </tr>
+    <tr>
+      <td>仅存值，运行时未消费<br>（Phase 8 wire）</td>
+      <td><code>jump_height</code> / <code>duration</code> / <code>powerup_multiplier</code> / <code>difficulty</code></td>
+    </tr>
+  </table>
+
+  <h3>6. UI 流程</h3>
+  <table>
+    <tr><th>阶段</th><th>显示</th><th>i18n key</th></tr>
+    <tr><td>接近未充能圣殿（&lt; 30m）</td><td>HUD：<code>充能神殿: {dist}m</code></td><td><code>shrine.indicator_far</code></td></tr>
+    <tr><td>站立充能中</td><td>HUD：<code>充能中... {percent}%</code> + 3D 蓝紫脉动</td><td><code>shrine.indicator_charging</code></td></tr>
+    <tr><td>充满</td><td>弹出 4 选 1 卡片面板（rarity 边框 + emoji + 数值）</td><td><code>shrine.title</code> + <code>shrine.reward.*</code></td></tr>
+    <tr><td>选完</td><td>卡片消失、圣殿变灰、玩家继续战斗</td><td>—</td></tr>
+  </table>
+
+  <h3>7. 与 <code>level_up</code> 的协同</h3>
+  <table>
+    <tr><th>维度</th><th><code>level_up</code></th><th><code>shrine_reward</code></th></tr>
+    <tr><td>触发</td><td>XP 满</td><td>站立 4 秒</td></tr>
+    <tr><td>选项数</td><td>3（保底 1 武器）</td><td>4（不重复奖励类型）</td></tr>
+    <tr><td>Phase 锁</td><td><code>'level_up'</code></td><td><code>'shrine_reward'</code></td></tr>
+    <tr><td>主循环</td><td>全暂停</td><td>全暂停</td></tr>
+    <tr><td>公开 API</td><td><code>selectUpgrade(id)</code></td><td><code>selectShrineReward(id)</code></td></tr>
+    <tr><td>互斥</td><td colspan="2">互不干扰，但同时只能进一个 phase</td></tr>
+  </table>
+
+  <h3>8. 相关文件</h3>
+  <table>
+    <tr><th>文件</th><th>作用</th></tr>
+    <tr><td><code>game/core/source/types.ts</code></td><td><code>ShrinePhase</code> / <code>ShrineRewardType</code> / <code>ShrineRewardOption</code> / <code>ShrineState</code> + <code>PlayerState</code> 的 14 个 shrine 字段</td></tr>
+    <tr><td><code>game/core/source/data/shrineRewards.ts</code></td><td>奖励池（25 条）+ <code>rollShrineOptions</code></td></tr>
+    <tr><td><code>game/core/source/systems/shrines.ts</code></td><td><code>generateShrines</code> / <code>tickShrines</code> 状态机 / <code>applyShrineReward</code></td></tr>
+    <tr><td><code>game/core/source/GameInstance.ts</code></td><td>主循环挂 <code>tickShrines</code>、<code>shrine_reward</code> phase 暂停、公开 <code>selectShrineReward(id)</code> 方法</td></tr>
+    <tr><td><code>game/client/source/index.ts</code></td><td><code>renderShrines</code>（3D 圆盘 + 水晶 + 进度环）+ <code>showShrineRewardPanel</code> 4 选 1 UI</td></tr>
+    <tr><td><code>i18n/{en,zh}.json</code></td><td><code>shrine.*</code> 一组 keys（标题 / 指示器 / rarity / 16 种 reward 名 + 描述）</td></tr>
+  </table>
 </section>
 
 <!-- ============= ARCHITECTURE ============= -->
@@ -1495,7 +1701,8 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
 ├── data/                     ← 数据驱动 (Phase 2-5)
 │   ├── weapons.ts            ← WeaponDef + WEAPONS table
 │   ├── enemies.ts            ← EnemyDef + ENEMIES table (单一 source of truth)
-│   └── tomes.ts              ← TomeDef + TOMES table (Phase 5)
+│   ├── tomes.ts              ← TomeDef + TOMES table (Phase 5)
+│   └── shrineRewards.ts      ← Charge Shrine 奖励池 + rollShrineOptions
 │
 ├── stats/                    ← 4 层 stat 管线 (Phase 1)
 │   ├── Stat.ts               ← Stat shape + finalize() 纯函数
@@ -1529,7 +1736,12 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
     ├── collisions.ts         ← processCollisions (4 类碰撞)
     ├── pickups.ts            ← processDeaths / tickPickups / tickThorns
     ├── spawning.ts           ← tickSpawning / checkBossSpawn (波次 + mini-boss + final swarm)
-    ├── teleporters.ts        ← tickChests / tickTeleporters / generateChests
+    ├── altars.ts             ← tickAltars / generateAltars / onBossDefeated / consumePortalUsed (5 阶段状态机)
+    ├── chests.ts             ← tickChests / generateChests
+    ├── teleporters.ts        ← @deprecated re-export shim → altars.ts + chests.ts
+    ├── overtime.ts           ← tickOvertime (gameTime ≥ 540 累加 overtimeSeconds)
+    ├── tierTransition.ts     ← tickTierTransition (portal_used → tier++ + 重置场景)
+    ├── shrines.ts            ← tickShrines / generateShrines / applyShrineReward (充能神殿 4 选 1)
     ├── weapons.ts            ← tickWeapons / getWeaponStats / checkWeaponEvolutions
     ├── aiSystem.ts           ← tickEnemyAi (modifier → brain dispatch)
     ├── bossAi.ts             ← tickBossAi (phase resolve + attack 调度)
@@ -1548,12 +1760,15 @@ processDeaths(engine);             // hp ≤ 0 → spawn pickup + kill++
 tickPickups(engine, dt);           // 寿命 / 吸附 / collect
 tickLevelUp(engine);               // xp ≥ xpToNext → 进 level_up phase
 tickSpawning(engine, dt);          // wave + mini-boss + final swarm
-tickTeleporters(engine, dt);
+tickAltars(engine, dt);            // 祭坛 / 传送门状态机（按 [E] 召唤 / 进入）
+tickShrines(engine, dt);           // 充能神殿状态机 / charging→ready→consumed
 tickChests(engine);
-checkBossSpawn(engine);
+checkBossSpawn(engine);            // 仅当祭坛 boss_active 时 spawn
 if (state.boss && phase === 'boss_fight') tickBossAi(state.boss, ctx);
 tickThorns(engine);
-checkGameOver(engine);
+checkGameOver(engine);             // Boss 死 → portal_open（祭坛变传送门）；玩家死 → defeat
+tickTierTransition(engine);        // portal_used → tier++ + 重置场景
+tickOvertime(engine, dt);          // gameTime ≥ 540 累加 overtimeSeconds
 engine.aiGroup = (engine.aiGroup + 1) % 4;  // 错峰组循环</code></pre>
 
   <h3>4 层 stat 管线（PoE 风格）</h3>
@@ -1666,9 +1881,13 @@ pnpm run dev
     <tr><td>加新典籍</td><td>① <code>types.ts TomeType</code> ② <code>config.ts TOME_MAX_LEVELS</code> ③ <code>data/tomes.ts</code> 加 <code>TomeDef</code>（影响 stat 的返回 modifier 列表; contextual 标 <code>contextOnly: true</code>） ④ i18n</td></tr>
     <tr><td>调难度</td><td><code>config.ts TIER_CONFIGS</code></td></tr>
     <tr><td>调波次 / Final Swarm</td><td><code>config.ts WAVE_CONFIGS</code> + <code>systems/spawning.ts</code></td></tr>
-    <tr><td>调 Boss</td><td><code>config.ts BOSS_SPAWN_TIME / BOSS_HP</code> + <code>ai/bosses/skeletonKing.ts</code> + <code>systems/bossAi.ts</code></td></tr>
+    <tr><td>调 Boss</td><td><code>config.ts BOSS_HP / BOSS_INTRO_DURATION</code> + <code>ai/bosses/skeletonKing.ts</code> + <code>systems/bossAi.ts</code>（触发逻辑见 <code>systems/altars.ts</code>）</td></tr>
+    <tr><td>调祭坛 / 召唤手感</td><td><code>config.ts ALTAR_SUMMON_DURATION / ALTAR_INTERACT_RADIUS / ALTAR_MIN_DISTANCE</code> + <code>systems/altars.ts</code>。生成位置算法 = 随机角度 + 距离 [25, halfMap×0.6]。</td></tr>
+    <tr><td>调 Overtime 难度曲线</td><td><code>config.ts OVERTIME_STEP_SECONDS / OVERTIME_HP_DAMAGE_PER_STEP / OVERTIME_SPEED_PER_STEP</code>。系数应用点 = <code>factories/spawnEnemy.ts</code>（仅 wave / miniBoss 模式叠加）。</td></tr>
     <tr><td>加新角色</td><td><code>config.ts CHARACTER_CONFIGS</code> → <code>public/models/player_*.gltf</code> → i18n</td></tr>
     <tr><td>调升级选项数量</td><td><code>systems/player.ts tickLevelUp</code> 内 <code>generateUpgradeOptions(player, 3)</code></td></tr>
+    <tr><td>加 Shrine 奖励</td><td>① <code>data/shrineRewards.ts</code> 加一行 <code>ShrineRewardDef</code> ② 如是新 reward 类型，<code>types.ts ShrineRewardType</code> + <code>systems/shrines.ts applyShrineReward</code> 加 case ③ i18n <code>shrine.reward.&lt;id&gt;_name/_desc</code></td></tr>
+    <tr><td>调 Shrine 节奏</td><td><code>config.ts SHRINE_COUNT / SHRINE_RADIUS / SHRINE_CHARGE_DURATION</code></td></tr>
   </table>
 
   <h3>调试技巧</h3>

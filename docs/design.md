@@ -551,6 +551,132 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
 
 ---
 
+## 十-bis、充能神殿（Charge Shrine）
+
+> 灵感来自原 megabonk 的 Charge Shrine —— 站立读条解锁 → 4 选 1 永久增益。开局即可触发，与 Boss 流程独立。
+
+### 1. 配置常量
+
+`config.ts`：
+
+| 常量 | 值 | 含义 |
+|---|---|---|
+| `SHRINE_COUNT` | 3 | 一局生成的圣殿数量 |
+| `SHRINE_RADIUS` | 2.5 | 玩家进入读条圈的半径（单位） |
+| `SHRINE_CHARGE_DURATION` | 4.0 | 充满 / 解锁需站立的连续秒数 |
+| `SHRINE_REWARD_COUNT` | 4 | 解锁后的奖励选项数（megabonk 固定 4） |
+| `SHIELD_REGEN_RATE` | 5.0 | 护盾每秒回复速率（远快于 HP） |
+| `SHIELD_REGEN_DELAY` | 3.0 | 离开战斗几秒后护盾才开始回 |
+
+### 2. 状态机
+
+`ShrinePhase` (`types.ts`)：
+
+```
+inactive ─(开局)─▶ charging ─(站满 4s)─▶ ready ─(玩家选完)─▶ consumed
+                       ▲                  │
+                       └─(玩家离开归零)──┘
+```
+
+- **charging**：玩家在 2.5m 内累计 `chargeTimer`；离开**立即归零**（须连续）
+- **ready**：4 个奖励选项 roll 出来；`GameState.phase = 'shrine_reward'`，主循环全暂停（与 `level_up` 同语义）
+- **consumed**：玩家选完，永久消耗，圣殿变灰
+
+> 同一时刻**只允许一座**圣殿处于 `ready` / `shrine_reward`，避免 phase 冲突；其他充满的圣殿排队等待。
+
+### 3. 奖励池（16 种）
+
+`data/shrineRewards.ts`，截图原游戏数值一一对应。`%` 表示百分比小数（0.12 = +12%）。
+
+#### Common（通用）
+
+| 类型 | 数值 | 描述 |
+|---|---|---|
+| `damage` | 0.12 / 0.10 | +12% / +10% 伤害 |
+| `shield` | 5 | +5 护盾上限（先于 HP 受伤） |
+| `pickup_range` | 0.20 | +20% 拾取范围 |
+| `crit_damage` | 0.10 | +10% 暴击伤害 |
+| `luck` | 0.05 | +5% 幸运值（提升后续稀有度滚点） |
+| `projectile_count` | 1 | +1 投射物（所有带弹数武器） |
+| `hp_regen` | 20 | +20 HP / 秒 回复 |
+| `knockback` | 0.10 | +10% 击退 |
+| `attack_speed` | 0.072 | +7.2% 攻速（uncommon 同名 +12%、rare +8.4%） |
+| `difficulty` | 0.08 | +8% 难度（仅记录，未实装） |
+| `lifesteal` | 0.06 | +6% 生命偷取 |
+| `powerup_multiplier` | 0.10 | +10% Powerup（仅记录） |
+| `elite_damage` | 0.10 | +10% 对精英伤害 |
+| `duration` | 0.08 | +8% 持续时间（仅记录） |
+| `jump_height` | 0.10 | +10% 跳跃高度（仅记录） |
+| `movement_speed` | 0.08 | +8% 移动速度 |
+
+#### Uncommon
+
+| 类型 | 数值 | 描述 |
+|---|---|---|
+| `knockback` | 0.12 | +12% 击退 |
+| `attack_speed` | 0.072 | +7.2% 攻速 |
+| `damage` | 0.16 | +16% 伤害 |
+| `shield` | 8 | +8 护盾上限 |
+| `lifesteal` | 0.10 | +10% 生命偷取 |
+
+#### Rare
+
+| 类型 | 数值 | 描述 |
+|---|---|---|
+| `attack_speed` | 0.084 | +8.4% 攻速 |
+| `damage` | 0.22 | +22% 伤害 |
+| `projectile_count` | 1 | +1 投射物 |
+| `shield` | 12 | +12 护盾上限 |
+
+### 4. 数值滚点
+
+`rollShrineOptions` (`data/shrineRewards.ts`)
+
+```
+基础稀有度权重：common 60 / uncommon 28 / rare 10 / legendary 2
+
+luck 偏移（每 5% luck = +1 等级）：
+  common  权重 -= 2 * luckLevel * 5  (下限 20)
+  rare    权重 += luckLevel * 5
+  legendary 权重 += luckLevel * 5
+
+luck 来源 = luck_tome.level + floor(player.luckBonus * 100)
+```
+
+每选定 1 个稀有度，再在该稀有度池里**加权随机**抽取一条；同一个圣殿内**不重复**奖励类型。
+
+### 5. 应用逻辑
+
+`applyShrineReward(player, reward, value)` (`systems/shrines.ts`)
+
+| 实装路径 | 字段 |
+|---|---|
+| 直接写 stat 字段（会被下次 tome 升级 recompute 重置 —— TODO Phase 8 拆 ShrineBonus 二次合并） | `damage` → `damageMultiplier *= 1+v`<br>`attack_speed` → `attackSpeedMultiplier *= 1+v`<br>`movement_speed` → `speed *= 1+v`<br>`pickup_range` → `pickupRadius *= 1+v`<br>`crit_damage` → `critDamage += v` |
+| 累加到玩家专属字段（不被 recompute 触碰） | `shield` → `maxShield += v`、补满 `shield`<br>`hp_regen` → `hpRegenRate += v`<br>`projectile_count` → `projectileBonus += v`<br>`knockback` → `knockbackMult *= 1+v`<br>`elite_damage` → `eliteDamageMult *= 1+v`<br>`lifesteal` → `lifestealPct += v`（capped 1.0）<br>`luck` → `luckBonus += v` |
+| 仅存值，运行时未消费（Phase 8 wire） | `jump_height` / `duration` / `powerup_multiplier` / `difficulty` |
+
+### 6. UI 流程
+
+| 阶段 | 显示 | 数据源 |
+|---|---|---|
+| 接近未充能圣殿（< 30m） | HUD：`充能神殿: {dist}m` | `shrine.indicator_far` |
+| 站立充能中 | HUD：`充能中... {percent}%` + 3D 蓝紫脉动 | `shrine.indicator_charging` |
+| 充满 | 弹出 4 选 1 卡片面板（rarity 边框 + emoji + 数值） | `shrine.title` + `shrine.reward.*` |
+| 选完 | 卡片消失、圣殿变灰、玩家继续战斗 | — |
+
+### 7. 与 `level_up` 的协同
+
+| 维度 | level_up | shrine_reward |
+|---|---|---|
+| 触发 | XP 满 | 站立 4 秒 |
+| 选项数 | 3（保底 1 武器） | 4（不重复奖励类型） |
+| Phase 锁 | `'level_up'` | `'shrine_reward'` |
+| 主循环 | 全暂停 | 全暂停 |
+| 公开 API | `selectUpgrade(id)` | `selectShrineReward(id)` |
+| 互斥 | 互不干扰，但同时只能进一个 phase | 同 |
+
+---
+
 ## 十一、存档结构
 
 `SaveData` (`save.ts`) — `localStorage` 持久化：
@@ -591,3 +717,5 @@ interface SaveData {
 | 调难度倍率 | `config.ts TIER_CONFIGS` |
 | 调敌人波次 / Final Swarm | `config.ts WAVE_CONFIGS`；`systems/spawning.ts tickSpawning` |
 | 调 Boss 时间 / HP | `config.ts BOSS_SPAWN_TIME`、`BOSS_HP` |
+| 加新 Shrine 奖励 | ① `data/shrineRewards.ts` 加一行 `ShrineRewardDef` ② 新 reward 类型时同步 `types.ts ShrineRewardType` + `systems/shrines.ts applyShrineReward` ③ i18n `shrine.reward.<id>_name/_desc` |
+| 调 Shrine 节奏 / 数量 | `config.ts SHRINE_COUNT / SHRINE_RADIUS / SHRINE_CHARGE_DURATION / SHRINE_REWARD_COUNT` |

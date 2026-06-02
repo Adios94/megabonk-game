@@ -43,9 +43,11 @@ import {
   type GamePhase,
   type UpgradeRarity,
   type CharacterType,
-  type TeleporterState,
+  type AltarState,
   type ChestState,
   type DifficultyTier,
+  type ShrineState,
+  type ShrineRewardOption,
 } from '@minigame/core';
 import { PlatformInput } from '@minigame/platform';
 import { installThreeHighDpi } from '@minigame/render-adapter';
@@ -99,6 +101,10 @@ export class LocalGameSession {
 
   selectUpgrade(id: string): void {
     this.game.selectUpgrade(id);
+  }
+
+  selectShrineReward(id: string): void {
+    this.game.selectShrineReward(id);
   }
 
   getRenderState(): GameState {
@@ -185,6 +191,25 @@ const RARITY_COLORS: Record<string, string> = {
   uncommon: '#44cc44',
   rare: '#4488ff',
   legendary: '#ffaa00',
+};
+
+const SHRINE_REWARD_ICONS: Record<string, string> = {
+  damage: '⚔️',
+  shield: '🛡️',
+  pickup_range: '🧲',
+  crit_damage: '💥',
+  luck: '🍀',
+  projectile_count: '🏹',
+  hp_regen: '❤️',
+  knockback: '💨',
+  attack_speed: '⚡',
+  difficulty: '☠️',
+  lifesteal: '🩸',
+  powerup_multiplier: '🔋',
+  elite_damage: '👑',
+  duration: '⏳',
+  jump_height: '🪂',
+  movement_speed: '👟',
 };
 
 const CHARACTER_COLORS: Record<string, number> = {
@@ -715,6 +740,11 @@ export class GameScene {
   private teleporterMeshes: THREE.Mesh[] = [];
   private teleporterGlowMeshes: THREE.Mesh[] = [];
 
+  // Charge Shrine meshes (1 entry per shrine, persistent)
+  private shrineMeshes: Map<number, THREE.Object3D> = new Map();
+  private shrinePanel: HTMLDivElement | null = null;
+  private shrineIndicator: HTMLDivElement | null = null;
+
   // Chest rendering
   private chestObjects: Map<number, THREE.Object3D> = new Map();
 
@@ -766,6 +796,8 @@ export class GameScene {
   private bossPhaseMarkers!: HTMLDivElement;
   private tierBadge!: HTMLDivElement;
   private teleporterIndicator!: HTMLDivElement;
+  private interactBtn!: HTMLDivElement;
+  private overtimeBanner!: HTMLDivElement;
   private pauseBtn!: HTMLDivElement;
   private upgradePanel: HTMLDivElement | null = null;
   private gameOverPanel: HTMLDivElement | null = null;
@@ -780,6 +812,13 @@ export class GameScene {
   private isPaused = false;
   private jumpKeyDown = false;
   private slideKeyDown = false;
+  /**
+   * 交互按键的边缘状态。`interactKeyPressed` 在按下的那一帧为 true，
+   * 发完一帧后立即清零，避免长按反复触发祭坛召唤。
+   */
+  private interactKeyPressed = false;
+  /** 移动端交互按钮被按下时由 UI 设置一次 true，发送一帧后清零（同 interactKeyPressed）。 */
+  private mobileInteractPressed = false;
   private lastTime = 0;
   private frameDt = 1 / 60;
 
@@ -873,6 +912,10 @@ export class GameScene {
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space') { this.jumpKeyDown = true; e.preventDefault(); }
       if (e.code === 'ShiftLeft' || e.code === 'ControlLeft') { this.slideKeyDown = true; }
+      if (e.code === 'KeyE') {
+        // 边缘触发：keydown 那一帧标记为 pressed；发送过 input 后会清零（见 handleInput）
+        if (!e.repeat) this.interactKeyPressed = true;
+      }
     });
     window.addEventListener('keyup', (e) => {
       if (e.code === 'Space') { this.jumpKeyDown = false; }
@@ -924,6 +967,8 @@ export class GameScene {
     this.hudContainer?.remove();
     this.upgradePanel?.remove();
     this.gameOverPanel?.remove();
+    this.shrinePanel?.remove();
+    this.shrineIndicator?.remove();
     this.finalSwarmLabel?.remove();
     this.finalSwarmBorder?.remove();
     this.screenFlashEl?.remove();
@@ -1733,6 +1778,21 @@ export class GameScene {
     this.teleporterIndicator.style.cssText = 'position:absolute;top:90px;left:50%;transform:translateX(-50%);color:#00ccff;font-size:13px;font-weight:bold;text-shadow:0 0 8px #00ccff,0 1px 3px rgba(0,0,0,0.8);display:none;background:rgba(0,20,40,0.6);padding:4px 12px;border-radius:6px;';
     this.hudContainer.appendChild(this.teleporterIndicator);
 
+    // 移动端"激活 Boss / 进入传送门"按钮（PC 不显示，统一通过 KeyE 处理）
+    this.interactBtn = document.createElement('div');
+    this.interactBtn.style.cssText = 'position:absolute;bottom:120px;left:50%;transform:translateX(-50%);color:#fff;font-size:14px;font-weight:bold;background:rgba(170,68,255,0.85);padding:14px 28px;border-radius:30px;cursor:pointer;pointer-events:auto;user-select:none;display:none;text-shadow:0 1px 3px rgba(0,0,0,0.8);box-shadow:0 4px 16px rgba(170,68,255,0.5);min-width:120px;text-align:center;touch-action:manipulation;';
+    this.interactBtn.textContent = '';
+    // 触屏 / 鼠标点击都触发一次"按下"
+    const onInteractTap = (ev: Event) => { ev.preventDefault(); this.mobileInteractPressed = true; };
+    this.interactBtn.addEventListener('touchstart', onInteractTap);
+    this.interactBtn.addEventListener('mousedown', onInteractTap);
+    this.hudContainer.appendChild(this.interactBtn);
+
+    // Overtime 横幅（gameTime 超过 540 + 玩家未进传送门时显示）
+    this.overtimeBanner = document.createElement('div');
+    this.overtimeBanner.style.cssText = 'position:absolute;top:50px;left:50%;transform:translateX(-50%);color:#ffaa00;font-size:14px;font-weight:bold;background:rgba(60,20,0,0.7);padding:6px 18px;border-radius:6px;border:1px solid #ff6600;display:none;text-shadow:0 1px 3px rgba(0,0,0,0.9);';
+    this.hudContainer.appendChild(this.overtimeBanner);
+
     // Pause button
     this.pauseBtn = document.createElement('div');
     this.pauseBtn.style.cssText = 'position:absolute;top:86px;right:16px;color:#ffffff;font-size:clamp(10px, 2.5vw, 16px);background:rgba(80,80,120,0.6);padding:8px 16px;border-radius:4px;cursor:pointer;pointer-events:auto;user-select:none;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;';
@@ -1816,8 +1876,9 @@ export class GameScene {
     this.renderProjectiles(state.projectiles);
     this.renderPickups(state.pickups);
     this.renderBoss(state.boss);
-    this.renderTeleporters(state.teleporters);
+    this.renderTeleporters(state.altars);
     this.renderChests(state.chests);
+    this.renderShrines(state.shrines, state.player.x, state.player.z);
     this.updateVFX(state, dt);
     this.updateCamera(state);
 
@@ -1873,7 +1934,11 @@ export class GameScene {
       skill2: false,
       jump: this.jumpKeyDown || (raw.action1 ?? false),
       slide: this.slideKeyDown || (raw.action2 ?? false),
+      interact: this.interactKeyPressed || (this.mobileInteractPressed ?? false),
     };
+    // 边缘触发：发出后立即清零，避免长按反复触发
+    this.interactKeyPressed = false;
+    this.mobileInteractPressed = false;
     this.platformInput.endFrame();
     this.session.sendAction(input);
   }
@@ -2908,15 +2973,15 @@ export class GameScene {
     }
   }
 
-  private renderTeleporters(teleporters: TeleporterState[]): void {
+  private renderTeleporters(altars: AltarState[]): void {
     const time = performance.now() * 0.003;
 
-    // Create or update teleporter meshes
-    while (this.teleporterMeshes.length < teleporters.length) {
+    // Create or update altar meshes
+    while (this.teleporterMeshes.length < altars.length) {
       // Try using loaded teleporter model
       if (loadedModels.teleporter) {
         const tp = cloneSkeleton(loadedModels.teleporter) as THREE.Object3D;
-        tp.name = 'Teleporter_Model';
+        tp.name = 'Altar_Model';
         tp.scale.set(1.5, 1.5, 1.5);
         this.scene.add(tp);
         this.teleporterMeshes.push(tp as unknown as THREE.Mesh);
@@ -2930,7 +2995,7 @@ export class GameScene {
           opacity: 0.8,
         });
         const ring = new THREE.Mesh(ringGeo, ringMat);
-        ring.name = 'Teleporter_Ring';
+        ring.name = 'Altar_Ring';
         ring.rotation.x = -Math.PI / 2;
         this.scene.add(ring);
         this.teleporterMeshes.push(ring);
@@ -2944,14 +3009,14 @@ export class GameScene {
         opacity: 0.3,
       });
       const pillar = new THREE.Mesh(pillarGeo, pillarMat);
-      pillar.name = 'Teleporter_Glow';
+      pillar.name = 'Altar_Glow';
       this.scene.add(pillar);
       this.teleporterGlowMeshes.push(pillar);
     }
 
     for (let i = 0; i < this.teleporterMeshes.length; i++) {
-      if (i < teleporters.length) {
-        const tp = teleporters[i];
+      if (i < altars.length) {
+        const tp = altars[i];
         const ring = this.teleporterMeshes[i];
         const pillar = this.teleporterGlowMeshes[i];
 
@@ -2966,19 +3031,38 @@ export class GameScene {
         const ringMat = ring.material as THREE.MeshBasicMaterial;
         const pillarMat = pillar.material as THREE.MeshBasicMaterial;
 
-        if (tp.phase === 'activated') {
-          ringMat.color.setHex(0xff4400);
-          pillarMat.color.setHex(0xff6600);
-          pillarMat.opacity = 0.6;
-        } else if (tp.phase === 'activating') {
-          const pulse = 0.5 + Math.sin(time * 3) * 0.3;
-          ringMat.color.setHex(0xffaa00);
-          pillarMat.color.setHex(0xffcc00);
-          pillarMat.opacity = pulse;
-        } else {
-          ringMat.color.setHex(0x00ccff);
-          pillarMat.color.setHex(0x00ffff);
-          pillarMat.opacity = 0.3 + Math.sin(time) * 0.1;
+        switch (tp.phase) {
+          case 'summoning': {
+            // 召唤读条阶段：金黄脉冲
+            const pulse = 0.5 + Math.sin(time * 4) * 0.3;
+            ringMat.color.setHex(0xffaa00);
+            pillarMat.color.setHex(0xffcc00);
+            pillarMat.opacity = pulse;
+            break;
+          }
+          case 'boss_active': {
+            // Boss 战进行中：红色锁定
+            ringMat.color.setHex(0xff2200);
+            pillarMat.color.setHex(0xff4400);
+            pillarMat.opacity = 0.4;
+            break;
+          }
+          case 'portal_ready':
+          case 'portal_used': {
+            // 传送门：紫光稳定
+            ringMat.color.setHex(0xaa44ff);
+            pillarMat.color.setHex(0xcc66ff);
+            pillarMat.opacity = 0.6 + Math.sin(time * 2) * 0.2;
+            break;
+          }
+          case 'ready':
+          default: {
+            // 待召唤：青蓝色平稳呼吸
+            ringMat.color.setHex(0x00ccff);
+            pillarMat.color.setHex(0x00ffff);
+            pillarMat.opacity = 0.3 + Math.sin(time) * 0.1;
+            break;
+          }
         }
       } else {
         this.teleporterMeshes[i].visible = false;
@@ -3192,6 +3276,285 @@ export class GameScene {
       const time = performance.now() * 0.001;
       obj.position.y = 0.1 + Math.sin(time * 1.5 + chest.id) * 0.05;
     }
+  }
+
+  /**
+   * Charge Shrine 渲染 —— 每个 shrine 用程序化几何（base + 漂浮宝石 + 充能进度环）。
+   *   - charging: 蓝紫色，根据 chargeTimer/chargeDuration 显示进度
+   *   - ready:    全亮 + 强光 (玩家应已进入 shrine_reward UI)
+   *   - consumed: 灰暗 + 不再脉动
+   */
+  private renderShrines(shrines: ShrineState[], playerX: number, playerZ: number): void {
+    const time = performance.now() * 0.001;
+    const seenIds = new Set<number>();
+
+    for (const shrine of shrines) {
+      seenIds.add(shrine.id);
+      let group = this.shrineMeshes.get(shrine.id);
+      if (!group) {
+        group = new THREE.Group();
+        group.name = `Shrine_${shrine.id}`;
+
+        // Base disc on the ground (large activation circle)
+        const discGeo = new THREE.CircleGeometry(2.5, 32);
+        discGeo.rotateX(-Math.PI / 2);
+        const discMat = new THREE.MeshBasicMaterial({
+          color: 0x88aaff,
+          transparent: true,
+          opacity: 0.3,
+          side: THREE.DoubleSide,
+        });
+        const disc = new THREE.Mesh(discGeo, discMat);
+        disc.name = 'Shrine_Disc';
+        disc.position.y = 0.05;
+        group.add(disc);
+
+        // Outer ring — charge progress meter (rotated wedge approx via ring)
+        const ringGeo = new THREE.RingGeometry(2.45, 2.65, 48);
+        ringGeo.rotateX(-Math.PI / 2);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: 0x66ddff,
+          transparent: true,
+          opacity: 0.85,
+          side: THREE.DoubleSide,
+        });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.name = 'Shrine_Ring';
+        ring.position.y = 0.06;
+        group.add(ring);
+
+        // Crystal: hovering octahedron over the shrine
+        const crystalGeo = new THREE.OctahedronGeometry(0.55, 0);
+        const crystalMat = new THREE.MeshToonMaterial({
+          color: 0x99bbff,
+          gradientMap: toonGradientMap,
+          emissive: 0x4466cc,
+          emissiveIntensity: 0.6,
+        });
+        const crystal = new THREE.Mesh(crystalGeo, crystalMat);
+        crystal.name = 'Shrine_Crystal';
+        crystal.position.y = 1.6;
+        group.add(crystal);
+
+        // Light pillar
+        const pillarGeo = new THREE.CylinderGeometry(0.18, 0.5, 3.5, 12);
+        const pillarMat = new THREE.MeshBasicMaterial({
+          color: 0x88ccff,
+          transparent: true,
+          opacity: 0.25,
+        });
+        const pillar = new THREE.Mesh(pillarGeo, pillarMat);
+        pillar.name = 'Shrine_Pillar';
+        pillar.position.y = 1.75;
+        group.add(pillar);
+
+        group.position.set(shrine.x, 0, shrine.z);
+        this.scene.add(group);
+        this.shrineMeshes.set(shrine.id, group);
+      }
+
+      // Animate by phase
+      const disc = group.children[0] as THREE.Mesh;
+      const ring = group.children[1] as THREE.Mesh;
+      const crystal = group.children[2] as THREE.Mesh;
+      const pillar = group.children[3] as THREE.Mesh;
+      const discMat = disc.material as THREE.MeshBasicMaterial;
+      const ringMat = ring.material as THREE.MeshBasicMaterial;
+      const crystalMat = crystal.material as THREE.MeshToonMaterial;
+      const pillarMat = pillar.material as THREE.MeshBasicMaterial;
+
+      crystal.rotation.y += 0.012;
+
+      if (shrine.phase === 'consumed') {
+        // Dim everything; keep crystal sunken & gray
+        crystal.position.y = 0.7 + Math.sin(time * 0.8 + shrine.id) * 0.05;
+        crystalMat.color.setHex(0x555566);
+        crystalMat.emissive.setHex(0x111122);
+        crystalMat.emissiveIntensity = 0.1;
+        discMat.opacity = 0.08;
+        ringMat.opacity = 0.15;
+        pillarMat.opacity = 0.05;
+      } else if (shrine.phase === 'ready') {
+        // Bright pulsing gold
+        const pulse = 0.5 + Math.sin(time * 6) * 0.5;
+        crystal.position.y = 1.6 + Math.sin(time * 2 + shrine.id) * 0.2;
+        crystalMat.color.setHex(0xffd966);
+        crystalMat.emissive.setHex(0xffaa22);
+        crystalMat.emissiveIntensity = 1.5 + pulse;
+        discMat.color.setHex(0xffcc44);
+        discMat.opacity = 0.55 + pulse * 0.2;
+        ringMat.color.setHex(0xffdd66);
+        ringMat.opacity = 0.95;
+        pillarMat.color.setHex(0xffcc44);
+        pillarMat.opacity = 0.55;
+      } else {
+        // charging or inactive: blue with progress-indicating glow strength
+        const pct = shrine.chargeDuration > 0
+          ? Math.min(1, shrine.chargeTimer / shrine.chargeDuration)
+          : 0;
+        crystal.position.y = 1.6 + Math.sin(time * 1.5 + shrine.id) * 0.12;
+        // Color blends from cool blue → warm cyan as charging progresses
+        crystalMat.color.setHex(pct > 0.05 ? 0xaaccff : 0x99bbff);
+        crystalMat.emissive.setHex(0x3366cc);
+        crystalMat.emissiveIntensity = 0.6 + pct * 1.2;
+        discMat.color.setHex(0x88aaff);
+        discMat.opacity = 0.18 + pct * 0.4;
+        ringMat.color.setHex(pct > 0.95 ? 0xffee66 : 0x66ddff);
+        ringMat.opacity = 0.4 + pct * 0.55;
+        pillarMat.color.setHex(0x88ccff);
+        pillarMat.opacity = 0.2 + pct * 0.35;
+      }
+    }
+
+    // Cleanup meshes whose shrines no longer exist (defensive — list is persistent in practice)
+    for (const [id, mesh] of this.shrineMeshes) {
+      if (!seenIds.has(id)) {
+        this.scene.remove(mesh);
+        this.shrineMeshes.delete(id);
+      }
+    }
+
+    // Update HUD indicator (nearest charging shrine within range)
+    this.updateShrineIndicator(shrines, playerX, playerZ);
+  }
+
+  /** 玩家在 charging shrine 附近时显示 "Charging... XX%"，未在范围则显示距离。 */
+  private updateShrineIndicator(shrines: ShrineState[], playerX: number, playerZ: number): void {
+    if (!this.shrineIndicator) {
+      this.shrineIndicator = document.createElement('div');
+      this.shrineIndicator.style.cssText = 'position:absolute;top:118px;left:50%;transform:translateX(-50%);color:#88ddff;font-size:13px;font-weight:bold;text-shadow:0 0 8px #4488cc,0 1px 3px rgba(0,0,0,0.8);display:none;background:rgba(20,30,60,0.7);padding:4px 12px;border-radius:6px;pointer-events:none;';
+      this.hudContainer.appendChild(this.shrineIndicator);
+    }
+    const ind = this.shrineIndicator;
+
+    // Find the most relevant shrine: charging in range > nearest charging in <30m
+    let chargingHere: ShrineState | null = null;
+    let nearestCharging: ShrineState | null = null;
+    let nearestDist = Infinity;
+    for (const s of shrines) {
+      if (s.phase !== 'charging') continue;
+      const dx = s.x - playerX;
+      const dz = s.z - playerZ;
+      const d = Math.sqrt(dx * dx + dz * dz);
+      if (s.chargeTimer > 0) {
+        chargingHere = s;
+      }
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearestCharging = s;
+      }
+    }
+
+    if (chargingHere) {
+      const pct = Math.round((chargingHere.chargeTimer / chargingHere.chargeDuration) * 100);
+      ind.style.display = 'block';
+      ind.textContent = t('shrine.indicator_charging', { percent: String(pct) });
+    } else if (nearestCharging && nearestDist < 30) {
+      ind.style.display = 'block';
+      ind.textContent = t('shrine.indicator_far', { dist: String(Math.round(nearestDist)) });
+    } else {
+      ind.style.display = 'none';
+    }
+  }
+
+  // ---- Shrine Reward Panel (4 选 1 UI, 触发自 phase==='shrine_reward') ----
+
+  private handleShrinePhaseChange(state: GameState): void {
+    const isShrinePhase = state.phase === 'shrine_reward';
+    if (isShrinePhase && !this.shrinePanel && state.activeShrineId != null) {
+      const shrine = state.shrines.find(s => s.id === state.activeShrineId);
+      if (shrine && shrine.options) {
+        this.showShrineRewardPanel(shrine.options);
+      }
+    } else if (!isShrinePhase && this.shrinePanel) {
+      this.hideShrineRewardPanel();
+    }
+  }
+
+  private showShrineRewardPanel(options: ShrineRewardOption[]): void {
+    this.shrinePanel = document.createElement('div');
+    this.shrinePanel.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:radial-gradient(ellipse at center,rgba(40,30,80,0.85),rgba(0,0,0,0.85));display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:300;font-family:Arial,sans-serif;';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'color:#ffd966;font-size:26px;font-weight:bold;margin-bottom:24px;text-shadow:0 2px 6px rgba(0,0,0,0.9),0 0 14px rgba(255,200,80,0.5);letter-spacing:1px;';
+    title.textContent = `⚡ ${t('shrine.title')} ⚡`;
+    this.shrinePanel.appendChild(title);
+
+    const cardRow = document.createElement('div');
+    cardRow.style.cssText = 'display:flex;gap:14px;flex-wrap:wrap;justify-content:center;padding:0 16px;max-width:100%;';
+    if (window.innerWidth < 500) {
+      cardRow.style.flexDirection = 'column';
+      cardRow.style.alignItems = 'center';
+    }
+
+    for (const option of options) {
+      const card = this.createShrineRewardCard(option);
+      cardRow.appendChild(card);
+    }
+
+    this.shrinePanel.appendChild(cardRow);
+    document.body.appendChild(this.shrinePanel);
+  }
+
+  private createShrineRewardCard(option: ShrineRewardOption): HTMLDivElement {
+    const card = document.createElement('div');
+    const borderColor = RARITY_COLORS[option.rarity] ?? '#aaaaaa';
+    card.style.cssText = `
+      width:170px;padding:18px 14px;background:rgba(20,20,40,0.96);border:2px solid ${borderColor};
+      border-radius:14px;cursor:pointer;text-align:center;transition:transform 0.15s, box-shadow 0.15s;
+      box-shadow:0 4px 14px rgba(0,0,0,0.6),0 0 0 1px ${borderColor}55 inset;
+    `;
+    card.addEventListener('mouseenter', () => {
+      card.style.transform = 'scale(1.05)';
+      card.style.boxShadow = `0 8px 24px ${borderColor}66, 0 0 0 1px ${borderColor}aa inset`;
+    });
+    card.addEventListener('mouseleave', () => {
+      card.style.transform = 'scale(1)';
+      card.style.boxShadow = `0 4px 14px rgba(0,0,0,0.6),0 0 0 1px ${borderColor}55 inset`;
+    });
+
+    // Rarity badge top
+    const rarityEl = document.createElement('div');
+    rarityEl.style.cssText = `color:${borderColor};font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:6px;font-weight:bold;`;
+    rarityEl.textContent = t(`shrine.rarity.${option.rarity}`);
+    card.appendChild(rarityEl);
+
+    // Icon
+    const iconEl = document.createElement('div');
+    iconEl.style.cssText = 'font-size:30px;margin-bottom:4px;';
+    iconEl.textContent = SHRINE_REWARD_ICONS[option.reward] ?? '⚡';
+    card.appendChild(iconEl);
+
+    // Name
+    const nameEl = document.createElement('div');
+    nameEl.style.cssText = `color:${borderColor};font-size:15px;font-weight:bold;margin-bottom:8px;`;
+    const percent = Math.round(option.value * 1000) / 10; // %.1
+    nameEl.textContent = t(`shrine.reward.${option.reward}_name`, {
+      value: String(option.value),
+      percent: String(percent),
+    });
+    card.appendChild(nameEl);
+
+    // Description
+    const descEl = document.createElement('div');
+    descEl.style.cssText = 'color:#cccccc;font-size:11px;line-height:1.4;';
+    descEl.textContent = t(`shrine.reward.${option.reward}_desc`, {
+      value: String(option.value),
+      percent: String(percent),
+    });
+    card.appendChild(descEl);
+
+    card.addEventListener('click', () => {
+      this.session.selectShrineReward(option.id);
+      this.hideShrineRewardPanel();
+    });
+
+    return card;
+  }
+
+  private hideShrineRewardPanel(): void {
+    this.shrinePanel?.remove();
+    this.shrinePanel = null;
   }
 
   private spawnPickupBurst(x: number, y: number, z: number, color: number): void {
@@ -3553,21 +3916,66 @@ export class GameScene {
       this.bossHpContainer.style.display = 'none';
     }
 
-    // --- Teleporter Indicator ---
-    const availableTeleporter = state.teleporters.find(tp => tp.phase === 'available' || tp.phase === 'activating');
-    if (availableTeleporter) {
+    // --- Altar / Portal Indicator ---
+    // 显示距离最近的祭坛（或玩家在交互半径里时的 prompt）。
+    // 跳过终态：boss_active（Boss 战中无意义）/ portal_used（即将被消费）。
+    const visibleAltar = state.altars.find(a => a.phase !== 'boss_active' && a.phase !== 'portal_used');
+    if (visibleAltar) {
       this.teleporterIndicator.style.display = 'block';
-      const dx = availableTeleporter.x - p.x;
-      const dz = availableTeleporter.z - p.z;
+      const dx = visibleAltar.x - p.x;
+      const dz = visibleAltar.z - p.z;
       const dist = Math.round(Math.sqrt(dx * dx + dz * dz));
-      if (availableTeleporter.phase === 'activating') {
-        const pct = Math.min(100, Math.round((availableTeleporter.activationTimer / availableTeleporter.activationDuration) * 100));
-        this.teleporterIndicator.textContent = `${t('teleporter.activating')} ${pct}%`;
-      } else {
-        this.teleporterIndicator.textContent = `🌀 Teleporter: ${dist}m`;
+      switch (visibleAltar.phase) {
+        case 'summoning': {
+          const pct = Math.min(100, Math.round((visibleAltar.summonTimer / visibleAltar.summonDuration) * 100));
+          this.teleporterIndicator.textContent = `${t('altar.summoning')} ${pct}%`;
+          break;
+        }
+        case 'portal_ready': {
+          // 已通关 Boss → 传送门
+          this.teleporterIndicator.textContent = dist <= 2
+            ? `🌀 ${t('altar.prompt.enterPortal')}`
+            : `🌀 ${t('hud.compass.portal')}: ${dist}m`;
+          break;
+        }
+        case 'ready':
+        default: {
+          // 等待召唤
+          this.teleporterIndicator.textContent = dist <= 2
+            ? `⛩️ ${t('altar.prompt.summon')}`
+            : `⛩️ ${t('hud.compass.altar')}: ${dist}m`;
+          break;
+        }
       }
     } else {
       this.teleporterIndicator.style.display = 'none';
+    }
+
+    // --- 移动端交互按钮：仅在玩家位于祭坛 / 传送门交互半径内时显示 ---
+    const altarInRange = state.altars.find(a =>
+      (a.phase === 'ready' || a.phase === 'portal_ready')
+      && Math.hypot(a.x - p.x, a.z - p.z) <= 2.0
+    );
+    // 简易移动端判定：能 hover 的设备视作 PC，不显示按钮（避免 PC 用户看到双重 UI）
+    const isMobile = !window.matchMedia('(hover: hover)').matches;
+    if (altarInRange && isMobile) {
+      this.interactBtn.style.display = 'block';
+      this.interactBtn.textContent = altarInRange.phase === 'portal_ready'
+        ? t('altar.prompt.enterPortal')
+        : t('altar.prompt.summon');
+    } else {
+      this.interactBtn.style.display = 'none';
+    }
+
+    // --- Overtime banner ---
+    if (state.overtimeSeconds > 0) {
+      this.overtimeBanner.style.display = 'block';
+      const sec = Math.floor(state.overtimeSeconds);
+      const mm = Math.floor(sec / 60).toString().padStart(2, '0');
+      const ss = (sec % 60).toString().padStart(2, '0');
+      this.overtimeBanner.textContent = `⏱ ${t('overtime.banner')} ${mm}:${ss}`;
+    } else {
+      this.overtimeBanner.style.display = 'none';
     }
 
     // --- Final Swarm visual effects ---
@@ -3700,6 +4108,8 @@ export class GameScene {
     } else if (state.phase !== 'level_up' && this.upgradePanel) {
       this.hideUpgradePanel();
     }
+    // Charge Shrine 4 选 1 panel
+    this.handleShrinePhaseChange(state);
   }
 
   private showUpgradePanel(options: UpgradeOption[]): void {

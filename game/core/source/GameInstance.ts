@@ -54,7 +54,11 @@ import { tickProjectiles } from './systems/projectiles.ts';
 import { processCollisions } from './systems/collisions.ts';
 import { processDeaths, tickPickups, tickThorns } from './systems/pickups.ts';
 import { tickSpawning, checkBossSpawn } from './systems/spawning.ts';
-import { tickChests, tickTeleporters, generateChests } from './systems/teleporters.ts';
+import { tickAltars, generateAltars } from './systems/altars.ts';
+import { tickChests, generateChests } from './systems/chests.ts';
+import { tickOvertime } from './systems/overtime.ts';
+import { tickTierTransition } from './systems/tierTransition.ts';
+import { tickShrines, generateShrines, applyShrineReward } from './systems/shrines.ts';
 import { addDamageEvent, applyKnockback, checkPlayerDeath, checkGameOver } from './systems/helpers.ts';
 import {
   PLAYER_INVINCIBLE_DURATION,
@@ -68,6 +72,7 @@ export class GameInstance {
     const state: GameState = {
       tick: 0,
       gameTime: 0,
+      overtimeSeconds: 0,
       running: false,
       paused: false,
       finished: false,
@@ -81,7 +86,9 @@ export class GameInstance {
       damageEvents: [],
       stats: { killCount: 0, damageDealt: 0, damageTaken: 0, silverEarned: 0 },
       waveIndex: 0,
-      teleporters: [],
+      altars: [],
+      shrines: [],
+      activeShrineId: null,
       chests: [],
       character: config.character,
       finalSwarm: false,
@@ -91,7 +98,7 @@ export class GameInstance {
     const engine = {
       state,
       config,
-      input: { moveX: 0, moveY: 0, dash: false, skill1: false, skill2: false, jump: false, slide: false },
+      input: { moveX: 0, moveY: 0, dash: false, skill1: false, skill2: false, jump: false, slide: false, interact: false },
       world,
       effects: null as unknown as AiEffects,  // 立刻填
       spatialHash: new SpatialHash(4),
@@ -120,6 +127,7 @@ export class GameInstance {
     state.finished = false;
     state.phase = 'playing';
     state.gameTime = 0;
+    state.overtimeSeconds = 0;
     state.tick = 0;
     state.enemies = [];
     state.projectiles = [];
@@ -129,7 +137,9 @@ export class GameInstance {
     state.upgradeOptions = null;
     state.stats = { killCount: 0, damageDealt: 0, damageTaken: 0, silverEarned: 0 };
     state.waveIndex = 0;
-    state.teleporters = [];
+    state.altars = generateAltars(config);
+    state.shrines = generateShrines(config);
+    state.activeShrineId = null;
     state.chests = generateChests(config);
     state.character = config.character;
     state.finalSwarm = false;
@@ -151,6 +161,8 @@ export class GameInstance {
       return state.finished;
     }
     if (state.phase === 'level_up') return false;
+    // shrine_reward phase: 玩家在 4 选 1 选项面板，game logic 全部暂停（等同 level_up）
+    if (state.phase === 'shrine_reward') return false;
 
     const dt = TICK_INTERVAL_MS / 1000;
 
@@ -185,7 +197,8 @@ export class GameInstance {
     tickPickups(engine, dt);
     tickLevelUp(engine);
     tickSpawning(engine, dt);
-    tickTeleporters(engine, dt);
+    tickAltars(engine, dt);
+    tickShrines(engine, dt);
     tickChests(engine);
     checkBossSpawn(engine);
     if (state.boss && state.phase === 'boss_fight') {
@@ -193,6 +206,11 @@ export class GameInstance {
     }
     tickThorns(engine);
     checkGameOver(engine);
+    // Boss 死亡后祭坛会进 portal_ready；玩家按 E 进入后变 portal_used。
+    // tickTierTransition 检测并执行下一关流程（清场 + tier++）。
+    tickTierTransition(engine);
+    // Overtime 累加（仅在 gameTime ≥ 540 且玩家未死且未在结算时）。
+    tickOvertime(engine, dt);
 
     engine.aiGroup = (engine.aiGroup + 1) % 4;
 
@@ -247,6 +265,35 @@ export class GameInstance {
     state.upgradeOptions = null;
     state.phase = state.boss ? 'boss_fight' : 'playing';
     checkWeaponEvolutions(engine);
+  }
+
+  /**
+   * 玩家从 Charge Shrine 4 个奖励选项里选一个 → 永久应用到 player +
+   * 关闭 shrine 并恢复 phase。
+   *
+   * 与 selectUpgrade 同样的语义结构：
+   *   - 仅在 phase === 'shrine_reward' 时生效
+   *   - 选完 → activeShrineId=null + shrine.phase='consumed'
+   *   - 恢复 phase 到 boss_fight / playing
+   */
+  selectShrineReward(optionId: string): void {
+    const { engine } = this;
+    const { state } = engine;
+    if (state.phase !== 'shrine_reward') return;
+    if (state.activeShrineId == null) return;
+
+    const shrine = state.shrines.find(s => s.id === state.activeShrineId);
+    if (!shrine || !shrine.options) return;
+
+    const option = shrine.options.find(o => o.id === optionId);
+    if (!option) return;
+
+    applyShrineReward(state.player, option.reward, option.value);
+
+    shrine.phase = 'consumed';
+    shrine.options = null;
+    state.activeShrineId = null;
+    state.phase = state.boss ? 'boss_fight' : 'playing';
   }
 
   pause(): void {
@@ -329,6 +376,7 @@ function makeEffects(engine: Engine): AiEffects {
         {
           gameTime: engine.state.gameTime,
           tier: engine.config.tier,
+          overtimeSeconds: engine.state.overtimeSeconds,
           player: engine.state.player,
           nextId: () => engine.nextEnemyId++,
         },

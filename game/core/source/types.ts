@@ -9,6 +9,11 @@ export interface InputState {
   skill2: boolean;
   jump: boolean;
   slide: boolean;
+  /**
+   * 通用交互按键（PC: KeyE / Mobile: 屏幕按钮）。
+   * 用于召唤 Boss 祭坛、进入传送门等场景交互。
+   */
+  interact: boolean;
 }
 
 // --- Characters ---
@@ -105,6 +110,83 @@ export interface PlayerState {
   maxWeaponSlots: number;
   comboCount: number;
   comboTimer: number;
+  // --- Shrine bonuses (累积来自 Charge Shrine 的奖励) ---
+  // 全部 optional：Phase 8 引入的字段，旧 fixture / 旧序列化数据不带这些字段也能跑。
+  // 系统侧消费时统一用 `?? 0` / `?? 1`。createInitialPlayer 会写入合理默认值。
+  /** 当前护盾值，受到伤害时优先消耗。 */
+  shield?: number;
+  /** 护盾上限。每个 +5 Shield shrine reward 累加。 */
+  maxShield?: number;
+  /** 护盾恢复累计计时（与 hp regen 分离，护盾恢复更快）。 */
+  shieldRegenAccum?: number;
+  /** HP 每秒恢复速率（来自 +HP Regen shrine reward）。 */
+  hpRegenRate?: number;
+  /** HP regen 累积器（< 1 时存余数）。 */
+  hpRegenAccum?: number;
+  /** 弹药数量额外加成（对每把武器的 projectileCount 加这么多）。 */
+  projectileBonus?: number;
+  /** 击退倍率（默认 1.0，shrine 会乘上去）。 */
+  knockbackMult?: number;
+  /** 对精英 / 小头目 / boss 的额外伤害倍率（默认 1.0）。 */
+  eliteDamageMult?: number;
+  /** 吸血百分比（0..1，造成伤害时按比例回血）。 */
+  lifestealPct?: number;
+  /** 跳跃高度倍率（默认 1.0）。 */
+  jumpHeightMult?: number;
+  /** 持续型武器持续时间倍率（默认 1.0），目前数据保留，未来 wire。 */
+  durationMult?: number;
+  /** Powerup 倍率（默认 1.0），目前数据保留。 */
+  powerupMult?: number;
+  /** 难度倍率（默认 1.0），目前数据保留。 */
+  difficultyMult?: number;
+  /** 额外幸运值（百分比，加到 luck tome 等级上参与 rolls）。 */
+  luckBonus?: number;
+}
+
+// --- Charge Shrine ---
+export type ShrinePhase = 'inactive' | 'charging' | 'ready' | 'consumed';
+
+/** Shrine 奖励类型（对应 megabonk 充能神殿的奖励池）。 */
+export type ShrineRewardType =
+  | 'damage'              // % damage
+  | 'shield'              // +N flat shield max
+  | 'pickup_range'        // % pickup radius
+  | 'crit_damage'         // % crit damage
+  | 'luck'                // % luck
+  | 'projectile_count'    // +N projectile
+  | 'hp_regen'            // +N HP regen / sec
+  | 'knockback'           // % knockback
+  | 'attack_speed'        // % attack speed
+  | 'difficulty'          // % difficulty
+  | 'lifesteal'           // % lifesteal
+  | 'powerup_multiplier'  // % powerup multiplier
+  | 'elite_damage'        // % elite damage
+  | 'duration'            // % duration
+  | 'jump_height'         // % jump height
+  | 'movement_speed';     // % move speed
+
+export interface ShrineRewardOption {
+  /** 唯一 id（shrine 内）。 */
+  id: string;
+  /** 稀有度（影响视觉 + 数值缩放，目前主要用于 UI 边框颜色）。 */
+  rarity: UpgradeRarity;
+  /** 奖励类别。 */
+  reward: ShrineRewardType;
+  /** 奖励数值（含义随 reward 类型而变，详见 ShrineRewardType 注释）。 */
+  value: number;
+}
+
+export interface ShrineState {
+  id: number;
+  x: number;
+  z: number;
+  phase: ShrinePhase;
+  /** 当前充能进度（秒）。 */
+  chargeTimer: number;
+  /** 充满需要的时间（秒）。 */
+  chargeDuration: number;
+  /** 充满后随机生成的 4 个奖励选项；其它阶段 = null。 */
+  options: ShrineRewardOption[] | null;
 }
 
 // --- Enemies ---
@@ -200,16 +282,38 @@ export interface ChestState {
   reward: number; // silver amount
 }
 
-// --- Teleporter ---
-export type TeleporterPhase = 'inactive' | 'available' | 'activating' | 'activated';
+// --- Altar (formerly Teleporter) ---
+/**
+ * 祭坛 / 传送门状态机。
+ *
+ * - `ready`         玩家未交互；进入半径时 UI 显示 `[E] 召唤 Boss`
+ * - `summoning`     玩家按住 E 触发的短读条（防误触），离开半径会回 `ready`
+ * - `boss_active`   Boss 已生成；祭坛此时锁住、不可再交互
+ * - `portal_ready`  Boss 死亡后祭坛变成传送门；UI 显示 `[E] 进入下一关`
+ * - `portal_used`   玩家进入传送门；终态，会被 tier 推进流程消费
+ */
+export type AltarPhase = 'ready' | 'summoning' | 'boss_active' | 'portal_ready' | 'portal_used';
 
-export interface TeleporterState {
+export interface AltarState {
   x: number;
   z: number;
-  phase: TeleporterPhase;
-  activationTimer: number;
-  activationDuration: number;
+  phase: AltarPhase;
+  /** 召唤读条进度（秒），仅 `summoning` 阶段递增。 */
+  summonTimer: number;
+  /** 召唤读条总时长（秒），= `ALTAR_SUMMON_DURATION`。 */
+  summonDuration: number;
 }
+
+/**
+ * @deprecated 使用 `AltarPhase`。本别名仅为减少一次性破坏；新代码请用 `AltarPhase`。
+ * 注意：阶段值与旧 `TeleporterPhase` 不再兼容（已重新设计为祭坛状态机）。
+ */
+export type TeleporterPhase = AltarPhase;
+
+/**
+ * @deprecated 使用 `AltarState`。本别名仅为减少一次性破坏；新代码请用 `AltarState`。
+ */
+export type TeleporterState = AltarState;
 
 // --- Upgrades ---
 export type UpgradeRarity = 'common' | 'uncommon' | 'rare' | 'legendary';
@@ -259,7 +363,7 @@ export interface DamageEvent {
 }
 
 // --- Game State ---
-export type GamePhase = 'menu' | 'playing' | 'level_up' | 'boss_intro' | 'boss_fight' | 'victory' | 'defeat' | 'paused';
+export type GamePhase = 'menu' | 'playing' | 'level_up' | 'shrine_reward' | 'boss_intro' | 'boss_fight' | 'portal_open' | 'victory' | 'defeat' | 'paused';
 
 export interface GameStats {
   killCount: number;
@@ -271,6 +375,12 @@ export interface GameStats {
 export interface GameState {
   tick: number;
   gameTime: number;
+  /**
+   * Overtime 累积时长（秒）。
+   * 玩家击败 Boss 但拒绝进入传送门、且 `gameTime ≥ 540s` 后开始累加。
+   * 用于驱动敌人难度系数（每 30s 一档）。
+   */
+  overtimeSeconds: number;
   running: boolean;
   paused: boolean;
   finished: boolean;
@@ -285,7 +395,15 @@ export interface GameState {
   damageEvents: DamageEvent[];
   stats: GameStats;
   waveIndex: number;
-  teleporters: TeleporterState[];
+  /**
+   * 祭坛 / 传送门列表。Boss 召唤前是祭坛，Boss 死亡后变传送门，进入后被消费。
+   * 旧字段名 `teleporters` 已弃用；请使用 `altars`。
+   */
+  altars: AltarState[];
+  /** Charge shrine 列表（开局生成）。 */
+  shrines: ShrineState[];
+  /** 当前正在选择奖励的 shrine id；其它阶段 = null。 */
+  activeShrineId: number | null;
   character: CharacterType;
   finalSwarm: boolean;
 }

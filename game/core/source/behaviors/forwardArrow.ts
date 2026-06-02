@@ -43,6 +43,7 @@ export function forwardArrow(_world: GameWorld, ctx: BehaviorContext): void {
       pierceLeft: stats.pierce,
       lifetime: 3.0,
       radius: 0.25,
+      fromPlayer: true,
     });
     if (id === null) break;  // 达 MAX_PROJECTILES, 与 legacy fireBow 一致
   }

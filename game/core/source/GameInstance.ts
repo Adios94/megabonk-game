@@ -67,7 +67,6 @@ import {
   TELEPORTER_APPEAR_TIME,
   TELEPORTER_RADIUS,
   XP_VALUES,
-  ENEMY_CONFIGS,
   WAVE_CONFIGS,
   WEAPON_STATS,
   CHARACTER_CONFIGS,
@@ -88,7 +87,20 @@ import { updateOrbitingProjectile } from './weapons.ts';
 import { computeWeaponDamage } from './stats/index.ts';
 import { createWorld, type GameWorld } from './world.ts';
 import { tryFireWeaponEcs } from './systems/weaponFiring.ts';
-import type { BehaviorEffects } from './behaviors/types.ts';
+import { tickEnemyAi } from './systems/aiSystem.ts';
+import { ENEMIES } from './data/enemies.ts';
+import { spawnEnemy } from './factories/spawnEnemy.ts';
+import type { AiEffects, AiContext } from './ai/types.ts';
+
+/**
+ * Phase 4a-c AI 迁移期间的默认开关。
+ * - true: 走新 ECS AI 路径 (systems/aiSystem.ts + ai/behaviors/* + ai/modifiers/*)
+ * - false: 走旧 GameInstance.updateEnemiesAI / updateChargeEnemy / etc switch
+ *
+ * 测试期可通过 instance.useEcsAi = false 临时翻转（见 __tests__/aiParity.test.ts）。
+ * Phase 4c 完成后, 本常量 + useEcsAi 字段 + 旧 AI helpers 一起删除。
+ */
+const USE_ECS_AI_DEFAULT = true;
 
 export class GameInstance {
   private config: GameConfig;
@@ -113,7 +125,10 @@ export class GameInstance {
   private miniBossTimer: number = 0;
 
   private world: GameWorld;
-  private effects: BehaviorEffects;
+  private effects: AiEffects;
+
+  /** Phase 4a-c AI 迁移开关。Phase 4c 完成后随旧 AI helpers 一起删除。 */
+  useEcsAi: boolean = USE_ECS_AI_DEFAULT;
 
   constructor(config: GameConfig) {
     this.config = config;
@@ -135,11 +150,37 @@ export class GameInstance {
         const id = this.nextProjectileId++;
         this.state.projectiles.push({
           id,
-          fromPlayer: true,
           hitEnemyIds: [],
           ...p,
         });
         return id;
+      },
+      spawnEnemyByType: (type, x, z, opts) => {
+        const newEnemy = spawnEnemy(
+          type, x, z,
+          {
+            gameTime: this.state.gameTime,
+            tier: this.config.tier,
+            player: this.state.player,
+            nextId: () => this.nextEnemyId++,
+          },
+          opts ?? {},
+        );
+        this.state.enemies.push(newEnemy);
+        return newEnemy;
+      },
+      damagePlayer: (rawDamage: number) => {
+        const player = this.state.player;
+        if (!player.alive || player.invincibleTimer > 0) return;
+        const shieldTome = player.tomes.find(t => t.type === 'shield_tome');
+        const shieldReduction = shieldTome ? shieldTome.level * 0.05 : 0;
+        const dmg = Math.max(1, rawDamage - player.armor);
+        const finalDmg = Math.max(1, Math.round(dmg * (1 - shieldReduction)));
+        player.hp -= finalDmg;
+        player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;
+        this.state.stats.damageTaken += finalDmg;
+        this.addDamageEvent(player.x, 1.5, player.z, finalDmg, false, true);
+        if (player.hp <= 0) this.checkPlayerDeath();
       },
     };
 
@@ -236,7 +277,11 @@ export class GameInstance {
     this.updateTimers(dt);
 
     // Update enemies AI
-    this.updateEnemiesAI(dt);
+    if (this.useEcsAi) {
+      tickEnemyAi(this.state.enemies, this.makeAiContext(dt));
+    } else {
+      this.updateEnemiesAI(dt);
+    }
 
     // Fire weapons
     this.fireWeapons(dt);
@@ -699,6 +744,25 @@ export class GameInstance {
   // Private: Enemy AI
   // =========================================================================
 
+  /**
+   * 构造 AiContext —— 给 systems/aiSystem.tickEnemyAi 用。
+   * 每帧调一次，把 GameInstance 的局部状态打包成行为/modifier 用的纯参数。
+   */
+  private makeAiContext(dt: number): AiContext {
+    return {
+      player: this.state.player,
+      enemies: this.state.enemies,
+      boss: this.state.boss,
+      dt,
+      gameTime: this.state.gameTime,
+      mapSize: this.config.mapSize,
+      aiGroup: this.aiGroup,
+      finalSwarm: this.state.finalSwarm,
+      getTerrainHeight: (x, z) => this.getTerrainHeight(x, z),
+      effects: this.effects,
+    };
+  }
+
   private updateEnemiesAI(dt: number): void {
     const player = this.state.player;
     const enemies = this.state.enemies;
@@ -735,7 +799,7 @@ export class GameInstance {
       // --- Ranged enemy shooting ---
       if (enemy.behavior === 'ranged' && enemy.attackCooldown <= 0) {
         const dist = distanceBetween(enemy.x, enemy.z, player.x, player.z);
-        const cfg = ENEMY_CONFIGS[enemy.type];
+        const cfg = ENEMIES[enemy.type];
         const preferredRange = cfg?.preferredRange ?? 8;
         if (dist <= preferredRange * 1.5 && dist >= preferredRange * 0.5) {
           this.enemyRangedAttack(enemy, player);
@@ -943,43 +1007,25 @@ export class GameInstance {
 
   private necromancerSummon(necro: EnemyState): void {
     const count = 2 + Math.floor(Math.random() * 2); // 2-3 skeleton_soldiers
-    const cfg = ENEMY_CONFIGS['skeleton_soldier'];
-    if (!cfg) return;
 
     for (let i = 0; i < count; i++) {
       if (this.state.enemies.length >= 150) break; // respect max
       const angle = (i / count) * Math.PI * 2 + Math.random() * 0.5;
       const spawnDist = 2 + Math.random() * 1.5;
-      const timeScale = 1 + this.state.gameTime / 600;
 
-      this.state.enemies.push({
-        id: this.nextEnemyId++,
-        type: 'skeleton_soldier',
-        x: necro.x + Math.cos(angle) * spawnDist,
-        y: 0,
-        z: necro.z + Math.sin(angle) * spawnDist,
-        hp: Math.round(cfg.hp * timeScale),
-        maxHp: Math.round(cfg.hp * timeScale),
-        speed: cfg.speed,
-        damage: cfg.damage,
-        behavior: cfg.behavior as EnemyBehavior,
-        isElite: false,
-        isMiniBoss: false,
-        hitFlashTimer: 0,
-        attackCooldown: 0,
-        attackCooldownMax: cfg.attackCooldown,
-        targetX: this.state.player.x,
-        targetZ: this.state.player.z,
-        chargeState: 'idle',
-        chargeTimer: 0,
-        chargeTargetX: 0,
-        chargeTargetZ: 0,
-        summonCooldown: 0,
-        orbitAngle: 0,
-        orbitTimer: 0,
-        diveState: 'flying',
-        diveTimer: 0,
-      });
+      const enemy = spawnEnemy(
+        'skeleton_soldier',
+        necro.x + Math.cos(angle) * spawnDist,
+        necro.z + Math.sin(angle) * spawnDist,
+        {
+          gameTime: this.state.gameTime,
+          tier: this.config.tier,
+          player: this.state.player,
+          nextId: () => this.nextEnemyId++,
+        },
+        { mode: 'necromancerSummon' },
+      );
+      this.state.enemies.push(enemy);
     }
   }
 
@@ -987,7 +1033,7 @@ export class GameInstance {
     const px = player.x;
     const pz = player.z;
     const dist = distanceBetween(enemy.x, enemy.z, px, pz);
-    const cfg = ENEMY_CONFIGS[enemy.type];
+    const cfg = ENEMIES[enemy.type];
 
     switch (enemy.behavior) {
       case 'chase':
@@ -1380,7 +1426,7 @@ export class GameInstance {
   private spawnPickupFromEnemy(enemy: EnemyState): void {
     if (this.state.pickups.length >= MAX_PICKUPS) return;
 
-    const cfg = ENEMY_CONFIGS[enemy.type];
+    const cfg = ENEMIES[enemy.type];
     if (!cfg) return;
 
     let xpReward = cfg.xpReward;
@@ -1633,7 +1679,7 @@ export class GameInstance {
 
       // Choose enemy types (all types available during final swarm)
       const availableEnemies = isFinalSwarm
-        ? Object.keys(ENEMY_CONFIGS)
+        ? Object.keys(ENEMIES)
         : wave.enemies;
 
       for (let i = 0; i < groupSize; i++) {
@@ -1644,8 +1690,8 @@ export class GameInstance {
         let enemyType: string;
 
         if (isEliteRoll) {
-          const eliteTypes = Object.keys(ENEMY_CONFIGS).filter(
-            t => ENEMY_CONFIGS[t].isElite && ENEMY_CONFIGS[t].firstAppear <= this.state.gameTime
+          const eliteTypes = (Object.keys(ENEMIES) as EnemyType[]).filter(
+            t => ENEMIES[t].isElite && ENEMIES[t].firstAppear <= this.state.gameTime
           );
           if (eliteTypes.length > 0) {
             enemyType = eliteTypes[Math.floor(Math.random() * eliteTypes.length)];
@@ -1663,48 +1709,24 @@ export class GameInstance {
   }
 
   private spawnMiniBoss(): void {
-    const allTypes = Object.keys(ENEMY_CONFIGS).filter(
-      t => ENEMY_CONFIGS[t].firstAppear <= this.state.gameTime
+    const allTypes = (Object.keys(ENEMIES) as EnemyType[]).filter(
+      t => ENEMIES[t].firstAppear <= this.state.gameTime
     );
     if (allTypes.length === 0) return;
 
     const baseType = allTypes[Math.floor(Math.random() * allTypes.length)];
-    const cfg = ENEMY_CONFIGS[baseType];
-    if (!cfg) return;
-
     const spawnPos = this.getSpawnPosition();
-    const timeScale = 1 + this.state.gameTime / 600;
-    const tierCfg = TIER_CONFIGS[this.config.tier];
-
-    const enemy: EnemyState = {
-      id: this.nextEnemyId++,
-      type: baseType as EnemyType,
-      x: spawnPos.x,
-      y: 0,
-      z: spawnPos.z,
-      hp: Math.round(cfg.hp * timeScale * 3 * tierCfg.enemyHpMultiplier),
-      maxHp: Math.round(cfg.hp * timeScale * 3 * tierCfg.enemyHpMultiplier),
-      speed: cfg.speed * tierCfg.enemySpeedMultiplier,
-      damage: Math.round(cfg.damage * 2 * tierCfg.enemyDamageMultiplier),
-      behavior: cfg.behavior as EnemyBehavior,
-      isElite: true,
-      isMiniBoss: true,
-      hitFlashTimer: 0,
-      attackCooldown: 0,
-      attackCooldownMax: cfg.attackCooldown,
-      targetX: this.state.player.x,
-      targetZ: this.state.player.z,
-      chargeState: 'idle',
-      chargeTimer: 0,
-      chargeTargetX: 0,
-      chargeTargetZ: 0,
-      summonCooldown: 8,
-      orbitAngle: Math.random() * Math.PI * 2,
-      orbitTimer: 0,
-      diveState: 'flying',
-      diveTimer: 0,
-    };
-
+    const enemy = spawnEnemy(
+      baseType,
+      spawnPos.x, spawnPos.z,
+      {
+        gameTime: this.state.gameTime,
+        tier: this.config.tier,
+        player: this.state.player,
+        nextId: () => this.nextEnemyId++,
+      },
+      { mode: 'miniBoss' },
+    );
     this.state.enemies.push(enemy);
   }
 
@@ -1722,82 +1744,37 @@ export class GameInstance {
 
   private pickWeightedEnemy(types: string[]): string {
     const available = types.filter(
-      t => ENEMY_CONFIGS[t] && ENEMY_CONFIGS[t].firstAppear <= this.state.gameTime
+      t => ENEMIES[t as EnemyType] && ENEMIES[t as EnemyType].firstAppear <= this.state.gameTime
     );
     if (available.length === 0) return types[0];
 
     let totalWeight = 0;
     for (const t of available) {
-      totalWeight += ENEMY_CONFIGS[t]?.spawnWeight ?? 1;
+      totalWeight += ENEMIES[t as EnemyType]?.spawnWeight ?? 1;
     }
 
     let roll = Math.random() * totalWeight;
     for (const t of available) {
-      roll -= ENEMY_CONFIGS[t]?.spawnWeight ?? 1;
+      roll -= ENEMIES[t as EnemyType]?.spawnWeight ?? 1;
       if (roll <= 0) return t;
     }
     return available[available.length - 1];
   }
 
   private spawnSingleEnemy(type: string): void {
-    const cfg = ENEMY_CONFIGS[type];
-    if (!cfg) return;
-
+    if (!ENEMIES[type as EnemyType]) return;
     const spawnPos = this.getSpawnPosition();
-    const timeScale = 1 + this.state.gameTime / 600;
-    const tierCfg = TIER_CONFIGS[this.config.tier];
-
-    // Enhanced HP scaling: after 3 minutes, +10% per minute
-    let hpScale = timeScale;
-    if (this.state.gameTime >= 180) {
-      const extraMinutes = (this.state.gameTime - 180) / 60;
-      hpScale *= (1 + extraMinutes * 0.1);
-    }
-
-    let hp = Math.round(cfg.hp * hpScale * tierCfg.enemyHpMultiplier);
-    let speed = cfg.speed * tierCfg.enemySpeedMultiplier;
-    let damage = Math.round(cfg.damage * tierCfg.enemyDamageMultiplier);
-    let isElite = cfg.isElite;
-
-    // Elite enemies: 50% chance of random buff (fast, tanky, or damage)
-    if (isElite && Math.random() < 0.5) {
-      const buff = Math.floor(Math.random() * 3);
-      switch (buff) {
-        case 0: speed *= 1.4; break; // fast
-        case 1: hp = Math.round(hp * 1.5); break; // tanky
-        case 2: damage = Math.round(damage * 1.5); break; // damage
-      }
-    }
-
-    const enemy: EnemyState = {
-      id: this.nextEnemyId++,
-      type: type as EnemyType,
-      x: spawnPos.x,
-      y: type === 'gargoyle' ? 3 : 0,
-      z: spawnPos.z,
-      hp,
-      maxHp: hp,
-      speed,
-      damage,
-      behavior: cfg.behavior as EnemyBehavior,
-      isElite,
-      isMiniBoss: false,
-      hitFlashTimer: 0,
-      attackCooldown: 0,
-      attackCooldownMax: cfg.attackCooldown,
-      targetX: this.state.player.x,
-      targetZ: this.state.player.z,
-      chargeState: 'idle',
-      chargeTimer: 0,
-      chargeTargetX: 0,
-      chargeTargetZ: 0,
-      summonCooldown: type === 'necromancer' ? 8 : 0,
-      orbitAngle: Math.random() * Math.PI * 2,
-      orbitTimer: 0,
-      diveState: 'flying',
-      diveTimer: 0,
-    };
-
+    const enemy = spawnEnemy(
+      type as EnemyType,
+      spawnPos.x, spawnPos.z,
+      {
+        gameTime: this.state.gameTime,
+        tier: this.config.tier,
+        player: this.state.player,
+        nextId: () => this.nextEnemyId++,
+      },
+      { mode: 'wave' },
+    );
     this.state.enemies.push(enemy);
   }
 
@@ -1955,38 +1932,22 @@ export class GameInstance {
           if (this.state.enemies.length >= MAX_ENEMIES) break;
           const angle = (i / count) * Math.PI * 2;
           const spawnDist = 5;
-          const enemyType = boss.phase >= 2 ? 'zombie' : 'skeleton_soldier';
-          const cfg = ENEMY_CONFIGS[enemyType];
-          if (!cfg) continue;
+          const enemyType: EnemyType = boss.phase >= 2 ? 'zombie' : 'skeleton_soldier';
+          if (!ENEMIES[enemyType]) continue;
 
-          this.state.enemies.push({
-            id: this.nextEnemyId++,
-            type: enemyType as EnemyType,
-            x: boss.x + Math.cos(angle) * spawnDist,
-            y: 0,
-            z: boss.z + Math.sin(angle) * spawnDist,
-            hp: cfg.hp,
-            maxHp: cfg.hp,
-            speed: cfg.speed,
-            damage: cfg.damage,
-            behavior: cfg.behavior as EnemyBehavior,
-            isElite: false,
-            isMiniBoss: false,
-            hitFlashTimer: 0,
-            attackCooldown: 0,
-            attackCooldownMax: cfg.attackCooldown,
-            targetX: player.x,
-            targetZ: player.z,
-            chargeState: 'idle',
-            chargeTimer: 0,
-            chargeTargetX: 0,
-            chargeTargetZ: 0,
-            summonCooldown: 0,
-            orbitAngle: Math.random() * Math.PI * 2,
-            orbitTimer: 0,
-            diveState: 'flying',
-            diveTimer: 0,
-          });
+          const enemy = spawnEnemy(
+            enemyType,
+            boss.x + Math.cos(angle) * spawnDist,
+            boss.z + Math.sin(angle) * spawnDist,
+            {
+              gameTime: this.state.gameTime,
+              tier: this.config.tier,
+              player: this.state.player,
+              nextId: () => this.nextEnemyId++,
+            },
+            { mode: 'bossSummon' },
+          );
+          this.state.enemies.push(enemy);
         }
         break;
       }

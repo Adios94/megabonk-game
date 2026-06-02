@@ -53,6 +53,7 @@ export function bouncingShot(_world: GameWorld, ctx: BehaviorContext): void {
       pierceLeft: 0,
       lifetime: 4.0,
       radius: 0.4,
+      fromPlayer: true,
     });
     if (id === null) break;
   }

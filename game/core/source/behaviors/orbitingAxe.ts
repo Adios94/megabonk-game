@@ -33,6 +33,7 @@ export function orbitingAxe(_world: GameWorld, ctx: BehaviorContext): void {
       pierceLeft: stats.pierce,
       lifetime: 3.0,
       radius: stats.aoeRadius,
+      fromPlayer: true,
       orbiting: true,
       orbitAngle: startAngle,
       orbitRadius: stats.range,

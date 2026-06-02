@@ -37,6 +37,7 @@ export function spreadShot(_world: GameWorld, ctx: BehaviorContext): void {
       pierceLeft: stats.pierce,
       lifetime: 1.5,
       radius: 0.2,
+      fromPlayer: true,
     });
     if (id === null) break;
   }

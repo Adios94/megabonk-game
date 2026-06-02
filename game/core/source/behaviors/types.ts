@@ -28,13 +28,13 @@ export interface BehaviorEffects {
   /** 累加 state.stats.damageDealt */
   addDamageDealt(amount: number): void;
   /**
-   * 推一个玩家投射物到 state.projectiles[]。返回分配的 id；
+   * 推一个投射物到 state.projectiles[]。返回分配的 id；
    * 达 MAX_PROJECTILES 上限时返回 null（行为应优雅 break / continue）。
    *
-   * Defaults 由实现填充: id 自增, fromPlayer: true, hitEnemyIds: [].
-   * caller 提供其它所有字段。
+   * Defaults 由实现填充: id 自增, hitEnemyIds: [].
+   * caller 提供其它字段, **包括 `fromPlayer`**（玩家武器: true, 敌人远程: false）。
    */
-  spawnProjectile(p: Omit<ProjectileState, 'id' | 'fromPlayer' | 'hitEnemyIds'>): number | null;
+  spawnProjectile(p: Omit<ProjectileState, 'id' | 'hitEnemyIds'>): number | null;
 }
 
 export interface BehaviorContext {

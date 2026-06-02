@@ -88,8 +88,10 @@ import { computeWeaponDamage } from './stats/index.ts';
 import { createWorld, type GameWorld } from './world.ts';
 import { tryFireWeaponEcs } from './systems/weaponFiring.ts';
 import { tickEnemyAi } from './systems/aiSystem.ts';
+import { tickBossAi } from './systems/bossAi.ts';
 import { ENEMIES } from './data/enemies.ts';
 import { spawnEnemy } from './factories/spawnEnemy.ts';
+import { getBossMeleeDamage } from './ai/bosses/skeletonKing.ts';
 import type { AiEffects, AiContext } from './ai/types.ts';
 
 /**
@@ -101,6 +103,16 @@ import type { AiEffects, AiContext } from './ai/types.ts';
  * Phase 4c 完成后, 本常量 + useEcsAi 字段 + 旧 AI helpers 一起删除。
  */
 const USE_ECS_AI_DEFAULT = true;
+
+/**
+ * Phase 4b-c Boss AI 迁移开关 —— 与 useEcsAi **独立**.
+ * - true:  走新 systems/bossAi.tickBossAi + ai/bosses/skeletonKing
+ * - false: 走旧 GameInstance.updateBossAI / executeBossAttack / chooseBossAttack
+ *
+ * 拆成 2 个 flag 是为了 4b 期间出现 boss bug 不必整体回退、保留 enemy bisect 能力。
+ * Phase 4c 完成后随旧 boss helpers 一起删除。
+ */
+const USE_ECS_BOSS_AI_DEFAULT = true;
 
 export class GameInstance {
   private config: GameConfig;
@@ -129,6 +141,9 @@ export class GameInstance {
 
   /** Phase 4a-c AI 迁移开关。Phase 4c 完成后随旧 AI helpers 一起删除。 */
   useEcsAi: boolean = USE_ECS_AI_DEFAULT;
+
+  /** Phase 4b-c Boss AI 迁移开关. 与 useEcsAi 独立。Phase 4c 完成后随旧 boss helpers 一起删除. */
+  useEcsBossAi: boolean = USE_ECS_BOSS_AI_DEFAULT;
 
   constructor(config: GameConfig) {
     this.config = config;
@@ -315,7 +330,11 @@ export class GameInstance {
 
     // Update boss AI
     if (this.state.boss && this.state.phase === 'boss_fight') {
-      this.updateBossAI(dt);
+      if (this.useEcsBossAi) {
+        tickBossAi(this.state.boss, this.makeAiContext(dt));
+      } else {
+        this.updateBossAI(dt);
+      }
     }
 
     // Apply thorns damage
@@ -1302,7 +1321,7 @@ export class GameInstance {
     if (player.alive && player.invincibleTimer <= 0 && this.state.boss && this.state.boss.hp > 0) {
       const dist = distanceBetween(player.x, player.z, this.state.boss.x, this.state.boss.z);
       if (dist < 2.0 && this.state.boss.attackCooldown <= 0) {
-        const bossDmg = this.getBossMeleeDamage();
+        const bossDmg = getBossMeleeDamage(this.state.boss);
         const shieldTome = player.tomes.find(t => t.type === 'shield_tome');
         const shieldReduction = shieldTome ? shieldTome.level * 0.05 : 0;
         const rawDamage = Math.max(1, bossDmg - player.armor);

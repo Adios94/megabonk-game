@@ -15,7 +15,12 @@
     "roberto": "Roberto",
     "roberto_desc": "Tanky warrior. Extra HP and armor, slower speed.",
     "skateboard_skeleton": "Skateboard Skeleton",
-    "skateboard_skeleton_desc": "Fast and fragile. High speed and crit, low HP."
+    "skateboard_skeleton_desc": "Fast and fragile. High speed and crit, low HP.",
+    "stat": {
+      "hp": "HP: {{value}}",
+      "speed": "Speed: {{value}}",
+      "damage": "Damage: {{value}}x"
+    }
   },
   "hud": {
     "level": "Lv.{{level}}",
@@ -170,10 +175,15 @@
     "warning": "Boss incoming!"
   },
   "tier": {
-    "1": "Tier 1 - Normal",
-    "2": "Tier 2 - Hard",
-    "3": "Tier 3 - Nightmare",
-    "select": "Select Difficulty"
+    "1": "Normal",
+    "2": "Hard",
+    "3": "Nightmare",
+    "select": "Select Difficulty",
+    "stat": {
+      "enemyHp": "Enemy HP: {{value}}x",
+      "enemyDamage": "Enemy damage: {{value}}x",
+      "silver": "Silver: {{value}}x"
+    }
   },
   "teleporter": {
     "found": "Teleporter Found!",

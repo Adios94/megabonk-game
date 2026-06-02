@@ -3956,9 +3956,9 @@ function showCharacterSelect(onSelect: (character: CharacterType) => void): HTML
       ${isSelected ? `box-shadow:0 0 15px ${hexColor}44;` : ''}
     `;
 
-    // Character icon/color swatch
+    // Character icon placeholder. This square will hold portrait art later.
     const iconEl = document.createElement('div');
-    iconEl.style.cssText = `width:40px;height:40px;border-radius:50%;margin:0 auto 8px;background:${hexColor};`;
+    iconEl.style.cssText = `width:48px;height:48px;border-radius:12px;margin:0 auto 8px;background:${hexColor};`;
     card.appendChild(iconEl);
 
     // Name
@@ -3976,17 +3976,25 @@ function showCharacterSelect(onSelect: (character: CharacterType) => void): HTML
     // Stats preview
     const cfg = CHARACTER_CONFIGS[char];
     const statsEl = document.createElement('div');
-    statsEl.style.cssText = 'color:#777;font-size:9px;margin-top:6px;line-height:1.4;';
-    statsEl.innerHTML = `HP:${cfg.hp} SPD:${cfg.speed} DMG:${cfg.damage}x`;
+    statsEl.style.cssText = 'color:#777;font-size:9px;margin-top:6px;line-height:1.45;text-align:left;';
+    const statRows = [
+      t('character.stat.hp', { value: String(cfg.hp) }),
+      t('character.stat.speed', { value: String(cfg.speed) }),
+      t('character.stat.damage', { value: String(cfg.damage) }),
+    ];
+    for (const statText of statRows) {
+      const statEl = document.createElement('div');
+      statEl.textContent = statText;
+      statsEl.appendChild(statEl);
+    }
     card.appendChild(statsEl);
 
     card.addEventListener('click', () => {
       selectedCharacter = char;
       onSelect(char);
-      // Re-render all cards to show selection
-      panel.remove();
+      // Re-render all cards to show selection while keeping every option visible.
       const newPanel = showCharacterSelect(onSelect);
-      panel.parentElement?.appendChild(newPanel);
+      panel.replaceWith(newPanel);
     });
 
     card.addEventListener('mouseenter', () => {
@@ -4031,18 +4039,24 @@ function showTierSelect(onSelect: (tier: DifficultyTier) => void): HTMLDivElemen
     btn.appendChild(nameEl);
 
     const descEl = document.createElement('div');
-    descEl.style.cssText = 'color:#888;font-size:9px;line-height:1.3;';
-    if (tier === 1) descEl.textContent = 'Boss on timer';
-    else if (tier === 2) descEl.textContent = `HP x${cfg.enemyHpMultiplier} | Silver x${cfg.silverMultiplier}`;
-    else descEl.textContent = `HP x${cfg.enemyHpMultiplier} | Silver x${cfg.silverMultiplier}`;
+    descEl.style.cssText = 'color:#888;font-size:9px;line-height:1.45;text-align:left;';
+    const tierStatRows = [
+      t('tier.stat.enemyHp', { value: String(cfg.enemyHpMultiplier) }),
+      t('tier.stat.enemyDamage', { value: String(cfg.enemyDamageMultiplier) }),
+      t('tier.stat.silver', { value: String(cfg.silverMultiplier) }),
+    ];
+    for (const statText of tierStatRows) {
+      const statEl = document.createElement('div');
+      statEl.textContent = statText;
+      descEl.appendChild(statEl);
+    }
     btn.appendChild(descEl);
 
     btn.addEventListener('click', () => {
       selectedTier = tier;
       onSelect(tier);
-      panel.remove();
       const newPanel = showTierSelect(onSelect);
-      panel.parentElement?.appendChild(newPanel);
+      panel.replaceWith(newPanel);
     });
 
     btn.addEventListener('mouseenter', () => { btn.style.transform = 'scale(1.05)'; });

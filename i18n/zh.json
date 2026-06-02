@@ -15,7 +15,12 @@
     "roberto": "罗伯托",
     "roberto_desc": "坦克型战士，高生命和护甲，速度较慢",
     "skateboard_skeleton": "滑板骷髅",
-    "skateboard_skeleton_desc": "速度型，高速高暴击，低生命值"
+    "skateboard_skeleton_desc": "速度型，高速高暴击，低生命值",
+    "stat": {
+      "hp": "血量: {{value}}",
+      "speed": "速度: {{value}}",
+      "damage": "伤害: {{value}}x"
+    }
   },
   "hud": {
     "level": "Lv.{{level}}",
@@ -170,10 +175,15 @@
     "warning": "Boss即将出现！"
   },
   "tier": {
-    "1": "难度1 - 普通",
-    "2": "难度2 - 困难",
-    "3": "难度3 - 噩梦",
-    "select": "选择难度"
+    "1": "普通",
+    "2": "困难",
+    "3": "噩梦",
+    "select": "选择难度",
+    "stat": {
+      "enemyHp": "敌人血量: {{value}}x",
+      "enemyDamage": "敌人伤害: {{value}}x",
+      "silver": "银币: {{value}}x"
+    }
   },
   "teleporter": {
     "found": "发现传送门！",

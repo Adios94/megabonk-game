@@ -55,7 +55,7 @@
 | 180–300 s | 加入弓手，1.2s/3–5 群，最多 70 同屏，10% 精英；**Mini-Boss 启动**（每 120 秒一只） | `WAVE_CONFIGS[2]`、`spawnEnemies()` |
 | 300–420 s | 1.0s/3–6 群，最多 85 同屏，15% 精英；**传送门出现**（Tier 2/3） | `WAVE_CONFIGS[3]`、`TELEPORTER_APPEAR_TIME` |
 | 420–480 s | 0.8s/4–8 群，最多 100 同屏，20% 精英 | `WAVE_CONFIGS[4]` |
-| 480–540 s | **Final Swarm**：刷新加倍、上限 150、敌速 +20% | `GameInstance.ts:1881` |
+| 480–540 s | **Final Swarm**：刷新加倍、上限 150、敌速 +20% | `systems/spawning.ts tickSpawning` |
 | 540 s | **Boss 出现**（Tier 1 自动；Tier 2/3 须激活完传送门） | `BOSS_SPAWN_TIME` |
 
 ### 6. 难度分层
@@ -113,7 +113,7 @@ xpForLevel(L) = floor(10 × (1 + L × 0.35))
 
 ### 3. 升级选项流程
 
-升级时**暂停游戏**，固定弹出 **3 个选项**（`GameInstance.ts:1854` 硬编码 `count=3`，幸运典籍**不**会增加选项数量）。
+升级时**暂停游戏**，固定弹出 **3 个选项**（`systems/player.ts tickLevelUp` 内 `generateUpgradeOptions(player, 3)`，幸运典籍**不**会增加选项数量）。
 
 选项池 (`upgrades.ts:51 buildAvailableOptions`)：
 
@@ -140,7 +140,7 @@ xpForLevel(L) = floor(10 × (1 + L × 0.35))
 
 ### 5. 武器槽解锁
 
-起始 2 槽（`MAX_WEAPONS_DEFAULT`），按等级自动解锁 (`GameInstance.ts:1847`)；任务 q30 还可奖励 +1 永久槽。
+起始 2 槽（`MAX_WEAPONS_DEFAULT`），按等级自动解锁 (`systems/player.ts tickLevelUp`)；任务 q30 还可奖励 +1 永久槽。
 
 | 玩家等级 | 武器槽 |
 |---|---|
@@ -152,7 +152,7 @@ xpForLevel(L) = floor(10 × (1 + L × 0.35))
 
 ### 6. 连击系统
 
-`GameInstance.ts:1665-1667, 1821-1823`
+`systems/pickups.ts processDeaths + collectPickup` (累加) + `systems/player.ts tickTimers` (归零)
 
 - 击杀后 `comboCount += 1`，`comboTimer = 2.0` 秒
 - XP 倍率 = `1 + min(comboCount × 0.05, 1.0)` → 最高 2×
@@ -196,7 +196,7 @@ xpForLevel(L) = floor(10 × (1 + L × 0.35))
 
 每把武器 8 个等级（数组下标 0–7），第 9 级 = 进化态。
 
-### 3. 取数与开火 — `getWeaponStats(weapon)` (`GameInstance.ts:2515`)
+### 3. 取数与开火 — `getWeaponStats(weapon)` (`systems/weapons.ts`)
 
 ```ts
 const idx = weapon.evolved ? 7 : weapon.level - 1;
@@ -321,7 +321,7 @@ if (weapon.cooldownTimer <= 0) {
 
 `WEAPON_EVOLUTIONS` (`config.ts:278`)
 
-触发条件 (`checkWeaponEvolutions()` `GameInstance.ts:2451`)：
+触发条件 (`checkWeaponEvolutions()` `systems/weapons.ts`)：
 1. `weapon.level >= 8`（满级）
 2. 有进化条目
 3. 对应典籍 `tome.level >= requiredTomeLevel`
@@ -354,7 +354,7 @@ if (weapon.cooldownTimer <= 0) {
 
 | ID | 中文 | 实际效果（每级） | 上限 | 源代码 |
 |---|---|---|---|---|
-| `attack_speed_tome` | 攻速典籍 | `attackSpeedMultiplier += 0.10`（影响所有武器 CD 速率） | 5 | `GameInstance.ts:2418` |
+| `attack_speed_tome` | 攻速典籍 | `attackSpeedMultiplier += 0.10`（影响所有武器 CD 速率） | 5 | `data/tomes.ts` + `stats/recomputePlayerStats.ts` |
 | `speed_tome` | 速度典籍 | `speedMult += 0.08` | 5 | `:2421` |
 | `attraction_tome` | 吸引典籍 | `pickupRadius += 1.2` | 5 | `:2424` |
 | `shield_tome` | 护盾典籍 | `armor += 2` **且** 受伤后再 ×(1−0.05·level) | 5 | `:2427`、`:867`、`:1531`、`:1554`、`:1579` |
@@ -362,7 +362,7 @@ if (weapon.cooldownTimer <= 0) {
 | `thorns_tome` | 荆棘典籍 | 每秒对周围敌人造成 `level × 3` 反伤 | 5 | `:2342-2345` |
 | `knockback_tome` | 击退典籍 | 击退力 `× (1 + 0.30·level)` | 3 | `:2358-2361` |
 | `luck_tome` | 幸运典籍 | 升级稀有度滚点：common −10、rare/legendary 各 +5 | 3 | `upgrades.ts:30-37` |
-| `xp_gain_tome` | 经验典籍 | 拾取 XP `× (1 + 0.15·level)` | 5 | `GameInstance.ts:1811-1813` |
+| `xp_gain_tome` | 经验典籍 | 拾取 XP `× (1 + 0.15·level)` | 5 | `systems/pickups.ts collectPickup` |
 | `curse_tome` | 诅咒典籍 | 敌速 `× (1 + 0.10·level)`、击杀 XP `× (1 + 0.20·level)`、刷新间隔 `× max(0.5, 1 − 0.10·level)` | 3 | `:1011-1013`、`:1684`、`:1902-1904` |
 
 > **shield_tome Lv 5** 实际是 +10 护甲 **再** ×0.75 残余 = 双重减伤，比 i18n 描述更强。
@@ -392,7 +392,7 @@ if (weapon.cooldownTimer <= 0) {
 
 ### 4. 精英敌人 buff（3 种 — 给敌人）
 
-`GameInstance.ts:2055`，精英怪 50% 概率随机滚一种：
+`factories/spawnEnemy.ts` (mode='wave')，精英怪 50% 概率随机滚一种：
 
 | 类型 | 加成 |
 |---|---|
@@ -467,7 +467,7 @@ attackSpeedMultiplier = 1.0 + attack_speed_tome.level × 0.1
 
 ### 3. Mini-Boss
 
-`spawnMiniBoss()` (`GameInstance.ts:1958`)，从 180 秒开始每 120 秒一只：
+`spawnMiniBoss()` (`systems/spawning.ts` 内)，从 180 秒开始每 120 秒一只：
 
 - HP = 普通 ×3
 - 伤害 = 普通 ×2
@@ -478,13 +478,13 @@ attackSpeedMultiplier = 1.0 + attack_speed_tome.level × 0.1
 触发：`gameTime ∈ [480, 540)`（即第 8–9 分钟）
 
 - 刷新间隔保持，但**最大同屏 = 150**
-- 敌人速度 ×1.2（`GameInstance.ts:1017`）
+- 敌人速度 ×1.2（`ai/behaviors/_move.ts` 的 finalSwarm boost）
 
 ### 5. Boss 战
 
 `BOSS_SPAWN_TIME = 540 s`，`BOSS_HP = 2000`（再 × `tier.bossHpMultiplier`）
 
-3 阶段（`updateBossAI()` `GameInstance.ts:2150`）：
+3 阶段（`systems/bossAi.ts tickBossAi` + `ai/bosses/skeletonKing.ts` 的 SKELETON_KING_PHASES + 7 attacks）：
 
 | 阶段 | HP 比例 | 速度 | 攻击池（`chooseBossAttack` `:2189`） |
 |---|---|---|---|
@@ -520,7 +520,7 @@ attackSpeedMultiplier = 1.0 + attack_speed_tome.level × 0.1
 
 ## 九、银币与结算
 
-`endRun()` (`GameInstance.ts:335`)
+`getResult()` (`GameInstance.ts`)
 
 ```
 baseSilver  = floor(killCount × 0.5 + level × 5)
@@ -585,9 +585,9 @@ interface SaveData {
 | 增加新武器等级（>8） | 在数组末尾加项；同时改 `getWeaponStats` 上限 |
 | 添加新进化路径 | `config.ts WEAPON_EVOLUTIONS` 加一条；i18n `evolution.<weapon>` 加进化名 |
 | 新增典籍效果 | `types.ts TomeType` 加类型；`config.ts TOME_MAX_LEVELS` 加上限；`recalculateTomeStats` 或对应业务路径加结算；i18n `weapon.tome.<id>` 加文案 |
-| 调升级选项数量 | `GameInstance.ts:1854 generateUpgradeOptions(player, 3)` |
+| 调升级选项数量 | `systems/player.ts tickLevelUp` 内 `generateUpgradeOptions(player, 3)` |
 | 修改稀有度权重 / luck 加成 | `upgrades.ts RARITY_WEIGHTS` / `rollRarity()` |
 | 添加新商店升级 | `shop.ts SHOP_UPGRADES`；`recalculateTomeStats` 读 `shopBonuses['<stat>']`；i18n `shop.<id>` |
 | 调难度倍率 | `config.ts TIER_CONFIGS` |
-| 调敌人波次 / Final Swarm | `config.ts WAVE_CONFIGS`；`GameInstance.ts:1881` |
+| 调敌人波次 / Final Swarm | `config.ts WAVE_CONFIGS`；`systems/spawning.ts tickSpawning` |
 | 调 Boss 时间 / HP | `config.ts BOSS_SPAWN_TIME`、`BOSS_HP` |

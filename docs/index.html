@@ -700,9 +700,9 @@
     <h1 style="color: var(--bad); margin: 0 0 8px;">⚠️ 框架契约 Framework Contract</h1>
     <div class="tagline" style="color: #7f1d1d;">本页是项目所有协作者（人 + AI）的强制规范。违反会导致构建失败、KUBEE 模板下游集成中断或运行时崩溃。</div>
     <div style="margin-top: 14px;">
-      <span class="pill" style="border-color: var(--bad); color: var(--bad); background: white;">v1.0.0</span>
+      <span class="pill" style="border-color: var(--bad); color: var(--bad); background: white;">v1.1.0</span>
       <span class="pill" style="border-color: var(--bad); color: var(--bad); background: white;">harness 强制</span>
-      <span class="pill" style="border-color: var(--bad); color: var(--bad); background: white;">最后更新 2026-06-01</span>
+      <span class="pill" style="border-color: var(--bad); color: var(--bad); background: white;">最后更新 2026-06-02</span>
     </div>
   </div>
 
@@ -805,30 +805,33 @@ export {
   </div>
 
   <h2>四、新增内容的标准流程</h2>
+  <p class="sub">方案 A 重构 (Phase 1-7) 落地后，加新东西不再需要改 <code>GameInstance.ts</code>。数据加在 <code>data/</code>，行为加在 <code>behaviors/</code> / <code>ai/</code>，工厂自动接管。</p>
   <div class="grid cols-2">
     <div class="card">
       <h4>加一把武器</h4>
       <ol>
-        <li>在 <code>game/core/source/data/weapons.ts</code> 新增 <code>WeaponDef</code></li>
-        <li>如需新行为，在 <code>game/core/source/behaviors/</code> 加 <code>.ts</code></li>
-        <li>完成</li>
+        <li><code>data/weapons.ts</code> 新增 <code>WeaponDef</code> <small>(type / behaviorId / tags / level stats ref)</small></li>
+        <li>如无现成行为（sweepArc / forwardArrow / orbitingAxe / spreadShot / bouncingShot / lightningChain / flameAura），在 <code>behaviors/</code> 加新 <code>.ts</code> + 注册到 <code>behaviors/index.ts</code></li>
+        <li>完成。<code>systems/weapons.ts</code> 自动通过 behaviorId dispatch</li>
       </ol>
       <p style="color: var(--dim); font-size: 13px;"><b>不再需要：</b>改 <code>GameInstance.ts</code>、加 <code>fireXxx</code> 方法、改 switch。</p>
     </div>
     <div class="card">
       <h4>加一个敌人</h4>
       <ol>
-        <li>在 <code>data/enemies.ts</code> 新增 <code>EnemyDef</code></li>
-        <li>如需新 AI 状态，在 <code>ai/Brain.ts</code> 的 tagged-union 加一种</li>
+        <li><code>data/enemies.ts</code> 新增 <code>EnemyDef</code><br><small>(hp / damage / speed / behavior: <code>'chase'|'ranged'|'charge'|'dive'</code> / modifier? / tags?)</small></li>
+        <li>4 brains 已覆盖大部分用例。如需叠加 (如 necromancer 召唤)，在 <code>ai/modifiers/</code> 加 <code>EnemyModifierFn</code> + 注册</li>
+        <li><code>factories/spawnEnemy.ts</code> 自动处理 tier 缩放 / elite buff / time scaling</li>
         <li>完成</li>
       </ol>
     </div>
     <div class="card">
-      <h4>加一个被动 / Tome / 升级</h4>
+      <h4>加一个 Tome（被动）</h4>
       <ol>
-        <li>在 <code>data/upgrades.ts</code> 新增 <code>UpgradeDef</code>（类型 / 数值 / tag）</li>
-        <li>stats 管线自动处理 base / added / increased / more 四层叠加</li>
-        <li>完成</li>
+        <li><code>types.ts</code> <code>TomeType</code> + <code>config.ts</code> <code>TOME_MAX_LEVELS</code> 加新条目</li>
+        <li><code>data/tomes.ts</code> 新增 <code>TomeDef</code>：影响 stat 的返回 modifier 列表；上下文型（thorns / luck / xp_gain ...）<code>modifiers: () => []</code> + <code>contextOnly: true</code></li>
+        <li><code>stats/recomputePlayerStats.ts</code> 自动遍历 tome modifiers + finalize → 写回 player</li>
+        <li>contextual tome 在对应代码路径读 <code>player.tomes.find(...)?.level</code></li>
       </ol>
     </div>
     <div class="card">
@@ -896,24 +899,28 @@ export {
   <h3>项目结构</h3>
   <div class="grid cols-2">
     <div class="card">
-      <h4>game/core/source/ — 纯逻辑</h4>
+      <h4>game/core/source/ — 纯逻辑（方案 A 重构后）</h4>
       <table>
-        <tr><th>文件</th><th class="num">行数</th><th>作用</th></tr>
-        <tr><td><code>GameInstance.ts</code></td><td class="num">2577</td><td>主循环 / AI / 武器 / Boss / 存档</td></tr>
-        <tr><td><code>weapons.ts</code></td><td class="num">419</td><td>武器开火逻辑</td></tr>
-        <tr><td><code>config.ts</code></td><td class="num">~310</td><td>所有数值配置</td></tr>
-        <tr><td><code>types.ts</code></td><td class="num">~200</td><td>类型定义</td></tr>
+        <tr><th>文件 / 目录</th><th class="num">行数</th><th>作用</th></tr>
+        <tr><td><code>GameInstance.ts</code></td><td class="num">~350</td><td>薄 facade（构造 / tick dispatch / 公开 API）</td></tr>
+        <tr><td><code>systems/*.ts</code></td><td class="num">~1300</td><td>11 个 dispatch 系统（player/projectiles/collisions/pickups/spawning/...）</td></tr>
+        <tr><td><code>data/*.ts</code></td><td class="num">~250</td><td>WeaponDef / EnemyDef / TomeDef 数据驱动</td></tr>
+        <tr><td><code>behaviors/*.ts</code></td><td class="num">~600</td><td>7 武器行为 + queries</td></tr>
+        <tr><td><code>ai/**/*.ts</code></td><td class="num">~500</td><td>4 brains + 1 modifier + boss phase script</td></tr>
+        <tr><td><code>stats/*.ts</code></td><td class="num">~250</td><td>4 层 stat 管线 + recomputePlayerStats</td></tr>
+        <tr><td><code>factories/*.ts</code></td><td class="num">~120</td><td>spawnEnemy 工厂</td></tr>
+        <tr><td><code>__tests__/*</code></td><td class="num">~2200</td><td>232 单测</td></tr>
+        <tr><td><code>config.ts</code> / <code>types.ts</code></td><td class="num">~510</td><td>共享类型 + 配置常量</td></tr>
         <tr><td><code>upgrades.ts</code></td><td class="num">146</td><td>升级选项 + XP 公式</td></tr>
         <tr><td><code>quests.ts</code></td><td class="num">202</td><td>29 个跨局任务</td></tr>
-        <tr><td><code>shop.ts</code></td><td class="num">73</td><td>永久商店</td></tr>
-        <tr><td><code>save.ts</code></td><td class="num">~150</td><td>localStorage 存档</td></tr>
+        <tr><td><code>shop.ts</code> / <code>save.ts</code></td><td class="num">~225</td><td>永久商店 / localStorage 存档</td></tr>
       </table>
     </div>
     <div class="card">
       <h4>game/client/source/ — 渲染 / UI</h4>
       <table>
         <tr><th>文件</th><th class="num">行数</th><th>作用</th></tr>
-        <tr><td><code>index.ts</code></td><td class="num">4568</td><td>Three.js 场景 / VFX / HUD / 菜单 / 输入桥接</td></tr>
+        <tr><td><code>index.ts</code></td><td class="num">~4500</td><td>Three.js 场景 / VFX / HUD / 菜单 / 输入桥接</td></tr>
       </table>
       <h4>packages/（不修改）</h4>
       <table>
@@ -1049,7 +1056,7 @@ export {
 <!-- ============= XP ============= -->
 <section id="xp">
   <h2>经验 / 升级 / 武器槽</h2>
-  <p class="sub">来源：<code>upgrades.ts</code>、<code>GameInstance.ts:1847</code></p>
+  <p class="sub">来源：<code>upgrades.ts</code>、<code>systems/player.ts tickLevelUp</code></p>
 
   <h3>XP 公式与曲线</h3>
   <pre><code>xpForLevel(L) = floor(10 × (1 + L × 0.35))</code></pre>
@@ -1069,7 +1076,7 @@ export {
 
   <h3>升级选项流程</h3>
   <div class="card">
-    <p>升级时<strong>暂停游戏</strong>，固定弹出 <strong>3 个选项</strong>（<code>GameInstance.ts:1854</code> 硬编码 <code>count=3</code>，幸运典籍<strong>不</strong>会增加选项数量）。</p>
+    <p>升级时<strong>暂停游戏</strong>，固定弹出 <strong>3 个选项</strong>（<code>systems/player.ts tickLevelUp</code> 内 <code>generateUpgradeOptions(player, 3)</code>，幸运典籍<strong>不</strong>会增加选项数量）。</p>
     <table>
       <tr><th>类型</th><th>进入条件</th></tr>
       <tr><td><code>weapon_upgrade</code></td><td>已拥有该武器 且 weapon.level &lt; 8</td></tr>
@@ -1138,7 +1145,7 @@ XP 倍率 = 1 + min(comboCount × 0.05, 1.0)   // 最高 2×
     <span class="arrow">→</span>
     <span class="box mul">× attackSpeedMul</span>
     <span class="arrow">→</span>
-    <span class="box out">每帧 fireWeapon()</span>
+    <span class="box out">每帧 tickWeapons()</span>
   </div>
 
   <h3>各武器每级数值</h3>
@@ -1179,7 +1186,7 @@ XP 倍率 = 1 + min(comboCount × 0.05, 1.0)   // 最高 2×
 <!-- ============= TOMES ============= -->
 <section id="tomes">
   <h2>典籍 Tome（10 种）</h2>
-  <p class="sub">关卡内被动 buff，单局生效。<strong>实际数值来自 <code>recalculateTomeStats()</code> 与各业务路径，i18n 文案有时简化。</strong></p>
+  <p class="sub">关卡内被动 buff，单局生效。<strong>实际数值来自 <code>data/tomes.ts</code> + <code>stats/recomputePlayerStats.ts</code> 与各业务路径，i18n 文案有时简化。</strong></p>
 
   <div class="grid cols-3" id="tome-grid"></div>
 
@@ -1187,7 +1194,7 @@ XP 倍率 = 1 + min(comboCount × 0.05, 1.0)   // 最高 2×
   <div class="grid cols-2">
     <div class="note bad">
       <strong>shield_tome 实际是双重减伤</strong><br>
-      不仅 +2 护甲/级（<code>recalculateTomeStats</code>），受伤后还会再 ×(1 − 0.05·level)。<br>
+      不仅 +2 护甲/级（<code>data/tomes.ts</code>），受伤后还会再 ×(1 − 0.05·level)。<br>
       Lv 5 = +10 护甲 <strong>且</strong> 残余伤害 ×0.75。
     </div>
     <div class="note">
@@ -1296,7 +1303,7 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
 
   <h3>Mini-Boss</h3>
   <div class="card">
-    <p>180 秒后每 120 秒一只（<code>spawnMiniBoss()</code> · <code>GameInstance.ts:1958</code>）</p>
+    <p>180 秒后每 120 秒一只（<code>systems/spawning.ts spawnMiniBoss</code>）</p>
     <table>
       <tr><th>属性</th><th>倍率</th></tr>
       <tr><td>HP</td><td><span class="hl">×3</span></td></tr>
@@ -1309,7 +1316,7 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
 <!-- ============= BOSS ============= -->
 <section id="boss">
   <h2>Boss 战</h2>
-  <p class="sub">触发：540s · 基础 HP 2000（再 × <code>tier.bossHpMultiplier</code>）· 来源：<code>updateBossAI()</code> (<code>GameInstance.ts:2150</code>)</p>
+  <p class="sub">触发：540s · 基础 HP 2000（再 × <code>tier.bossHpMultiplier</code>）· 来源：<code>ai/bosses/skeletonKing.ts</code>（phase 表 + 7 attacks）+ <code>systems/bossAi.ts</code> 调度</p>
 
   <div class="hpbar">
     <div class="seg p1">P1 · 100% – 60% HP</div>
@@ -1432,26 +1439,26 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
 <!-- ============= ARCHITECTURE ============= -->
 <section id="architecture">
   <h2>架构</h2>
-  <p class="sub">双层分离：纯逻辑 + 渲染。两层解耦，渲染降帧不影响逻辑。</p>
+  <p class="sub">方案 A 重构 Phase 1-7 落地后，<code>GameInstance.ts</code> 已退化为 ~350 行的薄 facade，所有逻辑迁到 <code>systems/</code>，数据驱动 + ECS（miniplex） + 4 层 stat 管线。</p>
 
+  <h3>双层分离</h3>
   <div class="arch">
     <div class="arch-row">
       <div class="arch-block core">
-        <div class="ttl">GameInstance（纯逻辑层）</div>
-        <div class="det"><code>game/core/source/GameInstance.ts</code> · 2577 行</div>
+        <div class="ttl">@minigame/core（纯逻辑层）</div>
+        <div class="det"><code>game/core/source/</code> · 11 systems + 数据驱动 · 232 单测</div>
         <ul>
-          <li>tick() — 60Hz 主循环</li>
-          <li>processPlayerMovement / updateEnemiesAI</li>
-          <li>fireWeapons / processCollisions</li>
-          <li>spawnEnemies / updateBossAI</li>
-          <li>selectUpgrade / checkWeaponEvolutions</li>
-          <li>recalculateTomeStats / endRun</li>
+          <li><code>GameInstance.ts</code> — 薄 facade ~350 行（构造 / start / tick dispatch / selectUpgrade / getState / getResult）</li>
+          <li><code>systems/</code> — 每帧 dispatch 的纯函数</li>
+          <li><code>data/</code> — 数据驱动配置（weapons / enemies / tomes）</li>
+          <li><code>behaviors/</code> · <code>ai/</code> · <code>factories/</code> · <code>stats/</code></li>
+          <li><code>world.ts</code> — miniplex World instance</li>
         </ul>
       </div>
       <div class="arch-arrow">⇄<span class="lbl">getState()<br>snapshot</span></div>
       <div class="arch-block client">
         <div class="ttl">GameScene（渲染层）</div>
-        <div class="det"><code>game/client/source/index.ts</code> · 4568 行</div>
+        <div class="det"><code>game/client/source/index.ts</code></div>
         <ul>
           <li>Three.js 场景 / 模型 / 动画</li>
           <li>InstancedMesh 投射物 / 拾取物</li>
@@ -1476,6 +1483,90 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
         <div class="det">自适应帧率</div>
       </div>
     </div>
+  </div>
+
+  <h3>core 内部目录树</h3>
+  <pre><code>game/core/source/
+├── index.ts                  ← 公开 API（不变, contract 锁定）
+├── GameInstance.ts           ← 薄 facade ~350 行
+├── world.ts                  ← miniplex World
+├── types.ts / config.ts
+│
+├── data/                     ← 数据驱动 (Phase 2-5)
+│   ├── weapons.ts            ← WeaponDef + WEAPONS table
+│   ├── enemies.ts            ← EnemyDef + ENEMIES table (单一 source of truth)
+│   └── tomes.ts              ← TomeDef + TOMES table (Phase 5)
+│
+├── stats/                    ← 4 层 stat 管线 (Phase 1)
+│   ├── Stat.ts               ← Stat shape + finalize() 纯函数
+│   ├── Modifier.ts           ← Modifier kind/stat/value/tags
+│   ├── StatBlock.ts          ← class StatBlock { setBase / applyModifier / getStat / getFinal }
+│   ├── computeWeaponDamage.ts
+│   └── recomputePlayerStats.ts ← 走 stat pipeline 算 player 7 个 stat 字段
+│
+├── behaviors/                ← 武器行为 (Phase 2-3, 7 把武器)
+│   ├── sweepArc.ts (sword) · forwardArrow.ts (bow) · orbitingAxe.ts (axe)
+│   ├── spreadShot.ts (shotgun) · bouncingShot.ts (bone_bouncer)
+│   ├── lightningChain.ts (lightning) · flameAura.ts (flame_ring)
+│   ├── queries.ts            ← findNearestEnemy + Excluding
+│   └── types.ts + index.ts (BEHAVIORS map)
+│
+├── ai/                       ← 敌人 + boss AI (Phase 4)
+│   ├── behaviors/{chase,ranged,charge,dive}.ts  ← 4 brains
+│   ├── modifiers/necromancer.ts                 ← 叠加召唤
+│   ├── bosses/skeletonKing.ts                   ← phase script + 7 attacks
+│   └── types.ts                                 ← AiContext + AiEffects
+│
+├── factories/
+│   └── spawnEnemy.ts         ← 4 mode (wave/miniBoss/necromancerSummon/bossSummon)
+│
+└── systems/                  ← 每帧 dispatch 纯函数 (Phase 6)
+    ├── types.ts              ← Engine interface (state + counters + effects + spatialHash + world)
+    ├── helpers.ts            ← findNearestEnemy* / addDamageEvent / applyKnockback / checkPlayerDeath / checkGameOver
+    ├── terrain.ts            ← getTerrainHeight (Neon Crucible 4 层平台)
+    ├── player.ts             ← createInitialPlayer / tickPlayerMovement / tickDash / tickTimers / tickLevelUp
+    ├── projectiles.ts        ← tickProjectiles (移动 / 寿命 / 出界)
+    ├── collisions.ts         ← processCollisions (4 类碰撞)
+    ├── pickups.ts            ← processDeaths / tickPickups / tickThorns
+    ├── spawning.ts           ← tickSpawning / checkBossSpawn (波次 + mini-boss + final swarm)
+    ├── teleporters.ts        ← tickChests / tickTeleporters / generateChests
+    ├── weapons.ts            ← tickWeapons / getWeaponStats / checkWeaponEvolutions
+    ├── aiSystem.ts           ← tickEnemyAi (modifier → brain dispatch)
+    ├── bossAi.ts             ← tickBossAi (phase resolve + attack 调度)
+    └── weaponFiring.ts       ← tryFireWeaponEcs (BEHAVIORS map dispatch)</code></pre>
+
+  <h3>tick() 顺序</h3>
+  <p><code>GameInstance.tick()</code> 现在只做 dispatch（每帧 60 Hz）：</p>
+  <pre><code>tickPlayerMovement(engine, dt);    // 移动 / 跳 / slide / bunny hop
+tickDash(engine, dt);              // dash 短无敌 + 高速移动
+tickTimers(engine, dt);            // 各种 cooldown / hitFlash 倒计时
+tickEnemyAi(state.enemies, ctx);   // brain → modifier per enemy
+tickWeapons(engine, dt);           // attackSpeed * dt 推 cooldown, 触发即 fire
+tickProjectiles(engine, dt);       // 投射物移动 + 寿命 + 出界
+processCollisions(engine);         // 4 类: 子弹 vs 敌人/boss + 敌人近战 + 子弹 vs 玩家
+processDeaths(engine);             // hp ≤ 0 → spawn pickup + kill++
+tickPickups(engine, dt);           // 寿命 / 吸附 / collect
+tickLevelUp(engine);               // xp ≥ xpToNext → 进 level_up phase
+tickSpawning(engine, dt);          // wave + mini-boss + final swarm
+tickTeleporters(engine, dt);
+tickChests(engine);
+checkBossSpawn(engine);
+if (state.boss && phase === 'boss_fight') tickBossAi(state.boss, ctx);
+tickThorns(engine);
+checkGameOver(engine);
+engine.aiGroup = (engine.aiGroup + 1) % 4;  // 错峰组循环</code></pre>
+
+  <h3>4 层 stat 管线（PoE 风格）</h3>
+  <div class="card">
+    <p><b>公式</b>: <code>final = (base + Σadded) × (1 + Σincreased) × Π(more)</code></p>
+    <table>
+      <tr><th>层</th><th>语义</th><th>例子</th></tr>
+      <tr><td><code>base</code></td><td>基础值，<code>setBase</code> 覆盖式</td><td>武器 lv 1 sword damage = 12</td></tr>
+      <tr><td><code>added</code></td><td>平加值之和</td><td>shield_tome lv 5 → armor +10</td></tr>
+      <tr><td><code>increased</code></td><td>百分比累加（多 increased 同桶相加）</td><td>speed_tome lv 5 → moveSpeed +40%</td></tr>
+      <tr><td><code>more</code></td><td>独立倍数（每个 more 各自相乘）</td><td>暴击 → ×critDamage（如 1.5）</td></tr>
+    </table>
+    <p><b>tag superset-AND</b>：modifier 带 <code>tags</code> 时，query 必须包含全部才生效（如 <code>{tags:['fire','spell']}</code> 仅对同时带 fire+spell 的攻击生效）。</p>
   </div>
 
   <h3>核心规则</h3>
@@ -1566,16 +1657,18 @@ pnpm run dev
   <p style="color: var(--dim);">环境变量：<code>VITE_I18N_LOCALE=zh VITE_I18N_MODE=dev</code></p>
 
   <h3>常见改数值入口</h3>
+  <p class="sub">方案 A 重构后，加新东西基本不需要碰 <code>GameInstance.ts</code>。下表对齐 Phase 1-7 实际目录。</p>
   <table>
     <tr><th>想做什么</th><th>改哪里</th></tr>
     <tr><td>改武器某级数值</td><td><code>config.ts WEAPON_STATS[type][level-1]</code></td></tr>
-    <tr><td>加新武器</td><td><code>types.ts WeaponType</code> → <code>config.ts WEAPON_STATS</code> → <code>weapons.ts fireWeapon</code> → <code>GameInstance.fireWeapon</code> → <code>client/index.ts</code> 颜色/图标 → i18n</td></tr>
-    <tr><td>加新典籍</td><td><code>types.ts TomeType</code> → <code>config.ts TOME_MAX_LEVELS</code> → <code>recalculateTomeStats()</code> 或对应业务路径加结算 → i18n</td></tr>
+    <tr><td>加新武器</td><td>① <code>data/weapons.ts</code> 加 <code>WeaponDef</code> ② 如需新行为, <code>behaviors/</code> 加 <code>.ts</code> + 注册到 <code>behaviors/index.ts</code> ③ <code>client/index.ts</code> 颜色/图标 ④ i18n</td></tr>
+    <tr><td>加新敌人</td><td>① <code>data/enemies.ts</code> 加 <code>EnemyDef</code>（behavior: chase/ranged/charge/dive） ② 需要叠加召唤等行为时在 <code>ai/modifiers/</code> 加 ③ i18n</td></tr>
+    <tr><td>加新典籍</td><td>① <code>types.ts TomeType</code> ② <code>config.ts TOME_MAX_LEVELS</code> ③ <code>data/tomes.ts</code> 加 <code>TomeDef</code>（影响 stat 的返回 modifier 列表; contextual 标 <code>contextOnly: true</code>） ④ i18n</td></tr>
     <tr><td>调难度</td><td><code>config.ts TIER_CONFIGS</code></td></tr>
-    <tr><td>调波次 / Final Swarm</td><td><code>config.ts WAVE_CONFIGS</code> · <code>GameInstance.ts:1881</code></td></tr>
-    <tr><td>调 Boss</td><td><code>config.ts BOSS_SPAWN_TIME / BOSS_HP</code> · <code>GameInstance.updateBossAI</code></td></tr>
+    <tr><td>调波次 / Final Swarm</td><td><code>config.ts WAVE_CONFIGS</code> + <code>systems/spawning.ts</code></td></tr>
+    <tr><td>调 Boss</td><td><code>config.ts BOSS_SPAWN_TIME / BOSS_HP</code> + <code>ai/bosses/skeletonKing.ts</code> + <code>systems/bossAi.ts</code></td></tr>
     <tr><td>加新角色</td><td><code>config.ts CHARACTER_CONFIGS</code> → <code>public/models/player_*.gltf</code> → i18n</td></tr>
-    <tr><td>调升级选项数量</td><td><code>GameInstance.ts:1854 generateUpgradeOptions(player, 3)</code></td></tr>
+    <tr><td>调升级选项数量</td><td><code>systems/player.ts tickLevelUp</code> 内 <code>generateUpgradeOptions(player, 3)</code></td></tr>
   </table>
 
   <h3>调试技巧</h3>

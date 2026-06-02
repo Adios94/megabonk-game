@@ -688,6 +688,8 @@ export class GameScene {
   private groundMesh!: THREE.Mesh;
   private gridLines!: THREE.LineSegments;
   private bossMesh: THREE.Mesh | null = null;
+  /** Boss 的 base scale（auto-scaled to TARGET_BOSS_HEIGHT），attack/enrage 脉冲基于此值。 */
+  private bossBaseScale = 1.0;
   private playerSpotLight!: THREE.SpotLight;
 
   // Weapon orbs (legacy — disabled, kept to avoid breaking older saves)
@@ -1867,7 +1869,9 @@ export class GameScene {
 
     const state = this.session.getRenderState();
 
-    if (state.phase === 'playing' || state.phase === 'boss_fight') {
+    // 玩家在 playing / boss_fight / portal_open 阶段都能控制角色：
+    // - portal_open 是 Boss 击败后、玩家可选进传送门或留下打 overtime 的中间态
+    if (state.phase === 'playing' || state.phase === 'boss_fight' || state.phase === 'portal_open') {
       this.handleInput();
     }
 
@@ -2900,8 +2904,19 @@ export class GameScene {
       if (loadedModels.boss) {
         this.bossMesh = cloneSkeleton(loadedModels.boss) as unknown as THREE.Mesh;
         this.bossMesh.name = 'Boss';
-        // Boss model is ~0.5 units raw, scale to ~5 units tall
-        this.bossMesh.scale.set(10, 10, 10);
+        // Auto-scale to a target height (~3× player height = imposing but not absurd).
+        // 旧代码硬编码 scale=10 假设原模型 0.5 单位高，但 enemy_large_gun.gltf 实际更大，
+        // 导致 Boss 超出屏幕。改为按 bounding box 算 scale。
+        const box = new THREE.Box3().setFromObject(this.bossMesh);
+        const size = box.getSize(new THREE.Vector3());
+        const TARGET_BOSS_HEIGHT = 5.0;
+        const autoScale = TARGET_BOSS_HEIGHT / Math.max(size.y, 0.01);
+        this.bossMesh.scale.set(autoScale, autoScale, autoScale);
+        // 把脚踩到地面（同 player 的处理）
+        const newBox = new THREE.Box3().setFromObject(this.bossMesh);
+        this.bossMesh.position.y = -newBox.min.y;
+        // 缓存 base scale，给 attack 脉冲 / enrage 脉冲用
+        this.bossBaseScale = autoScale;
         this.scene.add(this.bossMesh);
       } else {
         // Fallback
@@ -2909,6 +2924,7 @@ export class GameScene {
         const mat = new THREE.MeshToonMaterial({ color: 0x9933cc, gradientMap: toonGradientMap });
         this.bossMesh = new THREE.Mesh(geo, mat);
         this.bossMesh.name = 'Boss';
+        this.bossBaseScale = 1.0;
         this.scene.add(this.bossMesh);
       }
     }
@@ -2949,13 +2965,16 @@ export class GameScene {
     }
 
     // 2. Boss scale pulse when charging (body glow effect)
-    const baseScale = 10;
+    // 用 auto-scale 算出来的 baseScale，避免硬编码 10x 把 Boss 撑爆
+    const baseScale = this.bossBaseScale;
+    // 脉冲振幅：相对 baseScale 的 ±5% 而不是固定 ±0.5（在 baseScale=10 时 ±0.5 是 5%，
+    // 改成相对值后不同模型大小都 OK）
+    const pulseAmp = baseScale * 0.05;
     if (boss.attackTimer > 0 && boss.currentAttack !== 'idle') {
-      const pulse = Math.sin(time * 12) * 0.5;
-      const scale = baseScale + pulse;
+      const scale = baseScale + Math.sin(time * 12) * pulseAmp;
       this.bossMesh.scale.set(scale, scale, scale);
     } else if (boss.enraged) {
-      const scale = baseScale + Math.sin(time) * 0.5;
+      const scale = baseScale + Math.sin(time) * pulseAmp;
       this.bossMesh.scale.set(scale, scale, scale);
     } else {
       this.bossMesh.scale.set(baseScale, baseScale, baseScale);
@@ -3027,22 +3046,27 @@ export class GameScene {
         pillar.visible = true;
         pillar.position.set(tp.x, 2, tp.z);
 
-        // Color based on phase
-        const ringMat = ring.material as THREE.MeshBasicMaterial;
+        // Color based on phase.
+        // 注意：ring 可能是 GLB 模型（Object3D，无 .material）也可能是 fallback 的
+        // MeshBasicMaterial 圆环。glow pillar 始终是 MeshBasicMaterial，可放心染色。
+        const ringMaterial = (ring as THREE.Mesh).material;
+        const ringMat = (ringMaterial && !Array.isArray(ringMaterial))
+          ? ringMaterial as THREE.MeshBasicMaterial
+          : null;
         const pillarMat = pillar.material as THREE.MeshBasicMaterial;
 
         switch (tp.phase) {
           case 'summoning': {
             // 召唤读条阶段：金黄脉冲
             const pulse = 0.5 + Math.sin(time * 4) * 0.3;
-            ringMat.color.setHex(0xffaa00);
+            ringMat?.color.setHex(0xffaa00);
             pillarMat.color.setHex(0xffcc00);
             pillarMat.opacity = pulse;
             break;
           }
           case 'boss_active': {
             // Boss 战进行中：红色锁定
-            ringMat.color.setHex(0xff2200);
+            ringMat?.color.setHex(0xff2200);
             pillarMat.color.setHex(0xff4400);
             pillarMat.opacity = 0.4;
             break;
@@ -3050,7 +3074,7 @@ export class GameScene {
           case 'portal_ready':
           case 'portal_used': {
             // 传送门：紫光稳定
-            ringMat.color.setHex(0xaa44ff);
+            ringMat?.color.setHex(0xaa44ff);
             pillarMat.color.setHex(0xcc66ff);
             pillarMat.opacity = 0.6 + Math.sin(time * 2) * 0.2;
             break;
@@ -3058,7 +3082,7 @@ export class GameScene {
           case 'ready':
           default: {
             // 待召唤：青蓝色平稳呼吸
-            ringMat.color.setHex(0x00ccff);
+            ringMat?.color.setHex(0x00ccff);
             pillarMat.color.setHex(0x00ffff);
             pillarMat.opacity = 0.3 + Math.sin(time) * 0.1;
             break;

@@ -39,6 +39,16 @@ export const BOSS_INTRO_DURATION = 2.0;
 export const PICKUP_LIFETIME = 30;
 export const PICKUP_ATTRACT_SPEED = 12;
 
+// Health drop chances (on enemy death)
+export const HEALTH_DROP_CHANCE = 0.03;       // 3% chance for full heart (50 HP)
+export const HEALTH_SMALL_DROP_CHANCE = 0.08; // 8% chance for half heart (25 HP)
+
+// Chest settings
+export const CHEST_COUNT = 4;                 // Number of chests per game
+export const CHEST_INTERACT_RADIUS = 2.5;
+export const CHEST_SILVER_MIN = 50;
+export const CHEST_SILVER_MAX = 200;
+
 // Teleporter settings
 export const TELEPORTER_ACTIVATION_DURATION = 3.0; // seconds to activate
 export const TELEPORTER_APPEAR_TIME = 300; // when teleporter spawns (5 min)
@@ -172,16 +182,6 @@ export const WEAPON_STATS: Record<string, WeaponLevelStats[]> = {
     { damage: 26, cooldown: 1.0, projectileCount: 4, bounces: 0, chains: 0, range: 4.5, aoeRadius: 1.4, pierce: 999, speed: 5.5 },
     { damage: 32, cooldown: 0.9, projectileCount: 4, bounces: 0, chains: 0, range: 5.0, aoeRadius: 1.6, pierce: 999, speed: 6 },
   ],
-  revolver: [
-    { damage: 14, cooldown: 0.6, projectileCount: 1, bounces: 0, chains: 0, range: 20, aoeRadius: 0, pierce: 0, speed: 20 },
-    { damage: 17, cooldown: 0.55, projectileCount: 1, bounces: 0, chains: 0, range: 22, aoeRadius: 0, pierce: 0, speed: 22 },
-    { damage: 20, cooldown: 0.5, projectileCount: 1, bounces: 0, chains: 0, range: 24, aoeRadius: 0, pierce: 0, speed: 22 },
-    { damage: 24, cooldown: 0.45, projectileCount: 1, bounces: 0, chains: 0, range: 26, aoeRadius: 0, pierce: 0, speed: 24 },
-    { damage: 28, cooldown: 0.4, projectileCount: 2, bounces: 0, chains: 0, range: 28, aoeRadius: 0, pierce: 0, speed: 24 },
-    { damage: 32, cooldown: 0.35, projectileCount: 2, bounces: 0, chains: 0, range: 30, aoeRadius: 0, pierce: 0, speed: 26 },
-    { damage: 38, cooldown: 0.3, projectileCount: 2, bounces: 0, chains: 0, range: 32, aoeRadius: 0, pierce: 1, speed: 26 },
-    { damage: 45, cooldown: 0.25, projectileCount: 3, bounces: 0, chains: 0, range: 35, aoeRadius: 0, pierce: 1, speed: 28 },
-  ],
   bow: [
     { damage: 18, cooldown: 1.0, projectileCount: 1, bounces: 0, chains: 0, range: 30, aoeRadius: 0, pierce: 0, speed: 25 },
     { damage: 22, cooldown: 1.0, projectileCount: 1, bounces: 0, chains: 0, range: 32, aoeRadius: 0, pierce: 0, speed: 26 },
@@ -202,16 +202,6 @@ export const WEAPON_STATS: Record<string, WeaponLevelStats[]> = {
     { damage: 28, cooldown: 1.5, projectileCount: 1, bounces: 0, chains: 6, range: 14, aoeRadius: 0, pierce: 0, speed: 0 },
     { damage: 35, cooldown: 1.2, projectileCount: 1, bounces: 0, chains: 8, range: 40, aoeRadius: 0, pierce: 0, speed: 0 },
   ],
-  fire_staff: [
-    { damage: 22, cooldown: 1.8, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 2.5, pierce: 0, speed: 8 },
-    { damage: 26, cooldown: 1.7, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 2.8, pierce: 0, speed: 8 },
-    { damage: 30, cooldown: 1.6, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 3.0, pierce: 0, speed: 9 },
-    { damage: 35, cooldown: 1.5, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 3.2, pierce: 0, speed: 9 },
-    { damage: 40, cooldown: 1.4, projectileCount: 2, bounces: 0, chains: 0, range: 0, aoeRadius: 3.5, pierce: 0, speed: 10 },
-    { damage: 46, cooldown: 1.3, projectileCount: 2, bounces: 0, chains: 0, range: 0, aoeRadius: 3.8, pierce: 0, speed: 10 },
-    { damage: 54, cooldown: 1.2, projectileCount: 2, bounces: 0, chains: 0, range: 0, aoeRadius: 4.0, pierce: 0, speed: 11 },
-    { damage: 65, cooldown: 1.0, projectileCount: 3, bounces: 0, chains: 0, range: 0, aoeRadius: 4.5, pierce: 0, speed: 12 },
-  ],
   flame_ring: [
     { damage: 4, cooldown: 0.5, projectileCount: 0, bounces: 0, chains: 0, range: 3.5, aoeRadius: 3.5, pierce: 0, speed: 0 },
     { damage: 5, cooldown: 0.5, projectileCount: 0, bounces: 0, chains: 0, range: 3.5, aoeRadius: 3.5, pierce: 0, speed: 0 },
@@ -222,16 +212,6 @@ export const WEAPON_STATS: Record<string, WeaponLevelStats[]> = {
     { damage: 9, cooldown: 0.3, projectileCount: 0, bounces: 0, chains: 0, range: 6.5, aoeRadius: 6.5, pierce: 0, speed: 0 },
     { damage: 12, cooldown: 0.3, projectileCount: 0, bounces: 0, chains: 0, range: 8.0, aoeRadius: 8.0, pierce: 0, speed: 0 },
   ],
-  tornado: [
-    { damage: 6, cooldown: 2.5, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 1.5, pierce: 999, speed: 4 },
-    { damage: 7, cooldown: 2.4, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 1.6, pierce: 999, speed: 4.5 },
-    { damage: 8, cooldown: 2.3, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 1.8, pierce: 999, speed: 5 },
-    { damage: 10, cooldown: 2.2, projectileCount: 2, bounces: 0, chains: 0, range: 0, aoeRadius: 2.0, pierce: 999, speed: 5 },
-    { damage: 12, cooldown: 2.0, projectileCount: 2, bounces: 0, chains: 0, range: 0, aoeRadius: 2.2, pierce: 999, speed: 5.5 },
-    { damage: 14, cooldown: 1.8, projectileCount: 2, bounces: 0, chains: 0, range: 0, aoeRadius: 2.5, pierce: 999, speed: 6 },
-    { damage: 16, cooldown: 1.6, projectileCount: 3, bounces: 0, chains: 0, range: 0, aoeRadius: 2.8, pierce: 999, speed: 6 },
-    { damage: 20, cooldown: 1.4, projectileCount: 3, bounces: 0, chains: 0, range: 0, aoeRadius: 3.0, pierce: 999, speed: 7 },
-  ],
   shotgun: [
     { damage: 8, cooldown: 1.4, projectileCount: 5, bounces: 0, chains: 0, range: 12, aoeRadius: 0, pierce: 0, speed: 16 },
     { damage: 9, cooldown: 1.3, projectileCount: 5, bounces: 0, chains: 0, range: 13, aoeRadius: 0, pierce: 0, speed: 17 },
@@ -241,36 +221,6 @@ export const WEAPON_STATS: Record<string, WeaponLevelStats[]> = {
     { damage: 16, cooldown: 0.9, projectileCount: 7, bounces: 0, chains: 0, range: 17, aoeRadius: 0, pierce: 1, speed: 20 },
     { damage: 18, cooldown: 0.8, projectileCount: 8, bounces: 0, chains: 0, range: 18, aoeRadius: 0, pierce: 1, speed: 21 },
     { damage: 22, cooldown: 0.7, projectileCount: 9, bounces: 0, chains: 0, range: 20, aoeRadius: 0, pierce: 2, speed: 22 },
-  ],
-  black_hole: [
-    { damage: 5, cooldown: 4.0, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 4.0, pierce: 999, speed: 0 },
-    { damage: 6, cooldown: 3.8, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 4.5, pierce: 999, speed: 0 },
-    { damage: 7, cooldown: 3.6, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 5.0, pierce: 999, speed: 0 },
-    { damage: 8, cooldown: 3.4, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 5.5, pierce: 999, speed: 0 },
-    { damage: 10, cooldown: 3.2, projectileCount: 2, bounces: 0, chains: 0, range: 0, aoeRadius: 6.0, pierce: 999, speed: 0 },
-    { damage: 12, cooldown: 3.0, projectileCount: 2, bounces: 0, chains: 0, range: 0, aoeRadius: 6.5, pierce: 999, speed: 0 },
-    { damage: 14, cooldown: 2.8, projectileCount: 2, bounces: 0, chains: 0, range: 0, aoeRadius: 7.0, pierce: 999, speed: 0 },
-    { damage: 18, cooldown: 2.5, projectileCount: 3, bounces: 0, chains: 0, range: 0, aoeRadius: 8.0, pierce: 999, speed: 0 },
-  ],
-  katana: [
-    { damage: 16, cooldown: 0.5, projectileCount: 1, bounces: 0, chains: 0, range: 3.0, aoeRadius: 1.5, pierce: 2, speed: 18 },
-    { damage: 19, cooldown: 0.48, projectileCount: 1, bounces: 0, chains: 0, range: 3.2, aoeRadius: 1.5, pierce: 2, speed: 19 },
-    { damage: 22, cooldown: 0.45, projectileCount: 1, bounces: 0, chains: 0, range: 3.5, aoeRadius: 1.8, pierce: 3, speed: 20 },
-    { damage: 26, cooldown: 0.42, projectileCount: 1, bounces: 0, chains: 0, range: 3.8, aoeRadius: 1.8, pierce: 3, speed: 21 },
-    { damage: 30, cooldown: 0.4, projectileCount: 2, bounces: 0, chains: 0, range: 4.0, aoeRadius: 2.0, pierce: 4, speed: 22 },
-    { damage: 34, cooldown: 0.38, projectileCount: 2, bounces: 0, chains: 0, range: 4.2, aoeRadius: 2.0, pierce: 4, speed: 23 },
-    { damage: 40, cooldown: 0.35, projectileCount: 2, bounces: 0, chains: 0, range: 4.5, aoeRadius: 2.2, pierce: 5, speed: 24 },
-    { damage: 48, cooldown: 0.3, projectileCount: 3, bounces: 0, chains: 0, range: 5.0, aoeRadius: 2.5, pierce: 6, speed: 26 },
-  ],
-  aura: [
-    { damage: 3, cooldown: 0.8, projectileCount: 0, bounces: 0, chains: 0, range: 3.0, aoeRadius: 3.0, pierce: 0, speed: 0 },
-    { damage: 4, cooldown: 0.8, projectileCount: 0, bounces: 0, chains: 0, range: 3.5, aoeRadius: 3.5, pierce: 0, speed: 0 },
-    { damage: 5, cooldown: 0.7, projectileCount: 0, bounces: 0, chains: 0, range: 4.0, aoeRadius: 4.0, pierce: 0, speed: 0 },
-    { damage: 6, cooldown: 0.7, projectileCount: 0, bounces: 0, chains: 0, range: 4.5, aoeRadius: 4.5, pierce: 0, speed: 0 },
-    { damage: 7, cooldown: 0.6, projectileCount: 0, bounces: 0, chains: 0, range: 5.0, aoeRadius: 5.0, pierce: 0, speed: 0 },
-    { damage: 9, cooldown: 0.6, projectileCount: 0, bounces: 0, chains: 0, range: 5.5, aoeRadius: 5.5, pierce: 0, speed: 0 },
-    { damage: 11, cooldown: 0.5, projectileCount: 0, bounces: 0, chains: 0, range: 6.0, aoeRadius: 6.0, pierce: 0, speed: 0 },
-    { damage: 14, cooldown: 0.5, projectileCount: 0, bounces: 0, chains: 0, range: 7.0, aoeRadius: 7.0, pierce: 0, speed: 0 },
   ],
 };
 
@@ -293,9 +243,9 @@ export const PASSIVE_MAX_LEVELS: Record<string, number> = TOME_MAX_LEVELS;
 
 // All weapon types available in the game
 export const ALL_WEAPON_TYPES: WeaponType[] = [
-  'sword', 'bone_bouncer', 'axe', 'revolver', 'bow',
-  'lightning_staff', 'fire_staff', 'flame_ring', 'tornado',
-  'shotgun', 'black_hole', 'katana', 'aura',
+  'sword', 'bone_bouncer', 'axe', 'bow',
+  'lightning_staff', 'flame_ring',
+  'shotgun',
 ];
 
 // All tome types available in the game
@@ -319,11 +269,8 @@ export const WEAPON_EVOLUTIONS: WeaponEvolution[] = [
   { baseWeapon: 'sword', requiredTome: 'attack_speed_tome', requiredTomeLevel: 5, evolvedName: 'Dexecutioner', damageMultiplier: 2.5, specialEffect: 'massive_aoe' },
   { baseWeapon: 'axe', requiredTome: 'knockback_tome', requiredTomeLevel: 3, evolvedName: 'Berserker Axe', damageMultiplier: 2.0, specialEffect: 'triple_orbit' },
   { baseWeapon: 'bone_bouncer', requiredTome: 'luck_tome', requiredTomeLevel: 3, evolvedName: 'Bone Storm', damageMultiplier: 2.0, specialEffect: 'explode_on_hit' },
-  { baseWeapon: 'revolver', requiredTome: 'precision_tome', requiredTomeLevel: 3, evolvedName: 'Deagle', damageMultiplier: 3.0, specialEffect: 'pierce_all' },
+  { baseWeapon: 'bow', requiredTome: 'precision_tome', requiredTomeLevel: 3, evolvedName: 'Deagle', damageMultiplier: 3.0, specialEffect: 'pierce_all' },
   { baseWeapon: 'lightning_staff', requiredTome: 'curse_tome', requiredTomeLevel: 3, evolvedName: 'Thunder God', damageMultiplier: 2.5, specialEffect: 'chain_all' },
-  { baseWeapon: 'fire_staff', requiredTome: 'thorns_tome', requiredTomeLevel: 3, evolvedName: 'Inferno', damageMultiplier: 2.0, specialEffect: 'fire_trail' },
-  { baseWeapon: 'tornado', requiredTome: 'speed_tome', requiredTomeLevel: 5, evolvedName: 'Hurricane', damageMultiplier: 2.5, specialEffect: 'multiple_tornados' },
-  { baseWeapon: 'black_hole', requiredTome: 'attraction_tome', requiredTomeLevel: 5, evolvedName: 'Singularity', damageMultiplier: 3.0, specialEffect: 'screen_pull' },
 ];
 
 export const DEFAULT_GAME_CONFIG: GameConfig = {

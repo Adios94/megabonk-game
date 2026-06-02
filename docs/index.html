@@ -1,0 +1,2097 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MegaBonk Three.js — 设计文档</title>
+<style>
+  :root {
+    --bg: #f4f6fb;
+    --bg-1: #ffffff;
+    --bg-2: #f0f3fa;
+    --bg-3: #e3e9f4;
+    --line: #d9e0ed;
+    --line-strong: #c5cee0;
+
+    --text: #1a2240;
+    --dim: #4a5578;
+    --muted: #8a93ac;
+
+    --accent: #2563eb;
+    --accent-soft: #dbeafe;
+    --accent-2: #7c3aed;
+    --accent-2-soft: #ede9fe;
+
+    --good: #10b981;
+    --good-soft: #d1fae5;
+    --warn: #f59e0b;
+    --warn-soft: #fef3c7;
+    --bad: #ef4444;
+    --bad-soft: #fee2e2;
+
+    --c-sword:    #64748b;
+    --c-bone:     #a16207;
+    --c-axe:      #374151;
+    --c-bow:      #b45309;
+    --c-lightning:#0e7490;
+    --c-flame:    #c2410c;
+    --c-shotgun:  #ca8a04;
+
+    --c-common:    #94a3b8;
+    --c-uncommon:  #22c55e;
+    --c-rare:      #3b82f6;
+    --c-legendary: #f97316;
+
+    --shadow-sm: 0 1px 2px rgba(20, 30, 60, 0.04);
+    --shadow:    0 1px 3px rgba(20, 30, 60, 0.06), 0 4px 12px rgba(20, 30, 60, 0.04);
+    --shadow-lg: 0 4px 20px rgba(20, 30, 60, 0.08);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.65;
+    min-height: 100vh;
+  }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code {
+    background: var(--bg-2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: var(--accent-2);
+    font-size: 0.92em;
+    font-family: "JetBrains Mono", "Menlo", "Consolas", monospace;
+  }
+  pre {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    padding: 14px 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-family: "JetBrains Mono", "Menlo", "Consolas", monospace;
+    font-size: 12.5px;
+    color: var(--text);
+  }
+  pre code { background: transparent; padding: 0; color: var(--text); }
+
+  /* === Layout === */
+  .layout { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static !important; height: auto !important; } }
+
+  .sidebar {
+    background: var(--bg-1);
+    border-right: 1px solid var(--line);
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 22px 14px 40px;
+  }
+  .brand {
+    font-weight: 800;
+    font-size: 16px;
+    margin: 0 6px 4px;
+    letter-spacing: 0.3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .brand-sub { color: var(--muted); font-size: 11.5px; margin: 0 6px 22px; }
+
+  .nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav h4 {
+    margin: 18px 8px 6px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .nav h4:first-child { margin-top: 0; }
+  .nav a {
+    color: var(--dim);
+    padding: 7px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    transition: all 0.12s;
+    cursor: pointer;
+    user-select: none;
+  }
+  .nav a:hover {
+    background: var(--bg-2);
+    color: var(--text);
+    text-decoration: none;
+  }
+  .nav a.active {
+    color: #fff;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    font-weight: 600;
+    box-shadow: var(--shadow-sm);
+  }
+
+  main {
+    padding: 36px 56px 80px;
+    max-width: 1240px;
+  }
+  @media (max-width: 700px) { main { padding: 24px 18px 60px; } }
+
+  /* === Section (tabbed) === */
+  section { display: none; }
+  section.active {
+    display: block;
+    animation: fade 0.18s ease-out;
+  }
+  @keyframes fade {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  section > h2 {
+    font-size: 24px;
+    margin: 0 0 4px;
+    letter-spacing: 0.4px;
+    border-left: 4px solid var(--accent);
+    padding-left: 12px;
+  }
+  section > .sub {
+    color: var(--muted);
+    font-size: 13px;
+    margin: 0 0 24px 16px;
+  }
+  section h3 { font-size: 17px; margin: 28px 0 10px; color: var(--text); }
+  section h4 { font-size: 14px; margin: 18px 0 8px; color: var(--dim); }
+
+  /* === Hero === */
+  .hero {
+    background:
+      radial-gradient(ellipse at top right, rgba(37, 99, 235, 0.10), transparent 70%),
+      radial-gradient(ellipse at bottom left, rgba(124, 58, 237, 0.10), transparent 70%),
+      var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 30px 36px;
+    margin-bottom: 32px;
+    box-shadow: var(--shadow);
+  }
+  .hero h1 {
+    font-size: 30px;
+    margin: 0 0 6px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .hero .tagline { color: var(--dim); font-size: 14px; margin-bottom: 18px; }
+  .hero-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .stat-card {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .stat-card .num { font-size: 22px; font-weight: 700; color: var(--accent); }
+  .stat-card .lbl { color: var(--muted); font-size: 11.5px; margin-top: 2px; letter-spacing: 0.4px; }
+
+  .pill {
+    display: inline-block;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 2px 10px;
+    font-size: 11px;
+    color: var(--dim);
+    margin: 2px 4px 2px 0;
+  }
+  .pill.cyan { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .pill.purple { border-color: var(--accent-2); color: var(--accent-2); background: var(--accent-2-soft); }
+
+  /* === Tables === */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    background: var(--bg-1);
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-sm);
+  }
+  th, td {
+    text-align: left;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  th {
+    background: var(--bg-2);
+    color: var(--dim);
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  tbody tr:hover { background: var(--bg-2); }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .hl { color: var(--accent); font-weight: 600; }
+
+  /* === Card grid === */
+  .grid { display: grid; gap: 16px; }
+  .grid.cols-2 { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .grid.cols-3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .grid.cols-4 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+
+  .card {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 20px;
+    box-shadow: var(--shadow-sm);
+  }
+  .card h3 { margin-top: 0; }
+
+  /* === Bar Chart === */
+  .barchart { display: flex; gap: 4px; align-items: flex-end; height: 140px; padding: 4px 0; }
+  .barchart .bar {
+    flex: 1;
+    background: var(--bg-3);
+    border-radius: 3px 3px 0 0;
+    position: relative;
+    min-height: 6px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    transition: opacity 0.15s;
+  }
+  .barchart .bar:hover { opacity: 0.85; }
+  .barchart .bar .v {
+    position: absolute;
+    top: -18px;
+    font-size: 11px;
+    color: var(--dim);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  .barchart .bar .lvl {
+    position: absolute;
+    bottom: -16px;
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .barchart .bar.evolved {
+    background: linear-gradient(180deg, var(--accent), var(--accent-2));
+    box-shadow: 0 0 8px rgba(37, 99, 235, 0.35);
+  }
+  .barchart-wrap { padding: 22px 0 22px; }
+  .barchart-title {
+    font-size: 11.5px;
+    color: var(--dim);
+    margin-bottom: 28px;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-weight: 600;
+  }
+
+  /* === Weapon card === */
+  .wcard {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 0;
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+  }
+  .wcard-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg-2);
+  }
+  .wcard-header .icon {
+    font-size: 32px;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-1);
+    border-radius: 10px;
+    border: 1px solid var(--line);
+  }
+  .wcard-header .name {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0;
+  }
+  .wcard-header .desc {
+    color: var(--dim);
+    font-size: 12.5px;
+    margin: 2px 0 0;
+  }
+  .wcard-body { padding: 18px 20px; }
+
+  /* === Stat bar (horizontal) === */
+  .statbar { display: flex; align-items: center; gap: 10px; font-size: 12.5px; margin: 5px 0; }
+  .statbar .label { width: 90px; color: var(--dim); flex-shrink: 0; }
+  .statbar .track {
+    flex: 1;
+    height: 8px;
+    background: var(--bg-3);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .statbar .fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    border-radius: 4px;
+  }
+  .statbar .val { width: 56px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  /* === Timeline === */
+  .timeline-wrap { padding: 28px 0 70px; }
+  .timeline {
+    position: relative;
+    height: 70px;
+    background: linear-gradient(90deg,
+      #c7d2fe 0%, #c7d2fe 11.1%,
+      #a5b4fc 11.1%, #a5b4fc 33.3%,
+      #818cf8 33.3%, #818cf8 55.5%,
+      #6366f1 55.5%, #6366f1 77.7%,
+      #f59e0b 77.7%, #f59e0b 88.8%,
+      #ef4444 88.8%, #ef4444 100%);
+    border-radius: 8px;
+    overflow: visible;
+    box-shadow: var(--shadow);
+  }
+  .tl-marker {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 2px;
+    background: rgba(255, 255, 255, 0.85);
+  }
+  .tl-marker .lbl {
+    position: absolute;
+    top: -22px;
+    left: -32px;
+    width: 64px;
+    text-align: center;
+    color: var(--text);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  .tl-marker .ev {
+    position: absolute;
+    top: 76px;
+    left: -64px;
+    width: 128px;
+    text-align: center;
+    color: var(--dim);
+    font-size: 10.5px;
+    line-height: 1.3;
+  }
+
+  /* === Tier compare === */
+  .tier-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  @media (max-width: 800px) { .tier-cards { grid-template-columns: 1fr; } }
+  .tier {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px;
+    box-shadow: var(--shadow-sm);
+  }
+  .tier h3 {
+    margin-top: 0;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .tier.t1 { border-top: 3px solid var(--good); }
+  .tier.t2 { border-top: 3px solid var(--warn); }
+  .tier.t3 { border-top: 3px solid var(--bad); }
+  .tier-row {
+    display: flex; justify-content: space-between;
+    padding: 5px 0;
+    border-bottom: 1px dashed var(--line);
+    font-size: 12.5px;
+  }
+  .tier-row:last-child { border-bottom: none; }
+  .tier-row .k { color: var(--muted); }
+  .tier-row .v { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  /* === Boss phase bar === */
+  .hpbar {
+    height: 32px;
+    background: var(--bg-3);
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    margin: 14px 0 6px;
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-sm);
+  }
+  .hpbar .seg { display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #fff; }
+  .hpbar .p1 { width: 40%; background: var(--good); }
+  .hpbar .p2 { width: 30%; background: var(--warn); }
+  .hpbar .p3 { width: 30%; background: var(--bad); }
+  .hpbar-labels { display: flex; font-size: 11px; color: var(--dim); margin-top: 4px; }
+  .hpbar-labels span:nth-child(1) { width: 40%; }
+  .hpbar-labels span:nth-child(2) { width: 30%; }
+  .hpbar-labels span:nth-child(3) { width: 30%; }
+
+  /* === Flow boxes === */
+  .flow {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+    margin: 10px 0;
+    box-shadow: var(--shadow-sm);
+  }
+  .flow .box {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-family: "JetBrains Mono", "Menlo", monospace;
+    color: var(--text);
+    line-height: 1.4;
+  }
+  .flow .box small {
+    display: block;
+    color: var(--muted);
+    font-family: -apple-system, sans-serif;
+    font-size: 10px;
+    margin-top: 2px;
+  }
+  .flow .box.in { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  .flow .box.mul { background: var(--accent-2-soft); border-color: var(--accent-2); color: var(--accent-2); }
+  .flow .box.out { border-color: var(--good); background: var(--good-soft); color: var(--good); }
+  .flow .arrow { color: var(--muted); font-size: 16px; }
+
+  /* === Evolution arrow card === */
+  .evo {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px 18px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 14px;
+    box-shadow: var(--shadow-sm);
+  }
+  .evo-side { text-align: center; }
+  .evo-side .nm { font-weight: 700; font-size: 14px; }
+  .evo-side .meta { color: var(--dim); font-size: 11px; margin-top: 2px; }
+  .evo-arrow { color: var(--accent); font-size: 22px; line-height: 1; text-align: center; }
+  .evo-arrow .req {
+    display: block;
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 4px;
+    white-space: nowrap;
+  }
+  .evo-side.gold .nm {
+    background: linear-gradient(90deg, var(--c-bow), var(--warn));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* === Tome card === */
+  .tcard {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+    box-shadow: var(--shadow-sm);
+  }
+  .tcard h4 { margin: 0 0 4px; color: var(--text); font-size: 14px; }
+  .tcard .effect { color: var(--dim); font-size: 12.5px; margin: 4px 0 8px; }
+  .tcard .footer {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .pips { display: inline-flex; gap: 3px; }
+  .pip {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--bg-3);
+    border: 1px solid var(--line-strong);
+  }
+  .pip.on {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    border-color: var(--accent);
+  }
+
+  /* === Architecture diagram === */
+  .arch {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 24px;
+    box-shadow: var(--shadow-sm);
+  }
+  .arch-row {
+    display: grid;
+    grid-template-columns: 1fr 70px 1fr;
+    align-items: center;
+    gap: 8px;
+    margin: 14px 0;
+  }
+  .arch-block {
+    background: var(--bg-2);
+    border: 2px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .arch-block.core { border-color: var(--accent); background: var(--accent-soft); }
+  .arch-block.client { border-color: var(--accent-2); background: var(--accent-2-soft); }
+  .arch-block .ttl { font-weight: 700; font-size: 14px; }
+  .arch-block .det { color: var(--dim); font-size: 12px; margin-top: 4px; }
+  .arch-block ul { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--text); }
+  .arch-block ul li { margin: 2px 0; }
+  .arch-arrow {
+    text-align: center;
+    color: var(--dim);
+    font-size: 18px;
+  }
+  .arch-arrow .lbl { display: block; font-size: 10px; margin-top: 4px; }
+
+  /* === XP curve === */
+  .linechart {
+    width: 100%;
+    height: 240px;
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 18px 12px 24px;
+    box-shadow: var(--shadow-sm);
+  }
+  .linechart svg { width: 100%; height: 100%; }
+
+  /* === Misc === */
+  .note {
+    background: var(--warn-soft);
+    border-left: 3px solid var(--warn);
+    padding: 10px 14px;
+    border-radius: 4px;
+    font-size: 13px;
+    margin: 12px 0;
+    color: #78350f;
+  }
+  .note.cyan { background: var(--accent-soft); border-color: var(--accent); color: #1e3a8a; }
+  .note.bad { background: var(--bad-soft); border-color: var(--bad); color: #7f1d1d; }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--dim); margin: 8px 0 4px; }
+  .legend .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-right: 5px; }
+
+  details {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 6px 0;
+  }
+  details summary { cursor: pointer; color: var(--dim); font-size: 13px; }
+  details[open] summary { color: var(--accent); margin-bottom: 8px; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 10.5px;
+    border-radius: 10px;
+    background: var(--bg-2);
+    color: var(--dim);
+    margin-right: 4px;
+    border: 1px solid var(--line);
+  }
+  .badge.elite { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); }
+  .badge.chase { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .badge.ranged { background: var(--accent-2-soft); color: var(--accent-2); border-color: var(--accent-2); }
+  .badge.charge { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
+  .badge.dive { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); }
+
+  footer {
+    margin-top: 60px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 12px;
+    text-align: center;
+  }
+
+  /* color swatches inline (xp gem badge) */
+  .gem {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    vertical-align: middle;
+    margin-right: 6px;
+    box-shadow: var(--shadow-sm);
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+<aside class="sidebar">
+  <div class="brand">MegaBonk · 3D</div>
+  <div class="brand-sub">Three.js Roguelike Survivor</div>
+  <nav class="nav" id="nav">
+    <h4 style="color: var(--bad); margin-top: 0;">⚠️ 框架契约</h4>
+    <a data-tab="contract" style="color: var(--bad); font-weight: 700;">必读 · 不可违反</a>
+
+    <h4>概览</h4>
+    <a data-tab="overview">项目总览</a>
+    <a data-tab="timeline">单局节奏</a>
+    <a data-tab="tier">难度分层</a>
+    <a data-tab="characters">角色</a>
+    <a data-tab="xp">经验 / 升级</a>
+
+    <h4>战斗</h4>
+    <a data-tab="weapons">武器（7）</a>
+    <a data-tab="evolutions">武器进化</a>
+    <a data-tab="tomes">典籍（10）</a>
+    <a data-tab="shop">永久商店</a>
+    <a data-tab="combat">战斗公式</a>
+    <a data-tab="enemies">敌人</a>
+    <a data-tab="boss">Boss</a>
+
+    <h4>系统</h4>
+    <a data-tab="quests">任务 / 银币</a>
+    <a data-tab="teleporter">传送门 / 存档</a>
+
+    <h4>技术</h4>
+    <a data-tab="architecture">架构</a>
+    <a data-tab="performance">性能</a>
+    <a data-tab="dev">开发指南</a>
+    <a data-tab="assets">美术资源</a>
+  </nav>
+</aside>
+
+<main>
+
+<!-- ============= FRAMEWORK CONTRACT ============= -->
+<section id="contract">
+  <div class="hero" style="background: var(--bad-soft); border: 2px solid var(--bad); border-radius: 12px; padding: 24px;">
+    <h1 style="color: var(--bad); margin: 0 0 8px;">⚠️ 框架契约 Framework Contract</h1>
+    <div class="tagline" style="color: #7f1d1d;">本页是项目所有协作者（人 + AI）的强制规范。违反会导致构建失败、KUBEE 模板下游集成中断或运行时崩溃。</div>
+    <div style="margin-top: 14px;">
+      <span class="pill" style="border-color: var(--bad); color: var(--bad); background: white;">v1.0.0</span>
+      <span class="pill" style="border-color: var(--bad); color: var(--bad); background: white;">harness 强制</span>
+      <span class="pill" style="border-color: var(--bad); color: var(--bad); background: white;">最后更新 2026-06-01</span>
+    </div>
+  </div>
+
+  <div class="note bad" style="margin-top: 20px;">
+    <b>修改契约的唯一流程：</b>开 Issue → 标题以 <code>[CONTRACT]</code> 开头 → Maintainer 评审 → 同步修改 <code>docs/contract.md</code> + 本页 + <code>.claude/hooks/guard-contract.sh</code>。
+  </div>
+
+  <h2>一、🔒 锁定文件（绝对不得修改）</h2>
+  <p>通过 <code>.claude/hooks/guard-contract.sh</code> 在 Claude Code <code>PreToolUse</code> hook 强制阻断。Edit / Write / MultiEdit 命中以下文件会被 <code>exit 2</code> 直接拒绝。</p>
+  <div class="grid cols-2">
+    <div class="card">
+      <h4>构建与模板基础设施</h4>
+      <table>
+        <tr><th>文件</th><th>原因</th></tr>
+        <tr><td><code>index.html</code></td><td>入口写死 <code>/game/client/main.ts</code></td></tr>
+        <tr><td><code>vite.config.ts</code></td><td><code>external: ['three']</code> + manualChunks + i18n 插件</td></tr>
+        <tr><td><code>tsconfig.json</code></td><td>include 路径与 workspace 绑定</td></tr>
+        <tr><td><code>pnpm-workspace.yaml</code></td><td>五包路径定义</td></tr>
+        <tr><td><code>package.json</code>（根）</td><td>启动脚本 + workspace 依赖</td></tr>
+        <tr><td><code>template.yml</code></td><td>KUBEE 模板元数据</td></tr>
+        <tr><td><code>kubee.json</code></td><td>KUBEE 发布配置</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h4>workspace 与共享代码</h4>
+      <table>
+        <tr><th>文件</th><th>原因</th></tr>
+        <tr><td><code>game/core/package.json</code></td><td>包名 <code>@minigame/core</code></td></tr>
+        <tr><td><code>game/client/package.json</code></td><td>包名 <code>@minigame/client</code></td></tr>
+        <tr><td><code>packages/&lt;name&gt;/package.json</code></td><td>各包名定义</td></tr>
+        <tr><td><code>packages/i18n/source/**</code></td><td>i18n 共享运行时</td></tr>
+        <tr><td><code>packages/platform/source/**</code></td><td>跨平台输入</td></tr>
+        <tr><td><code>packages/render-adapter/source/**</code></td><td>HiDPI 适配</td></tr>
+        <tr><td><code>game/client/main.ts</code></td><td>必须保持 <code>bootGameClient()</code> 两行</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h2>二、📐 锁定签名（文件可改，但导出契约不变）</h2>
+  <p>这些文件允许重构（必然会动），但<b>导出名称、签名、类型形状</b>必须保留。通过 <code>.claude/skills/check-contract</code> skill 手动校验。</p>
+
+  <div class="card">
+    <h4>1. <code>@minigame/core</code> 公开 API（<code>game/core/source/index.ts</code>）</h4>
+    <p>下列导出<b>必须始终存在</b>：</p>
+<pre><code>// 类
+export { GameInstance } from './GameInstance.ts'
+
+// 类型（client 渲染依赖）
+export type { GameState, GameConfig, GameResult, InputState } from './types.ts'
+
+// 常量
+export {
+  TICK_INTERVAL_MS,
+  DEFAULT_GAME_CONFIG,
+} from './config.ts'</code></pre>
+    <p style="color: var(--dim); font-size: 13px;">其他导出（<code>WEAPON_STATS</code> / <code>fireWeapon</code> 等）属于内部协作 API，重构期间可以删改。</p>
+  </div>
+
+  <div class="card" style="margin-top: 12px;">
+    <h4>2. <code>GameInstance</code> 类签名</h4>
+<pre><code>export class GameInstance {
+  constructor(config: GameConfig)                  // 单参数
+  start(): void
+  tick(): boolean                                  // true = 本局结束
+  applyAction(input: InputState): void             // 单参数（无 playerId）
+  getState(): GameState
+  getResult(): GameResult
+}</code></pre>
+    <p style="color: var(--dim); font-size: 13px;">本项目是 single-player（KUBEE <code>threejs-3d-singleplayer</code> 模板）。重构期间 <code>GameInstance</code> 应当退化为薄 facade，方法体内部委托给 <code>world</code> + <code>systems</code>，但<b>外部接口不得改变</b>。</p>
+  </div>
+
+  <div class="card" style="margin-top: 12px;">
+    <h4>3. <code>GameState</code> 形状（client 渲染依赖）</h4>
+    <table>
+      <tr><th>字段</th><th>类型</th><th>必须存在</th></tr>
+      <tr><td><code>tick</code></td><td>number</td><td>✅</td></tr>
+      <tr><td><code>running</code></td><td>boolean</td><td>✅</td></tr>
+      <tr><td><code>finished</code></td><td>boolean</td><td>✅</td></tr>
+      <tr><td><code>player / enemies / projectiles ...</code></td><td>项目自有</td><td>—</td></tr>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top: 12px;">
+    <h4>4. i18n 必需键</h4>
+    <p><code>i18n/en.json</code> 与 <code>i18n/zh.json</code> 必须同时存在，且包含 client 用到的所有键。增减 i18n 键时<b>两份文件同步</b>。</p>
+  </div>
+
+  <h2>三、♻️ 自由区（鼓励大改）</h2>
+  <p>下面这些区域，请放心重构、原子化、模块化：</p>
+  <div class="card">
+    <ul>
+      <li><code>game/core/source/</code> 下<b>除 <code>index.ts</code> 之外</b>的所有文件</li>
+      <li>新增任意子目录：<code>data/</code> <code>components/</code> <code>systems/</code> <code>behaviors/</code> <code>factories/</code> <code>stats/</code> <code>ai/</code> <code>world.ts</code></li>
+      <li><code>GameInstance.ts</code> <b>内部实现</b>（保持类签名即可）</li>
+      <li><code>game/client/source/index.ts</code> 内部渲染逻辑（保持 <code>bootGameClient</code> 导出）</li>
+      <li><code>game/client/source/session/**</code> 整个 session 目录</li>
+      <li><code>i18n/*.json</code> 增减键（同步即可）</li>
+      <li>新增 npm 依赖（推荐：<code>miniplex</code> 用于 ECS）</li>
+    </ul>
+  </div>
+
+  <h2>四、新增内容的标准流程</h2>
+  <div class="grid cols-2">
+    <div class="card">
+      <h4>加一把武器</h4>
+      <ol>
+        <li>在 <code>game/core/source/data/weapons.ts</code> 新增 <code>WeaponDef</code></li>
+        <li>如需新行为，在 <code>game/core/source/behaviors/</code> 加 <code>.ts</code></li>
+        <li>完成</li>
+      </ol>
+      <p style="color: var(--dim); font-size: 13px;"><b>不再需要：</b>改 <code>GameInstance.ts</code>、加 <code>fireXxx</code> 方法、改 switch。</p>
+    </div>
+    <div class="card">
+      <h4>加一个敌人</h4>
+      <ol>
+        <li>在 <code>data/enemies.ts</code> 新增 <code>EnemyDef</code></li>
+        <li>如需新 AI 状态，在 <code>ai/Brain.ts</code> 的 tagged-union 加一种</li>
+        <li>完成</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h4>加一个被动 / Tome / 升级</h4>
+      <ol>
+        <li>在 <code>data/upgrades.ts</code> 新增 <code>UpgradeDef</code>（类型 / 数值 / tag）</li>
+        <li>stats 管线自动处理 base / added / increased / more 四层叠加</li>
+        <li>完成</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h4>加 i18n 文本</h4>
+      <ol>
+        <li><code>i18n/en.json</code> 加键</li>
+        <li><code>i18n/zh.json</code> 加键</li>
+        <li>代码用 <code>t('your.key')</code></li>
+      </ol>
+    </div>
+  </div>
+
+  <h2>五、违反契约的后果</h2>
+  <div class="card">
+    <table>
+      <tr><th>违反</th><th>后果</th></tr>
+      <tr><td>改了锁定文件</td><td>Claude Code hook 直接拒绝 Edit/Write</td></tr>
+      <tr><td>改了锁定签名</td><td><code>pnpm build</code> tsc 类型检查失败</td></tr>
+      <tr><td>改了 i18n 必需键</td><td>运行时 <code>t()</code> 返回 key 字符串，UI 异常</td></tr>
+      <tr><td>改了 <code>template.yml</code> / <code>kubee.json</code></td><td>KUBEE 模板分发链路中断</td></tr>
+      <tr><td>改了 <code>packages/</code></td><td>模板再下载时被覆盖，本地修改丢失</td></tr>
+    </table>
+  </div>
+
+  <h2>六、相关文件</h2>
+  <div class="card">
+    <table>
+      <tr><th>路径</th><th>作用</th></tr>
+      <tr><td><code>docs/contract.md</code></td><td>本契约的 markdown 源（与本页同步）</td></tr>
+      <tr><td><code>.claude/settings.json</code></td><td>项目级 harness 配置（hook 注册）</td></tr>
+      <tr><td><code>.claude/hooks/guard-contract.sh</code></td><td>PreToolUse 守卫脚本</td></tr>
+      <tr><td><code>.claude/skills/check-contract/SKILL.md</code></td><td>校验 skill</td></tr>
+      <tr><td><code>CLAUDE.md</code> / <code>AGENTS.md</code></td><td>AI agent 入口（指向本页）</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ============= OVERVIEW ============= -->
+<section id="overview">
+  <div class="hero">
+    <h1>MegaBonk Three.js</h1>
+    <div class="tagline">3D Roguelike Survivor · 单局 9 分钟 · 移动端优先 · 7 种武器 · 10 种典籍 · 5 条进化路径</div>
+
+    <div>
+      <span class="pill cyan">Three.js 0.170</span>
+      <span class="pill cyan">Vite 7.3</span>
+      <span class="pill cyan">TypeScript 5.7</span>
+      <span class="pill purple">pnpm workspace</span>
+      <span class="pill purple">@minigame/platform</span>
+      <span class="pill purple">@minigame/i18n</span>
+    </div>
+
+    <div class="hero-stats">
+      <div class="stat-card"><div class="num">7</div><div class="lbl">武器</div></div>
+      <div class="stat-card"><div class="num">10</div><div class="lbl">典籍</div></div>
+      <div class="stat-card"><div class="num">5</div><div class="lbl">武器进化</div></div>
+      <div class="stat-card"><div class="num">8</div><div class="lbl">永久商店</div></div>
+      <div class="stat-card"><div class="num">3</div><div class="lbl">角色</div></div>
+      <div class="stat-card"><div class="num">6</div><div class="lbl">敌人</div></div>
+      <div class="stat-card"><div class="num">29</div><div class="lbl">任务</div></div>
+      <div class="stat-card"><div class="num">540s</div><div class="lbl">单局长度</div></div>
+    </div>
+  </div>
+
+  <h3>项目结构</h3>
+  <div class="grid cols-2">
+    <div class="card">
+      <h4>game/core/source/ — 纯逻辑</h4>
+      <table>
+        <tr><th>文件</th><th class="num">行数</th><th>作用</th></tr>
+        <tr><td><code>GameInstance.ts</code></td><td class="num">2577</td><td>主循环 / AI / 武器 / Boss / 存档</td></tr>
+        <tr><td><code>weapons.ts</code></td><td class="num">419</td><td>武器开火逻辑</td></tr>
+        <tr><td><code>config.ts</code></td><td class="num">~310</td><td>所有数值配置</td></tr>
+        <tr><td><code>types.ts</code></td><td class="num">~200</td><td>类型定义</td></tr>
+        <tr><td><code>upgrades.ts</code></td><td class="num">146</td><td>升级选项 + XP 公式</td></tr>
+        <tr><td><code>quests.ts</code></td><td class="num">202</td><td>29 个跨局任务</td></tr>
+        <tr><td><code>shop.ts</code></td><td class="num">73</td><td>永久商店</td></tr>
+        <tr><td><code>save.ts</code></td><td class="num">~150</td><td>localStorage 存档</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h4>game/client/source/ — 渲染 / UI</h4>
+      <table>
+        <tr><th>文件</th><th class="num">行数</th><th>作用</th></tr>
+        <tr><td><code>index.ts</code></td><td class="num">4568</td><td>Three.js 场景 / VFX / HUD / 菜单 / 输入桥接</td></tr>
+      </table>
+      <h4>packages/（不修改）</h4>
+      <table>
+        <tr><th>包</th><th>作用</th></tr>
+        <tr><td><code>@minigame/platform</code></td><td>虚拟摇杆 / 触控按钮 / 桌面输入</td></tr>
+        <tr><td><code>@minigame/render-adapter</code></td><td>高 DPI 适配</td></tr>
+        <tr><td><code>@minigame/i18n</code></td><td>翻译运行时 + Vite 插件</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h3>操作方式</h3>
+  <div class="grid cols-2">
+    <div class="card">
+      <h4>桌面端</h4>
+      <table>
+        <tr><th>动作</th><th>按键</th></tr>
+        <tr><td>移动</td><td><code>W A S D</code></td></tr>
+        <tr><td>跳跃</td><td><code>Space</code></td></tr>
+        <tr><td>滑铲</td><td><code>Shift</code></td></tr>
+        <tr><td>武器</td><td>全自动</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h4>移动端（主要）</h4>
+      <table>
+        <tr><th>动作</th><th>位置</th></tr>
+        <tr><td>移动</td><td>左侧虚拟摇杆（deadzone 0.15）</td></tr>
+        <tr><td>跳跃</td><td>右侧 ⬆️</td></tr>
+        <tr><td>滑铲</td><td>右侧 ⬇️</td></tr>
+        <tr><td>武器</td><td>全自动</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h3>移动机制（来自 <code>config.ts:21-27</code>）</h3>
+  <table>
+    <tr><th>常量</th><th class="num">数值</th><th>含义</th></tr>
+    <tr><td><code>JUMP_FORCE</code></td><td class="num">6.0</td><td>跳跃力</td></tr>
+    <tr><td><code>GRAVITY</code></td><td class="num">18.0</td><td>重力</td></tr>
+    <tr><td><code>SLIDE_SPEED_MULTIPLIER</code></td><td class="num">1.6×</td><td>滑铲速度倍率</td></tr>
+    <tr><td><code>SLIDE_DURATION</code></td><td class="num">0.5s</td><td>滑铲持续</td></tr>
+    <tr><td><code>SLIDE_COOLDOWN</code></td><td class="num">0.3s</td><td>滑铲冷却</td></tr>
+    <tr><td><code>BUNNY_HOP_WINDOW</code></td><td class="num">0.15s</td><td>兔子跳判定窗口</td></tr>
+    <tr><td><code>BUNNY_HOP_BONUS</code></td><td class="num">1.2×</td><td>兔子跳跳跃加成</td></tr>
+    <tr><td><code>DASH_DISTANCE / DURATION / CD</code></td><td class="num">6 / 0.2 / 5</td><td>冲刺</td></tr>
+  </table>
+</section>
+
+<!-- ============= TIMELINE ============= -->
+<section id="timeline">
+  <h2>单局节奏（540 秒 = 9 分钟）</h2>
+  <p class="sub">来源：<code>WAVE_CONFIGS</code> 与 <code>spawnEnemies()</code></p>
+
+  <div class="timeline-wrap">
+    <div class="timeline">
+      <div class="tl-marker" style="left: 0%"><span class="lbl">0s</span><span class="ev">骷髅步兵<br>2.0s 刷新</span></div>
+      <div class="tl-marker" style="left: 11.1%"><span class="lbl">60s</span><span class="ev">+ 僵尸<br>5% 精英</span></div>
+      <div class="tl-marker" style="left: 33.3%"><span class="lbl">180s</span><span class="ev">+ 弓手<br>Mini-Boss 启动</span></div>
+      <div class="tl-marker" style="left: 55.5%"><span class="lbl">300s</span><span class="ev">+ 传送门<br>15% 精英</span></div>
+      <div class="tl-marker" style="left: 77.7%"><span class="lbl">420s</span><span class="ev">最后冲刺<br>20% 精英</span></div>
+      <div class="tl-marker" style="left: 88.8%"><span class="lbl">480s</span><span class="ev">FINAL SWARM<br>同屏 150 / 敌速 +20%</span></div>
+      <div class="tl-marker" style="left: 100%"><span class="lbl">540s</span><span class="ev">BOSS<br>3 阶段</span></div>
+    </div>
+  </div>
+
+  <table>
+    <tr>
+      <th>时间段</th>
+      <th>波次配置</th>
+      <th class="num">刷新间隔</th>
+      <th class="num">同屏上限</th>
+      <th>群体大小</th>
+      <th>精英率</th>
+    </tr>
+    <tr><td>0–60s</td><td>骷髅步兵</td><td class="num">2.0s</td><td class="num">30</td><td>1–3</td><td>0%</td></tr>
+    <tr><td>60–180s</td><td>+ 僵尸</td><td class="num">1.5s</td><td class="num">50</td><td>2–4</td><td>5%</td></tr>
+    <tr><td>180–300s</td><td>+ 弓手</td><td class="num">1.2s</td><td class="num">70</td><td>3–5</td><td>10%</td></tr>
+    <tr><td>300–420s</td><td>已全开</td><td class="num">1.0s</td><td class="num">85</td><td>3–6</td><td>15%</td></tr>
+    <tr><td>420–480s</td><td>已全开</td><td class="num">0.8s</td><td class="num">100</td><td>4–8</td><td>20%</td></tr>
+    <tr style="background: var(--warn-soft);"><td>480–540s</td><td><span class="hl">FINAL SWARM</span> 双倍刷新</td><td class="num">0.4s</td><td class="num">150</td><td>4–8</td><td>20%</td></tr>
+    <tr style="background: var(--bad-soft);"><td>540s</td><td><span class="hl">Boss 战</span></td><td colspan="3">Tier 1 自动 / Tier 2/3 须激活完传送门</td></tr>
+  </table>
+</section>
+
+<!-- ============= TIER ============= -->
+<section id="tier">
+  <h2>难度分层（Tier）</h2>
+  <p class="sub">来源：<code>TIER_CONFIGS</code> (<code>config.ts:298</code>)</p>
+
+  <div class="tier-cards">
+    <div class="tier t1">
+      <h3>Tier 1 <span class="badge" style="color: var(--good); border-color: var(--good); background: var(--good-soft);">普通</span></h3>
+      <div class="tier-row"><span class="k">敌人 HP</span><span class="v">1.0×</span></div>
+      <div class="tier-row"><span class="k">敌人伤害</span><span class="v">1.0×</span></div>
+      <div class="tier-row"><span class="k">敌人速度</span><span class="v">1.0×</span></div>
+      <div class="tier-row"><span class="k">XP 奖励</span><span class="v">1.0×</span></div>
+      <div class="tier-row"><span class="k">银币奖励</span><span class="v">1.0×</span></div>
+      <div class="tier-row"><span class="k">Boss HP</span><span class="v">1.0× (2000)</span></div>
+      <div class="tier-row"><span class="k">传送门</span><span class="v">0（Boss 自动出现）</span></div>
+    </div>
+    <div class="tier t2">
+      <h3>Tier 2 <span class="badge" style="color: var(--warn); border-color: var(--warn); background: var(--warn-soft);">困难</span></h3>
+      <div class="tier-row"><span class="k">敌人 HP</span><span class="v">1.5×</span></div>
+      <div class="tier-row"><span class="k">敌人伤害</span><span class="v">1.3×</span></div>
+      <div class="tier-row"><span class="k">敌人速度</span><span class="v">1.1×</span></div>
+      <div class="tier-row"><span class="k">XP 奖励</span><span class="v">1.5×</span></div>
+      <div class="tier-row"><span class="k">银币奖励</span><span class="v">2.0×</span></div>
+      <div class="tier-row"><span class="k">Boss HP</span><span class="v">1.5×</span></div>
+      <div class="tier-row"><span class="k">传送门</span><span class="v">1 个</span></div>
+    </div>
+    <div class="tier t3">
+      <h3>Tier 3 <span class="badge" style="color: var(--bad); border-color: var(--bad); background: var(--bad-soft);">噩梦</span></h3>
+      <div class="tier-row"><span class="k">敌人 HP</span><span class="v">2.5×</span></div>
+      <div class="tier-row"><span class="k">敌人伤害</span><span class="v">1.8×</span></div>
+      <div class="tier-row"><span class="k">敌人速度</span><span class="v">1.2×</span></div>
+      <div class="tier-row"><span class="k">XP 奖励</span><span class="v">2.0×</span></div>
+      <div class="tier-row"><span class="k">银币奖励</span><span class="v">3.0×</span></div>
+      <div class="tier-row"><span class="k">Boss HP</span><span class="v">2.5×</span></div>
+      <div class="tier-row"><span class="k">传送门</span><span class="v">2 个（须全激活）</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============= CHARACTERS ============= -->
+<section id="characters">
+  <h2>角色（3 种）</h2>
+  <p class="sub">来源：<code>CHARACTER_CONFIGS</code> (<code>config.ts:66</code>)</p>
+
+  <div class="grid cols-3" id="char-cards"></div>
+</section>
+
+<!-- ============= XP ============= -->
+<section id="xp">
+  <h2>经验 / 升级 / 武器槽</h2>
+  <p class="sub">来源：<code>upgrades.ts</code>、<code>GameInstance.ts:1847</code></p>
+
+  <h3>XP 公式与曲线</h3>
+  <pre><code>xpForLevel(L) = floor(10 × (1 + L × 0.35))</code></pre>
+
+  <div class="linechart">
+    <svg viewBox="0 0 800 200" preserveAspectRatio="none" id="xpchart"></svg>
+  </div>
+
+  <h3>XP 宝石值</h3>
+  <table style="max-width: 380px;">
+    <tr><th>颜色</th><th class="num">XP 值</th></tr>
+    <tr><td><span class="gem" style="background: var(--good);"></span> xp_green</td><td class="num">1</td></tr>
+    <tr><td><span class="gem" style="background: var(--accent);"></span> xp_blue</td><td class="num">5</td></tr>
+    <tr><td><span class="gem" style="background: var(--accent-2);"></span> xp_purple</td><td class="num">25</td></tr>
+    <tr><td><span class="gem" style="background: var(--warn);"></span> xp_orange</td><td class="num">100</td></tr>
+  </table>
+
+  <h3>升级选项流程</h3>
+  <div class="card">
+    <p>升级时<strong>暂停游戏</strong>，固定弹出 <strong>3 个选项</strong>（<code>GameInstance.ts:1854</code> 硬编码 <code>count=3</code>，幸运典籍<strong>不</strong>会增加选项数量）。</p>
+    <table>
+      <tr><th>类型</th><th>进入条件</th></tr>
+      <tr><td><code>weapon_upgrade</code></td><td>已拥有该武器 且 weapon.level &lt; 8</td></tr>
+      <tr><td><code>new_weapon</code></td><td>weapons.length &lt; maxWeaponSlots</td></tr>
+      <tr><td><code>tome</code></td><td>该典籍未达上限</td></tr>
+    </table>
+    <p style="margin-top: 12px; color: var(--dim);">抽取规则：<strong>必保</strong>至少 1 个武器相关选项；剩下 2 个从全部可用选项里随机不重复抽取。</p>
+  </div>
+
+  <h3>稀有度权重 <span style="font-weight: normal; color: var(--muted); font-size: 13px;">仅显示用，不改变数值</span></h3>
+  <div class="grid cols-4">
+    <div class="card" style="border-top: 3px solid var(--c-common);">
+      <h4 style="color: var(--c-common);">Common</h4>
+      <div style="font-size: 24px; font-weight: 700; color: var(--c-common);">55</div>
+      <div style="color: var(--muted); font-size: 11px;">基础权重</div>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--c-uncommon);">
+      <h4 style="color: var(--c-uncommon);">Uncommon</h4>
+      <div style="font-size: 24px; font-weight: 700; color: var(--c-uncommon);">28</div>
+      <div style="color: var(--muted); font-size: 11px;">基础权重</div>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--c-rare);">
+      <h4 style="color: var(--c-rare);">Rare</h4>
+      <div style="font-size: 24px; font-weight: 700; color: var(--c-rare);">13</div>
+      <div style="color: var(--muted); font-size: 11px;">基础权重</div>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--c-legendary);">
+      <h4 style="color: var(--c-legendary);">Legendary</h4>
+      <div style="font-size: 24px; font-weight: 700; color: var(--c-legendary);">4</div>
+      <div style="color: var(--muted); font-size: 11px;">基础权重</div>
+    </div>
+  </div>
+  <p style="color: var(--dim); margin-top: 10px;">幸运典籍每级把 common 权重 −10、rare/legendary 各 +5。</p>
+
+  <h3>武器槽解锁阶梯</h3>
+  <table>
+    <tr><th>玩家等级</th><th class="num">武器槽数</th><th>来源</th></tr>
+    <tr><td>1</td><td class="num">2</td><td>角色起始（<code>MAX_WEAPONS_DEFAULT</code>）</td></tr>
+    <tr><td>5</td><td class="num">3</td><td>升级解锁</td></tr>
+    <tr><td>10</td><td class="num">4</td><td>升级解锁</td></tr>
+    <tr><td>20</td><td class="num">5</td><td>升级解锁</td></tr>
+    <tr><td>30</td><td class="num">6</td><td><code>MAX_WEAPONS_CAP</code> 上限</td></tr>
+    <tr><td>—</td><td class="num">+1</td><td>任务 q30 永久奖励</td></tr>
+  </table>
+
+  <h3>连击系统</h3>
+  <pre><code>2 秒内连续击杀 → comboCount += 1
+XP 倍率 = 1 + min(comboCount × 0.05, 1.0)   // 最高 2×
+2 秒内无击杀 → 归零</code></pre>
+</section>
+
+<!-- ============= WEAPONS ============= -->
+<section id="weapons">
+  <h2>武器系统（7 种）</h2>
+  <p class="sub">来源：<code>WEAPON_STATS</code> (<code>config.ts:154</code>) · 每把武器 8 级 + 1 进化态</p>
+
+  <h3>取数与开火流程</h3>
+  <div class="flow">
+    <span class="box in">玩家点选项</span>
+    <span class="arrow">→</span>
+    <span class="box">weapon.level++</span>
+    <span class="arrow">→</span>
+    <span class="box">getWeaponStats(weapon)</span>
+    <span class="arrow">→</span>
+    <span class="box">WEAPON_STATS[type][level - 1]</span>
+    <span class="arrow">→</span>
+    <span class="box mul">× attackSpeedMul</span>
+    <span class="arrow">→</span>
+    <span class="box out">每帧 fireWeapon()</span>
+  </div>
+
+  <h3>各武器每级数值</h3>
+  <div class="legend">
+    <span><span class="swatch" style="background: var(--bg-3);"></span>Lv 1–8 基础态（颜色按武器主题）</span>
+    <span><span class="swatch" style="background: linear-gradient(180deg, var(--accent), var(--accent-2));"></span>Lv 9 进化态（如有）</span>
+  </div>
+
+  <div id="weapons-grid"></div>
+</section>
+
+<!-- ============= EVOLUTIONS ============= -->
+<section id="evolutions">
+  <h2>武器进化（5 条路径）</h2>
+  <p class="sub">来源：<code>WEAPON_EVOLUTIONS</code> (<code>config.ts:278</code>)</p>
+
+  <div class="card" style="margin-bottom: 18px;">
+    <h4>触发条件</h4>
+    <ol style="margin: 8px 0; padding-left: 18px; color: var(--text);">
+      <li><code>weapon.level &gt;= 8</code>（满级）</li>
+      <li>该武器在 <code>WEAPON_EVOLUTIONS</code> 中存在条目</li>
+      <li>对应典籍 <code>tome.level &gt;= requiredTomeLevel</code></li>
+    </ol>
+    <h4>数值计算</h4>
+    <pre><code>最终 = WEAPON_STATS[type][7]                    // Lv 8 数值
+       damage  → round(Lv8.damage × multiplier)
+       projectileCount → +1
+其他字段（CD/范围/穿透/速度/AoE）保持 Lv 8 不变</code></pre>
+  </div>
+
+  <div class="grid" style="grid-template-columns: 1fr; gap: 12px;" id="evo-grid"></div>
+
+  <div class="note">
+    <strong>注：</strong><code>flame_ring</code> 与 <code>shotgun</code> 暂无进化路径，如需扩展，在 <code>config.ts WEAPON_EVOLUTIONS</code> 加一条即可。
+  </div>
+</section>
+
+<!-- ============= TOMES ============= -->
+<section id="tomes">
+  <h2>典籍 Tome（10 种）</h2>
+  <p class="sub">关卡内被动 buff，单局生效。<strong>实际数值来自 <code>recalculateTomeStats()</code> 与各业务路径，i18n 文案有时简化。</strong></p>
+
+  <div class="grid cols-3" id="tome-grid"></div>
+
+  <h3 style="margin-top: 28px;">⚠️ 实际效果与文案差异</h3>
+  <div class="grid cols-2">
+    <div class="note bad">
+      <strong>shield_tome 实际是双重减伤</strong><br>
+      不仅 +2 护甲/级（<code>recalculateTomeStats</code>），受伤后还会再 ×(1 − 0.05·level)。<br>
+      Lv 5 = +10 护甲 <strong>且</strong> 残余伤害 ×0.75。
+    </div>
+    <div class="note">
+      <strong>curse_tome 是风险/收益型</strong><br>
+      堆满后：敌人速度 +30%、刷新间隔 −30%、击杀 XP +60%、拾取 XP 不变。<br>
+      <code>spawnInterval × max(0.5, 1 − 0.10·level)</code>
+    </div>
+  </div>
+</section>
+
+<!-- ============= SHOP ============= -->
+<section id="shop">
+  <h2>永久商店（8 种）</h2>
+  <p class="sub">跨局保留，用银币购买。来源：<code>SHOP_UPGRADES</code> (<code>shop.ts:16</code>)</p>
+
+  <div id="shop-grid" class="grid cols-2"></div>
+</section>
+
+<!-- ============= COMBAT ============= -->
+<section id="combat">
+  <h2>战斗公式（乘法栈）</h2>
+  <p class="sub">代码里武器伤害 / 受伤 / 攻速 / XP 都经过多层乘法叠加，下面把每条乘法栈摊开。</p>
+
+  <h3>① 玩家造成伤害</h3>
+  <div class="flow">
+    <span class="box in">stats.damage</span>
+    <span class="arrow">×</span>
+    <span class="box mul">player.damageMultiplier<small>角色基础 + 商店 +5%/级</small></span>
+    <span class="arrow">×</span>
+    <span class="box mul">isCrit ? critDamage : 1<small>角色 + 商店 + precision</small></span>
+    <span class="arrow">→</span>
+    <span class="box out">round(...) finalDamage</span>
+  </div>
+
+  <h3>② 玩家受到伤害</h3>
+  <div class="flow">
+    <span class="box in">enemy.damage</span>
+    <span class="arrow">−</span>
+    <span class="box mul">player.armor<small>角色 + shield ×2/级 + 商店</small></span>
+    <span class="arrow">→</span>
+    <span class="box">max(1, ...)</span>
+    <span class="arrow">×</span>
+    <span class="box mul">(1 − shield_tome.lv × 0.05)<small>shield_tome 二次减伤</small></span>
+    <span class="arrow">→</span>
+    <span class="box out">round(...) finalDamage</span>
+  </div>
+
+  <h3>③ 攻速</h3>
+  <div class="flow">
+    <span class="box in">weapon.cooldownTimer</span>
+    <span class="arrow">−=</span>
+    <span class="box mul">dt × player.attackSpeedMultiplier<small>1.0 + attack_speed_tome.lv × 0.1</small></span>
+    <span class="arrow">→</span>
+    <span class="box out">≤ 0 触发开火</span>
+  </div>
+
+  <h3>④ XP 收益（4 层乘法）</h3>
+  <div class="flow">
+    <span class="box in">基础 XP</span>
+    <span class="arrow">×</span>
+    <span class="box mul">1 + xp_gain_tome.lv × 0.15<small>拾取阶段</small></span>
+    <span class="arrow">×</span>
+    <span class="box mul">1 + curse_tome.lv × 0.20<small>击杀阶段</small></span>
+    <span class="arrow">×</span>
+    <span class="box mul">商店 xp_gain<small>+10%/级</small></span>
+    <span class="arrow">×</span>
+    <span class="box mul">1 + min(combo × 0.05, 1.0)<small>连击系统</small></span>
+    <span class="arrow">→</span>
+    <span class="box out">最终 XP</span>
+  </div>
+
+  <h3>⑤ 银币结算（局末）</h3>
+  <pre><code>baseSilver  = floor(killCount × 0.5 + level × 5)
+victoryBonus = phase === 'victory' ? 100 : 0
+runSilver   = silverEarned                        // 局内拾取/宝箱/任务
+totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultiplier)</code></pre>
+</section>
+
+<!-- ============= ENEMIES ============= -->
+<section id="enemies">
+  <h2>敌人系统（6 种）</h2>
+  <p class="sub">来源：<code>EnemyType</code> (<code>types.ts:111</code>) + <code>ENEMY_CONFIGS</code> (<code>config.ts:113</code>)</p>
+
+  <table>
+    <tr>
+      <th>ID</th><th>中文</th>
+      <th class="num">HP</th><th class="num">伤害</th><th class="num">速度</th>
+      <th>行为</th>
+      <th class="num">XP</th><th class="num">攻 CD</th>
+      <th>精英</th><th class="num">出现 (s)</th><th class="num">权重</th>
+    </tr>
+    <tr><td><code>skeleton_soldier</code></td><td>骷髅步兵</td><td class="num">15</td><td class="num">5</td><td class="num">3.0</td><td><span class="badge chase">chase</span></td><td class="num">1</td><td class="num">1.5</td><td>—</td><td class="num">0</td><td class="num">40</td></tr>
+    <tr><td><code>zombie</code></td><td>僵尸</td><td class="num">30</td><td class="num">10</td><td class="num">1.5</td><td><span class="badge chase">chase</span></td><td class="num">3</td><td class="num">2.5</td><td>—</td><td class="num">60</td><td class="num">25</td></tr>
+    <tr><td><code>skeleton_archer</code></td><td>骷髅弓手</td><td class="num">12</td><td class="num">7</td><td class="num">2.5</td><td><span class="badge ranged">ranged · 8</span></td><td class="num">3</td><td class="num">3.0</td><td>—</td><td class="num">120</td><td class="num">15</td></tr>
+    <tr><td><code>skeleton_knight</code></td><td>骷髅骑士</td><td class="num">120</td><td class="num">20</td><td class="num">3.5</td><td><span class="badge charge">charge</span></td><td class="num">25</td><td class="num">2.0</td><td><span class="badge elite">精英</span></td><td class="num">180</td><td class="num">5</td></tr>
+    <tr><td><code>necromancer</code></td><td>死灵法师</td><td class="num">80</td><td class="num">15</td><td class="num">2.0</td><td><span class="badge ranged">ranged · 10</span></td><td class="num">30</td><td class="num">4.0</td><td><span class="badge elite">精英</span></td><td class="num">240</td><td class="num">3</td></tr>
+    <tr><td><code>gargoyle</code></td><td>石像鬼</td><td class="num">200</td><td class="num">25</td><td class="num">4.0</td><td><span class="badge dive">dive</span></td><td class="num">40</td><td class="num">3.0</td><td><span class="badge elite">精英</span></td><td class="num">360</td><td class="num">2</td></tr>
+  </table>
+
+  <h3>精英 Buff（50% 概率随机滚一种）</h3>
+  <div class="grid cols-3">
+    <div class="card" style="border-left: 3px solid var(--accent);"><h4>fast</h4><div style="font-size: 22px; font-weight: 700; color: var(--accent);">速度 ×1.4</div></div>
+    <div class="card" style="border-left: 3px solid var(--warn);"><h4>tanky</h4><div style="font-size: 22px; font-weight: 700; color: var(--warn);">血量 ×1.5</div></div>
+    <div class="card" style="border-left: 3px solid var(--bad);"><h4>damage</h4><div style="font-size: 22px; font-weight: 700; color: var(--bad);">伤害 ×1.5</div></div>
+  </div>
+
+  <h3>Mini-Boss</h3>
+  <div class="card">
+    <p>180 秒后每 120 秒一只（<code>spawnMiniBoss()</code> · <code>GameInstance.ts:1958</code>）</p>
+    <table>
+      <tr><th>属性</th><th>倍率</th></tr>
+      <tr><td>HP</td><td><span class="hl">×3</span></td></tr>
+      <tr><td>伤害</td><td><span class="hl">×2</span></td></tr>
+      <tr><td>体型</td><td><span class="hl">×1.5</span></td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ============= BOSS ============= -->
+<section id="boss">
+  <h2>Boss 战</h2>
+  <p class="sub">触发：540s · 基础 HP 2000（再 × <code>tier.bossHpMultiplier</code>）· 来源：<code>updateBossAI()</code> (<code>GameInstance.ts:2150</code>)</p>
+
+  <div class="hpbar">
+    <div class="seg p1">P1 · 100% – 60% HP</div>
+    <div class="seg p2">P2 · 60% – 30%</div>
+    <div class="seg p3">P3 · 30% – 0%（狂暴）</div>
+  </div>
+  <div class="hpbar-labels">
+    <span>速度 3.0</span>
+    <span>速度 4.0</span>
+    <span>速度 5.0</span>
+  </div>
+
+  <div class="grid cols-3" style="margin-top: 18px;">
+    <div class="card" style="border-top: 3px solid var(--good);">
+      <h3 style="color: var(--good);">阶段 1</h3>
+      <p>HP &gt; 60%</p>
+      <p style="color: var(--dim); font-size: 12.5px;">攻击间隔：2.5s + rand(0,1)</p>
+      <h4>攻击池</h4>
+      <ul style="padding-left: 18px;">
+        <li><code>melee_sweep</code> — 近战横扫</li>
+        <li><code>ground_slam</code> — 地面砸击</li>
+        <li><code>dark_bolt</code> — 暗黑弹</li>
+      </ul>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--warn);">
+      <h3 style="color: var(--warn);">阶段 2</h3>
+      <p>HP 30% – 60%</p>
+      <p style="color: var(--dim); font-size: 12.5px;">攻击间隔：2.5s + rand(0,1)</p>
+      <h4>攻击池</h4>
+      <ul style="padding-left: 18px;">
+        <li><code>melee_sweep</code></li>
+        <li><code>ground_slam</code></li>
+        <li><code>summon_wave</code> — 召唤小兵</li>
+        <li><code>charge</code> — 冲刺</li>
+        <li><code>dark_bolt</code></li>
+      </ul>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--bad);">
+      <h3 style="color: var(--bad);">阶段 3 <span class="badge elite">狂暴</span></h3>
+      <p>HP &lt; 30%</p>
+      <p style="color: var(--dim); font-size: 12.5px;">攻击间隔：1.5s + rand(0,1)（更密）</p>
+      <h4>攻击池</h4>
+      <ul style="padding-left: 18px;">
+        <li><code>aoe_explosion</code> — 全屏 AOE</li>
+        <li><code>dark_rain</code> — 暗黑雨</li>
+        <li><code>charge</code></li>
+        <li><code>summon_wave</code></li>
+        <li><code>melee_sweep</code></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============= QUESTS ============= -->
+<section id="quests">
+  <h2>任务系统（29 个）</h2>
+  <p class="sub">跨局累积进度，奖励永久解锁。来源：<code>QUESTS</code> (<code>quests.ts</code>)</p>
+
+  <h3>任务大类</h3>
+  <div class="grid cols-3">
+    <div class="card"><h4>击杀数 (<code>kill</code>)</h4><p>q1–q4 击杀 100 / 500 / 1000 / 5000</p></div>
+    <div class="card"><h4>存活时间 (<code>survive</code>)</h4><p>2 / 5 / 9 分钟</p></div>
+    <div class="card"><h4>累计等级 (<code>level</code>)</h4><p>到达 10 / 20 / 30 / 40 级</p></div>
+    <div class="card"><h4>武器进化 (<code>evolve</code>)</h4><p>完成进化 1 / 3 / 5 次</p></div>
+    <div class="card"><h4>Boss 击杀 (<code>boss</code>)</h4><p>Tier 1/2/3 击杀</p></div>
+    <div class="card"><h4>无伤存活 (<code>no_damage</code>)</h4><p>q25 — 5 分钟无伤</p></div>
+    <div class="card"><h4>银币收集 (<code>collect</code>)</h4><p>q26–q30 累计 500 ~ 25000</p></div>
+  </div>
+
+  <h3>奖励类型</h3>
+  <table>
+    <tr><th>类型</th><th>含义</th></tr>
+    <tr><td><code>silver</code></td><td>直接给银币</td></tr>
+    <tr><td><code>weapon_unlock</code></td><td>解锁武器</td></tr>
+    <tr><td><code>character_unlock</code></td><td>解锁角色</td></tr>
+    <tr><td><code>weapon_slot</code></td><td>永久 +1 武器槽（q30）</td></tr>
+    <tr><td><code>tome_unlock</code></td><td>解锁典籍</td></tr>
+  </table>
+</section>
+
+<!-- ============= TELEPORTER ============= -->
+<section id="teleporter">
+  <h2>传送门 / 银币 / 存档</h2>
+
+  <h3>传送门 <span class="badge">仅 Tier 2/3</span></h3>
+  <table>
+    <tr><th>常量</th><th>值</th></tr>
+    <tr><td><code>TELEPORTER_APPEAR_TIME</code></td><td>300s（5 分钟）</td></tr>
+    <tr><td><code>TELEPORTER_RADIUS</code></td><td>2.0 单位</td></tr>
+    <tr><td><code>TELEPORTER_ACTIVATION_DURATION</code></td><td>3.0 秒（持续靠近）</td></tr>
+    <tr><td>数量</td><td>Tier 1 = 0 · Tier 2 = 1 · Tier 3 = 2（须全激活）</td></tr>
+  </table>
+
+  <h3>银币来源（关卡内）</h3>
+  <table>
+    <tr><th>来源</th><th>数额</th></tr>
+    <tr><td>银币拾取</td><td><code>pickup.value</code></td></tr>
+    <tr><td>幸运典籍每级附赠</td><td>+ luckTome.level / 拾取</td></tr>
+    <tr><td>宝箱（4 个 / 局）</td><td>50 ~ 200 随机</td></tr>
+    <tr><td>任务 q26 / q27 / q29</td><td>100 / 250 / 1000</td></tr>
+  </table>
+
+  <h3>存档结构 <code>save.ts</code></h3>
+  <pre><code>interface SaveData {
+  version: number;
+  silver: number;
+  shopLevels: Record&lt;string, number&gt;;
+  questsCompleted: string[];
+  weaponsUnlocked: string[];
+  charactersUnlocked: string[];
+  extraWeaponSlots: number;
+  stats: {
+    totalKills, totalRuns, bestSurvivalTime,
+    highestLevel, bossesDefeated, totalEvolutions
+  };
+}</code></pre>
+  <p style="color: var(--dim);">localStorage key: <code>megabonk_save</code></p>
+</section>
+
+<!-- ============= ARCHITECTURE ============= -->
+<section id="architecture">
+  <h2>架构</h2>
+  <p class="sub">双层分离：纯逻辑 + 渲染。两层解耦，渲染降帧不影响逻辑。</p>
+
+  <div class="arch">
+    <div class="arch-row">
+      <div class="arch-block core">
+        <div class="ttl">GameInstance（纯逻辑层）</div>
+        <div class="det"><code>game/core/source/GameInstance.ts</code> · 2577 行</div>
+        <ul>
+          <li>tick() — 60Hz 主循环</li>
+          <li>processPlayerMovement / updateEnemiesAI</li>
+          <li>fireWeapons / processCollisions</li>
+          <li>spawnEnemies / updateBossAI</li>
+          <li>selectUpgrade / checkWeaponEvolutions</li>
+          <li>recalculateTomeStats / endRun</li>
+        </ul>
+      </div>
+      <div class="arch-arrow">⇄<span class="lbl">getState()<br>snapshot</span></div>
+      <div class="arch-block client">
+        <div class="ttl">GameScene（渲染层）</div>
+        <div class="det"><code>game/client/source/index.ts</code> · 4568 行</div>
+        <ul>
+          <li>Three.js 场景 / 模型 / 动画</li>
+          <li>InstancedMesh 投射物 / 拾取物</li>
+          <li>VFX 粒子（500 池）</li>
+          <li>HUD / 升级 / 商店 / 任务 UI</li>
+          <li>相机系统（屏震 / 顿帧 / 动态 FOV）</li>
+          <li>读取 GameState 渲染（不写）</li>
+        </ul>
+      </div>
+    </div>
+
+    <div style="text-align: center; color: var(--dim); margin: 8px 0;">↓ &nbsp; ↓</div>
+
+    <div class="arch-row">
+      <div class="arch-block">
+        <div class="ttl">setInterval @ 60 Hz</div>
+        <div class="det">固定步长 dt = 16.67 ms</div>
+      </div>
+      <div></div>
+      <div class="arch-block">
+        <div class="ttl">requestAnimationFrame</div>
+        <div class="det">自适应帧率</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>核心规则</h3>
+  <div class="grid cols-2">
+    <div class="card">
+      <h4>必须遵守</h4>
+      <ol style="padding-left: 18px;">
+        <li>Three.js 命名空间导入：<code>import * as THREE from 'three'</code></li>
+        <li><code>game/core/</code> <strong>禁止</strong>导入 Three.js</li>
+        <li>所有 Three.js 对象必须设置 <code>.name</code></li>
+        <li>不修改 <code>packages/</code></li>
+        <li>导入路径用 <code>.ts</code> 扩展名</li>
+        <li>Three.js 在 build 时作为 external</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h4>不要这样做</h4>
+      <ul style="padding-left: 18px;">
+        <li>❌ 在 <code>game/core/</code> 里 <code>import * as THREE</code></li>
+        <li>❌ 修改 <code>packages/</code></li>
+        <li>❌ 用 <code>.clone()</code> 克隆带骨骼的 GLTF</li>
+        <li>❌ 把可调数值硬编码在 <code>client/index.ts</code></li>
+        <li>❌ 给 Three.js 对象不设 <code>.name</code></li>
+        <li>❌ 在热路径里 <code>new Vector3()</code></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============= PERFORMANCE ============= -->
+<section id="performance">
+  <h2>性能优化</h2>
+
+  <div class="grid cols-2">
+    <div class="card">
+      <h4>渲染层</h4>
+      <table>
+        <tr><th>措施</th><th>实现</th></tr>
+        <tr><td>InstancedMesh</td><td>投射物 200 / 拾取物 300</td></tr>
+        <tr><td>粒子 GPU 算大小</td><td>vertex shader 内 <code>gl_PointSize</code></td></tr>
+        <tr><td>AdditiveBlending</td><td>无需写 depth，省 fillrate</td></tr>
+        <tr><td><code>frustumCulled = false</code></td><td>关自动剔除，手动管理</td></tr>
+        <tr><td>高 DPI 限制</td><td>pixelRatio ≤ 2</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h4>逻辑层</h4>
+      <table>
+        <tr><th>措施</th><th>实现</th></tr>
+        <tr><td>SpatialHash 碰撞</td><td>网格 3 单位，避免 O(n²)</td></tr>
+        <tr><td>60Hz 固定步长</td><td><code>setInterval</code>，dt 稳定</td></tr>
+        <tr><td>渲染解耦</td><td>RAF 自适应帧率</td></tr>
+        <tr><td>临时变量预创建</td><td>模块级 <code>_tempVec</code>，热路径零 <code>new</code></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h3>对象池</h3>
+  <table>
+    <tr><th>对象</th><th class="num">池大小</th><th>来源常量</th></tr>
+    <tr><td>投射物 InstancedMesh</td><td class="num">200</td><td><code>MAX_PROJECTILES</code></td></tr>
+    <tr><td>拾取物 InstancedMesh</td><td class="num">300</td><td><code>MAX_PICKUPS</code></td></tr>
+    <tr><td>敌人 InstancedMesh（legacy）</td><td class="num">100</td><td><code>MAX_ENEMIES</code></td></tr>
+    <tr><td>VFX 粒子</td><td class="num">500</td><td><code>MAX_PARTICLES</code></td></tr>
+  </table>
+
+  <h3>性能指标目标</h3>
+  <table>
+    <tr><th>平台</th><th class="num">目标帧率</th><th class="num">最大同屏敌人</th><th class="num">最大粒子</th></tr>
+    <tr><td>桌面</td><td class="num">60 fps</td><td class="num">100</td><td class="num">500</td></tr>
+    <tr><td>移动端中端</td><td class="num">30–60 fps</td><td class="num">80</td><td class="num">300</td></tr>
+    <tr><td>Final Swarm（任意端）</td><td class="num">≥30 fps</td><td class="num">150</td><td class="num">500</td></tr>
+  </table>
+
+  <div class="note">
+    <strong>注：</strong>旧文档曾写「敌人 AI 决策分 4 帧轮流」，<strong>当前代码并未做此优化</strong>。如需加，可在 <code>enemy.aiPhase</code> 字段上按 <code>tick % 4 === aiPhase</code> 调度。
+  </div>
+</section>
+
+<!-- ============= DEV ============= -->
+<section id="dev">
+  <h2>开发指南</h2>
+
+  <h3>启动</h3>
+  <pre><code>pnpm install
+pnpm run dev
+# 浏览器打开 http://localhost:1513/</code></pre>
+  <p style="color: var(--dim);">环境变量：<code>VITE_I18N_LOCALE=zh VITE_I18N_MODE=dev</code></p>
+
+  <h3>常见改数值入口</h3>
+  <table>
+    <tr><th>想做什么</th><th>改哪里</th></tr>
+    <tr><td>改武器某级数值</td><td><code>config.ts WEAPON_STATS[type][level-1]</code></td></tr>
+    <tr><td>加新武器</td><td><code>types.ts WeaponType</code> → <code>config.ts WEAPON_STATS</code> → <code>weapons.ts fireWeapon</code> → <code>GameInstance.fireWeapon</code> → <code>client/index.ts</code> 颜色/图标 → i18n</td></tr>
+    <tr><td>加新典籍</td><td><code>types.ts TomeType</code> → <code>config.ts TOME_MAX_LEVELS</code> → <code>recalculateTomeStats()</code> 或对应业务路径加结算 → i18n</td></tr>
+    <tr><td>调难度</td><td><code>config.ts TIER_CONFIGS</code></td></tr>
+    <tr><td>调波次 / Final Swarm</td><td><code>config.ts WAVE_CONFIGS</code> · <code>GameInstance.ts:1881</code></td></tr>
+    <tr><td>调 Boss</td><td><code>config.ts BOSS_SPAWN_TIME / BOSS_HP</code> · <code>GameInstance.updateBossAI</code></td></tr>
+    <tr><td>加新角色</td><td><code>config.ts CHARACTER_CONFIGS</code> → <code>public/models/player_*.gltf</code> → i18n</td></tr>
+    <tr><td>调升级选项数量</td><td><code>GameInstance.ts:1854 generateUpgradeOptions(player, 3)</code></td></tr>
+  </table>
+
+  <h3>调试技巧</h3>
+  <pre><code>// 浏览器控制台
+window.__session.gameInstance.getState()
+
+// 查看典籍等级
+window.__session.gameInstance.getState().player.tomes</code></pre>
+
+  <h3>常见问题</h3>
+  <table>
+    <tr><th>现象</th><th>原因</th><th>解决</th></tr>
+    <tr><td>模型显示纯白</td><td>材质被覆盖</td><td>保留 GLTF 原材质</td></tr>
+    <tr><td>模型看不见</td><td>原始尺寸不一</td><td><code>Box3().setFromObject</code> 缩放</td></tr>
+    <tr><td>克隆动画错乱</td><td>用了 <code>.clone()</code></td><td>改 <code>SkeletonUtils.clone()</code></td></tr>
+    <tr><td>WASD 方向反</td><td>相机朝向</td><td>翻转 <code>moveX/moveY</code></td></tr>
+    <tr><td>粒子看不到</td><td>屏空间过小</td><td>调大 vertex shader 中 <code>aSize</code> 乘数</td></tr>
+    <tr><td>升级面板里出现 undefined</td><td>i18n 缺 key</td><td>检查 <code>i18n/zh.json</code> + <code>en.json</code></td></tr>
+  </table>
+</section>
+
+<!-- ============= ASSETS ============= -->
+<section id="assets">
+  <h2>美术资源</h2>
+  <p class="sub">来源：<code>public/models/</code> 实际文件 + <code>client/source/index.ts:387 loadModels()</code></p>
+
+  <div class="note">
+    资源风格混搭：场景 / 角色 / 敌人为 Quaternius Cyberpunk Game Kit；武器与拾取物为 Quaternius 经典中世纪 OBJ + MTL（金色变体用于进化态）。
+  </div>
+
+  <h3>实际加载的角色与敌人</h3>
+  <table>
+    <tr><th>名称</th><th>文件</th><th>渲染对象</th></tr>
+    <tr><td><code>player</code></td><td><code>player_cyberpunk.gltf</code></td><td>玩家</td></tr>
+    <tr><td><code>zombie_basic</code></td><td><code>zombie_basic.gltf</code></td><td>skeleton_soldier · skeleton_knight</td></tr>
+    <tr><td><code>zombie_arm</code></td><td><code>zombie_arm.gltf</code></td><td>skeleton_archer</td></tr>
+    <tr><td><code>zombie_chubby</code></td><td><code>zombie_chubby.gltf</code></td><td>zombie · necromancer</td></tr>
+    <tr><td><code>boss</code></td><td><code>enemy_large_gun.gltf</code></td><td>Boss</td></tr>
+  </table>
+
+  <h3>武器实例模型（OBJ + MTL）</h3>
+  <table>
+    <tr><th>武器</th><th>普通文件</th><th>金色（进化）文件</th></tr>
+    <tr><td>Axe</td><td><code>items/Axe_small.obj</code></td><td><code>Axe_Double_Golden.obj</code></td></tr>
+    <tr><td>Sword</td><td><code>items/Sword.obj</code></td><td><code>Sword_Golden.obj</code></td></tr>
+    <tr><td>Bow</td><td><code>items/Revolver.glb</code></td><td><code>Bow_Golden.obj</code></td></tr>
+    <tr><td>Dart（霰弹弹丸）</td><td><code>items/Dart.obj</code></td><td><code>Dart_Golden.obj</code></td></tr>
+    <tr><td>Katana / Dagger / Hammer</td><td colspan="2">已加载，预留扩展</td></tr>
+  </table>
+
+  <h3>拾取物几何体</h3>
+  <table>
+    <tr><th>文件</th><th>用途</th></tr>
+    <tr><td><code>items/Crystal1.obj</code></td><td>xp_green</td></tr>
+    <tr><td><code>items/Crystal2.obj</code></td><td>xp_blue</td></tr>
+    <tr><td><code>items/Crystal3.obj</code></td><td>xp_purple</td></tr>
+    <tr><td><code>items/Crystal4.obj</code></td><td>xp_orange</td></tr>
+    <tr><td><code>items/Heart.obj</code></td><td>health 大血包</td></tr>
+    <tr><td><code>items/Bone.obj</code></td><td>骨弹投射物几何</td></tr>
+    <tr><td><code>items/Coin.obj</code></td><td>银币拾取</td></tr>
+  </table>
+
+  <h3>纹理</h3>
+  <table>
+    <tr><th>文件</th><th>是否在用</th></tr>
+    <tr><td><code>textures/particle_circle.png</code></td><td><span class="hl">✅ 主粒子贴图</span></td></tr>
+    <tr><td><code>particle_flare / star / twirl.png</code></td><td>备选</td></tr>
+    <tr><td><code>texture_sign.png</code></td><td>跟随 sign GLTF</td></tr>
+  </table>
+
+  <details>
+    <summary>未启用的备选资源（可清理或留作扩展）</summary>
+    <pre style="margin-top: 8px;"><code>ac_stacked.gltf      antenna_1.gltf       computer.gltf
+enemy_2legs.gltf     enemy_2legs_gun.gltf
+enemy_flying.gltf    enemy_flying_gun.gltf
+enemy_large.gltf
+fence_cyber.fbx      fence.glb
+ghost.glb            pumpkin.glb          skeleton.glb        zombie.glb
+light_square.gltf    light_street_2.gltf
+lootbox.gltf         pickup_health.gltf   pickup_heart.gltf
+pipe_2.gltf
+player.glb           player_george.gltf   player_leela.gltf   player_stan.gltf
+rail_corner.gltf     rail_short.gltf
+sign_3.gltf          turret_cannon.gltf
+tv_1.gltf</code></pre>
+    <p style="color: var(--dim); margin-top: 8px;">删除前请运行 <code>pnpm build</code> 确认没有别的代码路径在引用。</p>
+  </details>
+</section>
+
+<footer>
+  Generated from <code>game/core/source/</code> · <code>game/client/source/</code> · <code>public/models/</code>
+  <br>
+  本页内容会与代码漂移；如有疑问以源码为准。
+</footer>
+
+</main>
+</div>
+
+<script>
+// ====================== Data ======================
+const WEAPONS = [
+  { id: 'sword', name: '大剑 Sword', icon: '🗡️', color: 'var(--c-sword)',
+    desc: '弧形剑气，pierce=999 穿透所有',
+    stats: [
+      { d: 12, c: 0.80, p: 1, b: 0, ch: 0, r: 2.5, a: 2.5, pi: 999, sp: 0 },
+      { d: 15, c: 0.80, p: 1, b: 0, ch: 0, r: 2.8, a: 2.8, pi: 999, sp: 0 },
+      { d: 18, c: 0.70, p: 1, b: 0, ch: 0, r: 3.0, a: 3.0, pi: 999, sp: 0 },
+      { d: 22, c: 0.70, p: 1, b: 0, ch: 0, r: 3.2, a: 3.2, pi: 999, sp: 0 },
+      { d: 26, c: 0.60, p: 1, b: 0, ch: 0, r: 3.5, a: 3.5, pi: 999, sp: 0 },
+      { d: 30, c: 0.60, p: 2, b: 0, ch: 0, r: 3.8, a: 3.8, pi: 999, sp: 0 },
+      { d: 35, c: 0.50, p: 2, b: 0, ch: 0, r: 4.0, a: 4.0, pi: 999, sp: 0 },
+      { d: 42, c: 0.50, p: 3, b: 0, ch: 0, r: 4.5, a: 4.5, pi: 999, sp: 0 },
+    ],
+    evo: { name: '死刑执行者', mul: 2.5, dmg: 105, cd: 0.5, p: 4, r: 4.5 },
+    fields: ['d','c','p','r','a']
+  },
+  { id: 'bone_bouncer', name: '弹射骨头 Bone Bouncer', icon: '🦴', color: 'var(--c-bone)',
+    desc: '直线投射物，命中后弹射',
+    stats: [
+      { d: 8,  c: 1.20, p: 1, b: 2, ch: 0, r: 0, a: 0, pi: 0, sp: 12 },
+      { d: 10, c: 1.20, p: 1, b: 2, ch: 0, r: 0, a: 0, pi: 0, sp: 12 },
+      { d: 10, c: 1.20, p: 1, b: 3, ch: 0, r: 0, a: 0, pi: 0, sp: 12 },
+      { d: 12, c: 1.00, p: 1, b: 3, ch: 0, r: 0, a: 0, pi: 0, sp: 13 },
+      { d: 12, c: 1.00, p: 2, b: 4, ch: 0, r: 0, a: 0, pi: 0, sp: 13 },
+      { d: 16, c: 1.00, p: 2, b: 4, ch: 0, r: 0, a: 0, pi: 0, sp: 14 },
+      { d: 16, c: 0.80, p: 2, b: 5, ch: 0, r: 0, a: 0, pi: 0, sp: 14 },
+      { d: 20, c: 0.80, p: 3, b: 6, ch: 0, r: 0, a: 0, pi: 0, sp: 15 },
+    ],
+    evo: { name: '骨暴风', mul: 2.0, dmg: 40, cd: 0.8, p: 4, b: 6 },
+    fields: ['d','c','p','b','sp']
+  },
+  { id: 'axe', name: '旋转飞斧 Axe', icon: '🪓', color: 'var(--c-axe)',
+    desc: '绕玩家轨道',
+    stats: [
+      { d: 10, c: 1.50, p: 1, b: 0, ch: 0, r: 3.0, a: 1.0, pi: 999, sp: 4 },
+      { d: 12, c: 1.50, p: 1, b: 0, ch: 0, r: 3.0, a: 1.0, pi: 999, sp: 4 },
+      { d: 14, c: 1.40, p: 2, b: 0, ch: 0, r: 3.5, a: 1.0, pi: 999, sp: 4.5 },
+      { d: 16, c: 1.30, p: 2, b: 0, ch: 0, r: 3.5, a: 1.2, pi: 999, sp: 4.5 },
+      { d: 18, c: 1.20, p: 3, b: 0, ch: 0, r: 4.0, a: 1.2, pi: 999, sp: 5 },
+      { d: 22, c: 1.10, p: 3, b: 0, ch: 0, r: 4.0, a: 1.4, pi: 999, sp: 5 },
+      { d: 26, c: 1.00, p: 4, b: 0, ch: 0, r: 4.5, a: 1.4, pi: 999, sp: 5.5 },
+      { d: 32, c: 0.90, p: 4, b: 0, ch: 0, r: 5.0, a: 1.6, pi: 999, sp: 6 },
+    ],
+    evo: { name: '狂战士之斧', mul: 2.0, dmg: 64, cd: 0.9, p: 5, r: 5.0 },
+    fields: ['d','c','p','r','a','sp']
+  },
+  { id: 'bow', name: '左轮手枪 Bow', icon: '🔫', color: 'var(--c-bow)',
+    desc: '前向高速子弹',
+    stats: [
+      { d: 18, c: 1.00, p: 1, b: 0, ch: 0, r: 30, a: 0, pi: 0, sp: 25 },
+      { d: 22, c: 1.00, p: 1, b: 0, ch: 0, r: 32, a: 0, pi: 0, sp: 26 },
+      { d: 26, c: 0.90, p: 1, b: 0, ch: 0, r: 34, a: 0, pi: 1, sp: 27 },
+      { d: 30, c: 0.85, p: 2, b: 0, ch: 0, r: 36, a: 0, pi: 1, sp: 28 },
+      { d: 35, c: 0.80, p: 2, b: 0, ch: 0, r: 38, a: 0, pi: 2, sp: 29 },
+      { d: 40, c: 0.75, p: 2, b: 0, ch: 0, r: 40, a: 0, pi: 2, sp: 30 },
+      { d: 48, c: 0.70, p: 3, b: 0, ch: 0, r: 42, a: 0, pi: 3, sp: 32 },
+      { d: 58, c: 0.60, p: 3, b: 0, ch: 0, r: 45, a: 0, pi: 4, sp: 35 },
+    ],
+    evo: { name: '沙漠之鹰', mul: 3.0, dmg: 174, cd: 0.6, p: 4, pi: 4 },
+    fields: ['d','c','p','r','pi','sp']
+  },
+  { id: 'lightning_staff', name: '闪电法杖 Lightning Staff', icon: '⚡', color: 'var(--c-lightning)',
+    desc: '即时连锁打击，无投射物',
+    stats: [
+      { d: 15, c: 2.00, p: 1, b: 0, ch: 3, r: 8,  a: 0, pi: 0, sp: 0 },
+      { d: 18, c: 2.00, p: 1, b: 0, ch: 3, r: 8,  a: 0, pi: 0, sp: 0 },
+      { d: 18, c: 2.00, p: 1, b: 0, ch: 4, r: 10, a: 0, pi: 0, sp: 0 },
+      { d: 22, c: 1.70, p: 1, b: 0, ch: 4, r: 10, a: 0, pi: 0, sp: 0 },
+      { d: 22, c: 1.70, p: 1, b: 0, ch: 5, r: 12, a: 0, pi: 0, sp: 0 },
+      { d: 28, c: 1.50, p: 1, b: 0, ch: 5, r: 12, a: 0, pi: 0, sp: 0 },
+      { d: 28, c: 1.50, p: 1, b: 0, ch: 6, r: 14, a: 0, pi: 0, sp: 0 },
+      { d: 35, c: 1.20, p: 1, b: 0, ch: 8, r: 40, a: 0, pi: 0, sp: 0 },
+    ],
+    evo: { name: '雷神', mul: 2.5, dmg: 88, cd: 1.2, ch: 9, r: 40 },
+    fields: ['d','c','ch','r']
+  },
+  { id: 'flame_ring', name: '烈焰环 Flame Ring', icon: '🔥', color: 'var(--c-flame)',
+    desc: '玩家身边持续 AoE',
+    stats: [
+      { d: 4,  c: 0.50, p: 0, b: 0, ch: 0, r: 3.5, a: 3.5, pi: 0, sp: 0 },
+      { d: 5,  c: 0.50, p: 0, b: 0, ch: 0, r: 3.5, a: 3.5, pi: 0, sp: 0 },
+      { d: 5,  c: 0.50, p: 0, b: 0, ch: 0, r: 4.5, a: 4.5, pi: 0, sp: 0 },
+      { d: 7,  c: 0.40, p: 0, b: 0, ch: 0, r: 4.5, a: 4.5, pi: 0, sp: 0 },
+      { d: 7,  c: 0.40, p: 0, b: 0, ch: 0, r: 5.5, a: 5.5, pi: 0, sp: 0 },
+      { d: 9,  c: 0.40, p: 0, b: 0, ch: 0, r: 5.5, a: 5.5, pi: 0, sp: 0 },
+      { d: 9,  c: 0.30, p: 0, b: 0, ch: 0, r: 6.5, a: 6.5, pi: 0, sp: 0 },
+      { d: 12, c: 0.30, p: 0, b: 0, ch: 0, r: 8.0, a: 8.0, pi: 0, sp: 0 },
+    ],
+    evo: null,
+    fields: ['d','c','r']
+  },
+  { id: 'shotgun', name: '霰弹枪 Shotgun', icon: '💥', color: 'var(--c-shotgun)',
+    desc: '前向扇形多弹',
+    stats: [
+      { d: 8,  c: 1.40, p: 5, b: 0, ch: 0, r: 12, a: 0, pi: 0, sp: 16 },
+      { d: 9,  c: 1.30, p: 5, b: 0, ch: 0, r: 13, a: 0, pi: 0, sp: 17 },
+      { d: 10, c: 1.20, p: 6, b: 0, ch: 0, r: 14, a: 0, pi: 0, sp: 18 },
+      { d: 12, c: 1.10, p: 6, b: 0, ch: 0, r: 15, a: 0, pi: 0, sp: 18 },
+      { d: 14, c: 1.00, p: 7, b: 0, ch: 0, r: 16, a: 0, pi: 1, sp: 19 },
+      { d: 16, c: 0.90, p: 7, b: 0, ch: 0, r: 17, a: 0, pi: 1, sp: 20 },
+      { d: 18, c: 0.80, p: 8, b: 0, ch: 0, r: 18, a: 0, pi: 1, sp: 21 },
+      { d: 22, c: 0.70, p: 9, b: 0, ch: 0, r: 20, a: 0, pi: 2, sp: 22 },
+    ],
+    evo: null,
+    fields: ['d','c','p','r','pi']
+  }
+];
+
+const FIELD_LABELS = {
+  d: '伤害', c: '冷却 (s)', p: '弹数', b: '弹射', ch: '链数',
+  r: '范围/距离', a: 'AoE 半径', pi: '穿透', sp: '速度'
+};
+
+const TOMES = [
+  { id: 'attack_speed_tome', zh: '攻速典籍', icon: '⚡', max: 5, effect: '攻速 +10%/级（影响所有武器 CD）' },
+  { id: 'speed_tome', zh: '速度典籍', icon: '🌬️', max: 5, effect: '移动速度 +8%/级' },
+  { id: 'attraction_tome', zh: '吸引典籍', icon: '🧲', max: 5, effect: '拾取范围 +1.2/级' },
+  { id: 'shield_tome', zh: '护盾典籍', icon: '🛡️', max: 5, effect: '+2 护甲/级 且 受伤再 ×(1−0.05·级) — 双重减伤' },
+  { id: 'precision_tome', zh: '精准典籍', icon: '🎯', max: 5, effect: '暴击率 +5%/级，暴伤 +10%/级' },
+  { id: 'thorns_tome', zh: '荆棘典籍', icon: '🌹', max: 5, effect: '每秒对周围敌人造成 level × 3 反伤' },
+  { id: 'knockback_tome', zh: '击退典籍', icon: '💢', max: 3, effect: '击退力 ×(1 + 0.30·级)' },
+  { id: 'luck_tome', zh: '幸运典籍', icon: '🍀', max: 3, effect: '升级稀有度滚点：common −10、rare/legendary 各 +5/级' },
+  { id: 'xp_gain_tome', zh: '经验典籍', icon: '📚', max: 5, effect: '拾取 XP ×(1 + 0.15·级)' },
+  { id: 'curse_tome', zh: '诅咒典籍', icon: '💀', max: 3, effect: '敌速 +10%/级、击杀 XP +20%/级、刷新间隔 −10%/级' },
+];
+
+const SHOP = [
+  { id: 'max_hp', zh: '最大生命', max: 10, eff: '+10 HP/级', costs: [50,100,150,200,300,400,500,650,800,1000], total: 4150 },
+  { id: 'damage', zh: '伤害', max: 10, eff: '+5% 伤害倍率/级', costs: [80,160,240,320,400,500,600,750,900,1200], total: 5350 },
+  { id: 'speed', zh: '速度', max: 5, eff: '+0.3 移动速度/级', costs: [100,200,350,500,700], total: 1850 },
+  { id: 'crit', zh: '暴击', max: 5, eff: '+2% 暴击率/级', costs: [120,250,400,600,900], total: 2270 },
+  { id: 'pickup_radius', zh: '拾取范围', max: 5, eff: '+0.5 拾取半径/级', costs: [60,120,200,300,450], total: 1130 },
+  { id: 'armor', zh: '护甲', max: 5, eff: '+1 护甲/级', costs: [100,200,350,500,750], total: 1900 },
+  { id: 'xp_gain', zh: '经验获取', max: 5, eff: '+10% XP/级', costs: [80,160,300,450,650], total: 1640 },
+  { id: 'starting_level', zh: '初始等级', max: 3, eff: '+1 起始等级/级', costs: [500,1000,2000], total: 3500 }
+];
+
+const EVOLUTIONS = [
+  { base: 'sword', baseZh: '大剑', tome: 'attack_speed_tome', tomeZh: '攻速典籍', lv: 5, name: '死刑执行者', mul: '×2.5', effect: 'massive_aoe' },
+  { base: 'axe', baseZh: '旋转飞斧', tome: 'knockback_tome', tomeZh: '击退典籍', lv: 3, name: '狂战士之斧', mul: '×2.0', effect: 'triple_orbit' },
+  { base: 'bone_bouncer', baseZh: '弹射骨头', tome: 'luck_tome', tomeZh: '幸运典籍', lv: 3, name: '骨暴风', mul: '×2.0', effect: 'explode_on_hit' },
+  { base: 'bow', baseZh: '左轮手枪', tome: 'precision_tome', tomeZh: '精准典籍', lv: 3, name: '沙漠之鹰', mul: '×3.0', effect: 'pierce_all' },
+  { base: 'lightning_staff', baseZh: '闪电法杖', tome: 'curse_tome', tomeZh: '诅咒典籍', lv: 3, name: '雷神', mul: '×2.5', effect: 'chain_all' },
+];
+
+const CHARACTERS = [
+  { id: 'megachad', zh: '超级猛男', icon: '💪', hp: 100, speed: 4.0, dmg: 1.2, armor: 0, crit: 0.08, weapon: 'sword' },
+  { id: 'roberto', zh: '罗伯托', icon: '🛡️', hp: 150, speed: 3.2, dmg: 1.0, armor: 3, crit: 0.05, weapon: 'axe' },
+  { id: 'skateboard_skeleton', zh: '滑板骷髅', icon: '💀', hp: 70, speed: 5.0, dmg: 0.9, armor: 0, crit: 0.10, weapon: 'bone_bouncer' },
+];
+
+// ====================== Render ======================
+
+// Characters
+(function renderChars() {
+  const wrap = document.getElementById('char-cards');
+  const maxes = { hp: 200, speed: 6, dmg: 1.5, armor: 5, crit: 0.15 };
+  for (const c of CHARACTERS) {
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.innerHTML = `
+      <h3>${c.icon} ${c.zh} <span class="badge">${c.id}</span></h3>
+      <div class="statbar"><span class="label">HP</span><div class="track"><div class="fill" style="width:${c.hp/maxes.hp*100}%"></div></div><span class="val">${c.hp}</span></div>
+      <div class="statbar"><span class="label">速度</span><div class="track"><div class="fill" style="width:${c.speed/maxes.speed*100}%"></div></div><span class="val">${c.speed.toFixed(1)}</span></div>
+      <div class="statbar"><span class="label">伤害倍率</span><div class="track"><div class="fill" style="width:${c.dmg/maxes.dmg*100}%"></div></div><span class="val">${c.dmg.toFixed(1)}×</span></div>
+      <div class="statbar"><span class="label">护甲</span><div class="track"><div class="fill" style="width:${c.armor/maxes.armor*100}%"></div></div><span class="val">${c.armor}</span></div>
+      <div class="statbar"><span class="label">暴击率</span><div class="track"><div class="fill" style="width:${c.crit/maxes.crit*100}%"></div></div><span class="val">${(c.crit*100).toFixed(0)}%</span></div>
+      <div style="margin-top:10px; color: var(--dim); font-size: 12.5px;">起始武器：<span class="hl">${c.weapon}</span></div>
+    `;
+    wrap.appendChild(div);
+  }
+})();
+
+// Weapons
+(function renderWeapons() {
+  const wrap = document.getElementById('weapons-grid');
+  for (const w of WEAPONS) {
+    const card = document.createElement('div');
+    card.className = 'wcard';
+    card.style.borderTop = `3px solid ${w.color}`;
+    card.style.marginBottom = '20px';
+
+    const fieldBars = w.fields.map(f => {
+      const values = w.stats.map(s => s[f]);
+      const evoVal = w.evo ? (
+        f === 'd' ? w.evo.dmg :
+        f === 'c' ? w.evo.cd :
+        f === 'p' ? (w.evo.p ?? values[7] + 1) :
+        f === 'r' ? (w.evo.r ?? values[7]) :
+        f === 'a' ? values[7] :
+        f === 'pi' ? (w.evo.pi ?? values[7]) :
+        f === 'sp' ? values[7] :
+        f === 'b' ? (w.evo.b ?? values[7]) :
+        f === 'ch' ? (w.evo.ch ?? values[7]) :
+        values[7]
+      ) : null;
+      const allVals = evoVal !== null ? [...values, evoVal] : values;
+      const max = Math.max(...allVals);
+      const isCooldown = f === 'c';
+      const min = Math.min(...allVals);
+
+      const bars = values.map((v, i) => {
+        const pct = isCooldown
+          ? (max === min ? 50 : 100 * (max - v) / (max - min) + 15)
+          : (max > 0 ? Math.max(8, v / max * 100) : 0);
+        return `<div class="bar" style="height:${pct}%; background:${w.color}; opacity:${0.35 + 0.65 * (i / 7)};">
+          <span class="v">${v}</span><span class="lvl">${i+1}</span>
+        </div>`;
+      }).join('');
+
+      const evoBar = evoVal !== null ? `<div class="bar evolved" style="height:${
+        isCooldown
+          ? (max === min ? 50 : 100 * (max - evoVal) / (max - min) + 15)
+          : (max > 0 ? Math.max(8, evoVal / max * 100) : 0)
+      }%;"><span class="v">${evoVal}</span><span class="lvl">9</span></div>` : '';
+
+      return `
+        <div class="barchart-wrap">
+          <div class="barchart-title">${FIELD_LABELS[f]}${isCooldown ? ' · 越短越好' : ''}</div>
+          <div class="barchart">${bars}${evoBar}</div>
+        </div>
+      `;
+    }).join('');
+
+    const evoLine = w.evo
+      ? `<div style="margin-top:6px;color:var(--accent-2);font-size:13px;font-weight:600;">⚡ 进化 → <strong>${w.evo.name}</strong>（伤害 ${w.evo.mul}，弹数 +1）</div>`
+      : `<div style="margin-top:6px;color:var(--muted);font-size:13px;">— 暂无进化路径 —</div>`;
+
+    const allFields = Object.keys(FIELD_LABELS).filter(f => w.stats.some(s => s[f] !== 0));
+    const headRow = '<tr><th>Lv</th>' + allFields.map(f => `<th>${FIELD_LABELS[f]}</th>`).join('') + '</tr>';
+    const bodyRows = w.stats.map((s, i) => {
+      const cells = allFields.map(f => `<td class="num">${s[f]}</td>`).join('');
+      return `<tr><td>${i+1}</td>${cells}</tr>`;
+    }).join('');
+
+    card.innerHTML = `
+      <div class="wcard-header">
+        <div class="icon">${w.icon}</div>
+        <div style="flex:1;">
+          <h3 class="name">${w.name}</h3>
+          <div class="desc">${w.desc} · <code>${w.id}</code></div>
+        </div>
+      </div>
+      <div class="wcard-body">
+        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:8px;">
+          ${fieldBars}
+        </div>
+        ${evoLine}
+        <details style="margin-top: 14px;">
+          <summary>查看完整数值表（Lv 1–8）</summary>
+          <table style="margin-top: 8px;">
+            <thead>${headRow}</thead>
+            <tbody>${bodyRows}</tbody>
+          </table>
+        </details>
+      </div>
+    `;
+    wrap.appendChild(card);
+  }
+})();
+
+// Evolutions
+(function renderEvo() {
+  const wrap = document.getElementById('evo-grid');
+  for (const e of EVOLUTIONS) {
+    const div = document.createElement('div');
+    div.className = 'evo';
+    div.innerHTML = `
+      <div class="evo-side">
+        <div class="nm">${e.baseZh}</div>
+        <div class="meta">基础武器 · Lv 8 满级</div>
+      </div>
+      <div class="evo-arrow">
+        →
+        <span class="req">${e.tomeZh} Lv ${e.lv}</span>
+      </div>
+      <div class="evo-side gold">
+        <div class="nm">⚡ ${e.name}</div>
+        <div class="meta">${e.mul} 伤害 · 弹数 +1 · ${e.effect}</div>
+      </div>
+    `;
+    wrap.appendChild(div);
+  }
+})();
+
+// Tomes
+(function renderTomes() {
+  const wrap = document.getElementById('tome-grid');
+  for (const t of TOMES) {
+    const pips = Array.from({length: t.max}).map(() => `<span class="pip on"></span>`).join('');
+    const div = document.createElement('div');
+    div.className = 'tcard';
+    div.innerHTML = `
+      <h4>${t.icon} ${t.zh}</h4>
+      <div class="effect">${t.effect}</div>
+      <div class="footer">
+        <span class="pips">${pips}</span>
+        <span>上限 Lv ${t.max}</span>
+      </div>
+    `;
+    wrap.appendChild(div);
+  }
+})();
+
+// Shop
+(function renderShop() {
+  const wrap = document.getElementById('shop-grid');
+  const maxTotal = Math.max(...SHOP.map(s => s.total));
+  for (const s of SHOP) {
+    const costSpans = s.costs.map(c => `<span style="display:inline-block;width:48px;text-align:right;">${c}</span>`).join(' → ');
+    const pct = s.total / maxTotal * 100;
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.innerHTML = `
+      <h4>${s.zh} <span class="badge">${s.id}</span></h4>
+      <div style="color:var(--dim); font-size:12.5px; margin: 4px 0 12px;">${s.eff} · 上限 Lv ${s.max}</div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size:11.5px; color:var(--text); background:var(--bg-2); padding:8px 10px; border-radius:6px; overflow-x:auto;">
+        ${costSpans}
+      </div>
+      <div class="statbar" style="margin-top:10px;">
+        <span class="label">总费用</span>
+        <div class="track"><div class="fill" style="width:${pct}%;"></div></div>
+        <span class="val">${s.total}</span>
+      </div>
+    `;
+    wrap.appendChild(div);
+  }
+})();
+
+// XP curve (SVG, light theme)
+(function renderXpChart() {
+  const svg = document.getElementById('xpchart');
+  const W = 800, H = 200, PAD_L = 40, PAD_R = 16, PAD_T = 24, PAD_B = 24;
+  const points = [];
+  for (let L = 1; L <= 40; L++) {
+    points.push({ L, xp: Math.floor(10 * (1 + L * 0.35)) });
+  }
+  const maxXp = Math.max(...points.map(p => p.xp));
+  const x = L => PAD_L + (L - 1) / 39 * (W - PAD_L - PAD_R);
+  const y = xp => H - PAD_B - (xp / maxXp) * (H - PAD_T - PAD_B);
+
+  let grid = '';
+  for (let i = 0; i <= 4; i++) {
+    const v = Math.round(maxXp * i / 4);
+    grid += `<line x1="${PAD_L}" x2="${W-PAD_R}" y1="${y(v)}" y2="${y(v)}" stroke="#d9e0ed" stroke-dasharray="3,3"/>`;
+    grid += `<text x="${PAD_L - 6}" y="${y(v)+4}" fill="#8a93ac" font-size="10" text-anchor="end">${v}</text>`;
+  }
+
+  let xLabels = '';
+  for (const L of [1, 10, 20, 30, 40]) {
+    xLabels += `<text x="${x(L)}" y="${H-6}" fill="#8a93ac" font-size="10" text-anchor="middle">L${L}</text>`;
+  }
+
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(p.L)} ${y(p.xp)}`).join(' ');
+  const area = path + ` L ${x(40)} ${H - PAD_B} L ${x(1)} ${H - PAD_B} Z`;
+
+  let dots = '';
+  for (const L of [1, 5, 10, 20, 30, 40]) {
+    const p = points[L-1];
+    dots += `<circle cx="${x(L)}" cy="${y(p.xp)}" r="4" fill="#2563eb" stroke="#fff" stroke-width="2"/>`;
+    dots += `<text x="${x(L)}" y="${y(p.xp)-10}" fill="#2563eb" font-size="11" text-anchor="middle" font-weight="600">${p.xp}</text>`;
+  }
+
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#2563eb" stop-opacity="0.18"/>
+        <stop offset="100%" stop-color="#2563eb" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    ${grid}
+    <path d="${area}" fill="url(#grad)"/>
+    <path d="${path}" stroke="#2563eb" stroke-width="2" fill="none"/>
+    ${dots}
+    ${xLabels}
+    <text x="${W/2}" y="14" fill="#5b6685" font-size="11" text-anchor="middle">每级所需 XP（floor(10 × (1 + L × 0.35)))</text>
+  `;
+})();
+
+// ====================== Tab switching ======================
+(function initTabs() {
+  const links = document.querySelectorAll('#nav a');
+  const sections = document.querySelectorAll('section');
+
+  function showTab(id) {
+    let found = false;
+    sections.forEach(s => {
+      const match = s.id === id;
+      s.classList.toggle('active', match);
+      if (match) found = true;
+    });
+    if (!found && sections[0]) {
+      sections[0].classList.add('active');
+      id = sections[0].id;
+    }
+    links.forEach(a => a.classList.toggle('active', a.dataset.tab === id));
+    if (history.replaceState) history.replaceState(null, '', '#' + id);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+
+  links.forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      showTab(a.dataset.tab);
+    });
+  });
+
+  window.addEventListener('hashchange', () => {
+    const id = location.hash.substring(1);
+    if (id) showTab(id);
+  });
+
+  const initial = location.hash.substring(1) || 'overview';
+  showTab(initial);
+})();
+</script>
+
+</body>
+</html>

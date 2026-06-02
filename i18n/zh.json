@@ -36,32 +36,20 @@
   "upgrade": {
     "title": "选择升级",
     "weapon": {
-      "sword": "大剑",
+      "sword": "武士刀",
       "sword_desc": "近战横扫周围敌人",
       "bone_bouncer": "弹射骨头",
       "bone_bouncer_desc": "向最近敌人发射弹跳骨头",
       "axe": "旋转飞斧",
       "axe_desc": "环绕玩家旋转的飞斧",
-      "revolver": "左轮手枪",
-      "revolver_desc": "快速自动瞄准射击",
-      "bow": "弓箭",
-      "bow_desc": "高速前方射箭",
+      "bow": "左轮手枪",
+      "bow_desc": "快速自动瞄准射击",
       "lightning_staff": "闪电法杖",
       "lightning_staff_desc": "释放连锁闪电攻击",
-      "fire_staff": "火焰法杖",
-      "fire_staff_desc": "火球术，命中后范围爆炸",
       "flame_ring": "烈焰环",
       "flame_ring_desc": "周围持续火焰伤害",
-      "tornado": "龙卷风",
-      "tornado_desc": "旋转穿透所有敌人的投射物",
       "shotgun": "霰弹枪",
-      "shotgun_desc": "面前方向扇形散射",
-      "black_hole": "黑洞",
-      "black_hole_desc": "引力场拉拽并伤害敌人",
-      "katana": "武士刀",
-      "katana_desc": "快速前方斩击",
-      "aura": "光环",
-      "aura_desc": "扩展伤害环并击退敌人"
+      "shotgun_desc": "面前方向扇形散射"
     },
     "tome": {
       "attack_speed_tome": "攻速典籍",
@@ -114,11 +102,8 @@
     "sword": "死刑执行者",
     "axe": "狂战士之斧",
     "bone_bouncer": "骨暴风",
-    "revolver": "沙漠之鹰",
-    "lightning_staff": "雷神",
-    "fire_staff": "地狱火",
-    "tornado": "飓风",
-    "black_hole": "奇点"
+    "bow": "沙漠之鹰",
+    "lightning_staff": "雷神"
   },
   "shop": {
     "title": "永久升级",

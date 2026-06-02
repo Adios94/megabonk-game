@@ -4,16 +4,10 @@
  * - Sword: melee damage arc in front of player
  * - Bone Bouncer: bouncing projectile
  * - Axe: orbiting projectiles around player (Vampire Survivors style)
- * - Revolver: fast aimed shots at nearest enemy
  * - Bow: forward arrow (high speed, single target)
  * - Lightning Staff: chain lightning (instant)
- * - Fire Staff: slow fireball with AOE on hit
  * - Flame Ring: constant AOE around player
- * - Tornado: slow spinning projectile, infinite pierce, curves
  * - Shotgun: spread shot forward
- * - Black Hole: gravitational pull area
- * - Katana: fast forward slash projectile
- * - Aura: expanding damage ring around player
  */
 
 import type { EnemyState, PlayerState, ProjectileState, WeaponType, DamageEvent } from './types.ts';
@@ -22,7 +16,7 @@ import { distanceBetween, normalizeDirection } from './physics.ts';
 
 /**
  * Fire a weapon, returning new projectiles to add.
- * For instant-hit weapons (lightning_staff, sword, flame_ring, aura), damage events are pushed directly.
+ * For instant-hit weapons (lightning_staff, sword, flame_ring), damage events are pushed directly.
  */
 export function fireWeapon(
   weaponType: WeaponType,
@@ -43,32 +37,39 @@ export function fireWeapon(
 
   switch (weaponType) {
     case 'sword': {
-      // Melee swipe: damage all enemies in a forward arc
-      const arcAngle = Math.PI * 0.6; // 108 degree arc
-      const swipeCount = stats.projectileCount;
-      for (let s = 0; s < swipeCount; s++) {
-        const baseAngle = playerState.rotation + (s - (swipeCount - 1) / 2) * 0.3;
-        for (const enemy of enemies) {
-          if (enemy.hp <= 0) continue;
-          const dist = distanceBetween(playerState.x, playerState.z, enemy.x, enemy.z);
-          if (dist > stats.range) continue;
-
-          // Check if enemy is within arc
-          const angleToEnemy = Math.atan2(enemy.x - playerState.x, enemy.z - playerState.z);
-          let angleDiff = angleToEnemy - baseAngle;
-          while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-          while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-
-          if (Math.abs(angleDiff) <= arcAngle / 2) {
-            const { finalDamage, isCrit } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
-            enemy.hp -= finalDamage;
-            enemy.hitFlashTimer = 0.15;
-            damageEvents.push({
-              x: enemy.x, y: 1.0, z: enemy.z,
-              damage: finalDamage, isCrit, isPlayerDamage: false,
-            });
-          }
+      // Sword qi projectile: wide arc slash wave
+      const count = stats.projectileCount;
+      for (let i = 0; i < count; i++) {
+        let angle = playerState.rotation;
+        if (count > 1) {
+          angle += ((i - (count - 1) / 2) * 0.4);
         }
+
+        const target = findNearestEnemyInRange(playerState.x, playerState.z, enemies, stats.range);
+        let vx: number, vz: number;
+        if (target) {
+          const dir = normalizeDirection(target.x - playerState.x, target.z - playerState.z);
+          vx = dir.x * stats.speed;
+          vz = dir.z * stats.speed;
+        } else {
+          vx = Math.sin(angle) * stats.speed;
+          vz = Math.cos(angle) * stats.speed;
+        }
+
+        const { finalDamage } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
+        projectiles.push({
+          id: currentId++,
+          weaponType: 'sword',
+          x: playerState.x, y: 1.0, z: playerState.z,
+          vx, vy: 0, vz,
+          damage: finalDamage,
+          bouncesLeft: 0,
+          pierceLeft: stats.pierce,
+          lifetime: 0.6,
+          radius: 0.8,
+          fromPlayer: true,
+          hitEnemyIds: [],
+        });
       }
       break;
     }
@@ -146,40 +147,6 @@ export function fireWeapon(
       break;
     }
 
-    case 'revolver': {
-      // Auto-aimed fast shots at nearest enemy
-      const count = stats.projectileCount;
-      for (let i = 0; i < count; i++) {
-        const target = findNearestEnemyInRange(playerState.x, playerState.z, enemies, stats.range);
-        let vx: number, vz: number;
-
-        if (target) {
-          const dir = normalizeDirection(target.x - playerState.x, target.z - playerState.z);
-          vx = dir.x * stats.speed;
-          vz = dir.z * stats.speed;
-        } else {
-          vx = Math.sin(playerState.rotation) * stats.speed;
-          vz = Math.cos(playerState.rotation) * stats.speed;
-        }
-
-        const { finalDamage } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
-        projectiles.push({
-          id: currentId++,
-          weaponType: 'revolver',
-          x: playerState.x, y: 1.0, z: playerState.z,
-          vx, vy: 0, vz,
-          damage: finalDamage,
-          bouncesLeft: 0,
-          pierceLeft: stats.pierce,
-          lifetime: 2.0,
-          radius: 0.2,
-          fromPlayer: true,
-          hitEnemyIds: [],
-        });
-      }
-      break;
-    }
-
     case 'bow': {
       // Forward arrow (high speed, single target, long range)
       const count = stats.projectileCount;
@@ -220,66 +187,28 @@ export function fireWeapon(
     }
 
     case 'lightning_staff': {
-      // Instant hit: find nearest enemy in range, chain to nearby enemies
-      const primaryTarget = findNearestEnemyInRange(playerState.x, playerState.z, enemies, stats.range);
-      if (primaryTarget) {
-        const chainTargets = findChainTargets(primaryTarget, enemies, stats.chains, stats.range * 0.6);
-
-        const { finalDamage, isCrit } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
-        primaryTarget.hp -= finalDamage;
-        primaryTarget.hitFlashTimer = 0.15;
-        damageEvents.push({
-          x: primaryTarget.x, y: 1.0, z: primaryTarget.z,
-          damage: finalDamage, isCrit, isPlayerDamage: false,
-        });
-
-        for (let i = 0; i < chainTargets.length; i++) {
-          const chainTarget = chainTargets[i];
-          const chainMult = 1 - (i + 1) * 0.1;
-          const { finalDamage: chainDmg, isCrit: chainCrit } = computeDamage(
-            stats.damage * Math.max(0.3, chainMult), damageMultiplier, critChance, critDamage,
-          );
-          chainTarget.hp -= chainDmg;
-          chainTarget.hitFlashTimer = 0.15;
-          damageEvents.push({
-            x: chainTarget.x, y: 1.0, z: chainTarget.z,
-            damage: chainDmg, isCrit: chainCrit, isPlayerDamage: false,
-          });
-        }
+      // Strike random enemies within range (instant hit, no projectile movement)
+      const hitCount = stats.projectileCount + (stats.chains ?? 0);
+      const inRange: typeof enemies = [];
+      for (const enemy of enemies) {
+        if (enemy.hp <= 0) continue;
+        const dist = distanceBetween(playerState.x, playerState.z, enemy.x, enemy.z);
+        if (dist <= stats.range) inRange.push(enemy);
       }
-      break;
-    }
-
-    case 'fire_staff': {
-      // Slow fireball with AOE on hit
-      const count = stats.projectileCount;
-      for (let i = 0; i < count; i++) {
-        const target = findNearestEnemy(playerState.x, playerState.z, enemies, -1);
-        let vx: number, vz: number;
-
-        if (target) {
-          const dir = normalizeDirection(target.x - playerState.x, target.z - playerState.z);
-          vx = dir.x * stats.speed;
-          vz = dir.z * stats.speed;
-        } else {
-          const angle = playerState.rotation + (count > 1 ? (i - (count - 1) / 2) * 0.4 : 0);
-          vx = Math.sin(angle) * stats.speed;
-          vz = Math.cos(angle) * stats.speed;
-        }
-
-        const { finalDamage } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
-        projectiles.push({
-          id: currentId++,
-          weaponType: 'fire_staff',
-          x: playerState.x, y: 1.0, z: playerState.z,
-          vx, vy: 0, vz,
-          damage: finalDamage,
-          bouncesLeft: 0,
-          pierceLeft: 0,
-          lifetime: 4.0,
-          radius: stats.aoeRadius,
-          fromPlayer: true,
-          hitEnemyIds: [],
+      // Shuffle and pick up to hitCount
+      for (let i = inRange.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [inRange[i], inRange[j]] = [inRange[j], inRange[i]];
+      }
+      const targets = inRange.slice(0, hitCount);
+      for (const target of targets) {
+        const { finalDamage, isCrit } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
+        target.hp -= finalDamage;
+        target.hitFlashTimer = 0.15;
+        damageEvents.push({
+          x: target.x, y: 1.0, z: target.z,
+          damage: finalDamage, isCrit, isPlayerDamage: false,
+          weaponType: 'lightning_staff',
         });
       }
       break;
@@ -287,39 +216,6 @@ export function fireWeapon(
 
     case 'flame_ring': {
       // Handled directly in game tick as AOE — returns nothing
-      break;
-    }
-
-    case 'aura': {
-      // Expanding damage ring — handled like flame_ring but grows outward
-      break;
-    }
-
-    case 'tornado': {
-      // Slow spinning projectile, infinite pierce, curves
-      const count = stats.projectileCount;
-      for (let i = 0; i < count; i++) {
-        const angle = playerState.rotation + (i / count) * Math.PI * 2;
-        const vx = Math.sin(angle) * stats.speed;
-        const vz = Math.cos(angle) * stats.speed;
-
-        const { finalDamage } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
-        projectiles.push({
-          id: currentId++,
-          weaponType: 'tornado',
-          x: playerState.x, y: 0.5, z: playerState.z,
-          vx, vy: 0, vz,
-          damage: finalDamage,
-          bouncesLeft: 0,
-          pierceLeft: stats.pierce,
-          lifetime: 8.0,
-          radius: stats.aoeRadius,
-          fromPlayer: true,
-          hitEnemyIds: [],
-          spinning: true,
-          spinAngle: angle,
-        });
-      }
       break;
     }
 
@@ -353,80 +249,6 @@ export function fireWeapon(
       break;
     }
 
-    case 'black_hole': {
-      // Place a gravitational point that pulls enemies in and damages
-      const count = stats.projectileCount;
-      for (let i = 0; i < count; i++) {
-        // Place near nearest cluster of enemies or random direction
-        const target = findNearestEnemy(playerState.x, playerState.z, enemies, -1);
-        let px: number, pz: number;
-        if (target) {
-          px = target.x;
-          pz = target.z;
-        } else {
-          const angle = playerState.rotation + (i / count) * Math.PI * 2;
-          px = playerState.x + Math.sin(angle) * 8;
-          pz = playerState.z + Math.cos(angle) * 8;
-        }
-
-        const { finalDamage } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
-        projectiles.push({
-          id: currentId++,
-          weaponType: 'black_hole',
-          x: px, y: 0.5, z: pz,
-          vx: 0, vy: 0, vz: 0,
-          damage: finalDamage,
-          bouncesLeft: 0,
-          pierceLeft: 999,
-          lifetime: 4.0,
-          radius: stats.aoeRadius,
-          fromPlayer: true,
-          hitEnemyIds: [],
-          gravitational: true,
-          gravityStrength: 8.0,
-        });
-      }
-      break;
-    }
-
-    case 'katana': {
-      // Fast forward slash projectile
-      const count = stats.projectileCount;
-      for (let i = 0; i < count; i++) {
-        let angle = playerState.rotation;
-        if (count > 1) {
-          angle += ((i - (count - 1) / 2) * 0.2);
-        }
-
-        // Aim at nearest enemy
-        const target = findNearestEnemyInRange(playerState.x, playerState.z, enemies, stats.range);
-        let vx: number, vz: number;
-        if (target) {
-          const dir = normalizeDirection(target.x - playerState.x, target.z - playerState.z);
-          vx = dir.x * stats.speed;
-          vz = dir.z * stats.speed;
-        } else {
-          vx = Math.sin(angle) * stats.speed;
-          vz = Math.cos(angle) * stats.speed;
-        }
-
-        const { finalDamage } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
-        projectiles.push({
-          id: currentId++,
-          weaponType: 'katana',
-          x: playerState.x, y: 1.0, z: playerState.z,
-          vx, vy: 0, vz,
-          damage: finalDamage,
-          bouncesLeft: 0,
-          pierceLeft: stats.pierce,
-          lifetime: 0.8,
-          radius: stats.aoeRadius,
-          fromPlayer: true,
-          hitEnemyIds: [],
-        });
-      }
-      break;
-    }
   }
 
   return { projectiles, nextId: currentId };
@@ -473,22 +295,6 @@ export function updateOrbitingProjectile(
   proj.orbitAngle += proj.orbitSpeed * dt;
   proj.x = playerX + Math.cos(proj.orbitAngle) * proj.orbitRadius;
   proj.z = playerZ + Math.sin(proj.orbitAngle) * proj.orbitRadius;
-}
-
-/**
- * Update spinning/curving projectiles (tornado).
- */
-export function updateSpinningProjectile(proj: ProjectileState, dt: number): void {
-  if (!proj.spinning || proj.spinAngle === undefined) return;
-  // Slowly curve the trajectory
-  proj.spinAngle += 1.2 * dt;
-  const speed = Math.sqrt(proj.vx * proj.vx + proj.vz * proj.vz);
-  if (speed > 0) {
-    const currentAngle = Math.atan2(proj.vx, proj.vz);
-    const newAngle = currentAngle + 0.8 * dt;
-    proj.vx = Math.sin(newAngle) * speed;
-    proj.vz = Math.cos(newAngle) * speed;
-  }
 }
 
 /**

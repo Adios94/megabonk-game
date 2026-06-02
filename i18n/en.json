@@ -36,32 +36,20 @@
   "upgrade": {
     "title": "Choose Upgrade",
     "weapon": {
-      "sword": "Sword",
+      "sword": "Katana",
       "sword_desc": "Melee swipe around player",
       "bone_bouncer": "Bone Bouncer",
       "bone_bouncer_desc": "Launch bouncing bones at nearest enemy",
       "axe": "Spinning Axe",
       "axe_desc": "Orbiting axes around player",
-      "revolver": "Revolver",
-      "revolver_desc": "Fast auto-aimed bullet shots",
-      "bow": "Bow",
-      "bow_desc": "High-speed forward arrow shots",
+      "bow": "Revolver",
+      "bow_desc": "Fast auto-aimed bullet shots",
       "lightning_staff": "Lightning Staff",
       "lightning_staff_desc": "Chain lightning attack",
-      "fire_staff": "Fire Staff",
-      "fire_staff_desc": "Fireball with area explosion",
       "flame_ring": "Flame Ring",
       "flame_ring_desc": "Continuous fire damage around you",
-      "tornado": "Tornado",
-      "tornado_desc": "Spinning projectile that pierces all",
       "shotgun": "Shotgun",
-      "shotgun_desc": "Spread shot in facing direction",
-      "black_hole": "Black Hole",
-      "black_hole_desc": "Gravitational pull that damages enemies",
-      "katana": "Katana",
-      "katana_desc": "Fast forward slash attack",
-      "aura": "Aura",
-      "aura_desc": "Expanding damage ring with knockback"
+      "shotgun_desc": "Spread shot in facing direction"
     },
     "tome": {
       "attack_speed_tome": "Attack Speed Tome",
@@ -114,11 +102,8 @@
     "sword": "Dexecutioner",
     "axe": "Berserker Axe",
     "bone_bouncer": "Bone Storm",
-    "revolver": "Deagle",
-    "lightning_staff": "Thunder God",
-    "fire_staff": "Inferno",
-    "tornado": "Hurricane",
-    "black_hole": "Singularity"
+    "bow": "Deagle",
+    "lightning_staff": "Thunder God"
   },
   "shop": {
     "title": "Permanent Upgrades",

@@ -4,5 +4,11 @@
   "type": "module",
   "main": "source/index.ts",
   "module": "source/index.ts",
-  "types": "source/index.ts"
+  "types": "source/index.ts",
+  "dependencies": {
+    "miniplex": "^2.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
 }

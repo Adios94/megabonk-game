@@ -30,16 +30,10 @@ export type WeaponType =
   | 'sword'
   | 'bone_bouncer'
   | 'axe'
-  | 'revolver'
   | 'bow'
   | 'lightning_staff'
-  | 'fire_staff'
   | 'flame_ring'
-  | 'tornado'
-  | 'shotgun'
-  | 'black_hole'
-  | 'katana'
-  | 'aura';
+  | 'shotgun';
 
 export interface WeaponState {
   type: WeaponType;
@@ -181,12 +175,10 @@ export interface ProjectileState {
   orbitSpeed?: number;
   gravitational?: boolean;
   gravityStrength?: number;
-  spinning?: boolean;
-  spinAngle?: number;
 }
 
 // --- Pickups ---
-export type PickupType = 'xp_green' | 'xp_blue' | 'xp_purple' | 'xp_orange' | 'silver';
+export type PickupType = 'xp_green' | 'xp_blue' | 'xp_purple' | 'xp_orange' | 'silver' | 'health' | 'health_small';
 
 export interface PickupState {
   id: number;
@@ -197,6 +189,15 @@ export interface PickupState {
   value: number;
   lifetime: number;
   attracted: boolean;
+}
+
+// --- Chest ---
+export interface ChestState {
+  id: number;
+  x: number;
+  z: number;
+  opened: boolean;
+  reward: number; // silver amount
 }
 
 // --- Teleporter ---
@@ -253,6 +254,8 @@ export interface DamageEvent {
   damage: number;
   isCrit: boolean;
   isPlayerDamage: boolean;
+  /** Optional source weapon — used by client to drive weapon-specific VFX. */
+  weaponType?: WeaponType;
 }
 
 // --- Game State ---
@@ -276,6 +279,7 @@ export interface GameState {
   enemies: EnemyState[];
   projectiles: ProjectileState[];
   pickups: PickupState[];
+  chests: ChestState[];
   boss: BossState | null;
   upgradeOptions: UpgradeOption[] | null;
   damageEvents: DamageEvent[];

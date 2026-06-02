@@ -34,14 +34,13 @@ export const QUESTS: Quest[] = [
   { id: 'q6', description: 'quest.kill_10000', type: 'kill', target: 10000, reward: { type: 'silver', value: 500 } },
 
   // Survival quests
-  { id: 'q7', description: 'quest.survive_2min', type: 'survive', target: 120, reward: { type: 'weapon_unlock', value: 'revolver' } },
+  { id: 'q7', description: 'quest.survive_2min', type: 'survive', target: 120, reward: { type: 'weapon_unlock', value: 'bow' } },
   { id: 'q8', description: 'quest.survive_5min', type: 'survive', target: 300, reward: { type: 'weapon_unlock', value: 'lightning_staff' } },
   { id: 'q9', description: 'quest.survive_7min', type: 'survive', target: 420, reward: { type: 'silver', value: 200 } },
-  { id: 'q10', description: 'quest.survive_9min', type: 'survive', target: 540, reward: { type: 'weapon_unlock', value: 'black_hole' } },
 
   // Level quests
   { id: 'q11', description: 'quest.reach_level_10', type: 'level', target: 10, reward: { type: 'silver', value: 100 } },
-  { id: 'q12', description: 'quest.reach_level_20', type: 'level', target: 20, reward: { type: 'weapon_unlock', value: 'katana' } },
+  { id: 'q12', description: 'quest.reach_level_20', type: 'level', target: 20, reward: { type: 'weapon_unlock', value: 'flame_ring' } },
   { id: 'q13', description: 'quest.reach_level_30', type: 'level', target: 30, reward: { type: 'silver', value: 300 } },
   { id: 'q14', description: 'quest.reach_level_40', type: 'level', target: 40, reward: { type: 'silver', value: 500 } },
 
@@ -60,12 +59,12 @@ export const QUESTS: Quest[] = [
   // No damage quests
   { id: 'q23', description: 'quest.no_damage_1min', type: 'no_damage', target: 1, reward: { type: 'silver', value: 150 } },
   { id: 'q24', description: 'quest.no_damage_3', type: 'no_damage', target: 3, reward: { type: 'silver', value: 300 } },
-  { id: 'q25', description: 'quest.no_damage_5', type: 'no_damage', target: 5, reward: { type: 'weapon_unlock', value: 'fire_staff' } },
+  { id: 'q25', description: 'quest.no_damage_5', type: 'no_damage', target: 5, reward: { type: 'weapon_unlock', value: 'shotgun' } },
 
   // Silver collection quests
   { id: 'q26', description: 'quest.collect_500_silver', type: 'collect', target: 500, reward: { type: 'silver', value: 100 } },
   { id: 'q27', description: 'quest.collect_2000_silver', type: 'collect', target: 2000, reward: { type: 'silver', value: 250 } },
-  { id: 'q28', description: 'quest.collect_5000_silver', type: 'collect', target: 5000, reward: { type: 'weapon_unlock', value: 'tornado' } },
+  { id: 'q28', description: 'quest.collect_5000_silver', type: 'collect', target: 5000, reward: { type: 'silver', value: 500 } },
   { id: 'q29', description: 'quest.collect_10000_silver', type: 'collect', target: 10000, reward: { type: 'silver', value: 1000 } },
   { id: 'q30', description: 'quest.collect_25000_silver', type: 'collect', target: 25000, reward: { type: 'weapon_slot', value: 1 } },
 ];

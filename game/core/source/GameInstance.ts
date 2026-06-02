@@ -82,6 +82,7 @@ import { SpatialHash } from './spatial-hash.ts';
 import { generateUpgradeOptions, xpForLevel } from './upgrades.ts';
 import { updateOrbitingProjectile } from './weapons.ts';
 import { computeWeaponDamage } from './stats/index.ts';
+import { recomputePlayerStats } from './stats/recomputePlayerStats.ts';
 import { createWorld, type GameWorld } from './world.ts';
 import { tryFireWeaponEcs } from './systems/weaponFiring.ts';
 import { tickEnemyAi } from './systems/aiSystem.ts';
@@ -1538,48 +1539,9 @@ export class GameInstance {
   // =========================================================================
 
   private recalculateTomeStats(): void {
-    const player = this.state.player;
-    const charCfg = CHARACTER_CONFIGS[this.config.character];
-    const shopBonuses = getShopBonuses();
-
-    let speedMult = 1.0;
-    let damageMult = charCfg.damage + (shopBonuses['damage'] ?? 0);
-    let attackSpeedMult = 1.0;
-    let critChance = charCfg.critChance + (shopBonuses['critChance'] ?? 0);
-    let critDamage = PLAYER_BASE_CRIT_DAMAGE;
-    let armor = charCfg.armor + (shopBonuses['armor'] ?? 0);
-    let pickupRadius = PLAYER_PICKUP_RADIUS + (shopBonuses['pickupRadius'] ?? 0);
-
-    for (const tome of player.tomes) {
-      switch (tome.type) {
-        case 'attack_speed_tome':
-          attackSpeedMult += tome.level * 0.1;
-          break;
-        case 'speed_tome':
-          speedMult += tome.level * 0.08;
-          break;
-        case 'attraction_tome':
-          pickupRadius += tome.level * 1.2;
-          break;
-        case 'shield_tome':
-          armor += tome.level * 2;
-          break;
-        case 'precision_tome':
-          critChance += tome.level * 0.05;
-          critDamage += tome.level * 0.1;
-          break;
-        // thorns_tome, knockback_tome, luck_tome, xp_gain_tome, curse_tome
-        // are handled contextually in their respective code paths
-      }
-    }
-
-    player.speed = (charCfg.speed + (shopBonuses['speed'] ?? 0)) * speedMult;
-    player.damageMultiplier = damageMult;
-    player.attackSpeedMultiplier = attackSpeedMult;
-    player.critChance = critChance;
-    player.critDamage = critDamage;
-    player.armor = armor;
-    player.pickupRadius = pickupRadius;
+    // Phase 5: 走数据驱动 stat pipeline (data/tomes.ts + stats/recomputePlayerStats.ts).
+    // 旧 switch case 已删, 数学等价 (见 __tests__/recomputePlayerStats.test.ts).
+    recomputePlayerStats(this.state.player, this.config.character, getShopBonuses());
   }
 
   // =========================================================================

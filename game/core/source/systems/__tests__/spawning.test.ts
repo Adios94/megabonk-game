@@ -5,12 +5,12 @@
  *  - boss_fight 阶段不刷怪
  *  - finalSwarm 标志 (gameTime 480-540)
  *  - mini-boss 每 120 秒一只 (gameTime ≥ 180)
- *  - tier 1 boss 时间到自动出, tier ≥2 等所有传送器
+ *  - Boss 起场 = 必须有祭坛进入 boss_active（按 E 召唤完成），与时间无关
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { tickSpawning, checkBossSpawn } from '../spawning.ts';
 import { makeEngine, makePlayer } from './_fixtures.ts';
-import { BOSS_SPAWN_TIME } from '../../config.ts';
+import { ALTAR_SUMMON_DURATION, REGULAR_GAME_DURATION } from '../../config.ts';
 
 describe('tickSpawning', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -113,7 +113,9 @@ describe('checkBossSpawn', () => {
   it('boss 已存在时不重复 spawn', () => {
     const engine = makeEngine();
     engine.state.boss = { x: 0, y: 0, z: 0, hp: 100, maxHp: 100, phase: 1, currentAttack: 'idle', attackTimer: 0, attackCooldown: 0, hitFlashTimer: 0, speed: 3, enraged: false };
-    engine.state.gameTime = BOSS_SPAWN_TIME + 10;
+    engine.state.altars = [{
+      x: 0, z: 0, phase: 'boss_active', summonTimer: 0, summonDuration: ALTAR_SUMMON_DURATION,
+    }];
     checkBossSpawn(engine);
     expect(engine.state.boss.hp).toBe(100);  // 没改
   });
@@ -121,26 +123,36 @@ describe('checkBossSpawn', () => {
   it('victory / defeat 阶段不 spawn', () => {
     const engine = makeEngine();
     engine.state.phase = 'victory';
-    engine.state.gameTime = BOSS_SPAWN_TIME + 10;
+    engine.state.altars = [{
+      x: 0, z: 0, phase: 'boss_active', summonTimer: 0, summonDuration: ALTAR_SUMMON_DURATION,
+    }];
     checkBossSpawn(engine);
     expect(engine.state.boss).toBeNull();
   });
 
-  it('tier 1 时间未到不 spawn', () => {
+  it('没有 boss_active 祭坛 → 不 spawn（即使时间已过去）', () => {
     const engine = makeEngine();
     engine.config = { ...engine.config, tier: 1 };
-    engine.state.gameTime = 100;
+    engine.state.gameTime = REGULAR_GAME_DURATION + 60;  // 久过去
+    engine.state.altars = [{
+      x: 0, z: 0, phase: 'ready', summonTimer: 0, summonDuration: ALTAR_SUMMON_DURATION,
+    }];
     checkBossSpawn(engine);
     expect(engine.state.boss).toBeNull();
   });
 
-  it('tier 1 时间到 → boss spawn + phase=boss_intro', () => {
+  it('有 boss_active 祭坛 → boss spawn + phase=boss_intro + 清场', () => {
     const engine = makeEngine();
     engine.config = { ...engine.config, tier: 1 };
-    engine.state.gameTime = BOSS_SPAWN_TIME + 1;
+    engine.state.altars = [{
+      x: 5, z: 7, phase: 'boss_active', summonTimer: ALTAR_SUMMON_DURATION, summonDuration: ALTAR_SUMMON_DURATION,
+    }];
     checkBossSpawn(engine);
     expect(engine.state.boss).not.toBeNull();
     expect(engine.state.phase).toBe('boss_intro');
-    expect(engine.state.enemies).toHaveLength(0);  // 清空
+    expect(engine.state.enemies).toHaveLength(0);
+    // Boss 出场点应该贴近触发祭坛
+    expect(engine.state.boss!.x).toBeCloseTo(5);
+    expect(engine.state.boss!.z).toBeCloseTo(3); // 7 - 4
   });
 });

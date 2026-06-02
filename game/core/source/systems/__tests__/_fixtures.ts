@@ -25,18 +25,18 @@ export interface MockAiEffects extends AiEffects {
 }
 
 function defaultInput(): InputState {
-  return { moveX: 0, moveY: 0, dash: false, skill1: false, skill2: false, jump: false, slide: false };
+  return { moveX: 0, moveY: 0, dash: false, skill1: false, skill2: false, jump: false, slide: false, interact: false };
 }
 
 function defaultState(player: PlayerState, character: GameConfig['character'] = 'megachad'): GameState {
   return {
-    tick: 0, gameTime: 0, running: false, paused: false, finished: false,
+    tick: 0, gameTime: 0, overtimeSeconds: 0, running: false, paused: false, finished: false,
     phase: 'playing',
     player,
     enemies: [], projectiles: [], pickups: [], boss: null,
     upgradeOptions: null, damageEvents: [],
     stats: { killCount: 0, damageDealt: 0, damageTaken: 0, silverEarned: 0 },
-    waveIndex: 0, teleporters: [], chests: [],
+    waveIndex: 0, altars: [], shrines: [], activeShrineId: null, chests: [],
     character,
     finalSwarm: false,
   };

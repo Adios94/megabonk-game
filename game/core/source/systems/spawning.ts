@@ -13,15 +13,15 @@
 import {
   WAVE_CONFIGS,
   TIER_CONFIGS,
-  BOSS_SPAWN_TIME,
   BOSS_HP,
   BOSS_INTRO_DURATION,
-  TELEPORTER_APPEAR_TIME,
+  REGULAR_GAME_DURATION,
 } from '../config.ts';
 import { ENEMIES } from '../data/enemies.ts';
 import { spawnEnemy } from '../factories/spawnEnemy.ts';
 import type { EnemyType } from '../types.ts';
 import type { Engine } from './types.ts';
+import { hasReadyBossTrigger } from './altars.ts';
 
 export function tickSpawning(engine: Engine, dt: number): void {
   // boss 阶段不刷怪
@@ -39,7 +39,8 @@ export function tickSpawning(engine: Engine, dt: number): void {
   }
 
   // Final Swarm 阶段（gameTime 480-540, 即 boss 来之前的 1 分钟）
-  const isFinalSwarm = engine.state.gameTime >= 480 && engine.state.gameTime < BOSS_SPAWN_TIME;
+  // 注：保留作为常规生存期收尾的怪潮提示；overtime 后由 overtime 系数接管，不再延续 finalSwarm。
+  const isFinalSwarm = engine.state.gameTime >= 480 && engine.state.gameTime < REGULAR_GAME_DURATION;
   engine.state.finalSwarm = isFinalSwarm;
 
   const maxAlive = isFinalSwarm ? 150 : wave.maxAlive;
@@ -115,6 +116,7 @@ function spawnMiniBoss(engine: Engine): void {
     {
       gameTime: engine.state.gameTime,
       tier: engine.config.tier,
+      overtimeSeconds: engine.state.overtimeSeconds,
       player: engine.state.player,
       nextId: () => engine.nextEnemyId++,
     },
@@ -163,6 +165,7 @@ function spawnSingleEnemy(engine: Engine, type: string): void {
     {
       gameTime: engine.state.gameTime,
       tier: engine.config.tier,
+      overtimeSeconds: engine.state.overtimeSeconds,
       player: engine.state.player,
       nextId: () => engine.nextEnemyId++,
     },
@@ -185,28 +188,31 @@ function getSpawnPosition(engine: Engine): { x: number; z: number } {
 }
 
 /**
- * Boss 起场 —— tier 1 看时间, tier ≥2 等所有传送器激活。
+ * Boss 起场 —— 当玩家在祭坛完成召唤读条（altars.ts 把祭坛 phase 推到 `boss_active`）时触发。
+ *
+ * 不再依赖 `BOSS_SPAWN_TIME`：所有 tier 都需要主动召唤。
  *
  * 起场后立刻进 'boss_intro' 阶段（spawnEnemies 和本函数都跳过此阶段）。
  */
 export function checkBossSpawn(engine: Engine): void {
   if (engine.state.boss) return;
   if (engine.state.phase === 'victory' || engine.state.phase === 'defeat') return;
+  if (engine.state.phase === 'boss_intro' || engine.state.phase === 'boss_fight') return;
+
+  // 必须有任何一个祭坛进入 boss_active 才触发
+  if (!hasReadyBossTrigger(engine)) return;
 
   const tierCfg = TIER_CONFIGS[engine.config.tier];
 
-  if (tierCfg.teleporterCount === 0) {
-    if (engine.state.gameTime < BOSS_SPAWN_TIME) return;
-  } else {
-    const allActivated = engine.state.teleporters.length >= tierCfg.teleporterCount &&
-      engine.state.teleporters.every(t => t.phase === 'activated');
-    if (!allActivated) return;
-  }
+  // Boss 出场点：选第一个 boss_active 祭坛附近，否则用地图中心偏北
+  const triggerAltar = engine.state.altars.find(a => a.phase === 'boss_active');
+  const bossX = triggerAltar ? triggerAltar.x : 0;
+  const bossZ = triggerAltar ? triggerAltar.z - 4 : -engine.config.mapSize * 0.3;
 
   engine.state.boss = {
-    x: 0,
+    x: bossX,
     y: 0,
-    z: -engine.config.mapSize * 0.3,
+    z: bossZ,
     hp: Math.round(BOSS_HP * tierCfg.bossHpMultiplier),
     maxHp: Math.round(BOSS_HP * tierCfg.bossHpMultiplier),
     phase: 1,
@@ -220,5 +226,4 @@ export function checkBossSpawn(engine: Engine): void {
 
   engine.state.phase = 'boss_intro';
   engine.state.enemies = [];
-  void TELEPORTER_APPEAR_TIME; // 本文件不直接读, 由 teleporters.ts 用
 }

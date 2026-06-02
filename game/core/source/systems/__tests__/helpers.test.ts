@@ -137,16 +137,23 @@ describe('checkGameOver', () => {
     expect(engine.state.running).toBe(false);
   });
 
-  it('boss hp ≤ 0 → victory + silver +50', () => {
+  it('boss hp ≤ 0 → portal_open + silver +50（不再是 victory 终态）', () => {
     const engine = makeEngine();
     engine.state.boss = makeBoss();
     engine.state.boss.hp = 0;
+    engine.state.phase = 'boss_fight';
     engine.state.running = true;
     engine.state.stats.silverEarned = 100;
+    // 准备一个 boss_active 祭坛，验证它会被翻成 portal_ready
+    engine.state.altars = [{
+      x: 0, z: 0, phase: 'boss_active', summonTimer: 0, summonDuration: 1,
+    }];
     checkGameOver(engine);
-    expect(engine.state.phase).toBe('victory');
-    expect(engine.state.finished).toBe(true);
+    expect(engine.state.phase).toBe('portal_open');
+    expect(engine.state.finished).toBe(false);  // 游戏还没结束，玩家可选进传送门或留下
+    expect(engine.state.boss).toBeNull();
     expect(engine.state.stats.silverEarned).toBe(150);
+    expect(engine.state.altars[0].phase).toBe('portal_ready');
   });
 
   it('player 活, boss 没死 → 不变', () => {

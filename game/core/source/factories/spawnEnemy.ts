@@ -11,12 +11,19 @@
  * - 'bossSummon':        raw cfg, 无任何缩放
  */
 import type { EnemyState, EnemyType, PlayerState, EnemyBehavior, DifficultyTier } from '../types.ts';
-import { TIER_CONFIGS } from '../config.ts';
+import {
+  TIER_CONFIGS,
+  OVERTIME_STEP_SECONDS,
+  OVERTIME_HP_DAMAGE_PER_STEP,
+  OVERTIME_SPEED_PER_STEP,
+} from '../config.ts';
 import { ENEMIES } from '../data/enemies.ts';
 
 export interface SpawnEnemyContext {
   gameTime: number;
   tier: DifficultyTier;
+  /** Overtime 累积秒数，0 表示常规生存期。每 OVERTIME_STEP_SECONDS 升一档系数。 */
+  overtimeSeconds?: number;
   player: PlayerState;     // 用于 targetX/Z 初始化
   nextId: () => number;    // 调用方维护 nextEnemyId
 }
@@ -44,6 +51,11 @@ export function spawnEnemy(
   // 这两个字段不同 spawn mode 的 legacy 行为不一致, 由 switch 设
   let orbitAngle = 0;
 
+  // Overtime 系数（仅对 wave / miniBoss 应用；necromancer/boss summon 保持原始数值）
+  const overtimeStep = Math.max(0, Math.floor((ctx.overtimeSeconds ?? 0) / OVERTIME_STEP_SECONDS));
+  const overtimeHpDmgFactor = 1 + OVERTIME_HP_DAMAGE_PER_STEP * overtimeStep;
+  const overtimeSpeedFactor = 1 + OVERTIME_SPEED_PER_STEP * overtimeStep;
+
   switch (mode) {
     case 'wave': {
       const timeScale = 1 + ctx.gameTime / 600;
@@ -52,9 +64,9 @@ export function spawnEnemy(
         hpScale *= (1 + (ctx.gameTime - 180) / 60 * 0.1);
       }
       const tierCfg = TIER_CONFIGS[ctx.tier];
-      hp = Math.round(def.hp * hpScale * tierCfg.enemyHpMultiplier);
-      damage = Math.round(def.damage * tierCfg.enemyDamageMultiplier);
-      speed = def.speed * tierCfg.enemySpeedMultiplier;
+      hp = Math.round(def.hp * hpScale * tierCfg.enemyHpMultiplier * overtimeHpDmgFactor);
+      damage = Math.round(def.damage * tierCfg.enemyDamageMultiplier * overtimeHpDmgFactor);
+      speed = def.speed * tierCfg.enemySpeedMultiplier * overtimeSpeedFactor;
 
       if (isElite && (opts.applyEliteRoll ?? true) && Math.random() < 0.5) {
         const buff = Math.floor(Math.random() * 3);
@@ -70,9 +82,9 @@ export function spawnEnemy(
     case 'miniBoss': {
       const timeScale = 1 + ctx.gameTime / 600;
       const tierCfg = TIER_CONFIGS[ctx.tier];
-      hp = Math.round(def.hp * timeScale * 3 * tierCfg.enemyHpMultiplier);
-      damage = Math.round(def.damage * 2 * tierCfg.enemyDamageMultiplier);
-      speed = def.speed * tierCfg.enemySpeedMultiplier;
+      hp = Math.round(def.hp * timeScale * 3 * tierCfg.enemyHpMultiplier * overtimeHpDmgFactor);
+      damage = Math.round(def.damage * 2 * tierCfg.enemyDamageMultiplier * overtimeHpDmgFactor);
+      speed = def.speed * tierCfg.enemySpeedMultiplier * overtimeSpeedFactor;
       isElite = true;
       isMiniBoss = true;
       summonCooldown = 8;

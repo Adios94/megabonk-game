@@ -28,6 +28,7 @@ const NEUTRAL_INPUT: InputState = {
   skill2: false,
   jump: false,
   slide: false,
+  interact: false,
 };
 
 describe('Framework Contract — exported constants', () => {

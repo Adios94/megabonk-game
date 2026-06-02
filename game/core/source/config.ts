@@ -96,28 +96,8 @@ export const CHARACTER_CONFIGS: Record<CharacterType, CharacterConfig> = {
   },
 };
 
-// Enemy configs
-export interface EnemyConfig {
-  hp: number;
-  damage: number;
-  speed: number;
-  behavior: string;
-  xpReward: number;
-  attackCooldown: number;
-  isElite: boolean;
-  firstAppear: number;
-  spawnWeight: number;
-  preferredRange?: number;
-}
-
-export const ENEMY_CONFIGS: Record<string, EnemyConfig> = {
-  skeleton_soldier: { hp: 15, damage: 5, speed: 3.0, behavior: 'chase', xpReward: 1, attackCooldown: 1.5, isElite: false, firstAppear: 0, spawnWeight: 40 },
-  zombie: { hp: 30, damage: 10, speed: 1.5, behavior: 'chase', xpReward: 3, attackCooldown: 2.5, isElite: false, firstAppear: 60, spawnWeight: 25 },
-  skeleton_archer: { hp: 12, damage: 7, speed: 2.5, behavior: 'ranged', xpReward: 3, attackCooldown: 3.0, isElite: false, firstAppear: 120, spawnWeight: 15, preferredRange: 8 },
-  skeleton_knight: { hp: 120, damage: 20, speed: 3.5, behavior: 'charge', xpReward: 25, attackCooldown: 2.0, isElite: true, firstAppear: 180, spawnWeight: 5 },
-  necromancer: { hp: 80, damage: 15, speed: 2.0, behavior: 'ranged', xpReward: 30, attackCooldown: 4.0, isElite: true, firstAppear: 240, spawnWeight: 3, preferredRange: 10 },
-  gargoyle: { hp: 200, damage: 25, speed: 4.0, behavior: 'dive', xpReward: 40, attackCooldown: 3.0, isElite: true, firstAppear: 360, spawnWeight: 2 },
-};
+// Enemy configs — moved to data/enemies.ts (Phase 4a, single source of truth)
+// `index.ts` re-exports ENEMY_CONFIGS + EnemyConfig from data/enemies.ts as legacy aliases.
 
 // Wave configs
 export interface WaveConfig {

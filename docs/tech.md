@@ -10,7 +10,7 @@
 
 | 层 | 文件 | 职责 | 依赖 Three.js |
 |---|---|---|---|
-| 逻辑 | `game/core/source/GameInstance.ts` | 60Hz tick 循环、状态推进、碰撞、AI、Boss、武器开火 | ❌ 禁止 |
+| 逻辑 | `@minigame/core` (`game/core/source/`) | 60Hz tick 循环、状态推进、碰撞、AI、Boss、武器开火、stat 管线 | ❌ 禁止 |
 | 渲染 | `game/client/source/index.ts` | Three.js 场景 / 模型 / VFX / HUD / 菜单 / 输入桥接 | ✅ |
 
 驱动方式：
@@ -25,6 +25,10 @@ GameScene.animate()
 
 两层解耦，渲染降帧不影响逻辑。
 
+> **方案 A 重构 Phase 1-7 落地后**：`GameInstance.ts` 已退化为 ~350 行薄 facade，
+> 所有逻辑迁到 `systems/`、数据迁到 `data/`、行为迁到 `behaviors/` / `ai/`。
+> 详见 §二「模块职责」。
+
 ### 2. 核心规则（必须遵守）
 
 1. **Three.js 命名空间导入**：`import * as THREE from 'three'`
@@ -38,50 +42,81 @@ GameScene.animate()
 
 | 模块 | 行数 |
 |---|---|
-| `game/core/source/GameInstance.ts` | 2577 |
-| `game/core/source/weapons.ts` | 419 |
-| `game/core/` 其他（types/config/upgrades/quests/shop/save/physics/spatial-hash） | ~1500 |
-| `game/client/source/index.ts` | 4568 |
-| **核心 + 客户端合计** | **≈ 7766** |
+| `game/core/source/GameInstance.ts` | ~350 (facade) |
+| `game/core/source/systems/*.ts` | ~1300 (11 systems) |
+| `game/core/source/{data,behaviors,ai,factories,stats}/*.ts` | ~1700 |
+| `game/core/source/__tests__/*` | ~2200（232 单测） |
+| `game/core/` 其他（types/config/upgrades/quests/shop/save/physics/spatial-hash/world） | ~1500 |
+| `game/client/source/index.ts` | ~4500 |
+| **核心 + 客户端合计** | **≈ 11600** |
 
 ---
 
 ## 二、模块职责
 
-### 1. `game/core/`
+### 1. `@minigame/core` 内部目录树
 
 ```
-GameInstance.ts (2577)
-├── tick() — 主循环
-│   ├── processPlayerMovement   (跳跃/滑铲/兔子跳/加速)
-│   ├── updateEnemiesAI         (4 种 behavior + 3 个精英专属逻辑)
-│   ├── fireWeapons             (7 种武器开火，cooldownTimer 推进)
-│   ├── updateProjectiles       (轨道 / 普通 / 重力)
-│   ├── processCollisions       (SpatialHash 投射物 vs 敌人)
-│   ├── processEnemyAttacks     (近战 / 远程 / 冲刺判定)
-│   ├── updatePickups
-│   ├── checkPlayerDeath
-│   ├── spawnEnemies            (波次 + Mini-Boss + Final Swarm)
-│   ├── updateBossAI            (3 阶段)
-│   ├── updateTeleporters
-│   └── processDeaths           (击杀后掉落 / combo 累加)
-├── selectUpgrade()             (玩家点选项后应用 + checkWeaponEvolutions)
-├── recalculateTomeStats()      (典籍 + 商店 buff 重算到 player.*)
-└── endRun()                    (结算银币 + 写存档)
-
-config.ts          武器/敌人/角色/Tier/波次/典籍上限的所有数值
-types.ts           WeaponType / TomeType / EnemyType / 状态接口
-weapons.ts         (419) fireWeapon、updateOrbitingProjectile、applyGravitationalPull
-upgrades.ts        升级选项构建 + 稀有度滚点 + xpForLevel
-quests.ts          (202) 29 个跨局任务定义
-shop.ts            8 个永久商店升级
-save.ts            localStorage 读写 + run stats 累计
-physics.ts         applyMovement3D、distanceBetween、normalizeDirection
-spatial-hash.ts    SpatialHash（碰撞优化）
-index.ts           barrel 导出
+game/core/source/
+├── index.ts                  公开 API（contract 锁定: GameInstance / GameState / GameConfig / GameResult / InputState
+│                             / TICK_INTERVAL_MS / DEFAULT_GAME_CONFIG）
+├── GameInstance.ts           薄 facade ~350 行
+│                             - constructor / start / tick / applyAction / selectUpgrade / pause / resume
+│                             - getState / getResult
+│                             - tick() 内只做 dispatch (16 个 system 调用顺序见 §三)
+├── world.ts                  miniplex World instance
+├── types.ts / config.ts      共享类型 + 各种配置常量
+│
+├── data/                     数据驱动配置（Phase 2-5）
+│   ├── weapons.ts            WeaponDef + WEAPONS table
+│   ├── enemies.ts            EnemyDef + ENEMIES (单一 source of truth, ENEMY_CONFIGS 别名兼容旧 API)
+│   └── tomes.ts              TomeDef + TOMES (走 stat pipeline, contextOnly 标志)
+│
+├── stats/                    4 层 stat 管线（Phase 1）
+│   ├── Stat.ts               Stat shape + finalize() = (base+added) × (1+Σincreased) × Π(more)
+│   ├── Modifier.ts           Modifier { kind, stat, value, tags? }
+│   ├── StatBlock.ts          class StatBlock { setBase / applyModifier / getStat / getFinal }
+│   ├── computeWeaponDamage.ts   武器伤害封装（base * damageMult * tagMods * crit）
+│   └── recomputePlayerStats.ts  charCfg + shop + tomes → 写回 player 7 个 stat 字段
+│
+├── behaviors/                武器行为（Phase 2-3, 7 把武器）
+│   ├── sweepArc.ts           sword 即时弧形扫击
+│   ├── forwardArrow.ts       bow 前向 / 第一发自瞄
+│   ├── orbitingAxe.ts        axe 绕玩家 orbit
+│   ├── spreadShot.ts         shotgun 等角扇形
+│   ├── bouncingShot.ts       bone_bouncer 弹跳 + 自瞄
+│   ├── lightningChain.ts     lightning_staff 链击
+│   ├── flameAura.ts          flame_ring 半径 AOE
+│   ├── queries.ts            findNearestEnemy + Excluding
+│   ├── types.ts              BehaviorContext / BehaviorEffects
+│   └── index.ts              BEHAVIORS map (id → fn)
+│
+├── ai/                       敌人 + boss AI（Phase 4）
+│   ├── behaviors/            chase / ranged / charge / dive (4 brains) + _move 共享移动
+│   ├── modifiers/            necromancer (召唤 overlay)
+│   ├── bosses/skeletonKing.ts   SKELETON_KING_PHASES (3 phases) + 7 attacks + getBossMeleeDamage
+│   └── types.ts              AiContext + AiEffects extends BehaviorEffects
+│
+├── factories/
+│   └── spawnEnemy.ts         4 mode (wave/miniBoss/necromancerSummon/bossSummon) 处理 tier / elite buff / time scaling
+│
+└── systems/                  每帧 dispatch 的纯函数（Phase 6, 232 单测覆盖）
+    ├── types.ts              Engine interface (state + counters + spatialHash + world + effects)
+    ├── helpers.ts            findNearestEnemy* / addDamageEvent / applyKnockback / checkPlayerDeath / checkGameOver
+    ├── terrain.ts            getTerrainHeight (Neon Crucible 4 层平台 + 斜坡过渡)
+    ├── player.ts             createInitialPlayer / tickPlayerMovement / tickDash / tickTimers / tickLevelUp
+    ├── projectiles.ts        tickProjectiles (移动 / 寿命 / 出界 / 地形 y clamp)
+    ├── collisions.ts         processCollisions (4 类碰撞 + bone_bouncer 弹跳 + pierce + shield_tome)
+    ├── pickups.ts            processDeaths / tickPickups / tickThorns
+    ├── spawning.ts           tickSpawning (波次 + curse_tome 加快 + final swarm + mini-boss) / checkBossSpawn
+    ├── teleporters.ts        tickChests / tickTeleporters / generateChests
+    ├── weapons.ts            tickWeapons / getWeaponStats / checkWeaponEvolutions
+    ├── aiSystem.ts           tickEnemyAi (modifier → brain dispatch per enemy)
+    ├── bossAi.ts             tickBossAi (phase resolve + attack 调度 + 移动)
+    └── weaponFiring.ts       tryFireWeaponEcs (BEHAVIORS map dispatch)
 ```
 
-### 2. `game/client/source/index.ts` (4568)
+### 2. `game/client/source/index.ts` (~4500)
 
 ```
 LocalGameSession            (会话桥接：驱动 GameInstance + 调用渲染)
@@ -97,6 +132,34 @@ GameScene                   (Three.js 场景管理)
 ├── 相机系统                (固定角度 + 动态 FOV + 屏震 + 顿帧)
 └── 启动流程                (loadModels → showMainMenu → startGame)
 ```
+
+### 3. tick() 顺序（每帧 60 Hz）
+
+`GameInstance.tick()` 现在只做 dispatch：
+
+```ts
+tickPlayerMovement(engine, dt);    // 移动 / 跳 / slide / bunny hop
+tickDash(engine, dt);              // dash 短无敌 + 高速移动
+tickTimers(engine, dt);            // 各种 cooldown / hitFlash 倒计时
+tickEnemyAi(state.enemies, ctx);   // modifier → brain dispatch per enemy
+tickWeapons(engine, dt);           // attackSpeed × dt 推 cooldown, 触发即 fire
+tickProjectiles(engine, dt);       // 投射物移动 + 寿命 + 出界
+processCollisions(engine);         // 4 类: 子弹 vs 敌人/boss + 敌人近战 + 子弹 vs 玩家
+processDeaths(engine);             // hp ≤ 0 → spawn pickup + kill++
+tickPickups(engine, dt);           // 寿命 / 吸附 / collect
+tickLevelUp(engine);               // xp ≥ xpToNext → 进 level_up phase
+tickSpawning(engine, dt);          // wave + mini-boss + final swarm
+tickTeleporters(engine, dt);
+tickChests(engine);
+checkBossSpawn(engine);
+if (state.boss && phase === 'boss_fight') tickBossAi(state.boss, ctx);
+tickThorns(engine);
+checkGameOver(engine);
+engine.aiGroup = (engine.aiGroup + 1) % 4;  // 错峰组循环
+```
+
+各 system 接受 `engine: Engine`（封装 state + counters + spatialHash + world + effects）和 `dt: number`，
+mutate engine 内字段。这是 ECS-style 组合：数据 + 系统纯函数。
 
 ---
 
@@ -239,7 +302,7 @@ interface SaveData {
 
 写时机：
 - `endRun()` 写 stats 和银币
-- `selectUpgrade(tome)` → `recalculateTomeStats()` 期间从 `getShopBonuses()` 读
+- `selectUpgrade(tome)` → `recomputePlayerStats()`（`stats/recomputePlayerStats.ts`）期间从 `getShopBonuses()` 读
 - `purchaseUpgrade(id)` 写 shopLevels
 
 ---
@@ -262,6 +325,14 @@ pnpm run dev
 megabonk-game/
 ├── game/
 │   ├── core/source/        # 纯逻辑（不导 Three.js）
+│   │   ├── GameInstance.ts # 薄 facade ~350 行
+│   │   ├── world.ts        # miniplex World
+│   │   ├── data/           # WeaponDef / EnemyDef / TomeDef
+│   │   ├── stats/          # 4 层 stat 管线
+│   │   ├── behaviors/      # 武器行为 (7 个)
+│   │   ├── ai/             # brains + modifiers + bosses
+│   │   ├── factories/      # spawnEnemy 工厂
+│   │   └── systems/        # 11 个 dispatch 系统
 │   └── client/source/      # 渲染 + UI
 ├── packages/               # 模板基础设施（不修改）
 │   ├── platform/             虚拟摇杆 / 触控按钮 / 桌面输入
@@ -279,17 +350,22 @@ megabonk-game/
 └── tsconfig.json
 ```
 
-### 3. 改数值的常见入口
+### 3. 改数值 / 加新内容的常见入口
+
+> 方案 A 重构后，**加新东西基本不需要碰 `GameInstance.ts`**。下表已对齐 Phase 1-7 实际目录。
 
 | 想做什么 | 改哪里 |
 |---|---|
 | 改武器某级数值 | `config.ts WEAPON_STATS[type][level-1]` |
-| 加新武器 | `types.ts WeaponType` → `config.ts WEAPON_STATS` → `weapons.ts fireWeapon` 加分支 → `GameInstance.fireWeapon` 加 case → `client/index.ts` 加颜色 / 图标 / 模型 → i18n |
-| 加新典籍 | `types.ts TomeType` → `config.ts TOME_MAX_LEVELS` → `recalculateTomeStats()` 或对应业务路径加结算 → i18n |
+| 加新武器 | ① `data/weapons.ts` 加 `WeaponDef` ② 如需新行为, 在 `behaviors/` 加 `.ts` + 注册到 `behaviors/index.ts` ③ `client/index.ts` 加颜色 / 图标 / 模型 ④ i18n。**不再需要** 改 `GameInstance.ts` / 加 `fireXxx` / 改 switch |
+| 加新敌人 | ① `data/enemies.ts` 加 `EnemyDef` (behavior: chase/ranged/charge/dive) ② 如需叠加召唤等行为，在 `ai/modifiers/` 加 + 注册 ③ i18n |
+| 加新典籍 | ① `types.ts TomeType` ② `config.ts TOME_MAX_LEVELS` ③ `data/tomes.ts` 加 `TomeDef`（影响 stat 的返回 modifier 列表；contextual 标 `contextOnly: true`） ④ contextual tome 在对应代码路径读 `player.tomes.find(...)?.level` ⑤ i18n |
 | 调难度 | `config.ts TIER_CONFIGS` |
-| 调波次 / Final Swarm | `config.ts WAVE_CONFIGS`、`GameInstance.ts:1881` |
-| 调 Boss | `config.ts BOSS_SPAWN_TIME / BOSS_HP`、`GameInstance.updateBossAI` |
+| 调波次 / Final Swarm | `config.ts WAVE_CONFIGS` + `systems/spawning.ts` (final swarm 在 480-540s) |
+| 调 Boss | `config.ts BOSS_SPAWN_TIME / BOSS_HP`、`ai/bosses/skeletonKing.ts`（phase 表 + 7 attacks）、`systems/bossAi.ts`（dispatch） |
 | 加新角色 | `config.ts CHARACTER_CONFIGS` → 模型在 `public/models/player_*.gltf` → i18n |
+| 调玩家 stat 公式 | `stats/recomputePlayerStats.ts` + `data/tomes.ts` |
+| 加新武器进化 | `config.ts WEAPON_EVOLUTIONS`（基础武器 + 必需 tome + 进化数值） |
 
 ### 4. 调试技巧
 

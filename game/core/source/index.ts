@@ -61,7 +61,6 @@ export {
   PICKUP_LIFETIME,
   PICKUP_ATTRACT_SPEED,
   XP_VALUES,
-  ENEMY_CONFIGS,
   WAVE_CONFIGS,
   WEAPON_STATS,
   PASSIVE_MAX_LEVELS,
@@ -74,7 +73,12 @@ export {
   TIER_CONFIGS,
 } from './config.ts';
 
-export type { EnemyConfig, WaveConfig, WeaponLevelStats, WeaponEvolution, TierConfig } from './config.ts';
+export type { WaveConfig, WeaponLevelStats, WeaponEvolution, TierConfig } from './config.ts';
+
+// Phase 4a: ENEMY_CONFIGS + EnemyConfig source-of-truth 迁到 data/enemies.ts。
+// 外部 API 不变 (re-export legacy 别名 + 新 ENEMIES/EnemyDef 同时暴露)。
+export { ENEMIES, ENEMY_CONFIGS } from './data/enemies.ts';
+export type { EnemyDef, EnemyConfig, EnemyModifierId } from './data/enemies.ts';
 
 export { applyMovement3D, distanceBetween, normalizeDirection } from './physics.ts';
 export { SpatialHash } from './spatial-hash.ts';

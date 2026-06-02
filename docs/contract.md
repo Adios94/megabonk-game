@@ -129,41 +129,66 @@ export interface GameState {
 下面这些区域，请放心重构、原子化、模块化：
 
 - `game/core/source/` 下**除 `index.ts` 之外的所有文件**
-- 新增任意子目录：`data/` `components/` `systems/` `behaviors/` `factories/` `stats/` `ai/` `world.ts` 等
-- `GameInstance.ts` **内部实现**（保持类签名即可）
+- 已落地的子目录（方案 A 重构产出）：
+  - `data/` — 数据驱动配置（weapons / enemies / tomes）
+  - `behaviors/` — 武器行为注册表（sweepArc / forwardArrow / orbitingAxe / spreadShot / bouncingShot / lightningChain / flameAura）
+  - `ai/` — 敌人 brain (chase/ranged/charge/dive) + modifier (necromancer) + boss phase script (skeletonKing)
+  - `factories/` — `spawnEnemy` 工厂 (4 mode: wave/miniBoss/necromancerSummon/bossSummon)
+  - `stats/` — 4 层 stat 管线 (PoE 风格 base/added/increased/more) + tag superset-AND
+  - `systems/` — 每帧 dispatch 的纯函数（player / projectiles / collisions / pickups / spawning / weapons / teleporters / aiSystem / bossAi / terrain / helpers）
+  - `world.ts` — miniplex World instance
+- `GameInstance.ts` **内部实现**（保持类签名即可，目前是薄 facade ~350 行）
 - `game/client/source/index.ts` 内部渲染逻辑（保持 `bootGameClient` 导出即可）
 - `game/client/source/session/**` 整个 session 目录
 - `i18n/*.json` 增减键
-- 新增 npm 依赖（推荐：`miniplex` 用于 ECS）
+- 新增 npm 依赖（已用：`miniplex` 用于 ECS）
 
 ---
 
 ## 四、新增内容时的标准流程
 
+> 方案 A 重构后，加新东西不再需要改 `GameInstance.ts`。
+> 数据加在 `data/`，行为加在 `behaviors/` / `ai/`，工厂自动接管。
+
 ### 加一把武器
 
 ```
-1. 在 game/core/source/data/weapons.ts 新增一行 WeaponDef
-2. 如果该武器需要新行为，在 game/core/source/behaviors/ 加一个 .ts
-3. 完成
+1. game/core/source/data/weapons.ts 新增一行 WeaponDef
+   { type, behaviorId, tags, ... }
+2. 如果该武器需要新行为（没有现成的 sweepArc / forwardArrow / orbitingAxe / ...）：
+   2a. game/core/source/behaviors/<newBehavior>.ts 新增导出函数 (BehaviorContext) => void
+   2b. game/core/source/behaviors/index.ts 注册到 BEHAVIORS map
+3. 完成。GameInstance 不动，systems/weapons.ts 自动通过 behaviorId dispatch
 ```
-
-**不再需要：** 改 `GameInstance.ts`、加 `fireXxx` 方法、改 switch。
 
 ### 加一个敌人
 
 ```
-1. 在 game/core/source/data/enemies.ts 新增 EnemyDef
-2. 如果需要新 AI 状态，在 game/core/source/ai/Brain.ts 的 tagged-union 加一种
-3. 完成
+1. game/core/source/data/enemies.ts 新增一行 EnemyDef
+   { hp, damage, speed, behavior: 'chase'|'ranged'|'charge'|'dive', modifier?, tags?, ... }
+2. 4 种 brain 已覆盖大部分用例：
+   - chase: 直奔玩家
+   - ranged: 保持 preferredRange + 远程射击
+   - charge: 蓄力冲锋（skeleton_knight 状态机）
+   - dive: 飞行 → 俯冲 → 落地 AOE（gargoyle 状态机）
+3. 如果需要叠加额外逻辑（如 necromancer 召唤），加 modifier:
+   3a. game/core/source/ai/modifiers/<name>.ts 新增 EnemyModifierFn
+   3b. game/core/source/ai/modifiers/index.ts 注册到 MODIFIERS map
+4. factories/spawnEnemy.ts 自动处理 tier 缩放 / elite buff / time scaling，无需改
+5. 完成
 ```
 
-### 加一个被动 / Tome / 升级
+### 加一个 Tome（被动）
 
 ```
-1. 在 game/core/source/data/upgrades.ts 新增 UpgradeDef，描述效果（增益类型 / 数值 / tag）
-2. stats 管线会自动处理 base / added / increased / more 四层叠加
-3. 完成
+1. types.ts TomeType 加新 ID
+2. config.ts TOME_MAX_LEVELS 加 max level
+3. game/core/source/data/tomes.ts 新增 TomeDef
+   - 影响 stat 的 tome：返回 modifiers 列表（喂给 player StatBlock）
+   - 上下文型（thorns / luck / xp_gain ...）：modifiers: () => [], 标 contextOnly
+4. 如果是 contextual tome，在对应代码路径读 player.tomes.find(...)?.level
+5. stats/recomputePlayerStats.ts 自动遍历所有 tome 的 modifiers + finalize → 写回 player
+6. 完成。无需改 GameInstance.ts
 ```
 
 ### 加 i18n 文本
@@ -217,5 +242,5 @@ export interface GameState {
 
 ---
 
-最后更新：2026-06-01
-契约版本：v1.0.0
+最后更新：2026-06-02
+契约版本：v1.1.0（方案 A 重构 Phase 1-7 落地：data/ + behaviors/ + ai/ + factories/ + stats/ + systems/ 全部就位）

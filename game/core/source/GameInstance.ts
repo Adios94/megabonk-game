@@ -1,184 +1,78 @@
 /**
- * MegaBonk 3D Roguelike Survivor - Core Game Instance
+ * MegaBonk 3D Roguelike Survivor — Game Instance facade.
+ *
  * Pure game logic — NO Three.js or rendering imports.
- * Features: MegaBonk-style movement (jump, slide, bunny hop),
- * 13 weapons, 10 tomes, 3 characters, teleporter system.
+ *
+ * Phase 6: 本文件缩成 thin facade. 所有内部逻辑迁到 `systems/`:
+ *   - systems/player.ts     — 移动 / dash / 计时器 / 升级 / createInitialPlayer
+ *   - systems/spawning.ts   — wave / mini-boss / 单怪 / boss spawn
+ *   - systems/projectiles.ts — 投射物移动 / 寿命 / 出界
+ *   - systems/collisions.ts — 4 种碰撞 + 击退 + damage event
+ *   - systems/pickups.ts    — pickup 寿命 / 吸附 / collect / deaths / thorns
+ *   - systems/weapons.ts    — fireWeapons / getWeaponStats / evolution
+ *   - systems/teleporters.ts — teleporter 状态机 + 宝箱
+ *   - systems/aiSystem.ts   — enemy AI 主循环
+ *   - systems/bossAi.ts     — boss AI 主循环
+ *   - systems/helpers.ts    — findNearestEnemy / addDamageEvent / applyKnockback / ...
+ *   - systems/terrain.ts    — getTerrainHeight 纯函数
+ *
+ * 公开 API 完全不变：start / tick / applyAction / selectUpgrade / pause / resume
+ *                  / getState / getResult.
  */
 
 import type {
-  GameConfig,
-  GameState,
-  GameResult,
-  InputState,
-  PlayerState,
-  EnemyState,
-  ProjectileState,
-  PickupState,
-  BossState,
-  DamageEvent,
-  UpgradeOption,
-  GamePhase,
-  EnemyType,
-  WeaponState,
-  WeaponType,
-  GameStats,
-  PickupType,
-  CharacterType,
-  TeleporterState,
-  TomeState,
-  ChestState,
+  GameConfig, GameState, GameResult, InputState, PlayerState,
 } from './types.ts';
-
 import {
   TICK_INTERVAL_MS,
-  MAX_ENEMIES,
-  MAX_PROJECTILES,
-  MAX_PICKUPS,
-  PLAYER_BASE_HP,
-  PLAYER_BASE_SPEED,
-  PLAYER_BASE_CRIT_CHANCE,
-  PLAYER_BASE_CRIT_DAMAGE,
-  PLAYER_PICKUP_RADIUS,
-  PLAYER_INVINCIBLE_DURATION,
-  DASH_DISTANCE,
-  DASH_DURATION,
-  DASH_COOLDOWN,
-  JUMP_FORCE,
-  GRAVITY,
-  SLIDE_DURATION,
-  SLIDE_SPEED_MULTIPLIER,
-  BUNNY_HOP_WINDOW,
-  BUNNY_HOP_BONUS,
-  BOSS_SPAWN_TIME,
-  BOSS_HP,
-  BOSS_INTRO_DURATION,
-  PICKUP_LIFETIME,
-  PICKUP_ATTRACT_SPEED,
-  HEALTH_DROP_CHANCE,
-  HEALTH_SMALL_DROP_CHANCE,
-  CHEST_COUNT,
-  CHEST_INTERACT_RADIUS,
-  CHEST_SILVER_MIN,
-  CHEST_SILVER_MAX,
-  TELEPORTER_ACTIVATION_DURATION,
-  TELEPORTER_APPEAR_TIME,
-  TELEPORTER_RADIUS,
-  XP_VALUES,
-  WAVE_CONFIGS,
-  WEAPON_STATS,
-  CHARACTER_CONFIGS,
-  MAX_WEAPONS_DEFAULT,
-  MAX_WEAPONS_CAP,
-  WEAPON_EVOLUTIONS,
   TIER_CONFIGS,
 } from './config.ts';
-
-import { loadSave, saveSave, updateRunStats } from './save.ts';
-import { getShopBonuses } from './shop.ts';
-import { checkQuestCompletion } from './quests.ts';
-
-import { applyMovement3D, distanceBetween, normalizeDirection } from './physics.ts';
-import { SpatialHash } from './spatial-hash.ts';
-import { generateUpgradeOptions, xpForLevel } from './upgrades.ts';
-import { updateOrbitingProjectile } from './weapons.ts';
-import { computeWeaponDamage } from './stats/index.ts';
-import { recomputePlayerStats } from './stats/recomputePlayerStats.ts';
-import { createWorld, type GameWorld } from './world.ts';
-import { tryFireWeaponEcs } from './systems/weaponFiring.ts';
-import { tickEnemyAi } from './systems/aiSystem.ts';
-import { tickBossAi } from './systems/bossAi.ts';
-import { ENEMIES } from './data/enemies.ts';
-import { spawnEnemy } from './factories/spawnEnemy.ts';
-import { getBossMeleeDamage } from './ai/bosses/skeletonKing.ts';
+import { MAX_PROJECTILES } from './config.ts';
 import type { AiEffects, AiContext } from './ai/types.ts';
 
+import { SpatialHash } from './spatial-hash.ts';
+import { createWorld } from './world.ts';
+import { updateRunStats } from './save.ts';
+import { getShopBonuses } from './shop.ts';
+import { checkQuestCompletion } from './quests.ts';
+import { spawnEnemy } from './factories/spawnEnemy.ts';
+import { recomputePlayerStats } from './stats/recomputePlayerStats.ts';
+import { tickEnemyAi } from './systems/aiSystem.ts';
+import { tickBossAi } from './systems/bossAi.ts';
+
+import type { Engine } from './systems/types.ts';
+import { getTerrainHeight } from './systems/terrain.ts';
+import {
+  createInitialPlayer,
+  tickPlayerMovement,
+  tickDash,
+  tickTimers,
+  tickLevelUp,
+} from './systems/player.ts';
+import { tickWeapons, checkWeaponEvolutions } from './systems/weapons.ts';
+import { tickProjectiles } from './systems/projectiles.ts';
+import { processCollisions } from './systems/collisions.ts';
+import { processDeaths, tickPickups, tickThorns } from './systems/pickups.ts';
+import { tickSpawning, checkBossSpawn } from './systems/spawning.ts';
+import { tickChests, tickTeleporters, generateChests } from './systems/teleporters.ts';
+import { addDamageEvent, applyKnockback, checkPlayerDeath, checkGameOver } from './systems/helpers.ts';
+import {
+  PLAYER_INVINCIBLE_DURATION,
+} from './config.ts';
+
 export class GameInstance {
-  private config: GameConfig;
-  private state: GameState;
-  private currentInput: InputState;
-  private nextEnemyId: number;
-  private nextProjectileId: number;
-  private nextPickupId: number;
-  private spatialHash: SpatialHash;
-  private spawnTimer: number;
-  private aiGroup: number;
-
-  // Track last input for dash edge-detection
-  private lastDashInput: boolean = false;
-  private lastJumpInput: boolean = false;
-  // Player facing direction for projectile aiming
-  private facingX: number = 0;
-  private facingZ: number = 1;
-  // Bunny hop: track time since last landing
-  private landingTimer: number = 0;
-  // Mini-boss spawn timer (every 2 min after minute 3)
-  private miniBossTimer: number = 0;
-
-  private world: GameWorld;
-  private effects: AiEffects;
+  private engine: Engine;
 
   constructor(config: GameConfig) {
-    this.config = config;
-    this.currentInput = { moveX: 0, moveY: 0, dash: false, skill1: false, skill2: false, jump: false, slide: false };
-    this.nextEnemyId = 1;
-    this.nextProjectileId = 1;
-    this.nextPickupId = 1;
-    this.spatialHash = new SpatialHash(4);
-    this.spawnTimer = 1.0;
-    this.aiGroup = 0;
-
-    this.world = createWorld();
-    this.effects = {
-      addDamageEvent: (x, y, z, d, c, p, w) => this.addDamageEvent(x, y, z, d, c, p, w),
-      applyKnockback: (e, fx, fz) => this.applyKnockback(e, fx, fz),
-      addDamageDealt: (n) => { this.state.stats.damageDealt += n; },
-      spawnProjectile: (p) => {
-        if (this.state.projectiles.length >= MAX_PROJECTILES) return null;
-        const id = this.nextProjectileId++;
-        this.state.projectiles.push({
-          id,
-          hitEnemyIds: [],
-          ...p,
-        });
-        return id;
-      },
-      spawnEnemyByType: (type, x, z, opts) => {
-        const newEnemy = spawnEnemy(
-          type, x, z,
-          {
-            gameTime: this.state.gameTime,
-            tier: this.config.tier,
-            player: this.state.player,
-            nextId: () => this.nextEnemyId++,
-          },
-          opts ?? {},
-        );
-        this.state.enemies.push(newEnemy);
-        return newEnemy;
-      },
-      damagePlayer: (rawDamage: number) => {
-        const player = this.state.player;
-        if (!player.alive || player.invincibleTimer > 0) return;
-        const shieldTome = player.tomes.find(t => t.type === 'shield_tome');
-        const shieldReduction = shieldTome ? shieldTome.level * 0.05 : 0;
-        const dmg = Math.max(1, rawDamage - player.armor);
-        const finalDmg = Math.max(1, Math.round(dmg * (1 - shieldReduction)));
-        player.hp -= finalDmg;
-        player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;
-        this.state.stats.damageTaken += finalDmg;
-        this.addDamageEvent(player.x, 1.5, player.z, finalDmg, false, true);
-        if (player.hp <= 0) this.checkPlayerDeath();
-      },
-    };
-
-    this.state = {
+    const world = createWorld();
+    const state: GameState = {
       tick: 0,
       gameTime: 0,
       running: false,
       paused: false,
       finished: false,
       phase: 'menu',
-      player: this.createInitialPlayer(),
+      player: {} as PlayerState,  // 占位, start() 会重建
       enemies: [],
       projectiles: [],
       pickups: [],
@@ -192,140 +86,132 @@ export class GameInstance {
       character: config.character,
       finalSwarm: false,
     };
+    state.player = createInitialPlayer(config);
+
+    const engine = {
+      state,
+      config,
+      input: { moveX: 0, moveY: 0, dash: false, skill1: false, skill2: false, jump: false, slide: false },
+      world,
+      effects: null as unknown as AiEffects,  // 立刻填
+      spatialHash: new SpatialHash(4),
+      nextEnemyId: 1,
+      nextProjectileId: 1,
+      nextPickupId: 1,
+      spawnTimer: 1.0,
+      aiGroup: 0,
+      miniBossTimer: 0,
+      landingTimer: 0,
+      lastDashInput: false,
+      lastJumpInput: false,
+      facingX: 0,
+      facingZ: 1,
+    } satisfies Engine;
+
+    engine.effects = makeEffects(engine);
+    this.engine = engine;
   }
 
   start(): void {
-    this.state.running = true;
-    this.state.paused = false;
-    this.state.finished = false;
-    this.state.phase = 'playing';
-    this.state.gameTime = 0;
-    this.state.tick = 0;
-    this.state.enemies = [];
-    this.state.projectiles = [];
-    this.state.pickups = [];
-    this.state.damageEvents = [];
-    this.state.boss = null;
-    this.state.upgradeOptions = null;
-    this.state.stats = { killCount: 0, damageDealt: 0, damageTaken: 0, silverEarned: 0 };
-    this.state.waveIndex = 0;
-    this.state.teleporters = [];
-    this.state.chests = this.generateChests();
-    this.state.character = this.config.character;
-    this.state.finalSwarm = false;
-    this.state.player = this.createInitialPlayer();
-    this.nextEnemyId = 1;
-    this.nextProjectileId = 1;
-    this.nextPickupId = 1;
-    this.spawnTimer = 1.0;
-    this.aiGroup = 0;
-    this.landingTimer = 0;
-    this.miniBossTimer = 0;
+    const { engine } = this;
+    const { state, config } = engine;
+    state.running = true;
+    state.paused = false;
+    state.finished = false;
+    state.phase = 'playing';
+    state.gameTime = 0;
+    state.tick = 0;
+    state.enemies = [];
+    state.projectiles = [];
+    state.pickups = [];
+    state.damageEvents = [];
+    state.boss = null;
+    state.upgradeOptions = null;
+    state.stats = { killCount: 0, damageDealt: 0, damageTaken: 0, silverEarned: 0 };
+    state.waveIndex = 0;
+    state.teleporters = [];
+    state.chests = generateChests(config);
+    state.character = config.character;
+    state.finalSwarm = false;
+    state.player = createInitialPlayer(config);
+    engine.nextEnemyId = 1;
+    engine.nextProjectileId = 1;
+    engine.nextPickupId = 1;
+    engine.spawnTimer = 1.0;
+    engine.aiGroup = 0;
+    engine.landingTimer = 0;
+    engine.miniBossTimer = 0;
   }
 
   tick(): boolean {
-    if (!this.state.running || this.state.finished || this.state.paused) {
-      return this.state.finished;
-    }
+    const { engine } = this;
+    const { state } = engine;
 
-    if (this.state.phase === 'level_up') {
-      return false;
+    if (!state.running || state.finished || state.paused) {
+      return state.finished;
     }
+    if (state.phase === 'level_up') return false;
 
-    // Boss intro countdown
-    if (this.state.phase === 'boss_intro') {
-      const dt = TICK_INTERVAL_MS / 1000;
-      this.state.gameTime += dt;
-      this.state.tick++;
-      if (this.state.boss) {
-        this.state.boss.attackTimer -= dt;
-        if (this.state.boss.attackTimer <= 0) {
-          this.state.phase = 'boss_fight';
+    const dt = TICK_INTERVAL_MS / 1000;
+
+    // Boss intro 倒计时（其它 system 全部跳过）
+    if (state.phase === 'boss_intro') {
+      state.gameTime += dt;
+      state.tick++;
+      if (state.boss) {
+        state.boss.attackTimer -= dt;
+        if (state.boss.attackTimer <= 0) {
+          state.phase = 'boss_fight';
         }
       }
       return false;
     }
 
-    const dt = TICK_INTERVAL_MS / 1000;
+    // 清上一帧 damageEvents（client 在两帧之间读）
+    state.damageEvents = [];
 
-    // Clear damage events from PREVIOUS tick (so client can read them between ticks)
-    this.state.damageEvents = [];
+    state.gameTime += dt;
+    state.tick++;
 
-    this.state.gameTime += dt;
-    this.state.tick++;
-
-    // Process player movement (with bunny hop)
-    this.processPlayerMovement(dt);
-
-    // Process dash
-    this.processDash(dt);
-
-    // Update timers
-    this.updateTimers(dt);
-
-    // Update enemies AI
-    tickEnemyAi(this.state.enemies, this.makeAiContext(dt));
-
-    // Fire weapons
-    this.fireWeapons(dt);
-
-    // Update projectiles (including orbiting, gravitational)
-    this.updateProjectiles(dt);
-
-    // Collision detection
-    this.processCollisions();
-
-    // Process deaths
-    this.processDeaths();
-
-    // Update pickups
-    this.updatePickups(dt);
-
-    // Check level up
-    this.checkLevelUp();
-
-    // Spawn enemies
-    this.spawnEnemies(dt);
-
-    // Update teleporters
-    this.updateTeleporters(dt);
-
-    // Update chests
-    this.updateChests();
-
-    // Check boss spawn
-    this.checkBossSpawn();
-
-    // Update boss AI
-    if (this.state.boss && this.state.phase === 'boss_fight') {
-      tickBossAi(this.state.boss, this.makeAiContext(dt));
+    // ─── 顺序见 systems/README.md。每帧 dispatch ───
+    tickPlayerMovement(engine, dt);
+    tickDash(engine, dt);
+    tickTimers(engine, dt);
+    tickEnemyAi(state.enemies, makeAiContext(engine, dt));
+    tickWeapons(engine, dt);
+    tickProjectiles(engine, dt);
+    processCollisions(engine);
+    processDeaths(engine);
+    tickPickups(engine, dt);
+    tickLevelUp(engine);
+    tickSpawning(engine, dt);
+    tickTeleporters(engine, dt);
+    tickChests(engine);
+    checkBossSpawn(engine);
+    if (state.boss && state.phase === 'boss_fight') {
+      tickBossAi(state.boss, makeAiContext(engine, dt));
     }
+    tickThorns(engine);
+    checkGameOver(engine);
 
-    // Apply thorns damage
-    this.applyThornsDamage();
+    engine.aiGroup = (engine.aiGroup + 1) % 4;
 
-    // Check game over
-    this.checkGameOver();
-
-    // damageEvents are kept until next tick start (so client can read them)
-
-    // Cycle AI group
-    this.aiGroup = (this.aiGroup + 1) % 4;
-
-    return this.state.finished;
+    return state.finished;
   }
 
   applyAction(input: InputState): void {
-    this.currentInput = input;
+    this.engine.input = input;
   }
 
   selectUpgrade(optionId: string): void {
-    if (this.state.phase !== 'level_up' || !this.state.upgradeOptions) return;
+    const { engine } = this;
+    const { state } = engine;
+    if (state.phase !== 'level_up' || !state.upgradeOptions) return;
 
-    const option = this.state.upgradeOptions.find(o => o.id === optionId);
+    const option = state.upgradeOptions.find(o => o.id === optionId);
     if (!option) return;
 
-    const player = this.state.player;
+    const player = state.player;
 
     switch (option.kind) {
       case 'new_weapon':
@@ -338,16 +224,12 @@ export class GameInstance {
           });
         }
         break;
-
       case 'weapon_upgrade':
         if (option.weaponType) {
           const weapon = player.weapons.find(w => w.type === option.weaponType);
-          if (weapon) {
-            weapon.level = option.newLevel;
-          }
+          if (weapon) weapon.level = option.newLevel;
         }
         break;
-
       case 'tome':
         if (option.tomeType) {
           const existing = player.tomes.find(t => t.type === option.tomeType);
@@ -356,1322 +238,117 @@ export class GameInstance {
           } else {
             player.tomes.push({ type: option.tomeType!, level: option.newLevel });
           }
-          // Keep passives in sync
           player.passives = player.tomes;
-          this.recalculateTomeStats();
+          recomputePlayerStats(player, engine.config.character, getShopBonuses());
         }
         break;
     }
 
-    // Clear upgrade state and resume
-    this.state.upgradeOptions = null;
-    this.state.phase = this.state.boss ? 'boss_fight' : 'playing';
-
-    // Check for weapon evolutions after any upgrade
-    this.checkWeaponEvolutions();
+    state.upgradeOptions = null;
+    state.phase = state.boss ? 'boss_fight' : 'playing';
+    checkWeaponEvolutions(engine);
   }
 
   pause(): void {
-    if (this.state.running && !this.state.finished) {
-      this.state.paused = true;
+    if (this.engine.state.running && !this.engine.state.finished) {
+      this.engine.state.paused = true;
     }
   }
 
   resume(): void {
-    this.state.paused = false;
+    this.engine.state.paused = false;
   }
 
   getState(): GameState {
-    return this.state;
+    return this.engine.state;
   }
 
   getResult(): GameResult {
-    // Calculate silver earned for this run
-    const tierCfg = TIER_CONFIGS[this.config.tier];
-    const baseSilver = Math.floor(this.state.stats.killCount * 0.5 + this.state.player.level * 5);
-    const victoryBonus = this.state.phase === 'victory' ? 100 : 0;
-    const totalSilver = Math.round((baseSilver + victoryBonus + this.state.stats.silverEarned) * tierCfg.silverMultiplier);
+    const { engine } = this;
+    const { state, config } = engine;
+    const tierCfg = TIER_CONFIGS[config.tier];
+    const baseSilver = Math.floor(state.stats.killCount * 0.5 + state.player.level * 5);
+    const victoryBonus = state.phase === 'victory' ? 100 : 0;
+    const totalSilver = Math.round((baseSilver + victoryBonus + state.stats.silverEarned) * tierCfg.silverMultiplier);
 
-    // Persist stats and silver
     updateRunStats(
-      this.state.stats.killCount,
-      this.state.gameTime,
-      this.state.player.level,
-      this.state.phase === 'victory',
-      this.state.stats.damageTaken,
+      state.stats.killCount,
+      Math.floor(state.gameTime),
+      state.player.level,
+      state.phase === 'victory',
+      state.stats.damageTaken,
     );
-
-    // Add silver to save
-    const save = loadSave();
-    save.silver += totalSilver;
-    save.totalSilverEarned += totalSilver;
-    saveSave(save);
-
-    // Check quest completions
     checkQuestCompletion();
 
     return {
-      victory: this.state.phase === 'victory',
-      survivalTime: this.state.gameTime,
-      killCount: this.state.stats.killCount,
-      level: this.state.player.level,
+      victory: state.phase === 'victory',
+      survivalTime: Math.floor(state.gameTime),
+      killCount: state.stats.killCount,
+      level: state.player.level,
       silverEarned: totalSilver,
     };
   }
+}
 
-  // =========================================================================
-  // Private: Initialization
-  // =========================================================================
+// ─────────────────────────────────────────────────────────────────────────
+// Helpers (file-private)
+// ─────────────────────────────────────────────────────────────────────────
 
-  private createInitialPlayer(): PlayerState {
-    const charCfg = CHARACTER_CONFIGS[this.config.character];
-    const save = loadSave();
-    const shopBonuses = getShopBonuses();
+function makeAiContext(engine: Engine, dt: number): AiContext {
+  return {
+    player: engine.state.player,
+    enemies: engine.state.enemies,
+    boss: engine.state.boss,
+    dt,
+    gameTime: engine.state.gameTime,
+    mapSize: engine.config.mapSize,
+    aiGroup: engine.aiGroup,
+    finalSwarm: engine.state.finalSwarm,
+    getTerrainHeight,
+    effects: engine.effects,
+  };
+}
 
-    // Apply extra weapon slots from quests
-    const extraSlots = save.extraWeaponSlots;
-
-    return {
-      x: 0,
-      y: 0,
-      z: 0,
-      rotation: 0,
-      velocityY: 0,
-      isGrounded: true,
-      isJumping: false,
-      isSliding: false,
-      slideTimer: 0,
-      slideSpeedBoost: 0,
-      bunnyHopTimer: 0,
-      hp: charCfg.hp + (shopBonuses['maxHp'] ?? 0),
-      maxHp: charCfg.hp + (shopBonuses['maxHp'] ?? 0),
-      level: 1 + (shopBonuses['startLevel'] ?? 0),
-      xp: 0,
-      xpToNext: xpForLevel(1 + (shopBonuses['startLevel'] ?? 0)),
-      speed: charCfg.speed + (shopBonuses['speed'] ?? 0),
-      currentSpeed: 0,
-      damageMultiplier: charCfg.damage + (shopBonuses['damage'] ?? 0),
-      attackSpeedMultiplier: 1.0,
-      critChance: charCfg.critChance + (shopBonuses['critChance'] ?? 0),
-      critDamage: PLAYER_BASE_CRIT_DAMAGE,
-      armor: charCfg.armor + (shopBonuses['armor'] ?? 0),
-      pickupRadius: PLAYER_PICKUP_RADIUS + (shopBonuses['pickupRadius'] ?? 0),
-      weapons: [{ type: charCfg.startingWeapon, level: 1, cooldownTimer: 0, evolved: false }],
-      tomes: [],
-      passives: [],
-      dashCooldown: 0,
-      dashCooldownMax: DASH_COOLDOWN,
-      dashTimer: 0,
-      invincibleTimer: 0,
-      alive: true,
-      character: this.config.character,
-      maxWeaponSlots: Math.min(MAX_WEAPONS_CAP, charCfg.weaponSlots + extraSlots),
-      comboCount: 0,
-      comboTimer: 0,
-    };
-  }
-
-  // =========================================================================
-  // Private: Player Movement & Dash (MegaBonk movement system)
-  // =========================================================================
-
-  private processPlayerMovement(dt: number): void {
-    const player = this.state.player;
-    if (!player.alive) return;
-    if (player.dashTimer > 0) return;
-
-    const moveX = this.currentInput.moveX;
-    const moveZ = this.currentInput.moveY;
-
-    // Update facing direction
-    if (moveX !== 0 || moveZ !== 0) {
-      this.facingX = moveX;
-      this.facingZ = moveZ;
-      player.rotation = Math.atan2(moveX, moveZ);
-    }
-
-    // --- Bunny Hop Timer ---
-    if (player.bunnyHopTimer > 0) {
-      player.bunnyHopTimer -= dt;
-    }
-
-    // --- Jump (with bunny hop mechanic) ---
-    const jumpPressed = this.currentInput.jump && !this.lastJumpInput;
-    this.lastJumpInput = this.currentInput.jump;
-
-    if (jumpPressed && player.isGrounded && !player.isSliding) {
-      // Bunny hop: if jump within BUNNY_HOP_WINDOW of landing, get extra height
-      const isBunnyHop = player.bunnyHopTimer > 0;
-      const jumpMultiplier = isBunnyHop ? BUNNY_HOP_BONUS : 1.0;
-      player.velocityY = JUMP_FORCE * jumpMultiplier;
-      player.isGrounded = false;
-      player.isJumping = true;
-      player.bunnyHopTimer = 0;
-    }
-
-    // --- Gravity ---
-    if (!player.isGrounded) {
-      player.velocityY -= GRAVITY * dt;
-      player.y += player.velocityY * dt;
-
-      const groundHeight = this.getTerrainHeight(player.x, player.z);
-      if (player.y <= groundHeight) {
-        player.y = groundHeight;
-        player.velocityY = 0;
-        player.isGrounded = true;
-        player.isJumping = false;
-        // Set bunny hop window timer on landing
-        player.bunnyHopTimer = BUNNY_HOP_WINDOW;
-
-        // Landing → slide if holding slide input
-        if (this.currentInput.slide && !player.isSliding) {
-          player.isSliding = true;
-          player.slideTimer = SLIDE_DURATION;
-          player.slideSpeedBoost = SLIDE_SPEED_MULTIPLIER;
-        }
-      }
-    }
-
-    // --- Slide ---
-    if (this.currentInput.slide && player.isGrounded && !player.isSliding && !player.isJumping) {
-      player.isSliding = true;
-      player.slideTimer = SLIDE_DURATION;
-      player.slideSpeedBoost = SLIDE_SPEED_MULTIPLIER;
-    }
-
-    if (player.isSliding) {
-      player.slideTimer -= dt;
-      if (player.slideTimer <= 0) {
-        player.isSliding = false;
-        player.slideSpeedBoost = 0;
-      }
-    }
-
-    // --- Horizontal movement with acceleration ---
-    const speedMultiplier = player.isSliding ? player.slideSpeedBoost : 1.0;
-    const targetSpeed = player.speed * speedMultiplier;
-    const isMoving = moveX !== 0 || moveZ !== 0;
-
-    if (isMoving) {
-      // Quick acceleration — responsive controls
-      const accelRate = 12.0;
-      player.currentSpeed += (targetSpeed - player.currentSpeed) * Math.min(1, accelRate * dt);
-    } else {
-      // Fast deceleration — no sliding when releasing input
-      const decelRate = 16.0;
-      player.currentSpeed += (0 - player.currentSpeed) * Math.min(1, decelRate * dt);
-    }
-
-    // Only move if we have meaningful speed
-    if (player.currentSpeed > 0.01 && (isMoving || player.currentSpeed > 0.1)) {
-      const result = applyMovement3D(
-        player.x, player.z,
-        isMoving ? moveX : this.facingX,
-        isMoving ? moveZ : this.facingZ,
-        player.currentSpeed, dt,
-        this.config.mapSize,
+/**
+ * 构造 AiEffects —— 给 AI / 武器 behavior 提供副作用入口。Engine 已就绪后调一次。
+ */
+function makeEffects(engine: Engine): AiEffects {
+  return {
+    addDamageEvent: (x, y, z, d, c, p, w) => addDamageEvent(engine, x, y, z, d, c, p, w),
+    applyKnockback: (e, fx, fz) => applyKnockback(engine, e, fx, fz),
+    addDamageDealt: (n) => { engine.state.stats.damageDealt += n; },
+    spawnProjectile: (p) => {
+      if (engine.state.projectiles.length >= MAX_PROJECTILES) return null;
+      const id = engine.nextProjectileId++;
+      engine.state.projectiles.push({ id, hitEnemyIds: [], ...p });
+      return id;
+    },
+    spawnEnemyByType: (type, x, z, opts) => {
+      const newEnemy = spawnEnemy(
+        type, x, z,
+        {
+          gameTime: engine.state.gameTime,
+          tier: engine.config.tier,
+          player: engine.state.player,
+          nextId: () => engine.nextEnemyId++,
+        },
+        opts ?? {},
       );
-
-      if (result) {
-        player.x = result.x;
-        player.z = result.z;
-      }
-    }
-  }
-
-  /** Get terrain height at position — Neon Crucible arena layout */
-  private getTerrainHeight(x: number, z: number): number {
-    const platforms: [number, number, number, number, number][] = [
-      // ═══════════════════════════════════════════════════════════════
-      // GROUND FLOOR (y=0) — The Pit + Corridors
-      // ═══════════════════════════════════════════════════════════════
-
-      // Central Arena — 30×30 open square
-      [0, 0, 15, 15, 0],
-
-      // North Corridor (extends to z = -55)
-      [0, -30, 6, 15, 0],
-      // South Corridor (extends to z = +55)
-      [0, 30, 6, 15, 0],
-      // East Corridor (extends to x = +55)
-      [30, 0, 15, 6, 0],
-      // West Corridor (extends to x = -55)
-      [-30, 0, 15, 6, 0],
-
-      // Diagonal fill patches (smooth corners between arms)
-      [15, -15, 5, 5, 0],
-      [-15, -15, 5, 5, 0],
-      [15, 15, 5, 5, 0],
-      [-15, 15, 5, 5, 0],
-
-      // Corridor end pads (wider landing zones at edges)
-      [0, -50, 8, 5, 0],
-      [0, 50, 8, 5, 0],
-      [50, 0, 5, 8, 0],
-      [-50, 0, 5, 8, 0],
-
-      // ═══════════════════════════════════════════════════════════════
-      // MID-LEVEL RING (y=2) — The Catwalk
-      // ═══════════════════════════════════════════════════════════════
-
-      // Cardinal stations (on corridor edges)
-      [0, -25, 5, 4, 2],     // N station
-      [0, 25, 5, 4, 2],      // S station
-      [25, 0, 4, 5, 2],      // E station
-      [-25, 0, 4, 5, 2],     // W station
-
-      // Diagonal junctions (between corridors)
-      [20, -20, 5, 5, 2],    // NE junction
-      [-20, -20, 5, 5, 2],   // NW junction
-      [20, 20, 5, 5, 2],     // SE junction
-      [-20, 20, 5, 5, 2],    // SW junction
-
-      // ═══════════════════════════════════════════════════════════════
-      // WATCHTOWERS (y=4) — Cardinal Overlooks
-      // ═══════════════════════════════════════════════════════════════
-
-      [0, -40, 5, 5, 4],     // N tower
-      [0, 40, 5, 5, 4],      // S tower
-      [40, 0, 5, 5, 4],      // E tower
-      [-40, 0, 5, 5, 4],     // W tower
-
-      // ═══════════════════════════════════════════════════════════════
-      // NESTS (y=6) — Diagonal Pinnacles
-      // ═══════════════════════════════════════════════════════════════
-
-      [38, -38, 3, 3, 6],    // NE nest
-      [-38, -38, 3, 3, 6],   // NW nest
-      [38, 38, 3, 3, 6],     // SE nest
-      [-38, 38, 3, 3, 6],    // SW nest
-    ];
-
-    let height = 0;
-    for (const [cx, cz, hw, hd, h] of platforms) {
-      const dx = Math.abs(x - cx);
-      const dz = Math.abs(z - cz);
-
-      if (dx <= hw && dz <= hd) {
-        height = Math.max(height, h);
-      } else if (dx <= hw + 3 && dz <= hd + 3) {
-        const edgeDist = Math.max(dx - hw, dz - hd, 0);
-        if (edgeDist <= 3) {
-          const rampHeight = h * (1 - edgeDist / 3);
-          height = Math.max(height, rampHeight);
-        }
-      }
-    }
-    return height;
-  }
-
-  private processDash(dt: number): void {
-    const player = this.state.player;
-    if (!player.alive) return;
-
-    const dashPressed = this.currentInput.dash && !this.lastDashInput;
-    this.lastDashInput = this.currentInput.dash;
-
-    if (dashPressed && player.dashCooldown <= 0 && player.dashTimer <= 0) {
-      player.dashTimer = DASH_DURATION;
-      player.dashCooldown = DASH_COOLDOWN;
-      player.invincibleTimer = DASH_DURATION;
-    }
-
-    if (player.dashTimer > 0) {
-      player.dashTimer -= dt;
-      const dashSpeed = DASH_DISTANCE / DASH_DURATION;
-      const dir = normalizeDirection(this.facingX, this.facingZ);
-
-      const result = applyMovement3D(
-        player.x, player.z,
-        dir.x, dir.z,
-        dashSpeed, dt,
-        this.config.mapSize,
-      );
-
-      if (result) {
-        player.x = result.x;
-        player.z = result.z;
-      }
-    }
-  }
-
-  // =========================================================================
-  // Private: Timer Updates
-  // =========================================================================
-
-  private updateTimers(dt: number): void {
-    const player = this.state.player;
-    if (player.dashCooldown > 0) player.dashCooldown = Math.max(0, player.dashCooldown - dt);
-    if (player.invincibleTimer > 0) player.invincibleTimer = Math.max(0, player.invincibleTimer - dt);
-
-    // Combo timer decay
-    if (player.comboTimer > 0) {
-      player.comboTimer -= dt;
-      if (player.comboTimer <= 0) {
-        player.comboCount = 0;
-        player.comboTimer = 0;
-      }
-    }
-
-    for (const enemy of this.state.enemies) {
-      if (enemy.hitFlashTimer > 0) enemy.hitFlashTimer = Math.max(0, enemy.hitFlashTimer - dt);
-      if (enemy.attackCooldown > 0) enemy.attackCooldown = Math.max(0, enemy.attackCooldown - dt);
-    }
-
-    if (this.state.boss && this.state.boss.hitFlashTimer > 0) {
-      this.state.boss.hitFlashTimer = Math.max(0, this.state.boss.hitFlashTimer - dt);
-    }
-  }
-
-  // =========================================================================
-  // Private: Enemy AI
-  // =========================================================================
-
-  /**
-   * 构造 AiContext —— 给 systems/aiSystem.tickEnemyAi 用。
-   * 每帧调一次，把 GameInstance 的局部状态打包成行为/modifier 用的纯参数。
-   */
-  private makeAiContext(dt: number): AiContext {
-    return {
-      player: this.state.player,
-      enemies: this.state.enemies,
-      boss: this.state.boss,
-      dt,
-      gameTime: this.state.gameTime,
-      mapSize: this.config.mapSize,
-      aiGroup: this.aiGroup,
-      finalSwarm: this.state.finalSwarm,
-      getTerrainHeight: (x, z) => this.getTerrainHeight(x, z),
-      effects: this.effects,
-    };
-  }
-
-  // =========================================================================
-  // Private: Weapons
-  // =========================================================================
-
-  private fireWeapons(dt: number): void {
-    const player = this.state.player;
-    if (!player.alive) return;
-
-    for (const weapon of player.weapons) {
-      weapon.cooldownTimer -= dt * player.attackSpeedMultiplier;
-      if (weapon.cooldownTimer <= 0) {
-        const stats = this.getWeaponStats(weapon);
-        weapon.cooldownTimer = stats.cooldown;
-        tryFireWeaponEcs(
-          this.world, weapon, stats,
-          player, this.state.enemies, this.state.boss,
-          this.effects,
-        );
-      }
-    }
-  }
-
-  // =========================================================================
-  // Private: Projectiles
-  // =========================================================================
-
-  private updateProjectiles(dt: number): void {
-    const projectiles = this.state.projectiles;
-    const player = this.state.player;
-
-    for (let i = projectiles.length - 1; i >= 0; i--) {
-      const proj = projectiles[i];
-
-      // Handle orbiting projectiles (axe)
-      if (proj.orbiting) {
-        updateOrbitingProjectile(proj, player.x, player.z, dt);
-      }
-      // Normal movement
-      else {
-        proj.x += proj.vx * dt;
-        proj.y += proj.vy * dt;
-        proj.z += proj.vz * dt;
-      }
-
-      // Ensure projectile y does not go below terrain height
-      const terrainY = this.getTerrainHeight(proj.x, proj.z);
-      if (proj.y < terrainY + 0.1) {
-        proj.y = terrainY + 0.1;
-      }
-
-      proj.lifetime -= dt;
-      if (proj.lifetime <= 0) {
-        projectiles.splice(i, 1);
-        continue;
-      }
-
-      // Remove if out of bounds
-      const halfMap = (this.config.mapSize + 20) * 0.5;
-      if (Math.abs(proj.x) > halfMap || Math.abs(proj.z) > halfMap) {
-        projectiles.splice(i, 1);
-      }
-    }
-  }
-
-  // =========================================================================
-  // Private: Collision Detection
-  // =========================================================================
-
-  private processCollisions(): void {
-    const player = this.state.player;
-    const enemies = this.state.enemies;
-
-    // Insert all enemies into spatial hash
-    this.spatialHash.clear();
-    for (const enemy of enemies) {
-      if (enemy.hp <= 0) continue;
-      this.spatialHash.insert(enemy.id, enemy.x, enemy.z, 0.5);
-    }
-    if (this.state.boss && this.state.boss.hp > 0) {
-      this.spatialHash.insert(-1, this.state.boss.x, this.state.boss.z, 1.5);
-    }
-
-    // Player projectiles vs enemies
-    for (let i = this.state.projectiles.length - 1; i >= 0; i--) {
-      const proj = this.state.projectiles[i];
-      if (!proj.fromPlayer) continue;
-
-      // Gravitational projectiles deal periodic damage (handled via hit reset)
-      if (proj.gravitational) {
-        // Reset hit list periodically (every 0.5s)
-        if (proj.lifetime % 0.5 < TICK_INTERVAL_MS / 1000) {
-          proj.hitEnemyIds = [];
-        }
-      }
-
-      const nearbyIds = this.spatialHash.query(proj.x, proj.z, proj.radius);
-      let consumed = false;
-
-      for (const id of nearbyIds) {
-        if (proj.hitEnemyIds.includes(id)) continue;
-
-        // Boss collision
-        if (id === -1 && this.state.boss && this.state.boss.hp > 0) {
-          this.state.boss.hp -= proj.damage;
-          this.state.boss.hitFlashTimer = 0.15;
-          this.state.stats.damageDealt += proj.damage;
-          this.addDamageEvent(this.state.boss.x, 2, this.state.boss.z, proj.damage, false, false, proj.weaponType);
-          proj.hitEnemyIds.push(id);
-
-          if (proj.pierceLeft > 0) {
-            proj.pierceLeft--;
-            continue;
-          }
-          if (!proj.gravitational && !proj.orbiting) {
-            consumed = true;
-          }
-          break;
-        }
-
-        // Enemy collision
-        const enemy = this.findEnemyById(id);
-        if (!enemy || enemy.hp <= 0) continue;
-
-        enemy.hp -= proj.damage;
-        enemy.hitFlashTimer = 0.15;
-        this.state.stats.damageDealt += proj.damage;
-        this.addDamageEvent(enemy.x, 1.0, enemy.z, proj.damage, false, false, proj.weaponType);
-        proj.hitEnemyIds.push(id);
-
-        // Knockback from knockback tome
-        this.applyKnockback(enemy, proj.x, proj.z);
-
-        // Handle bone_bouncer bounce
-        if (proj.weaponType === 'bone_bouncer' && proj.bouncesLeft > 0) {
-          proj.bouncesLeft--;
-          const nextTarget = this.findNearestEnemyExcluding(proj.x, proj.z, proj.hitEnemyIds);
-          if (nextTarget) {
-            const dir = normalizeDirection(nextTarget.x - proj.x, nextTarget.z - proj.z);
-            const speed = Math.sqrt(proj.vx * proj.vx + proj.vz * proj.vz);
-            proj.vx = dir.x * speed;
-            proj.vz = dir.z * speed;
-          } else {
-            consumed = true;
-          }
-          break;
-        }
-
-        // Handle pierce
-        if (proj.pierceLeft > 0) {
-          proj.pierceLeft--;
-          continue;
-        }
-
-        // Gravitational/orbiting projectiles don't get consumed on single hits
-        if (proj.gravitational || proj.orbiting) {
-          continue;
-        }
-
-        consumed = true;
-        break;
-      }
-
-      if (consumed) {
-        this.state.projectiles.splice(i, 1);
-      }
-    }
-
-    // Enemies attacking player (melee)
-    if (player.alive && player.invincibleTimer <= 0) {
-      for (const enemy of enemies) {
-        if (enemy.hp <= 0 || enemy.attackCooldown > 0) continue;
-
-        const dist = distanceBetween(player.x, player.z, enemy.x, enemy.z);
-        if (dist < 1.2) {
-          // Shield tome reduces damage
-          const shieldTome = player.tomes.find(t => t.type === 'shield_tome');
-          const shieldReduction = shieldTome ? shieldTome.level * 0.05 : 0;
-          const rawDamage = Math.max(1, enemy.damage - player.armor);
-          const damage = Math.max(1, Math.round(rawDamage * (1 - shieldReduction)));
-          player.hp -= damage;
-          player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;
-          enemy.attackCooldown = enemy.attackCooldownMax;
-          this.state.stats.damageTaken += damage;
-          this.addDamageEvent(player.x, 1.5, player.z, damage, false, true);
-
-          if (player.hp <= 0) {
-            this.checkPlayerDeath();
-          }
-          break;
-        }
-      }
-    }
-
-    // Boss melee vs player
-    if (player.alive && player.invincibleTimer <= 0 && this.state.boss && this.state.boss.hp > 0) {
-      const dist = distanceBetween(player.x, player.z, this.state.boss.x, this.state.boss.z);
-      if (dist < 2.0 && this.state.boss.attackCooldown <= 0) {
-        const bossDmg = getBossMeleeDamage(this.state.boss);
-        const shieldTome = player.tomes.find(t => t.type === 'shield_tome');
-        const shieldReduction = shieldTome ? shieldTome.level * 0.05 : 0;
-        const rawDamage = Math.max(1, bossDmg - player.armor);
-        const damage = Math.max(1, Math.round(rawDamage * (1 - shieldReduction)));
-        player.hp -= damage;
-        player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;
-        this.state.boss.attackCooldown = 2.0;
-        this.state.stats.damageTaken += damage;
-        this.addDamageEvent(player.x, 1.5, player.z, damage, false, true);
-
-        if (player.hp <= 0) {
-          this.checkPlayerDeath();
-        }
-      }
-    }
-
-    // Enemy projectiles vs player
-    if (player.alive && player.invincibleTimer <= 0) {
-      for (let i = this.state.projectiles.length - 1; i >= 0; i--) {
-        const proj = this.state.projectiles[i];
-        if (proj.fromPlayer) continue;
-
-        const dist = distanceBetween(proj.x, proj.z, player.x, player.z);
-        const yDist = Math.abs(proj.y - 0.5);
-        if (dist < proj.radius + 0.5 && yDist < 1.5) {
-          const shieldTome = player.tomes.find(t => t.type === 'shield_tome');
-          const shieldReduction = shieldTome ? shieldTome.level * 0.05 : 0;
-          const rawDamage = Math.max(1, proj.damage - player.armor);
-          const damage = Math.max(1, Math.round(rawDamage * (1 - shieldReduction)));
-          player.hp -= damage;
-          player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;
-          this.state.stats.damageTaken += damage;
-          this.addDamageEvent(player.x, 1.5, player.z, damage, false, true);
-          this.state.projectiles.splice(i, 1);
-
-          if (player.hp <= 0) {
-            this.checkPlayerDeath();
-          }
-          break;
-        }
-      }
-    }
-  }
-
-  // =========================================================================
-  // Private: Teleporter System
-  // =========================================================================
-
-  private updateTeleporters(dt: number): void {
-    const player = this.state.player;
-    const tierCfg = TIER_CONFIGS[this.config.tier];
-
-    // Tier 1: no teleporters (boss spawns on timer)
-    if (tierCfg.teleporterCount === 0) return;
-
-    // Spawn teleporters when time is right
-    if (this.state.teleporters.length < tierCfg.teleporterCount && this.state.gameTime >= TELEPORTER_APPEAR_TIME && !this.state.boss) {
-      // Spawn teleporter(s) at random locations away from player
-      while (this.state.teleporters.length < tierCfg.teleporterCount) {
-        const angle = Math.random() * Math.PI * 2;
-        const distance = 25 + Math.random() * 15;
-        const tx = Math.cos(angle) * distance;
-        const tz = Math.sin(angle) * distance;
-        const halfMap = this.config.mapSize * 0.4;
-
-        this.state.teleporters.push({
-          x: Math.max(-halfMap, Math.min(halfMap, tx)),
-          z: Math.max(-halfMap, Math.min(halfMap, tz)),
-          phase: 'available',
-          activationTimer: 0,
-          activationDuration: TELEPORTER_ACTIVATION_DURATION,
-        });
-      }
-    }
-
-    // Update existing teleporters
-    for (const tp of this.state.teleporters) {
-      if (tp.phase === 'available') {
-        // Check if player is standing on it
-        const dist = distanceBetween(player.x, player.z, tp.x, tp.z);
-        if (dist < TELEPORTER_RADIUS) {
-          tp.phase = 'activating';
-          tp.activationTimer = 0;
-        }
-      } else if (tp.phase === 'activating') {
-        const dist = distanceBetween(player.x, player.z, tp.x, tp.z);
-        if (dist >= TELEPORTER_RADIUS) {
-          // Player walked away, reset
-          tp.phase = 'available';
-          tp.activationTimer = 0;
-        } else {
-          tp.activationTimer += dt;
-          if (tp.activationTimer >= tp.activationDuration) {
-            tp.phase = 'activated';
-            // Teleporter activated → trigger boss spawn
-          }
-        }
-      }
-    }
-  }
-
-  // =========================================================================
-  // Private: Deaths & Pickups
-  // =========================================================================
-
-  private processDeaths(): void {
-    const enemies = this.state.enemies;
-    for (let i = enemies.length - 1; i >= 0; i--) {
-      const enemy = enemies[i];
-      if (enemy.hp <= 0) {
-        this.spawnPickupFromEnemy(enemy);
-        this.state.stats.killCount++;
-        // Combo system: increment on each kill
-        this.state.player.comboCount++;
-        this.state.player.comboTimer = 2.0;
-        enemies.splice(i, 1);
-      }
-    }
-  }
-
-  private spawnPickupFromEnemy(enemy: EnemyState): void {
-    if (this.state.pickups.length >= MAX_PICKUPS) return;
-
-    const cfg = ENEMIES[enemy.type];
-    if (!cfg) return;
-
-    let xpReward = cfg.xpReward;
-
-    // Curse tome: more XP from kills
-    const curseTome = this.state.player.tomes.find(t => t.type === 'curse_tome');
-    if (curseTome) {
-      xpReward = Math.round(xpReward * (1 + curseTome.level * 0.2));
-    }
-
-    let pickupType: PickupType;
-    if (xpReward >= 30) {
-      pickupType = 'xp_orange';
-    } else if (xpReward >= 10) {
-      pickupType = 'xp_purple';
-    } else if (xpReward >= 3) {
-      pickupType = 'xp_blue';
-    } else {
-      pickupType = 'xp_green';
-    }
-
-    this.state.pickups.push({
-      id: this.nextPickupId++,
-      type: pickupType,
-      x: enemy.x,
-      y: 0.2,
-      z: enemy.z,
-      value: XP_VALUES[pickupType] ?? 1,
-      lifetime: PICKUP_LIFETIME,
-      attracted: false,
-    });
-
-    // Elites also drop silver
-    if (enemy.isElite && this.state.pickups.length < MAX_PICKUPS) {
-      this.state.pickups.push({
-        id: this.nextPickupId++,
-        type: 'silver',
-        x: enemy.x + (Math.random() - 0.5),
-        y: 0.2,
-        z: enemy.z + (Math.random() - 0.5),
-        value: 5,
-        lifetime: PICKUP_LIFETIME,
-        attracted: false,
-      });
-    }
-
-    // Random health drops
-    if (this.state.pickups.length < MAX_PICKUPS) {
-      const roll = Math.random();
-      if (roll < HEALTH_DROP_CHANCE) {
-        this.state.pickups.push({
-          id: this.nextPickupId++,
-          type: 'health',
-          x: enemy.x + (Math.random() - 0.5),
-          y: 0.2,
-          z: enemy.z + (Math.random() - 0.5),
-          value: 50,
-          lifetime: PICKUP_LIFETIME,
-          attracted: false,
-        });
-      } else if (roll < HEALTH_DROP_CHANCE + HEALTH_SMALL_DROP_CHANCE) {
-        this.state.pickups.push({
-          id: this.nextPickupId++,
-          type: 'health_small',
-          x: enemy.x + (Math.random() - 0.5),
-          y: 0.2,
-          z: enemy.z + (Math.random() - 0.5),
-          value: 25,
-          lifetime: PICKUP_LIFETIME,
-          attracted: false,
-        });
-      }
-    }
-  }
-
-  private updatePickups(dt: number): void {
-    const player = this.state.player;
-    if (!player.alive) return;
-
-    const pickups = this.state.pickups;
-    for (let i = pickups.length - 1; i >= 0; i--) {
-      const pickup = pickups[i];
-      pickup.lifetime -= dt;
-
-      if (pickup.lifetime <= 0) {
-        pickups.splice(i, 1);
-        continue;
-      }
-
-      const dist = distanceBetween(player.x, player.z, pickup.x, pickup.z);
-
-      if (dist < player.pickupRadius) {
-        pickup.attracted = true;
-      }
-
-      if (pickup.attracted) {
-        // Accelerating attraction: starts slow, gets faster as gem approaches
-        // speed = PICKUP_ATTRACT_SPEED * (1 - distance/maxDist)^2
-        const maxDist = player.pickupRadius;
-        const t = Math.max(0, 1 - dist / maxDist);
-        const attractSpeed = PICKUP_ATTRACT_SPEED * (0.3 + t * t * 2.0);
-
-        const dir = normalizeDirection(player.x - pickup.x, player.z - pickup.z);
-        pickup.x += dir.x * attractSpeed * dt;
-        pickup.z += dir.z * attractSpeed * dt;
-
-        const newDist = distanceBetween(player.x, player.z, pickup.x, pickup.z);
-        if (newDist < 0.5) {
-          this.collectPickup(pickup);
-          pickups.splice(i, 1);
-        }
-      }
-    }
-  }
-
-  private collectPickup(pickup: PickupState): void {
-    if (pickup.type === 'silver') {
-      this.state.stats.silverEarned += pickup.value;
-      const luckTome = this.state.player.tomes.find(t => t.type === 'luck_tome');
-      if (luckTome) {
-        this.state.stats.silverEarned += luckTome.level;
-      }
-      return;
-    }
-
-    // Health pickup — restore HP
-    if (pickup.type === 'health' || pickup.type === 'health_small') {
-      const player = this.state.player;
-      player.hp = Math.min(player.maxHp, player.hp + pickup.value);
-      return;
-    }
-
-    // XP pickup
-    let xpValue = pickup.value;
-    const xpGainTome = this.state.player.tomes.find(t => t.type === 'xp_gain_tome');
-    if (xpGainTome) {
-      xpValue = Math.floor(xpValue * (1 + xpGainTome.level * 0.15));
-    }
-    // Shop xpGain bonus
-    const shopBonuses = getShopBonuses();
-    const shopXpBonus = shopBonuses['xpGain'] ?? 0;
-    if (shopXpBonus > 0) {
-      xpValue = Math.floor(xpValue * (1 + shopXpBonus));
-    }
-    // Combo multiplier: 1 + min(comboCount * 0.05, 1.0) → max 2x
-    const comboMultiplier = 1 + Math.min(this.state.player.comboCount * 0.05, 1.0);
-    xpValue = Math.floor(xpValue * comboMultiplier);
-    // Tier XP multiplier
-    const tierCfg = TIER_CONFIGS[this.config.tier];
-    xpValue = Math.floor(xpValue * tierCfg.xpMultiplier);
-    this.state.player.xp += xpValue;
-  }
-
-  // =========================================================================
-  // Private: Level Up
-  // =========================================================================
-
-  private checkLevelUp(): void {
-    const player = this.state.player;
-    if (!player.alive || this.state.phase === 'level_up') return;
-    if (player.level >= 40) return;
-
-    while (player.xp >= player.xpToNext && player.level < 40) {
-      player.xp -= player.xpToNext;
-      player.level++;
-      player.xpToNext = xpForLevel(player.level);
-
-      // Heal on level up
-      player.hp = Math.min(player.maxHp, player.hp + Math.round(player.maxHp * 0.1));
-
-      // Unlock weapon slots at certain levels (MegaBonk progression)
-      if (player.level === 5 && player.maxWeaponSlots < 3) player.maxWeaponSlots = 3;
-      if (player.level === 10 && player.maxWeaponSlots < 4) player.maxWeaponSlots = 4;
-      if (player.level === 20 && player.maxWeaponSlots < 5) player.maxWeaponSlots = 5;
-      if (player.level === 30 && player.maxWeaponSlots < MAX_WEAPONS_CAP) player.maxWeaponSlots = MAX_WEAPONS_CAP;
-
-      // Generate upgrade options
-      const options = generateUpgradeOptions(player, 3);
-      if (options.length > 0) {
-        this.state.upgradeOptions = options;
-        this.state.phase = 'level_up';
-        return;
-      }
-    }
-  }
-
-  // =========================================================================
-  // Private: Enemy Spawning
-  // =========================================================================
-
-  private spawnEnemies(dt: number): void {
-    if (this.state.phase === 'boss_fight' || this.state.phase === 'boss_intro') return;
-
-    const wave = this.getCurrentWave();
-    if (!wave) return;
-
-    for (let i = 0; i < WAVE_CONFIGS.length; i++) {
-      if (this.state.gameTime >= WAVE_CONFIGS[i].timeStart && this.state.gameTime < WAVE_CONFIGS[i].timeEnd) {
-        this.state.waveIndex = i;
-        break;
-      }
-    }
-
-    // --- Final Swarm Phase (time 480-540) ---
-    const isFinalSwarm = this.state.gameTime >= 480 && this.state.gameTime < BOSS_SPAWN_TIME;
-    this.state.finalSwarm = isFinalSwarm;
-
-    const maxAlive = isFinalSwarm ? 150 : wave.maxAlive;
-    const maxEnemiesLimit = isFinalSwarm ? 150 : this.config.maxEnemies;
-
-    if (this.state.enemies.length >= maxAlive) return;
-    if (this.state.enemies.length >= maxEnemiesLimit) return;
-
-    // --- Mini-boss spawning (every 2 minutes after minute 3) ---
-    if (this.state.gameTime >= 180) {
-      this.miniBossTimer += dt;
-      if (this.miniBossTimer >= 120) {
-        this.miniBossTimer = 0;
-        this.spawnMiniBoss();
-      }
-    }
-
-    this.spawnTimer -= dt;
-    if (this.spawnTimer <= 0) {
-      // Curse tome: faster spawn rate
-      const curseTome = this.state.player.tomes.find(t => t.type === 'curse_tome');
-      const curseSpawnMult = curseTome ? (1 - curseTome.level * 0.1) : 1.0;
-      let spawnInterval = wave.spawnInterval * Math.max(0.5, curseSpawnMult);
-
-      // Final swarm: double spawn rate
-      if (isFinalSwarm) {
-        spawnInterval *= 0.5;
-      }
-
-      this.spawnTimer = spawnInterval;
-
-      const groupMin = wave.groupSize[0];
-      const groupMax = wave.groupSize[1];
-      let groupSize = groupMin + Math.floor(Math.random() * (groupMax - groupMin + 1));
-
-      // Curse tome: bigger groups
-      if (curseTome) {
-        groupSize = Math.round(groupSize * (1 + curseTome.level * 0.15));
-      }
-
-      // Final swarm: bigger groups
-      if (isFinalSwarm) {
-        groupSize = Math.round(groupSize * 1.5);
-      }
-
-      // Choose enemy types (all types available during final swarm)
-      const availableEnemies = isFinalSwarm
-        ? Object.keys(ENEMIES)
-        : wave.enemies;
-
-      for (let i = 0; i < groupSize; i++) {
-        if (this.state.enemies.length >= maxAlive) break;
-        if (this.state.enemies.length >= maxEnemiesLimit) break;
-
-        const isEliteRoll = Math.random() < wave.eliteChance;
-        let enemyType: string;
-
-        if (isEliteRoll) {
-          const eliteTypes = (Object.keys(ENEMIES) as EnemyType[]).filter(
-            t => ENEMIES[t].isElite && ENEMIES[t].firstAppear <= this.state.gameTime
-          );
-          if (eliteTypes.length > 0) {
-            enemyType = eliteTypes[Math.floor(Math.random() * eliteTypes.length)];
-          } else {
-            enemyType = this.pickWeightedEnemy(availableEnemies);
-          }
-        } else {
-          enemyType = this.pickWeightedEnemy(availableEnemies);
-        }
-
-        if (!enemyType) continue;
-        this.spawnSingleEnemy(enemyType);
-      }
-    }
-  }
-
-  private spawnMiniBoss(): void {
-    const allTypes = (Object.keys(ENEMIES) as EnemyType[]).filter(
-      t => ENEMIES[t].firstAppear <= this.state.gameTime
-    );
-    if (allTypes.length === 0) return;
-
-    const baseType = allTypes[Math.floor(Math.random() * allTypes.length)];
-    const spawnPos = this.getSpawnPosition();
-    const enemy = spawnEnemy(
-      baseType,
-      spawnPos.x, spawnPos.z,
-      {
-        gameTime: this.state.gameTime,
-        tier: this.config.tier,
-        player: this.state.player,
-        nextId: () => this.nextEnemyId++,
-      },
-      { mode: 'miniBoss' },
-    );
-    this.state.enemies.push(enemy);
-  }
-
-  private getCurrentWave(): typeof WAVE_CONFIGS[number] | null {
-    for (const wave of WAVE_CONFIGS) {
-      if (this.state.gameTime >= wave.timeStart && this.state.gameTime < wave.timeEnd) {
-        return wave;
-      }
-    }
-    if (WAVE_CONFIGS.length > 0 && this.state.gameTime >= WAVE_CONFIGS[WAVE_CONFIGS.length - 1].timeEnd) {
-      return WAVE_CONFIGS[WAVE_CONFIGS.length - 1];
-    }
-    return null;
-  }
-
-  private pickWeightedEnemy(types: string[]): string {
-    const available = types.filter(
-      t => ENEMIES[t as EnemyType] && ENEMIES[t as EnemyType].firstAppear <= this.state.gameTime
-    );
-    if (available.length === 0) return types[0];
-
-    let totalWeight = 0;
-    for (const t of available) {
-      totalWeight += ENEMIES[t as EnemyType]?.spawnWeight ?? 1;
-    }
-
-    let roll = Math.random() * totalWeight;
-    for (const t of available) {
-      roll -= ENEMIES[t as EnemyType]?.spawnWeight ?? 1;
-      if (roll <= 0) return t;
-    }
-    return available[available.length - 1];
-  }
-
-  private spawnSingleEnemy(type: string): void {
-    if (!ENEMIES[type as EnemyType]) return;
-    const spawnPos = this.getSpawnPosition();
-    const enemy = spawnEnemy(
-      type as EnemyType,
-      spawnPos.x, spawnPos.z,
-      {
-        gameTime: this.state.gameTime,
-        tier: this.config.tier,
-        player: this.state.player,
-        nextId: () => this.nextEnemyId++,
-      },
-      { mode: 'wave' },
-    );
-    this.state.enemies.push(enemy);
-  }
-
-  private getSpawnPosition(): { x: number; z: number } {
-    const halfMap = this.config.mapSize * 0.5;
-    const offset = 5;
-    const side = Math.floor(Math.random() * 4);
-    const along = (Math.random() - 0.5) * this.config.mapSize;
-
-    switch (side) {
-      case 0: return { x: along, z: -halfMap - offset };
-      case 1: return { x: along, z: halfMap + offset };
-      case 2: return { x: -halfMap - offset, z: along };
-      default: return { x: halfMap + offset, z: along };
-    }
-  }
-
-  // =========================================================================
-  // Private: Boss
-  // =========================================================================
-
-  private checkBossSpawn(): void {
-    if (this.state.boss) return;
-    if (this.state.phase === 'victory' || this.state.phase === 'defeat') return;
-
-    const tierCfg = TIER_CONFIGS[this.config.tier];
-
-    if (tierCfg.teleporterCount === 0) {
-      // Tier 1: boss spawns automatically on timer
-      if (this.state.gameTime < BOSS_SPAWN_TIME) return;
-    } else {
-      // Tier 2+: boss ONLY spawns via teleporter activation (all must be activated)
-      const allActivated = this.state.teleporters.length >= tierCfg.teleporterCount &&
-        this.state.teleporters.every(t => t.phase === 'activated');
-      if (!allActivated) return;
-    }
-
-    this.state.boss = {
-      x: 0,
-      y: 0,
-      z: -this.config.mapSize * 0.3,
-      hp: Math.round(BOSS_HP * tierCfg.bossHpMultiplier),
-      maxHp: Math.round(BOSS_HP * tierCfg.bossHpMultiplier),
-      phase: 1,
-      currentAttack: 'idle',
-      attackTimer: BOSS_INTRO_DURATION,
-      attackCooldown: 3.0,
-      hitFlashTimer: 0,
-      speed: 3.0,
-      enraged: false,
-    };
-
-    this.state.phase = 'boss_intro';
-    this.state.enemies = [];
-  }
-
-  // =========================================================================
-  // Private: Thorns & Knockback
-  // =========================================================================
-
-  private applyThornsDamage(): void {
-    const player = this.state.player;
-    const thornsTome = player.tomes.find(t => t.type === 'thorns_tome');
-    if (!thornsTome || thornsTome.level <= 0) return;
-
-    const thornsDamage = thornsTome.level * 3;
-    for (const enemy of this.state.enemies) {
-      if (enemy.hp <= 0) continue;
-      const dist = distanceBetween(player.x, player.z, enemy.x, enemy.z);
-      if (dist < 1.5) {
-        enemy.hp -= thornsDamage;
-        enemy.hitFlashTimer = 0.1;
-        this.state.stats.damageDealt += thornsDamage;
-      }
-    }
-  }
-
-  private applyKnockback(enemy: EnemyState, fromX: number, fromZ: number): void {
-    const knockbackTome = this.state.player.tomes.find(t => t.type === 'knockback_tome');
-    // Always apply a base knockback; tome multiplies it
-    const baseForce = 1.5;
-    const tomeMultiplier = knockbackTome ? (1 + knockbackTome.level * 0.3) : 1.0;
-    const force = baseForce * tomeMultiplier;
-
-    const dir = normalizeDirection(enemy.x - fromX, enemy.z - fromZ);
-    const halfMap = (this.config.mapSize + 10) * 0.5;
-    enemy.x = Math.max(-halfMap, Math.min(halfMap, enemy.x + dir.x * force));
-    enemy.z = Math.max(-halfMap, Math.min(halfMap, enemy.z + dir.z * force));
-  }
-
-  // =========================================================================
-  // Private: Game Over
-  // =========================================================================
-
-  private checkGameOver(): void {
-    if (!this.state.player.alive) {
-      this.state.phase = 'defeat';
-      this.state.finished = true;
-      this.state.running = false;
-      return;
-    }
-
-    if (this.state.boss && this.state.boss.hp <= 0) {
-      this.state.phase = 'victory';
-      this.state.finished = true;
-      this.state.running = false;
-      this.state.stats.silverEarned += 50;
-    }
-  }
-
-  private checkPlayerDeath(): void {
-    const player = this.state.player;
-    if (player.hp <= 0) {
-      // No revive mechanic in MegaBonk — just die
-      player.alive = false;
-    }
-  }
-
-  // =========================================================================
-  // Private: Tome Stats Recalculation
-  // =========================================================================
-
-  private recalculateTomeStats(): void {
-    // Phase 5: 走数据驱动 stat pipeline (data/tomes.ts + stats/recomputePlayerStats.ts).
-    // 旧 switch case 已删, 数学等价 (见 __tests__/recomputePlayerStats.test.ts).
-    recomputePlayerStats(this.state.player, this.config.character, getShopBonuses());
-  }
-
-  // =========================================================================
-  // Private: Weapon Evolution
-  // =========================================================================
-
-  private checkWeaponEvolutions(): void {
-    const player = this.state.player;
-
-    for (const weapon of player.weapons) {
-      if (weapon.evolved) continue;
-      if (weapon.level < 8) continue;
-
-      // Check if any evolution matches this weapon
-      const evolution = WEAPON_EVOLUTIONS.find(e => e.baseWeapon === weapon.type);
-      if (!evolution) continue;
-
-      // Check if the required tome is at the required level
-      const tome = player.tomes.find(t => t.type === evolution.requiredTome);
-      if (!tome || tome.level < evolution.requiredTomeLevel) continue;
-
-      // Evolve the weapon!
-      weapon.evolved = true;
-      weapon.level = 9; // Special evolved level
-
-      // Track evolution in save stats
-      const save = loadSave();
-      save.stats.totalEvolutions += 1;
-      saveSave(save);
-    }
-  }
-
-  // =========================================================================
-  // Private: Chests
-  // =========================================================================
-
-  private generateChests(): ChestState[] {
-    const chests: ChestState[] = [];
-    const halfMap = this.config.mapSize * 0.4;
-    for (let i = 0; i < CHEST_COUNT; i++) {
-      const angle = (i / CHEST_COUNT) * Math.PI * 2 + Math.random() * 0.5;
-      const dist = 15 + Math.random() * halfMap * 0.5;
-      chests.push({
-        id: i + 1,
-        x: Math.cos(angle) * dist,
-        z: Math.sin(angle) * dist,
-        opened: false,
-        reward: CHEST_SILVER_MIN + Math.floor(Math.random() * (CHEST_SILVER_MAX - CHEST_SILVER_MIN)),
-      });
-    }
-    return chests;
-  }
-
-  private updateChests(): void {
-    const player = this.state.player;
-    if (!player.alive) return;
-    for (const chest of this.state.chests) {
-      if (chest.opened) continue;
-      const dist = distanceBetween(player.x, player.z, chest.x, chest.z);
-      if (dist < CHEST_INTERACT_RADIUS) {
-        chest.opened = true;
-        this.state.stats.silverEarned += chest.reward;
-      }
-    }
-  }
-
-  // =========================================================================
-  // Private: Utility
-  // =========================================================================
-
-  private getWeaponStats(weapon: WeaponState) {
-    const levelStats = WEAPON_STATS[weapon.type];
-    if (!levelStats) return WEAPON_STATS['bone_bouncer'][0];
-    // Evolved weapons use max level stats with multiplier
-    const idx = Math.max(0, Math.min((weapon.evolved ? 7 : weapon.level - 1), levelStats.length - 1));
-    const baseStats = levelStats[idx];
-
-    if (weapon.evolved) {
-      const evolution = WEAPON_EVOLUTIONS.find(e => e.baseWeapon === weapon.type);
-      if (evolution) {
-        return {
-          ...baseStats,
-          damage: Math.round(baseStats.damage * evolution.damageMultiplier),
-          projectileCount: baseStats.projectileCount + 1,
-        };
-      }
-    }
-
-    return baseStats;
-  }
-
-  private findNearestEnemy(x: number, z: number, maxRange?: number): EnemyState | null {
-    let nearest: EnemyState | null = null;
-    let nearestDist = maxRange ?? Infinity;
-
-    for (const enemy of this.state.enemies) {
-      if (enemy.hp <= 0) continue;
-      const dist = distanceBetween(x, z, enemy.x, enemy.z);
-      if (dist < nearestDist) {
-        nearestDist = dist;
-        nearest = enemy;
-      }
-    }
-    return nearest;
-  }
-
-  private findNearestEnemyExcluding(x: number, z: number, excludeIds: number[]): EnemyState | null {
-    let nearest: EnemyState | null = null;
-    let nearestDist = 20;
-
-    for (const enemy of this.state.enemies) {
-      if (enemy.hp <= 0) continue;
-      if (excludeIds.includes(enemy.id)) continue;
-      const dist = distanceBetween(x, z, enemy.x, enemy.z);
-      if (dist < nearestDist) {
-        nearestDist = dist;
-        nearest = enemy;
-      }
-    }
-    return nearest;
-  }
-
-  private findEnemyById(id: number): EnemyState | null {
-    for (let i = 0; i < this.state.enemies.length; i++) {
-      if (this.state.enemies[i].id === id) return this.state.enemies[i];
-    }
-    return null;
-  }
-
-  private addDamageEvent(x: number, y: number, z: number, damage: number, isCrit: boolean, isPlayerDamage: boolean, weaponType?: WeaponType): void {
-    this.state.damageEvents.push({ x, y, z, damage, isCrit, isPlayerDamage, weaponType });
-  }
+      engine.state.enemies.push(newEnemy);
+      return newEnemy;
+    },
+    damagePlayer: (rawDamage: number) => {
+      const player = engine.state.player;
+      if (!player.alive || player.invincibleTimer > 0) return;
+      const shieldTome = player.tomes.find(t => t.type === 'shield_tome');
+      const shieldReduction = shieldTome ? shieldTome.level * 0.05 : 0;
+      const dmg = Math.max(1, rawDamage - player.armor);
+      const finalDmg = Math.max(1, Math.round(dmg * (1 - shieldReduction)));
+      player.hp -= finalDmg;
+      player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;
+      engine.state.stats.damageTaken += finalDmg;
+      addDamageEvent(engine, player.x, 1.5, player.z, finalDmg, false, true);
+      if (player.hp <= 0) checkPlayerDeath(engine);
+    },
+  };
 }

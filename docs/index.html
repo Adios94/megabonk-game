@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MegaBonk Three.js — 设计文档</title>
+<title>MegaBonk Three.js — 设计文档（策划 v0.5）</title>
 <style>
   :root {
     --bg: #f4f6fb;
@@ -36,6 +36,11 @@
     --c-lightning:#0e7490;
     --c-flame:    #c2410c;
     --c-shotgun:  #ca8a04;
+    --c-void:     #6366f1;
+    --c-ray:      #0891b2;
+    --c-gas:      #65a30d;
+    --c-paralyze: #7c3aed;
+    --c-scorch:   #ea580c;
 
     --c-common:    #94a3b8;
     --c-uncommon:  #22c55e;
@@ -123,6 +128,26 @@
     transition: all 0.12s;
     cursor: pointer;
     user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .nav a .badge-new {
+    margin-left: auto;
+    flex-shrink: 0;
+    padding: 1px 5px;
+    font-size: 9px;
+    margin-right: 0;
+    pointer-events: none;
+  }
+  .nav a.nav-entry-new:not(.active) {
+    color: #7c3aed;
+    font-weight: 600;
+  }
+  .nav a.nav-entry-new:not(.active):hover {
+    color: #6d28d9;
+    background: var(--accent-2-soft);
   }
   .nav a:hover {
     background: var(--bg-2);
@@ -651,6 +676,22 @@
     margin-right: 6px;
     box-shadow: var(--shadow-sm);
   }
+
+  .badge-new {
+    display: inline-block;
+    margin-left: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    vertical-align: middle;
+    color: #fff;
+    background: #7c3aed;
+    box-shadow: 0 1px 2px rgba(124, 58, 237, 0.35);
+  }
+  section > h2 .badge-new { font-size: 12px; }
 </style>
 </head>
 <body>
@@ -659,22 +700,29 @@
 
 <aside class="sidebar">
   <div class="brand">MegaBonk · 3D</div>
-  <div class="brand-sub">Three.js Roguelike Survivor</div>
+  <div class="brand-sub">Three.js Roguelike Survivor · 策划 v0.5</div>
   <nav class="nav" id="nav">
     <h4 style="color: var(--bad); margin-top: 0;">⚠️ 框架契约</h4>
-    <a data-tab="contract" style="color: var(--bad); font-weight: 700;">必读 · 不可违反</a>
+    <a href="#contract" data-tab="contract" style="color: var(--bad); font-weight: 700;">必读 · 不可违反</a>
 
     <h4>概览</h4>
-    <a data-tab="overview">项目总览</a>
+    <a href="#overview" data-tab="overview">项目总览</a>
+    <a data-tab="ext-overview" class="nav-entry-new">扩展总览<span class="badge-new">new</span></a>
     <a data-tab="timeline">单局节奏</a>
     <a data-tab="tier">难度分层</a>
-    <a data-tab="characters">角色</a>
-    <a data-tab="xp">经验 / 升级</a>
+
+    <h4>角色</h4>
+    <a data-tab="characters">角色（3）<span class="badge-new">new</span></a>
+
+    <h4>经验 / 升级</h4>
+    <a data-tab="xp">经验 / 升级<span class="badge-new">new</span></a>
 
     <h4>战斗</h4>
-    <a data-tab="weapons">武器（7）</a>
-    <a data-tab="evolutions">武器进化</a>
-    <a data-tab="tomes">典籍（10）</a>
+    <a data-tab="weapons">武器（12）<span class="badge-new">new</span></a>
+    <a data-tab="tomes">典籍（12）<span class="badge-new">new</span></a>
+    <a data-tab="ext-bonds" class="nav-entry-new">羁绊系统<span class="badge-new">new</span></a>
+    <a data-tab="ext-relics" class="nav-entry-new">遗物 · 宝箱 · 金币<span class="badge-new">new</span></a>
+    <a data-tab="ext-consumables" class="nav-entry-new">消耗品<span class="badge-new">new</span></a>
     <a data-tab="shop">永久商店</a>
     <a data-tab="combat">战斗公式</a>
     <a data-tab="enemies">敌人</a>
@@ -875,7 +923,7 @@ export {
 <section id="overview">
   <div class="hero">
     <h1>MegaBonk Three.js</h1>
-    <div class="tagline">3D Roguelike Survivor · 探索找祭坛召 Boss · 通关跳关递进 · 移动端优先 · 7 种武器 · 10 种典籍 · 5 条进化路径</div>
+    <div class="tagline">3D Roguelike Survivor · 探索找祭坛召 Boss · 通关跳关递进 · 移动端优先 · 12 种武器 · 12 种典籍 · 9 条羁绊</div>
 
     <div>
       <span class="pill cyan">Three.js 0.170</span>
@@ -887,15 +935,21 @@ export {
     </div>
 
     <div class="hero-stats">
-      <div class="stat-card"><div class="num">7</div><div class="lbl">武器</div></div>
-      <div class="stat-card"><div class="num">10</div><div class="lbl">典籍</div></div>
-      <div class="stat-card"><div class="num">5</div><div class="lbl">武器进化</div></div>
+      <div class="stat-card"><div class="num">12</div><div class="lbl">武器</div></div>
+      <div class="stat-card"><div class="num">12</div><div class="lbl">典籍</div></div>
+      <div class="stat-card"><div class="num">9</div><div class="lbl">羁绊</div></div>
       <div class="stat-card"><div class="num">8</div><div class="lbl">永久商店</div></div>
       <div class="stat-card"><div class="num">3</div><div class="lbl">角色</div></div>
       <div class="stat-card"><div class="num">6</div><div class="lbl">敌人</div></div>
       <div class="stat-card"><div class="num">29</div><div class="lbl">任务</div></div>
       <div class="stat-card"><div class="num">540s</div><div class="lbl">常规生存期</div></div>
     </div>
+  </div>
+
+  <div class="note" style="border-left: 4px solid var(--accent-2); background: var(--accent-2-soft); padding: 12px 16px; border-radius: 8px; margin-bottom: 24px;">
+    <b>本页为 MegaBonk 策划主文档</b>（<code>index.html</code> · v0.5）。侧栏：<span class="badge-new">new</span> = 相对旧版文档有修订；<strong style="color:#7c3aed;">紫色条目</strong> = 全新栏目。100 级成长并入「经验 / 升级」页，天赋转模并入「角色」页，羁绊/遗物/消耗品在「战斗」下。
+    <br><br>
+    <b>如何打开：</b>用浏览器<strong>直接打开本文件</strong>，或 <code>npx serve docs -l 5199</code> → <code>http://localhost:5199/index.html</code>。
   </div>
 
   <h3>项目结构</h3>
@@ -1022,7 +1076,7 @@ export {
       <div class="tier-row"><span class="k">敌人速度</span><span class="v">1.0×</span></div>
       <div class="tier-row"><span class="k">XP 奖励</span><span class="v">1.0×</span></div>
       <div class="tier-row"><span class="k">银币奖励</span><span class="v">1.0×</span></div>
-      <div class="tier-row"><span class="k">Boss HP</span><span class="v">1.0× (2000)</span></div>
+      <div class="tier-row"><span class="k">Boss HP</span><span class="v">1.0×（新设计 6000）</span></div>
       <div class="tier-row"><span class="k">祭坛</span><span class="v">1 个（按 [E] 召唤）</span></div>
     </div>
     <div class="tier t2">
@@ -1050,23 +1104,136 @@ export {
 
 <!-- ============= CHARACTERS ============= -->
 <section id="characters">
-  <h2>角色（3 种）</h2>
+  <h2>角色（3 种） <span class="badge-new">new</span></h2>
   <p class="sub">来源：<code>CHARACTER_CONFIGS</code> (<code>config.ts:66</code>)</p>
 
   <div class="grid cols-3" id="char-cards"></div>
+
+  <div id="ext-unlock" style="margin-top: 36px; padding-top: 28px; border-top: 1px solid var(--line);">
+  <h3>选角解锁（v0.5）</h3>
+  <p>选角界面读取 <code>save.charactersUnlocked</code>；未解锁角色灰显且不可开局。需跨局记录各典籍<strong>历史最高等级</strong>（建议字段 <code>save.tomePeakLevels</code>），在单局内升级典籍或局末结算时更新峰值并判定解锁。</p>
+  <table>
+    <tr><th>角色</th><th>默认</th><th>解锁条件</th></tr>
+    <tr><td>megachad</td><td>✓ 已解锁</td><td>新档默认</td></tr>
+    <tr><td>roberto</td><td>锁定</td><td>历史上曾达成：<code>shield_tome</code>（护盾典籍）或 <code>precision_tome</code>（精准典籍）<strong>至少其一 ≥ 6 级</strong></td></tr>
+    <tr><td>skateboard_skeleton</td><td>锁定</td><td>历史上曾达成：<code>speed_tome</code>（速度典籍）或 <code>attack_speed_tome</code>（攻速典籍）<strong>至少其一 ≥ 6 级</strong></td></tr>
+  </table>
+  <pre><code>// 策划规则（实现时写入 save，与任务奖励解耦）
+// 新档: charactersUnlocked = ['megachad']
+// 每局结束 / 典籍升级后: 更新 tomePeakLevels[type] = max(旧值, 本局等级)
+// 若 peak(speed_tome)≥6 或 peak(attack_speed_tome)≥6 → 解锁 skateboard_skeleton
+// 若 peak(shield_tome)≥6 或 peak(precision_tome)≥6 → 解锁 roberto
+// 选角: 未在 charactersUnlocked 内 → 灰显 + 不可开局</code></pre>
+  <p>解锁与天赋转模独立：解锁只控制<strong>能否选</strong>；天赋转模在局内始终按角色定义生效。</p>
+  </div>
+
+  <div id="ext-traits" style="margin-top: 36px; padding-top: 28px; border-top: 1px solid var(--line);">
+  <h3>角色天赋 · 转模</h3>
+  <p class="sub">角色自带天赋，选角即生效、整局跟随。在 <code>recomputePlayerStats</code> 之后调用 <code>applyCharacterTrait</code>。</p>
+
+  <h4>设计原则</h4>
+  <ul>
+    <li>用角色<strong>固有强项</strong>溢出部分转换到另一维收益</li>
+    <li>转化率<strong>偏低</strong>，<strong>不设转模上限</strong></li>
+    <li>与典籍 / 遗物 / 消耗品叠加；消耗品临时 buff 可实时影响转模输入</li>
+  </ul>
+
+  <div class="grid cols-3">
+    <div class="card">
+      <h4>Megachad</h4>
+      <p class="pill cyan">伤害 → 经验</p>
+      <p><b>主题：</b>蛮力换阅历</p>
+      <pre><code>damageExcess = max(0, dM - 1.0)
+traitXpBonus = damageExcess × 0.22
+
+// pickups.ts XP 结算
+xpValue × (1 + traitXpBonus)</code></pre>
+      <table>
+        <tr><th>dM</th><th class="num">+XP</th></tr>
+        <tr><td>1.2（底）</td><td class="num">+4.4%</td></tr>
+        <tr><td>1.5</td><td class="num">+11%</td></tr>
+        <tr><td>2.0</td><td class="num">+22%</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h4>Roberto</h4>
+      <p class="pill cyan">护甲 → 暴率 → 溢出暴伤</p>
+      <p><b>主题：</b>铁壁换精准</p>
+      <pre><code>armorPoints = armor × 0.008
+critRoom = max(0, 1.0 - critChance)
+addCrit = min(armorPoints, critRoom)
+overflow = armorPoints - addCrit
+
+critChance += addCrit
+critDamage += overflow × 0.80</code></pre>
+      <p>100% 暴率为<strong>溢出分流点</strong>（非转模人为 cap）。precision tome 在转模之前走 StatBlock。</p>
+    </div>
+    <div class="card">
+      <h4>Skateboard Skeleton</h4>
+      <p class="pill cyan">移速 → 攻速</p>
+      <p><b>主题：</b>速度换输出</p>
+      <pre><code>speedExcess = max(0, speed - charBaseSpeed)
+traitAspd = speedExcess × 0.025
+
+attackSpeedMult × (1 + traitAspd)</code></pre>
+      <table>
+        <tr><th>移速</th><th class="num">+攻速</th></tr>
+        <tr><td>5.0（底）</td><td class="num">0%</td></tr>
+        <tr><td>6.0</td><td class="num">+2.5%</td></tr>
+        <tr><td>7.0</td><td class="num">+5%</td></tr>
+        <tr><td>9.0</td><td class="num">+10%</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h4>角色底数（<code>CHARACTER_CONFIGS</code>）</h4>
+  <table>
+    <tr><th>角色</th><th class="num">HP</th><th class="num">移速</th><th class="num">伤害</th><th class="num">护甲</th><th class="num">暴率</th></tr>
+    <tr><td>megachad</td><td class="num">100</td><td class="num">4.0</td><td class="num">1.2</td><td class="num">0</td><td class="num">8%</td></tr>
+    <tr><td>roberto</td><td class="num">150</td><td class="num">3.2</td><td class="num">1.0</td><td class="num">3</td><td class="num">5%</td></tr>
+    <tr><td>skateboard_skeleton</td><td class="num">70</td><td class="num">5.0</td><td class="num">0.9</td><td class="num">0</td><td class="num">10%</td></tr>
+  </table>
+
+  <h4>转化率一览</h4>
+  <table>
+    <tr><th>角色</th><th>来源</th><th>转化</th><th>去向</th></tr>
+    <tr><td>Megachad</td><td><code>(dM - 1.0)</code></td><td class="num">×0.22</td><td>XP +%</td></tr>
+    <tr><td>Roberto</td><td><code>armor</code></td><td class="num">×0.008</td><td>暴率当量 → 满 100% 后溢出 ×0.80 → 暴伤</td></tr>
+    <tr><td>Skateboard Skeleton</td><td><code>(speed - base)</code></td><td class="num">×0.025</td><td>攻速 +%</td></tr>
+  </table>
+
+  <h4>实现位点</h4>
+  <table>
+    <tr><th>文件（草案）</th><th>作用</th></tr>
+    <tr><td><code>data/traits.ts</code></td><td>三角色转模定义</td></tr>
+    <tr><td><code>stats/applyCharacterTrait.ts</code></td><td>recompute 后 mutate crit / aspd</td></tr>
+    <tr><td><code>systems/pickups.ts</code></td><td>Megachad XP 乘算</td></tr>
+  </table>
+  </div>
 </section>
 
 <!-- ============= XP ============= -->
 <section id="xp">
-  <h2>经验 / 升级 / 武器槽</h2>
-  <p class="sub">来源：<code>upgrades.ts</code>、<code>systems/player.ts tickLevelUp</code></p>
+  <h2>经验 / 升级 / 武器槽 <span class="badge-new">new</span></h2>
+  <p class="sub">目标上限 <strong>100 级</strong>。来源：<code>upgrades.ts</code>、<code>systems/player.ts tickLevelUp</code>；当前代码仍是 40 级上限，本文为策划合并版。</p>
 
-  <h3>XP 公式与曲线</h3>
-  <pre><code>xpForLevel(L) = floor(10 × (1 + L × 0.35))</code></pre>
+  <h3 id="ext-progression">XP 曲线与 100 级上限</h3>
+  <div class="note bad">
+    <b>当前代码：</b><code>systems/player.ts</code> 硬顶 40 级 + 每级 +10% maxHp。新设计改为 <strong>100 级上限</strong>，并移除升级治疗 / maxHp 增长。
+  </div>
+  <pre><code>level ≤ 40:  xpForLevel(L) = floor(10 × (1 + L × 0.35))
+41 ≤ L ≤ 100: xpForLevel(L) = floor(150 × 1.0725^(L - 40))</code></pre>
 
   <div class="linechart">
     <svg viewBox="0 0 800 200" preserveAspectRatio="none" id="xpchart"></svg>
   </div>
+
+  <table>
+    <tr><th>阶段</th><th>设计目的</th><th>升级感受</th></tr>
+    <tr><td>1–40</td><td>沿用当前线性成长</td><td>快速建立武器 / 典籍 / 羁绊方向</td></tr>
+    <tr><td>41–70</td><td>中后期放缓</td><td>补齐构筑、追关键 T2/T3</td></tr>
+    <tr><td>71–100</td><td>封顶前冲刺</td><td>高成本少量升级，避免后期选项泛滥</td></tr>
+  </table>
 
   <h3>XP 宝石值</h3>
   <table style="max-width: 380px;">
@@ -1077,19 +1244,43 @@ export {
     <tr><td><span class="gem" style="background: var(--warn);"></span> xp_orange</td><td class="num">100</td></tr>
   </table>
 
-  <h3>升级选项流程</h3>
-  <div class="card">
-    <p>升级时<strong>暂停游戏</strong>，固定弹出 <strong>3 个选项</strong>（<code>systems/player.ts tickLevelUp</code> 内 <code>generateUpgradeOptions(player, 3)</code>，幸运典籍<strong>不</strong>会增加选项数量）。</p>
-    <table>
-      <tr><th>类型</th><th>进入条件</th></tr>
-      <tr><td><code>weapon_upgrade</code></td><td>已拥有该武器 且 weapon.level &lt; 8</td></tr>
-      <tr><td><code>new_weapon</code></td><td>weapons.length &lt; maxWeaponSlots</td></tr>
-      <tr><td><code>tome</code></td><td>该典籍未达上限</td></tr>
-    </table>
-    <p style="margin-top: 12px; color: var(--dim);">抽取规则：<strong>必保</strong>至少 1 个武器相关选项；剩下 2 个从全部可用选项里随机不重复抽取。</p>
-  </div>
+  <h3>升级流程</h3>
+  <table>
+    <tr><th>步骤</th><th>说明</th></tr>
+    <tr><td>XP 达标</td><td>可一次跨多级；每级扣 XP、<code>level++</code>、重算 <code>xpToNext</code></td></tr>
+    <tr><td>治疗 / maxHp</td><td><strong>不在升级时给予</strong>；生命上限、再生和治疗改由典籍、消耗品、遗物、Shrine 负责</td></tr>
+    <tr><td>升级选项</td><td><code>generateUpgradeOptions(player, 3)</code>；固定 <strong>3 选 1</strong>，幸运典籍只影响稀有度滚点，不增加选项数量</td></tr>
+    <tr><td>有选项</td><td><code>phase = level_up</code>，暂停游戏等待选择</td></tr>
+    <tr><td>无选项</td><td>不再静默升级；改为 roll 金币或银币（见下方空池补偿）</td></tr>
+  </table>
 
-  <h3>稀有度权重 <span style="font-weight: normal; color: var(--muted); font-size: 13px;">仅显示用，不改变数值</span></h3>
+  <h3>选项池与出现次数</h3>
+  <table>
+    <tr><th>类型</th><th>进入条件</th><th>上限语义</th></tr>
+    <tr><td><code>weapon_upgrade</code></td><td>已持武器 <code>level &lt; maxLevel</code>（通常 <strong>10</strong>）</td><td>武器等级上限 = 单局最多出现次数</td></tr>
+    <tr><td><code>new_weapon</code></td><td><code>weapons.length &lt; activeWeaponSlots</code> 且未拥有该 type</td><td>首次获得记作该武器第 1 次出现</td></tr>
+    <tr><td><code>tome</code></td><td>该典籍未达自身 <code>maxLevel</code>；新典籍仅当已持典籍种类 <strong>&lt; 6</strong></td><td>12 本典籍中最多持有 6 种；典籍等级上限 = 单局最多出现次数</td></tr>
+    <tr><td><code>bond_activate</code></td><td>羁绊条件已满足但尚未激活</td><td>新机制选项，见羁绊系统</td></tr>
+    <tr><td><code>bond_upgrade</code></td><td>羁绊已激活且下一档条件满足</td><td>T1 → T2 → T3</td></tr>
+  </table>
+  <p style="color: var(--dim);">保底：有武器 / 羁绊相关选项时，3 张中至少 1 张为构筑相关（武器升级 / 新武 / 羁绊）。<del><code>weapon_fusion</code></del> 由羁绊激活替代。</p>
+
+  <h3>升级 +1 级与稀有度幅度</h3>
+  <p class="sub">每次选定升级选项，<strong>等级始终 +1</strong>；但相对配置表「本级 → 下一级」的数值步进，按选项稀有度缩放。</p>
+  <table>
+    <tr><th>稀有度</th><th class="num">相对 common 步进</th><th>说明</th></tr>
+    <tr><td><span class="pill">Common</span></td><td class="num">×1.0</td><td>基准：等于表内 designed 的每级增量（100%）</td></tr>
+    <tr><td><span class="pill" style="border-color:var(--c-uncommon);color:var(--c-uncommon)">Uncommon</span></td><td class="num">×1.3</td><td>在本级步进上额外获得 30% 增量</td></tr>
+    <tr><td><span class="pill" style="border-color:var(--c-rare);color:var(--c-rare)">Rare</span></td><td class="num">×1.6</td><td>额外 60%</td></tr>
+    <tr><td><span class="pill" style="border-color:var(--c-legendary);color:var(--c-legendary)">Legendary</span></td><td class="num">×2.0</td><td>额外 100%（总步进 = 表内步进的 2 倍）</td></tr>
+  </table>
+  <pre><code>// 示意：从 L 升到 L+1
+baseDelta = WEAPON_UPGRADE_BASE[type][field]   // common 每级基础增量
+实际增益 = baseDelta × mult[rarity]            // common=1.0, uncommon=1.3, rare=1.6, legendary=2.0
+level 仍 +1；实际数值累加到 weapon 的运行时成长值上</code></pre>
+  <p style="color: var(--dim);">幸运典籍仍只影响<strong>滚出稀有度的权重</strong>，不直接改倍率表。</p>
+
+  <h3>稀有度权重（滚点）</h3>
   <div class="grid cols-4">
     <div class="card" style="border-top: 3px solid var(--c-common);">
       <h4 style="color: var(--c-common);">Common</h4>
@@ -1116,14 +1307,26 @@ export {
 
   <h3>武器槽解锁阶梯</h3>
   <table>
-    <tr><th>玩家等级</th><th class="num">武器槽数</th><th>来源</th></tr>
-    <tr><td>1</td><td class="num">2</td><td>角色起始（<code>MAX_WEAPONS_DEFAULT</code>）</td></tr>
-    <tr><td>5</td><td class="num">3</td><td>升级解锁</td></tr>
-    <tr><td>10</td><td class="num">4</td><td>升级解锁</td></tr>
-    <tr><td>20</td><td class="num">5</td><td>升级解锁</td></tr>
-    <tr><td>30</td><td class="num">6</td><td><code>MAX_WEAPONS_CAP</code> 上限</td></tr>
-    <tr><td>—</td><td class="num">+1</td><td>任务 q30 永久奖励</td></tr>
+    <tr><th>概念</th><th>含义</th><th>建议节奏</th></tr>
+    <tr><td><code>maxWeaponSlots</code></td><td>本局最多能装几把武器，由角色 + 局外奖励决定，封顶 6</td><td>角色起始 2；任务 / 商店可提高</td></tr>
+    <tr><td><code>activeWeaponSlots</code></td><td>本局当前已解锁槽位，不超过 <code>maxWeaponSlots</code></td><td>建议等级 10 / 20 / 30 / 40 / 50 各 +1</td></tr>
+    <tr><td><code>new_weapon</code></td><td>只有 <code>weapons.length &lt; activeWeaponSlots</code> 时进入池</td><td>避免前期过早塞满 6 武器</td></tr>
   </table>
+
+  <h3>新增典籍</h3>
+  <table>
+    <tr><th>典籍</th><th>类别</th><th>效果（每级）</th><th>上限</th></tr>
+    <tr><td><code>life_tome</code> 生命典籍</td><td>生存</td><td>maxHp +15</td><td>8</td></tr>
+    <tr><td><code>consumable_tome</code> 拾荒典籍</td><td>资源 / 消耗品</td><td>消耗品掉落率 +5%</td><td>8</td></tr>
+  </table>
+
+  <h3>空池补偿</h3>
+  <pre><code>if (options.length === 0) {
+  if (random() < 0.5)
+    player.gold += round(8 × (1 + level × 0.08) + rand(0..12))
+  else
+    stats.silverEarned += round(15 × (1 + level × 0.08) + rand(0..25))
+}</code></pre>
 
   <h3>连击系统</h3>
   <pre><code>2 秒内连续击杀 → comboCount += 1
@@ -1133,63 +1336,105 @@ XP 倍率 = 1 + min(comboCount × 0.05, 1.0)   // 最高 2×
 
 <!-- ============= WEAPONS ============= -->
 <section id="weapons">
-  <h2>武器系统（7 种）</h2>
-  <p class="sub">来源：<code>WEAPON_STATS</code> (<code>config.ts:154</code>) · 每把武器 8 级 + 1 进化态</p>
+  <h2>武器系统（12 种） <span class="badge-new">new</span></h2>
+  <p class="sub">单把 <strong>maxLevel = 10</strong>。不再维护每级完整数值表；改为 <code>WEAPON_BASE_STATS</code>（Lv1 基准值）+ <code>WEAPON_UPGRADE_BASE</code>（每次升级的 Common 基础增量）。实际升级增量由选项品质乘以基础增量决定，满级后的构筑深化由<strong>羁绊系统</strong>承担。</p>
 
   <h3>取数与开火流程</h3>
   <div class="flow">
-    <span class="box in">玩家点选项</span>
+    <span class="box in">升级 3 选 1</span>
     <span class="arrow">→</span>
-    <span class="box">weapon.level++</span>
+    <span class="box">level++</span>
     <span class="arrow">→</span>
-    <span class="box">getWeaponStats(weapon)</span>
+    <span class="box">读取基础升级增量</span>
     <span class="arrow">→</span>
-    <span class="box">WEAPON_STATS[type][level - 1]</span>
+    <span class="box">baseDelta × rarityMult</span>
     <span class="arrow">→</span>
-    <span class="box mul">× attackSpeedMul</span>
+    <span class="box mul">累加到运行时成长值</span>
     <span class="arrow">→</span>
-    <span class="box out">每帧 tickWeapons()</span>
+    <span class="box out">tickWeapons()</span>
   </div>
 
-  <h3>各武器每级数值</h3>
-  <div class="legend">
-    <span><span class="swatch" style="background: var(--bg-3);"></span>Lv 1–8 基础态（颜色按武器主题）</span>
-    <span><span class="swatch" style="background: linear-gradient(180deg, var(--accent), var(--accent-2));"></span>Lv 9 进化态（如有）</span>
-  </div>
-
-  <div id="weapons-grid"></div>
-</section>
-
-<!-- ============= EVOLUTIONS ============= -->
-<section id="evolutions">
-  <h2>武器进化（5 条路径）</h2>
-  <p class="sub">来源：<code>WEAPON_EVOLUTIONS</code> (<code>config.ts:278</code>)</p>
-
-  <div class="card" style="margin-bottom: 18px;">
-    <h4>触发条件</h4>
-    <ol style="margin: 8px 0; padding-left: 18px; color: var(--text);">
-      <li><code>weapon.level &gt;= 8</code>（满级）</li>
-      <li>该武器在 <code>WEAPON_EVOLUTIONS</code> 中存在条目</li>
-      <li>对应典籍 <code>tome.level &gt;= requiredTomeLevel</code></li>
-    </ol>
-    <h4>数值计算</h4>
-    <pre><code>最终 = WEAPON_STATS[type][7]                    // Lv 8 数值
-       damage  → round(Lv8.damage × multiplier)
-       projectileCount → +1
-其他字段（CD/范围/穿透/速度/AoE）保持 Lv 8 不变</code></pre>
-  </div>
-
-  <div class="grid" style="grid-template-columns: 1fr; gap: 12px;" id="evo-grid"></div>
-
+  <h3>升级数值规则</h3>
   <div class="note">
-    <strong>注：</strong><code>flame_ring</code> 与 <code>shotgun</code> 暂无进化路径，如需扩展，在 <code>config.ts WEAPON_EVOLUTIONS</code> 加一条即可。
+    <b>核心：</b>每把武器只配置 <code>baseStats</code>（Lv1）与 <code>upgradeBase</code>（Common 每级增量）。升级选项品质只影响本次增量，不改变「+1 级」这个事实。
   </div>
+  <table>
+    <tr><th>品质</th><th class="num">倍率</th><th>一次升级的实际增量</th></tr>
+    <tr><td>Common</td><td class="num">×1.0</td><td><code>upgradeBase</code></td></tr>
+    <tr><td>Uncommon</td><td class="num">×1.3</td><td><code>upgradeBase × 1.3</code></td></tr>
+    <tr><td>Rare</td><td class="num">×1.6</td><td><code>upgradeBase × 1.6</code></td></tr>
+    <tr><td>Legendary</td><td class="num">×2.0</td><td><code>upgradeBase × 2.0</code></td></tr>
+  </table>
+
+  <h3>攻击数量 / 目标数的小数成长</h3>
+  <p>带攻击数量、弹数、链数、目标数成长的武器，配置值允许保留小数；实际战斗中对最终值<strong>向下取整</strong>，从而让品质倍率也能影响数量成长。</p>
+  <pre><code>storedTargetCount += upgradeBase.targetCount × rarityMult
+actualTargetCount = floor(storedTargetCount)
+
+// 示例：
+1.2  → 1 个目标
+3.8  → 3 个目标
+4.54 → 4 个目标</code></pre>
+  <p style="color: var(--dim);">这样可以把「数量成长」从固定等级节点改成连续成长：普通升级慢慢攒，稀有升级更早跨过下一个整数阈值。</p>
+
+  <h3>武器基础升级表（草案）</h3>
+  <table>
+    <tr><th>武器</th><th>Lv1 基准</th><th>Common 每级基础增量</th><th>数量字段</th><th>机制备注</th></tr>
+    <tr><td>Sword 大剑</td><td>伤害 12；范围 2.5；攻击数 1.0</td><td>伤害 +3.2；范围 +0.22；攻击数 +0.22</td><td><code>attackCount</code> floor</td><td>扇扫命中数仍由范围与碰撞决定</td></tr>
+    <tr><td>Bone 骨头</td><td>伤害 8；弹射 2.0；投射数 1.0</td><td>伤害 +1.5；弹射 +0.45；投射数 +0.20</td><td><code>projectileCount</code> / <code>bounces</code> floor</td><td>弹射数小数可让高品质更早多弹一次</td></tr>
+    <tr><td>Axe 飞斧</td><td>伤害 10；斧数 1.0；范围 3.0</td><td>伤害 +2.4；斧数 +0.28；范围 +0.22</td><td><code>axeCount</code> floor</td><td>攻速/旋转速度另由典籍与羁绊影响</td></tr>
+    <tr><td>Bow 左轮</td><td>伤害 18；弹数 1.0；穿透 0.0</td><td>伤害 +4.5；弹数 +0.22；穿透 +0.32</td><td><code>projectileCount</code> / <code>pierce</code> floor</td><td>射程固定偏高，升级重点是伤害和穿透</td></tr>
+    <tr><td>Lightning 闪电</td><td>伤害 15；链数 3.0；范围 8</td><td>伤害 +2.8；链数 +0.42；范围 +1.6</td><td><code>chains</code> floor</td><td>高品质升级可提前跨链数阈值</td></tr>
+    <tr><td>Flame 烈焰环</td><td>秒伤 4；半径 3.5；tick 间隔 0.5</td><td>秒伤 +0.9；半径 +0.45；tick 间隔 −0.02</td><td>无</td><td>不做数量成长，稳定 AoE</td></tr>
+    <tr><td>Shotgun 霰弹</td><td>伤害 8；弹丸 5.0；穿透 0.0</td><td>伤害 +1.7；弹丸 +0.42；穿透 +0.18</td><td><code>pelletCount</code> / <code>pierce</code> floor</td><td>品质越高越早增加弹丸密度</td></tr>
+    <tr><td>Void 虚空涟漪</td><td>伤害 10；环宽 1.2；击退 0.4</td><td>伤害 +1.4；环宽 +0.18；CD −0.04</td><td>无</td><td>控制型武器，数量成长交给羁绊</td></tr>
+    <tr><td>Ray 射线枪</td><td>伤害 24；宽度 0.32；射程 12</td><td>伤害 +3.2；宽度 +0.035</td><td>无</td><td>射程固定，路径命中人数由站位决定</td></tr>
+    <tr><td>Poison 毒气弹</td><td>秒伤 10；持续 3.0；投掷数 1.0</td><td>秒伤 +1.3；持续 +0.22；投掷数 +0.16</td><td><code>grenadeCount</code> floor</td><td>高品质可更早多投一枚毒气弹</td></tr>
+    <tr><td>Paralyze 麻痹枪</td><td>伤害 17；目标 1.0；强减速 1.0s</td><td>伤害 +2.2；目标 +0.32；控制 +0.12s</td><td><code>targetCount</code> floor</td><td>目标数采用小数积累，控制效果改为强减速 + 攻击减慢</td></tr>
+    <tr><td>Scorch 灼地靴</td><td>秒伤 6；宽度 1.0；持续 2.0s</td><td>秒伤 +0.75；宽度 +0.10；持续 +0.05s</td><td>无</td><td>跟移动路线绑定，不做攻击数成长</td></tr>
+  </table>
+
+  <h3 id="weapons-balance">全武器强度评估（机制加权）</h3>
+  <p class="sub">档位 S/A/B/C；所有武器统一对标 Lv10，额外机制由羁绊承担。</p>
+  <table>
+    <tr><th>武器</th><th>对单</th><th>对群</th><th>Lv10 基准</th><th>范围</th><th>机制</th><th>综合</th></tr>
+    <tr><td colspan="7" style="background:var(--bg-2);font-weight:600;">已实现 · 7</td></tr>
+    <tr><td>Bow 左轮</td><td>S</td><td>B+</td><td class="num">~290+</td><td>极远</td><td>穿透、猎标羁绊</td><td><strong>S</strong></td></tr>
+    <tr><td>Sword 大剑</td><td>A</td><td>S</td><td class="num">高×扫中数</td><td>近扇</td><td>多刀、穿透 999</td><td><strong>S</strong></td></tr>
+    <tr><td>Lightning 闪电</td><td>B+</td><td>S</td><td class="num">~145–280</td><td>链 + 远距</td><td>即时连锁</td><td><strong>A+</strong></td></tr>
+    <tr><td>Shotgun 霰弹</td><td>B+</td><td>A</td><td class="num">~283+</td><td>中扇</td><td>多弹贴脸</td><td><strong>A</strong></td></tr>
+    <tr><td>Bone 骨头</td><td>B</td><td>A</td><td class="num">~150–220</td><td>弹射</td><td>弹数 + 弹返</td><td><strong>A-</strong></td></tr>
+    <tr><td>Axe 飞斧</td><td>B+</td><td>A</td><td class="num">~140×刮</td><td>近轨</td><td>环绕</td><td><strong>A-</strong></td></tr>
+    <tr><td>Flame 烈焰环</td><td>C+</td><td>A</td><td class="num">40+/s</td><td>近 AoE</td><td>零操作</td><td><strong>B+</strong></td></tr>
+    <tr><td colspan="7" style="background:var(--accent-2-soft);font-weight:600;">草案 · 5</td></tr>
+    <tr><td>Ray 射线枪</td><td>B+</td><td>A-</td><td class="num">37×N</td><td>线穿透</td><td>无衰减</td><td><strong>B+</strong></td></tr>
+    <tr><td>Poison 毒气弹</td><td>B</td><td>B+</td><td class="num">DoT</td><td>投掷</td><td>毒师联动</td><td><strong>B</strong></td></tr>
+    <tr><td>Paralyze 麻痹枪</td><td>C+</td><td>B</td><td class="num">控场</td><td>多目标</td><td>精英优先</td><td><strong>B</strong></td></tr>
+    <tr><td>Scorch 灼地靴</td><td>C+</td><td>A-</td><td class="num">轨迹</td><td>移动</td><td>跑图 AoE</td><td><strong>B</strong></td></tr>
+    <tr><td>Void 虚空涟漪</td><td>C+</td><td>B+</td><td class="num">环 DPS</td><td>360°</td><td>导体/寸劲</td><td><strong>B</strong></td></tr>
+  </table>
+
+  <h3>羁绊联动（新武器）</h3>
+  <table>
+    <tr><th>新武器</th><th>羁绊</th><th>T2</th><th>T3</th></tr>
+    <tr><td><code>void_ripple</code></td><td>奥术、寸劲、弧光</td><td>奥秘 / 击退伤 / 导体标记</td><td>计数触发、撞墙、连锁</td></tr>
+    <tr><td><code>ray_gun</code></td><td>弧光、猎标</td><td>连锁 / 烙印</td><td>连锁升格、绞杀线</td></tr>
+    <tr><td><code>poison_grenade</code></td><td>毒师、余烬</td><td>毒层 / 火池</td><td>毒雾扩散、叠层</td></tr>
+    <tr><td><code>paralyze_gun</code></td><td>毒师、猎标</td><td>强减速 / 攻击减慢 / 烙印</td><td>精英易伤</td></tr>
+    <tr><td><code>scorch_boots</code></td><td>余烬、寸劲</td><td>火池 / 贴身</td><td>轨迹强化</td></tr>
+  </table>
+  <h3>草案实现备注</h3>
+  <ul>
+    <li>五把新武：<code>behaviors/</code> + <code>data/weapons.ts</code></li>
+    <li>毒气/控场：<code>StatusEffect</code>（gas_dot、strong_slow、attack_slow、elite_slow_coef）</li>
+    <li><code>scorch_boots</code>：轨迹 system 或复用 flame 逻辑</li>
+  </ul>
 </section>
 
 <!-- ============= TOMES ============= -->
 <section id="tomes">
-  <h2>典籍 Tome（10 种）</h2>
-  <p class="sub">关卡内被动 buff，单局生效。<strong>实际数值来自 <code>data/tomes.ts</code> + <code>stats/recomputePlayerStats.ts</code> 与各业务路径，i18n 文案有时简化。</strong></p>
+  <h2>典籍 Tome（12 种） <span class="badge-new">new</span></h2>
+  <p class="sub">关卡内被动 buff，单局生效。新增<strong>生命典籍</strong>与<strong>拾荒典籍</strong>；所有典籍上限统一提升到 <strong>Lv8</strong>。同时最多持有 6 种典籍，满 6 后升级池只刷已有典籍的升级。</p>
 
   <div class="grid cols-3" id="tome-grid"></div>
 
@@ -1198,12 +1443,12 @@ XP 倍率 = 1 + min(comboCount × 0.05, 1.0)   // 最高 2×
     <div class="note bad">
       <strong>shield_tome 实际是双重减伤</strong><br>
       不仅 +2 护甲/级（<code>data/tomes.ts</code>），受伤后还会再 ×(1 − 0.05·level)。<br>
-      Lv 5 = +10 护甲 <strong>且</strong> 残余伤害 ×0.75。
+      Lv 8 = +16 护甲 <strong>且</strong> 残余伤害 ×0.60。
     </div>
     <div class="note">
       <strong>curse_tome 是风险/收益型</strong><br>
-      堆满后：敌人速度 +30%、刷新间隔 −30%、击杀 XP +60%、拾取 XP 不变。<br>
-      <code>spawnInterval × max(0.5, 1 − 0.10·level)</code>
+      每级：敌人速度 +3.75%、刷新间隔 −3.75%、击杀 XP +7.5%；Lv8 合计敌速 +30%、刷新 −30%、击杀 XP +60%，拾取 XP 不变。<br>
+      <code>spawnInterval × max(0.7, 1 − 0.0375·level)</code>
     </div>
   </div>
 </section>
@@ -1260,7 +1505,7 @@ XP 倍率 = 1 + min(comboCount × 0.05, 1.0)   // 最高 2×
     <span class="arrow">×</span>
     <span class="box mul">1 + xp_gain_tome.lv × 0.15<small>拾取阶段</small></span>
     <span class="arrow">×</span>
-    <span class="box mul">1 + curse_tome.lv × 0.20<small>击杀阶段</small></span>
+    <span class="box mul">1 + curse_tome.lv × 0.075<small>击杀阶段</small></span>
     <span class="arrow">×</span>
     <span class="box mul">商店 xp_gain<small>+10%/级</small></span>
     <span class="arrow">×</span>
@@ -1319,7 +1564,7 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
 <!-- ============= BOSS ============= -->
 <section id="boss">
   <h2>Boss 战</h2>
-  <p class="sub">触发：玩家走到祭坛旁按 <code>[E]</code> / 移动端按钮，1.0s 读条完成后进场（不再依赖 540s 时间触发）· 基础 HP 2000（再 × <code>tier.bossHpMultiplier</code>）· 来源：<code>ai/bosses/skeletonKing.ts</code>（phase 表 + 7 attacks）+ <code>systems/bossAi.ts</code> 调度。Boss 死亡后祭坛变传送门，详见 <a data-tab="teleporter">祭坛 / Boss / 超时</a>。</p>
+  <p class="sub">触发：玩家走到祭坛旁按 <code>[E]</code> / 移动端按钮，1.0s 读条完成后进场（不再依赖 540s 时间触发）· 新设计建议基础 HP <strong>6000</strong>（当前代码仍为 2000，再 × <code>tier.bossHpMultiplier</code>）· 来源：<code>ai/bosses/skeletonKing.ts</code>（phase 表 + 7 attacks）+ <code>systems/bossAi.ts</code> 调度。Boss 死亡后祭坛变传送门，详见 <a data-tab="teleporter">祭坛 / Boss / 超时</a>。</p>
 
   <div class="hpbar">
     <div class="seg p1">P1 · 100% – 60% HP</div>
@@ -1383,7 +1628,7 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
     <div class="card"><h4>击杀数 (<code>kill</code>)</h4><p>q1–q4 击杀 100 / 500 / 1000 / 5000</p></div>
     <div class="card"><h4>存活时间 (<code>survive</code>)</h4><p>2 / 5 / 9 分钟</p></div>
     <div class="card"><h4>累计等级 (<code>level</code>)</h4><p>到达 10 / 20 / 30 / 40 级</p></div>
-    <div class="card"><h4>武器进化 (<code>evolve</code>)</h4><p>完成进化 1 / 3 / 5 次</p></div>
+    <div class="card"><h4>羁绊成长 (<code>bond</code>)</h4><p>激活羁绊 1 / 3 / 5 次，或达成 T2 / T3</p></div>
     <div class="card"><h4>Boss 击杀 (<code>boss</code>)</h4><p>Tier 1/2/3 击杀</p></div>
     <div class="card"><h4>无伤存活 (<code>no_damage</code>)</h4><p>q25 — 5 分钟无伤</p></div>
     <div class="card"><h4>银币收集 (<code>collect</code>)</h4><p>q26–q30 累计 500 ~ 25000</p></div>
@@ -1485,7 +1730,8 @@ portal_used    终态；tier 推进流程消费它（清场 + 重生新祭坛）
   shopLevels: Record&lt;string, number&gt;;
   questsCompleted: string[];
   weaponsUnlocked: string[];
-  charactersUnlocked: string[];
+  charactersUnlocked: string[];  // 新档仅 megachad
+  tomePeakLevels?: Record&lt;string, number&gt;;  // 建议新增：典籍历史最高级
   extraWeaponSlots: number;
   stats: {
     totalKills, totalRuns, bestSurvivalTime,
@@ -1643,6 +1889,508 @@ luck 来源 = luck_tome.level + floor(player.luckBonus * 100)</code></pre>
   </table>
 </section>
 
+<!-- ============= EXTENSION OVERVIEW ============= -->
+<section id="ext-overview">
+  <h2>扩展设计总览 <span class="badge-new">new</span></h2>
+  <p class="sub">相较当前已落地代码的<strong>策划草案 v0.4（ximing 修订）</strong> — 尚未实现，供战斗设计与程序对齐。</p>
+
+  <div class="hero">
+    <h1>构筑扩展 v0.4</h1>
+    <div class="tagline">100 级 · 羁绊激活 · 金币经济 · 遗物/消耗品 · 角色天赋转模 · 5 把新武器</div>
+    <div class="hero-stats">
+      <div class="stat-card"><div class="num">100</div><div class="lbl">等级上限</div></div>
+      <div class="stat-card"><div class="num">9</div><div class="lbl">羁绊 · 语义分组</div></div>
+      <div class="stat-card"><div class="num">∞</div><div class="lbl">遗物可叠加</div></div>
+      <div class="stat-card"><div class="num">12+</div><div class="lbl">武器（含 5 把新武）</div></div>
+    </div>
+  </div>
+
+  <div class="note" style="border-left: 4px solid var(--accent-2); background: var(--accent-2-soft); padding: 12px 16px; border-radius: 8px; margin-bottom: 24px;">
+    <b>状态：</b>设计文档 only。v0.4 核心变更：<strong>取消升级自动加血/加 maxHp</strong>、<strong>用羁绊激活替代 21 条双武融合</strong>、<strong>宝箱改消耗金币</strong>、<strong>空池 roll 金币/银币</strong>。
+  </div>
+
+  <h3>机制分类（策划填表用）</h3>
+  <table>
+    <tr><th>类别</th><th>包含内容</th><th>主要来源</th></tr>
+    <tr><td><strong>生存类</strong></td><td>生命上限、治疗/再生、护盾、荆棘</td><td><code>life_tome</code>、<code>shield_tome</code>、<code>thorns_tome</code>、遗物、消耗品</td></tr>
+    <tr><td><strong>伤害提升类</strong></td><td>全局伤害、暴击、攻速、羁绊增伤</td><td><code>precision_tome</code>、<code>attack_speed_tome</code>、羁绊、遗物、消耗品</td></tr>
+    <tr><td><strong>削弱敌方类</strong></td><td>毒气持续伤、强减速、攻击减慢、击退、诅咒（敌加速但多经验）</td><td>新武器（毒气弹/麻痹枪）、<code>knockback_tome</code>、<code>curse_tome</code>、羁绊感官机制</td></tr>
+    <tr><td><strong>速度类</strong></td><td>移速、冲刺相关、灼地轨迹</td><td><code>speed_tome</code>、羁绊、消耗品、灼地靴</td></tr>
+    <tr><td><strong>资源类</strong></td><td>金币、银币、经验、拾取半径</td><td>击杀掉落、空池 roll、宝箱、<code>attraction_tome</code>、<code>xp_gain_tome</code>、<code>luck_tome</code></td></tr>
+    <tr><td><strong>槽位与构筑类</strong></td><td>局外 max 槽、局内 active 槽、武器/典籍/羁绊</td><td><code>save.extraWeaponSlots</code>、等级解锁、升级 3 选 1</td></tr>
+    <tr><td><strong>遗物类</strong></td><td>不占武器槽；<strong>同 ID 可叠加</strong>；机制可更激进</td><td>金币开箱、击杀间接增益</td></tr>
+    <tr><td><strong>消耗品类</strong></td><td>怪物概率掉落；拾荒典籍提高掉落概率</td><td><code>consumable_tome</code>、精英/Mini-Boss 掉落、地图消耗品点</td></tr>
+    <tr><td><strong>感官/机制类</strong></td><td>羁绊 <strong>T2 新机制</strong>、<strong>T3 机制升格</strong>（震波、折射、火池、曳光、猎标等）</td><td>羁绊 T2/T3 激活、<code>bondEvents</code> + behavior 分支</td></tr>
+  </table>
+
+  <h3>新增模块一览</h3>
+  <div class="grid cols-2">
+    <div class="card">
+      <h4>成长 · 100 级</h4>
+      <p>等级上限 <strong>100</strong>。升级仍 <strong>3 选 1</strong>。选项池为空时<strong>自动 roll 金币或银币</strong>（各 50%），不再静默白给。升级<strong>不再</strong>自动 +10% maxHp。</p>
+      <p><a href="#" data-tab="xp">→ 详见</a></p>
+    </div>
+    <div class="card">
+      <h4>新增典籍</h4>
+      <p><code>life_tome</code>：提升 maxHp（替代升级加血）。<code>consumable_tome</code>：提高消耗品掉落概率，支持消耗品流派。</p>
+      <p><a href="#" data-tab="xp">→ 详见</a></p>
+    </div>
+    <div class="card">
+      <h4>羁绊系统 v0.5d</h4>
+      <p><strong>9 条</strong>羁绊，语义入组（N=2～4）；含<strong>羁绊激活</strong>（替代 21 条双武融合），升级池 <code>bond_activate</code> / <code>bond_upgrade</code>。</p>
+      <p><a href="#" data-tab="ext-bonds">→ 详见</a></p>
+    </div>
+    <div class="card">
+      <h4>遗物 · 金币 · 宝箱</h4>
+      <p>遗物<strong>不占武器槽</strong>，<strong>同 ID 可叠加</strong>（重复开箱同种遗物 → 层数 +1，效果累加）。击杀掉<strong>金币</strong>。开箱需<strong>消耗金币</strong>，费用随玩家等级增长。</p>
+      <p><a href="#" data-tab="ext-relics">→ 详见</a></p>
+    </div>
+    <div class="card">
+      <h4>消耗品 + 拾荒典籍</h4>
+      <p>怪物概率掉落；拾取即用或入库存。<code>consumable_tome</code> 提高消耗品掉落率。</p>
+      <p><a href="#" data-tab="ext-consumables">→ 详见</a></p>
+    </div>
+    <div class="card">
+      <h4>武器槽：局外 max + 局内 active</h4>
+      <p><code>maxWeaponSlots</code> = 角色基础 + 局外 <code>extraWeaponSlots</code>（任务/商店）。<code>activeWeaponSlots</code> 开局 1，随等级解锁至 max（如 10/20/30/40/50 级）。</p>
+      <p><a href="#" data-tab="xp">→ 详见</a></p>
+    </div>
+    <div class="card">
+      <h4>角色天赋 · 转模</h4>
+      <p>选角解锁见典籍 6 级里程碑；局内天赋转模整局生效（Megachad / Roberto / Skateboard）。</p>
+      <p><a href="#" data-tab="characters">→ 详见</a></p>
+    </div>
+  </div>
+
+  <h3>与现系统的替换关系</h3>
+  <table>
+    <tr><th>现有</th><th>v0.4 草案</th></tr>
+    <tr><td>升级 +10% maxHp</td><td>移除；生命上限改由 <code>life_tome</code>、遗物与消耗品承担</td></tr>
+    <tr><td><code>level &gt;= 40</code> 停止升级</td><td>上限 100 + 41+ 更陡 XP 曲线</td></tr>
+    <tr><td>选项池空 → 静默升级</td><td>roll <strong>金币或银币</strong></td></tr>
+    <tr><td>旧武器进化 + 典籍门槛</td><td><strong>删除</strong>；统一改为羁绊激活（减少融合配方数量）</td></tr>
+    <tr><td>21 条 <code>weapon_fusion</code></td><td>改为 <code>bond_activate</code> / <code>bond_upgrade</code></td></tr>
+    <tr><td>宝箱免费开 → 银币</td><td>消耗<strong>金币</strong> → roll 遗物（可叠层）</td></tr>
+    <tr><td>仅精英掉银币</td><td>全怪物掉金币 + 保留银币来源</td></tr>
+    <tr><td>5/10/20/30 级开槽 = maxWeaponSlots</td><td>局外 max + 局内 active 分离</td></tr>
+  </table>
+
+  <h3>系统关系</h3>
+  <pre><code>击杀 → XP + 金币掉落（按怪物等级）
+         ↓
+  level++（上限 100，无自动治疗）
+         ↓
+  buildAvailableOptions → 有选项？→ 3 选 1（upgrade / new_weapon / tome / bond_activate / bond_upgrade）
+         ↓ 无
+  roll 金币 or 银币（50/50，数量随 level 缩放）
+
+  宝箱 ──→ 消耗 gold ──→ 遗物 roll（同 ID 叠层，效果累加）
+  怪物 ──→ 概率掉落消耗品（consumable_tome 提高掉落率）
+
+  羁绊 ──→ 条件满足 → bond_activate/upgrade；T1 数值 → T2 机制 → T3 升格
+  转模 ──→ recomputePlayerStats 之后 applyCharacterTrait
+  选角 ──→ charactersUnlocked 校验</code></pre>
+
+  <h3>建议实现顺序</h3>
+  <ol>
+    <li>100 级 + 移除升级治疗 + 空池 roll 金币/银币 + 槽位拆分</li>
+    <li><code>life_tome</code> / <code>consumable_tome</code></li>
+    <li>金币掉落 + 宝箱改金币消耗</li>
+    <li>遗物（可叠加、不占槽）</li>
+    <li>消耗品掉落 + 使用</li>
+    <li>羁绊 v0.5d（9 条 · T1 激活瞬时 / T2 机制 / T3 升格）+ 羁绊激活选项（替代融合）</li>
+    <li>选角解锁 + 天赋转模</li>
+    <li>5 把新武器（见 <a href="#weapons">武器系统</a> 草案小节）</li>
+  </ol>
+</section>
+
+<!-- ============= EXT BONDS ============= -->
+<section id="ext-bonds">
+  <h2>羁绊系统 v0.5d <span class="badge-new">new</span></h2>
+  <p class="sub">覆盖 <strong>12</strong> 种 <code>WeaponType</code>（7 旧 + 5 新），<strong>9 条</strong>羁绊；<strong>名称沿用现稿</strong>，组内武器按<strong>语义</strong>编排，单条羁绊 <strong>N=2～4</strong> 不等。武器各占 1 槽。</p>
+
+  <div class="note" style="border-left: 4px solid var(--accent-2); background: var(--accent-2-soft); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px;">
+    <b>三档分工（固定）：</b><br>
+    <strong>T1 · 数值档</strong> — 仅 stat 管线：伤害 increased、冷却、暴击、弹数、持续伤倍率等。<strong>无新 VFX 机制。</strong><br>
+    <strong>T2 · 机制档</strong> — 引入<strong>新战斗规则</strong> + 强反馈（光效 / 音效 / 命中特效）；玩家应能明确感到「玩法变了」。<br>
+    <strong>T3 · 升格档</strong> — 在 T2 机制上<strong>数值强化或机制升级</strong>（比例提高、次数 +1、持续时间延长、触发条件放宽），不另起一套无关机制。
+  </div>
+
+  <h3>符号与计数</h3>
+  <table>
+    <tr><th>符号</th><th>含义</th></tr>
+    <tr><td><code>N</code></td><td>该羁绊固定武器种类数（本版 <strong>2～4</strong> 不等）</td></tr>
+    <tr><td><code>k</code></td><td>玩家当前持有、属于该羁绊的武器种类数</td></tr>
+    <tr><td><code>L_sum</code> / <code>L_min</code></td><td>已持有羁绊武器的等级之和 / 最低等级</td></tr>
+    <tr><td><code>mechanicId</code></td><td>T2 引入的机制 id；T3 只升级此 id，不新增 id</td></tr>
+  </table>
+
+  <h3>语义分组原则</h3>
+  <ul>
+    <li><strong>铁血</strong> — 仅<strong>铁制冷兵器</strong>（剑、斧）；不含虚空环、射线等</li>
+    <li><strong>奥术</strong> — <strong>魔法/元素施法</strong>（闪电杖、烈焰环、虚空涟漪、灼地靴魔迹）；射线枪归入<strong>弧光</strong>，不进奥术</li>
+    <li><strong>零距寸劲</strong> — <strong>贴身主战</strong>（剑、斧、虚空环、霰弹）；id <code>zero_range</code>，3m 内加伤与击退位移伤</li>
+    <li><strong>余烬</strong> — <strong>火焰残留</strong>（烈焰环、灼地靴）；与毒气弹无关</li>
+    <li><strong>毒师</strong> — <strong>毒与控场</strong>（毒气弹、麻痹枪；控制表现为强减速 + 攻击减慢）；id <code>poison_master</code></li>
+    <li>单条羁绊 <strong>N=2～4</strong> 均可；不要求每条都是 3 武。12 把武器允许 <strong>1～4</strong> 条羁绊，以语义优先</li>
+  </ul>
+
+  <h3>档位门槛（按 N 分档）</h3>
+  <p class="sub">单把最高 <strong>Lv10</strong>。T2/T3 的 <code>k</code> 与 <code>L_sum</code> 随羁绊规模调整。</p>
+  <table>
+    <tr><th>档位</th><th>N=2</th><th>N=3</th><th>N=4</th></tr>
+    <tr><td><strong>T1</strong></td><td><code>k ≥ 1</code></td><td><code>k ≥ 2</code></td><td><code>k ≥ 2</code></td></tr>
+    <tr><td><strong>T2</strong></td><td><code>k = 2</code> 且 <code>L_sum ≥ 8</code></td><td><code>k = 3</code> 且 <code>L_sum ≥ 12</code></td><td><code>k ≥ 3</code> 且 <code>L_sum ≥ 12</code></td></tr>
+    <tr><td><strong>T3</strong></td><td><code>k = 2</code> 且 <code>L_sum ≥ 14</code> 且 <code>L_min ≥ 5</code></td><td><code>k = 3</code> 且 <code>L_sum ≥ 18</code> 且 <code>L_min ≥ 5</code></td><td><code>k = 4</code> 且 <code>L_sum ≥ 20</code> 且 <code>L_min ≥ 4</code></td></tr>
+  </table>
+  <p><b>示例：</b>铁血（N=2）双武 7+7 可开 T2；零距寸劲（N=4）四武各 5 级可冲 T3。</p>
+
+  <h3>T1 说明</h3>
+  <p class="sub">各羁绊 <strong>T1 以激活时描述为准</strong>（立即护甲、伤害%、属性倍率等）。下式仅作扩展项，与固定 T1 不叠算除非策划另定。</p>
+  <pre><code>// 可选：部分羁绊额外叠 bondDamageIncreased（k/N 缩放）
+scale(k, N) = 0.6 + 0.4 × (k / N)²</code></pre>
+  <table>
+    <tr><th>N</th><th class="num">base</th><th class="num">levelScale</th></tr>
+    <tr><td>2</td><td class="num">0.06</td><td class="num">0.005</td></tr>
+    <tr><td>3</td><td class="num">0.08</td><td class="num">0.004</td></tr>
+    <tr><td>4</td><td class="num">0.07</td><td class="num">0.003</td></tr>
+  </table>
+
+  <h3>九条羁绊（v0.5d 档位效果）</h3>
+  <p class="sub">T1 = 激活瞬间生效；T2 = 新机制；T3 = 在 T2 上升格。组内武器见各卡。</p>
+  <div class="grid cols-2">
+    <div class="card">
+      <h4>B1 · 铁血 <code>iron_blood</code> <span class="pill purple">N=2</span></h4>
+      <p style="color:var(--dim);font-size:12.5px;">铁制冷兵器 · 剑 / 斧</p>
+      <p><span class="pill">sword</span> <span class="pill">axe</span></p>
+      <table>
+        <tr><th>档</th><th>类型</th><th>效果</th></tr>
+        <tr><td>T1</td><td>激活</td><td>立即获得 <strong>10 护甲</strong>；羁绊内武器伤害 <strong>+6%</strong></td></tr>
+        <tr><td>T2</td><td>机制</td><td><code>iron_blood_counter</code>：<strong>受到伤害时</strong>立即刷新 <code>sword</code> 冷却，并使<strong>下次斩击</strong>伤害 <strong>+8%</strong>（可叠层 UI）</td></tr>
+        <tr><td>T3</td><td>升格</td><td>再受击时：羁绊内武器 <strong>10s</strong> 内攻速与伤害提升（在 T2 下次斩击加成之上；具体倍率走配置表）</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h4>B2 · 奥术 <code>arcane</code> <span class="pill purple">N=4</span></h4>
+      <p style="color:var(--dim);font-size:12.5px;">魔法施法 · 闪电 / 火焰 / 虚空 / 灼地</p>
+      <p><span class="pill">lightning_staff</span> <span class="pill">flame_ring</span> <span class="pill">void_ripple</span> <span class="pill">scorch_boots</span></p>
+      <table>
+        <tr><th>档</th><th>类型</th><th>效果</th></tr>
+        <tr><td>T1</td><td>激活</td><td>羁绊内武器伤害 <strong>+4%</strong>；立即获得 <strong>+0.1</strong> 伤害倍率（写入属性 <code>damageMult</code>）</td></tr>
+        <tr><td>T2</td><td>机制</td><td><code>arcane_mystery</code>：羁绊内武器每命中 1 名敌人获得 <strong>1 点「奥秘」</strong>，但每秒最多获得 <strong>15</strong> 点；累计 <strong>100</strong> 点时对索敌范围内<strong>当前生命值最高</strong>的 1 名敌人造成一次较高 AoE 伤（强度 ∝ 羁绊内武器<strong>平均等级</strong>；周围敌人受到目标伤害的 <strong>50%</strong>），并扣除 <strong>100</strong> 点奥秘</td></tr>
+        <tr><td>T3</td><td>升格</td><td>触发阈值 <strong>100→60</strong>；累计 <strong>60</strong> 点奥秘时同样爆发并扣除 <strong>60</strong> 点奥秘；奥秘爆发伤害提升</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h4>B3 · 零距寸劲 <code>zero_range</code> <span class="pill purple">N=4</span></h4>
+      <p style="color:var(--dim);font-size:12.5px;">贴身主战 · 剑 / 斧 / 虚空环 / 霰弹</p>
+      <p><span class="pill">sword</span> <span class="pill">axe</span> <span class="pill">void_ripple</span> <span class="pill">shotgun</span></p>
+      <table>
+        <tr><th>档</th><th>类型</th><th>效果</th></tr>
+        <tr><td>T1</td><td>激活</td><td>对距角色 <strong>≤3m</strong>（初定）的敌人，羁绊内武器伤害 <strong>+8%</strong></td></tr>
+        <tr><td>T2</td><td>机制</td><td><code>knockback_impact</code>：羁绊内武器<strong>全部附加少量击退</strong>；造成击退时按<strong>击退位移量</strong>对敌人造成额外伤害</td></tr>
+        <tr><td>T3</td><td>升格</td><td>攻击 <strong>3m 内</strong>敌人时击退效果增强；击退若使敌人碰到障碍/建筑，立即受到<strong>高额碰撞伤</strong></td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h4>B4 · 余烬轨迹 <code>ember_trail</code> <span class="pill purple">N=2</span></h4>
+      <p style="color:var(--dim);font-size:12.5px;">火焰 · 烈焰环 / 灼地靴</p>
+      <p><span class="pill">flame_ring</span> <span class="pill">scorch_boots</span></p>
+      <table>
+        <tr><th>档</th><th>类型</th><th>效果</th></tr>
+        <tr><td>T1</td><td>激活</td><td>羁绊内武器伤害 <strong>+8%</strong></td></tr>
+        <tr><td>T2</td><td>机制</td><td><code>ember_detonate</code>：羁绊内武器<strong>击杀</strong>的敌人在原地<strong>爆炸</strong>，对小范围敌人造成伤害（<strong>不含玩家</strong>）；该爆炸伤计入羁绊内武器伤害体系</td></tr>
+        <tr><td>T3</td><td>升格</td><td>爆炸伤害、范围提升；爆炸点地面留 <strong>3s 灼烧痕迹</strong>（机制同 <code>scorch_boots</code> 轨迹段）</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h4>B5 · 弹幕 <code>volley</code> <span class="pill purple">N=4</span></h4>
+      <p style="color:var(--dim);font-size:12.5px;">投射物齐射 · 弓 / 霰弹 / 骨弹 / 毒气弹</p>
+      <p><span class="pill">bow</span> <span class="pill">shotgun</span> <span class="pill">bone_bouncer</span> <span class="pill">poison_grenade</span></p>
+      <table>
+        <tr><th>档</th><th>类型</th><th>效果</th></tr>
+        <tr><td>T1</td><td>激活</td><td>羁绊内武器伤害 <strong>+5%</strong>，攻击速度 <strong>+5%</strong></td></tr>
+        <tr><td>T2</td><td>机制</td><td><code>volley_tempo</code>：羁绊内武器攻击速度提升；<strong>每个羁绊武器等级 +1%</strong> 攻速（加算在 T1 之上）</td></tr>
+        <tr><td>T3</td><td>升格</td><td>羁绊内武器可<strong>攻击敌方远程弹幕</strong>（拦截/摧毁投射物，具体规则走 projectile 层）</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h4>B6 · 碎骨震 <code>bone_crush</code> <span class="pill purple">N=3</span></h4>
+      <p style="color:var(--dim);font-size:12.5px;">高血量猎杀 · 弓 / 剑 / 骨头</p>
+      <p><span class="pill">bow</span> <span class="pill">sword</span> <span class="pill">bone_bouncer</span></p>
+      <table>
+        <tr><th>档</th><th>类型</th><th>效果</th></tr>
+        <tr><td>T1</td><td>激活</td><td>对生命值 <strong>&gt;50%</strong> 的敌人，羁绊内武器伤害 <strong>+8%</strong></td></tr>
+        <tr><td>T2</td><td>机制</td><td><code>bone_crush_priority</code>：羁绊内武器<strong>优先攻击 hp&gt;70%</strong> 的敌人（索敌优先级最高）；命中后该敌 <strong>5s</strong> 内受到的伤害 <strong>+16%</strong>（易伤，羁绊内武器生效）</td></tr>
+        <tr><td>T3</td><td>升格</td><td><code>bone_bouncer</code> 弹射命中生命值 <strong>&gt;50%</strong> 的敌人时<strong>不消耗弹射次数</strong></td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h4>B7 · 弧光导体 <code>arc_conductor</code> <span class="pill purple">N=3</span></h4>
+      <p style="color:var(--dim);font-size:12.5px;">导体连锁 · 射线 / 闪电 / 虚空涟漪</p>
+      <p><span class="pill">ray_gun</span> <span class="pill">lightning_staff</span> <span class="pill">void_ripple</span></p>
+      <table>
+        <tr><th>档</th><th>类型</th><th>效果</th></tr>
+        <tr><td>T1</td><td>激活</td><td>羁绊内武器伤害 <strong>+6%</strong>；攻击间隔微量降低</td></tr>
+        <tr><td>T2</td><td>机制</td><td><code>conductor_mark</code>：<code>void_ripple</code> 攻击过的敌人获得 <strong>「导体」标记</strong>（<strong>3s</strong>）；标记数量上限 = 当前羁绊内武器等级总和 <code>L_sum</code>；被羁绊内<strong>其他</strong>武器命中时，所有带导体标记的敌人额外受到本次伤害的 <strong>8%</strong>（<strong>连锁伤害</strong>）</td></tr>
+        <tr><td>T3</td><td>升格</td><td>连锁伤害 <strong>8%→16%</strong>；导体标记持续 <strong>3s→6s</strong>，数量上限仍为当前羁绊内武器等级总和</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h4>B8 · 毒师 <code>poison_master</code> <span class="pill purple">N=2</span></h4>
+      <p style="color:var(--dim);font-size:12.5px;">毒控 · 毒气弹 / 麻痹枪（强减速 + 攻击减慢）</p>
+      <p><span class="pill">poison_grenade</span> <span class="pill">paralyze_gun</span></p>
+      <table>
+        <tr><th>档</th><th>类型</th><th>效果</th></tr>
+        <tr><td>T1</td><td>激活</td><td>羁绊内武器施加的<strong>负面效果持续时间 +0.8s</strong></td></tr>
+        <tr><td>T2</td><td>机制</td><td><code>neuro_toxin</code>：羁绊武器攻击施加共用 debuff <strong>神经毒素</strong>（<strong>5s</strong>，上限 <strong>5</strong> 层，攻击刷新持续）：施加时及每 <strong>2s</strong> 触发 <strong>1s</strong> 强减速 + 攻击减慢；每层每秒损失目标 <strong>1% maxHP</strong>，对精英单位系数 <strong>×0.5</strong></td></tr>
+        <tr><td>T3</td><td>升格</td><td>持续 <strong>+2s</strong>，层数上限 <strong>+2</strong>（共 7 层）；带神经毒素的敌人强减速与攻击减慢幅度提升</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h4>B9 · 猎标烙印 <code>hunter_mark</code> <span class="pill purple">N=3</span></h4>
+      <p style="color:var(--dim);font-size:12.5px;">烙印处决 · 弓 / 射线 / 麻痹枪（强减速 + 攻击减慢）</p>
+      <p><span class="pill">bow</span> <span class="pill">ray_gun</span> <span class="pill">paralyze_gun</span></p>
+      <table>
+        <tr><th>档</th><th>类型</th><th>效果</th></tr>
+        <tr><td>T1</td><td>激活</td><td>羁绊内武器暴击率 <strong>+5%</strong>，暴击伤害 <strong>+10%</strong></td></tr>
+        <tr><td>T2</td><td>机制</td><td><code>hunter_brand</code>：<code>paralyze_gun</code> 攻击时为敌人施加<strong>不可解除的猎标烙印</strong>：优先被索敌，且受到羁绊内武器伤害 <strong>+16%</strong></td></tr>
+        <tr><td>T3</td><td>升格</td><td>羁绊内武器攻击烙印且 <strong>HP&lt;16%</strong> 的敌人时<strong>直接绞杀</strong>（处决，走 elite 免疫表）</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h3>12 武器 × 羁绊矩阵</h3>
+  <p class="sub">● = 计入该羁绊；N 列括号内为羁绊规模。合计 <strong>27</strong> 槽 / 12 武 ≈ <strong>2.25</strong>。</p>
+  <table>
+    <tr><th>武器</th><th class="num">绑</th><th>铁血<br><span class="pill purple">2</span></th><th>奥术<br><span class="pill purple">4</span></th><th>寸劲<br><span class="pill purple">4</span></th><th>余烬<br><span class="pill purple">2</span></th><th>弹幕<br><span class="pill purple">4</span></th><th>碎骨<br><span class="pill purple">3</span></th><th>弧光<br><span class="pill purple">3</span></th><th>毒师<br><span class="pill purple">2</span></th><th>猎标<br><span class="pill purple">3</span></th></tr>
+    <tr><td>sword</td><td class="num">3</td><td class="hl">●</td><td></td><td class="hl">●</td><td></td><td></td><td class="hl">●</td><td></td><td></td><td></td></tr>
+    <tr><td>axe</td><td class="num">2</td><td class="hl">●</td><td></td><td class="hl">●</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td>bow</td><td class="num">3</td><td></td><td></td><td></td><td></td><td class="hl">●</td><td class="hl">●</td><td></td><td></td><td class="hl">●</td></tr>
+    <tr><td>bone_bouncer</td><td class="num">2</td><td></td><td></td><td></td><td></td><td class="hl">●</td><td class="hl">●</td><td></td><td></td><td></td></tr>
+    <tr><td>lightning_staff</td><td class="num">2</td><td></td><td class="hl">●</td><td></td><td></td><td></td><td></td><td class="hl">●</td><td></td><td></td></tr>
+    <tr><td>flame_ring</td><td class="num">2</td><td></td><td class="hl">●</td><td></td><td class="hl">●</td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td>shotgun</td><td class="num">2</td><td></td><td></td><td class="hl">●</td><td></td><td class="hl">●</td><td></td><td></td><td></td><td></td></tr>
+    <tr><td>void_ripple</td><td class="num">3</td><td></td><td class="hl">●</td><td class="hl">●</td><td></td><td></td><td></td><td class="hl">●</td><td></td><td></td></tr>
+    <tr><td>ray_gun</td><td class="num">2</td><td></td><td></td><td></td><td></td><td></td><td></td><td class="hl">●</td><td></td><td class="hl">●</td></tr>
+    <tr><td>poison_grenade</td><td class="num">2</td><td></td><td></td><td></td><td></td><td class="hl">●</td><td></td><td></td><td class="hl">●</td><td></td></tr>
+    <tr><td>paralyze_gun</td><td class="num">2</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="hl">●</td><td class="hl">●</td></tr>
+    <tr><td>scorch_boots</td><td class="num">2</td><td></td><td class="hl">●</td><td></td><td class="hl">●</td><td></td><td></td><td></td><td></td><td></td></tr>
+  </table>
+  <p style="color:var(--dim);font-size:13px;">虚空涟漪：奥术 + 寸劲 + 弧光（导体标记由虚空施加）。灼地靴：余烬爆炸留痕 + 奥术奥秘计数。</p>
+
+  <h3>T2 机制一览</h3>
+  <table>
+    <tr><th>mechanicId</th><th>羁绊</th><th>感官要点</th><th>T3 升格</th></tr>
+    <tr><td><code>iron_blood_counter</code></td><td>铁血</td><td>受击刷新剑 CD + 下次斩击 +8%</td><td>10s 攻速/伤害 rage</td></tr>
+    <tr><td><code>arcane_mystery</code></td><td>奥术</td><td>奥秘计数（每秒最多 15）→ 满 100 爆发并扣 100</td><td>阈值 60、扣 60 奥秘、爆发伤↑</td></tr>
+    <tr><td><code>knockback_impact</code></td><td>零距寸劲</td><td>全体小击退 + 位移额外伤</td><td>3m 击退↑、撞墙高额伤</td></tr>
+    <tr><td><code>ember_detonate</code></td><td>余烬</td><td>击杀原地爆炸</td><td>爆炸↑、3s 灼地痕</td></tr>
+    <tr><td><code>volley_tempo</code></td><td>弹幕</td><td>每武等级 +1% 攻速</td><td>可打敌方弹幕</td></tr>
+    <tr><td><code>bone_crush_priority</code></td><td>碎骨震</td><td>优先 hp&gt;70% + 5s 易伤 16%</td><td>骨弹高血量不耗弹射</td></tr>
+    <tr><td><code>conductor_mark</code></td><td>弧光导体</td><td>虚空导体标记 3s + 8% 连锁；数量上限 = L_sum</td><td>连锁 16%、标记 6s</td></tr>
+    <tr><td><code>neuro_toxin</code></td><td>毒师</td><td>神经毒素叠层 + 周期强减速/攻击减慢；精英系数 ×0.5</td><td>层数/持续↑、控制幅度↑</td></tr>
+    <tr><td><code>hunter_brand</code></td><td>猎标烙印</td><td>麻痹枪不可解除烙印</td><td>烙印 HP&lt;16% 绞杀</td></tr>
+  </table>
+
+  <h3>数据结构与激活</h3>
+  <pre><code>// data/bonds.ts
+interface BondDef {
+  id: string;
+  weapons: WeaponType[];  // length = N（2～4）
+  tiers: {
+    1: { stats: Modifier[] };
+    2: { mechanicId: string; params: Record&lt;string, number&gt; };
+    3: { mechanicUpgrade: Record&lt;string, number&gt;; stats?: Modifier[] };
+  };
+}
+
+// player.bonds[]: { bondId, activeTier: 0|1|2|3 }
+// 条件满足 → 升级池 bond_activate / bond_upgrade
+// 点击后 activeTier++，重算 stat；T≥2 时注册 mechanic + bondEvents</code></pre>
+  <ul>
+    <li>删除旧武器进化与 21 条双武融合，统一替换为本节羁绊激活</li>
+    <li>典籍门槛（建议）：T2 需相关典籍 Lv3+，T3 需 Lv5+ — 在 <code>bond_activate</code> 条件里配置，避免纯武器满级即毕业</li>
+  </ul>
+
+  <h3 id="ext-bond-activate">羁绊激活（替代武器融合）</h3>
+  <p class="sub">v0.4 <strong>废弃</strong> v0.3 的 21 条双武融合三选一。条件符合时在升级界面出现羁绊激活/升级，点击后效果正式生效。</p>
+
+  <div class="note bad">
+    <b>设计变更：</b>不再减少槽位占用、不再 <code>fusionGroupId</code> 双槽绑定。武器各占 1 槽；羁绊根据<strong>槽内武器组合 + 典籍 + 等级</strong>判定。
+  </div>
+
+  <h4>核心规则</h4>
+  <table>
+    <tr><th>项</th><th>说明</th></tr>
+    <tr><td>触发</td><td>槽内羁绊武 <code>k</code> 达到档位门槛（上表）+ 建议 minLevel / 典籍</td></tr>
+    <tr><td>入口</td><td>level_up 选项 <code>bond_activate</code>（首次）或 <code>bond_upgrade</code>（升档）</td></tr>
+    <tr><td>生效</td><td>玩家点击后写入 <code>player.bonds</code>；数值 + 感官机制同时开启</td></tr>
+    <tr><td>满级后</td><td>不再走武器进化；满级后的变化只走羁绊 T1/T2/T3</td></tr>
+    <tr><td>与融合</td><td>原 21 配方<strong>不实现</strong>；仅上文 <strong>9 条</strong>羁绊</td></tr>
+  </table>
+
+  <h4>示例：铁血 T2 激活</h4>
+  <pre><code>bond: iron_blood / activeTier: 2  // N = 2
+requires:
+  - k = 2（sword + axe 均在槽）
+  - L_sum >= 8
+on bond_activate 0→1:
+  - armor += 10；bond weapon damage +6%
+on bond_upgrade 1→2:
+  - register iron_blood_counter（受击刷新 sword CD、下次斩击 +8%）
+on bond_upgrade 2→3:
+  - iron_blood_counter: 10s 内羁绊攻速/伤害提升（T2 之上）</code></pre>
+
+  <h4>升级界面优先级</h4>
+  <ol>
+    <li>若有<strong>可激活羁绊</strong>，3 选 1 中至少 1 张为 <code>bond_activate</code>（legendary 边框）</li>
+    <li>否则照常 roll 武器 / 典籍</li>
+    <li>同屏不重复出现多条相同羁绊</li>
+  </ol>
+
+  <details>
+    <summary><strong>附录：v0.3 双武融合（已废弃，仅供对照）</strong></summary>
+    <p>原 21 条 C(7,2) 配方（斩铁斧、雷箭等）不再作为升级选项。若需保留少量「超级组合」，应合并进羁绊 T3 感官机制而非独立 fusion behavior。</p>
+  </details>
+
+  <h3>6 把武器 · 平均能激活几条？</h3>
+  <p class="sub">粗算策划参考：从 12 种武中<strong>均匀随机</strong>抽 6 把入槽，只看武器种类是否满足各羁绊 <strong>T1 的 k 门槛</strong>（未计等级 / 典籍）。期望用指示变量求和，与羁绊是否重叠无关。</p>
+  <table>
+    <tr><th>羁绊</th><th>N</th><th>T1 需 k</th><th>P(k 达标 | 随机 6 武)</th></tr>
+    <tr><td>铁血</td><td class="num">2</td><td>≥1</td><td class="num">77.3%</td></tr>
+    <tr><td>奥术</td><td class="num">4</td><td>≥2</td><td class="num">72.7%</td></tr>
+    <tr><td>零距寸劲</td><td class="num">4</td><td>≥2</td><td class="num">72.7%</td></tr>
+    <tr><td>余烬</td><td class="num">2</td><td>≥1</td><td class="num">77.3%</td></tr>
+    <tr><td>弹幕</td><td class="num">4</td><td>≥2</td><td class="num">72.7%</td></tr>
+    <tr><td>碎骨震</td><td class="num">3</td><td>≥2</td><td class="num">50.0%</td></tr>
+    <tr><td>弧光</td><td class="num">3</td><td>≥2</td><td class="num">50.0%</td></tr>
+    <tr><td>毒师</td><td class="num">2</td><td>≥1</td><td class="num">77.3%</td></tr>
+    <tr><td>猎标</td><td class="num">3</td><td>≥2</td><td class="num">50.0%</td></tr>
+    <tr><td colspan="3"><strong>期望（T1 可点亮条数）</strong></td><td class="num"><strong>≈ 5.2 / 9</strong></td></tr>
+  </table>
+  <p><b>解读：</b></p>
+  <ul>
+    <li><strong>T1（首次 bond_activate，有数值、无 T2 机制）</strong>：随机构筑约 <strong>5～6 条</strong>能凑到 k；刻意选语义相近的 6 武常见 <strong>4～6 条</strong>，上限受 6 槽限制（武种不重复），理论满配例：剑+斧+火环+灼地+毒弹+麻痹枪 → 铁血 T2 + 余烬 T2 + 毒师 T2 等 <strong>3 条满档</strong>，其余多为 T1 半凑。</li>
+    <li><strong>T2（机制档）</strong>：须集齐该羁绊几乎全部武且 <code>L_sum</code> 达标。随机 6 武期望仅 <strong>≈ 1.5 条</strong>达到 k 门槛；6 槽对 N=4 羁绊最多 4/4，寸劲 / 奥术 / 弹幕<strong>无法四武全齐</strong>，除非以后扩槽。</li>
+    <li>分母 9 条羁绊、玩家仅 6 槽 → 单局不可能激活全部；设计目标约为「中后期常维持 <strong>3～5 条 T1</strong> + <strong>1～2 条 T2</strong>」。</li>
+  </ul>
+  <p style="color:var(--dim);font-size:13px;">计算式：12 选 6 共 <code>C(12,6)=924</code> 种；单羁绊达标率用超几何分布求和。例：N=3 武、需 k≥2 → <code>[C(3,2)C(9,4)+C(3,3)C(9,3)]/924 = 50%</code>。</p>
+</section>
+
+<!-- ============= EXT RELICS ============= -->
+<section id="ext-relics">
+  <h2>遗物 · 宝箱 · 金币 <span class="badge-new">new</span></h2>
+  <p class="sub">v0.4：遗物<strong>不占武器槽</strong>；<strong>同 ID 可无限叠加</strong>（无种类上限、无替换 UI）。开箱消耗<strong>金币</strong>，费用随玩家等级增长。</p>
+
+  <div class="note bad">
+    <b>当前代码：</b>宝箱（<code>systems/chests.ts</code>）免费开 → 仅银币。v0.4 改为 <code>player.gold</code> 支付 + 遗物 roll；击杀需新增金币掉落。
+  </div>
+
+  <h3>叠加规则</h3>
+  <table>
+    <tr><th>项</th><th>说明</th></tr>
+    <tr><td>数据结构</td><td><code>player.relicStacks: Record&lt;relicId, number&gt;</code>；开箱命中已有 ID 则 <code>count++</code></td></tr>
+    <tr><td>数值效果</td><td>线性叠加（如 3 层锐眼透镜 → 暴击率 +9%）</td></tr>
+    <tr><td>触发 / 机制效果</td><td>按层数增强：概率独立 roll、CD 不叠、或每层 +固定幅度（见下表备注）</td></tr>
+    <tr><td>击杀收益</td><td>如契约硬币：每层让击杀敌人额外 +1 金币，避免金币开箱形成过强正反馈</td></tr>
+    <tr><td>上限</td><td><strong>无种类上限、无总层数硬 cap</strong>；个别 Legendary 的内置效果上限仍按单件描述（如 overtime 全伤 +36% 为每层独立计时或取 max，数值待定）</td></tr>
+  </table>
+
+  <h3>金币经济</h3>
+  <table>
+    <tr><th>来源</th><th>规则</th></tr>
+    <tr><td>普通怪击杀</td><td><code>gold += floor(1 + enemyTier × 0.4 + rand(0..2))</code></td></tr>
+    <tr><td>精英击杀</td><td>×3～5 倍 + 保底 +3</td></tr>
+    <tr><td>Mini-Boss</td><td>固定 15～25 + 等级缩放</td></tr>
+    <tr><td>空升级池</td><td>50% 概率 roll 金币（见 <a href="#" data-tab="xp">经验 / 升级</a>）</td></tr>
+    <tr><td>银币</td><td>保留：空池 50%、精英、结算；与金币并行，不互相替代</td></tr>
+  </table>
+
+  <h3>宝箱（金币消耗）</h3>
+  <table>
+    <tr><th>项</th><th>说明</th></tr>
+    <tr><td>费用</td><td><code>cost = floor(35 × (1 + player.level × 0.08))</code>（比旧草案更陡，防止遗物滚雪球过快）</td></tr>
+    <tr><td>交互</td><td>靠近 + 确认；<code>gold &lt; cost</code> 时 UI 灰显</td></tr>
+    <tr><td>产出</td><td>按稀有度权重 roll 1 种遗物 → 对应 <code>relicStacks[id]++</code>；已拥有则<strong>叠层</strong>而非替换</td></tr>
+    <tr><td>金币不足</td><td>无法开启；无「遗物栏满」fallback（因为无上限）</td></tr>
+  </table>
+
+  <h3>10 个遗物（v0.5 · 可叠层）</h3>
+  <p>同 ID 重复获得 → 层数 +1，<strong>每层增量相同</strong>（无「首层 / 叠层」两套规则）。效果尽量简短。</p>
+  <table>
+    <tr><th>ID</th><th>名称</th><th>稀有度</th><th>每层效果（× 层数）</th></tr>
+    <tr><td>R01</td><td>锐眼透镜</td><td><span class="pill">Common</span></td><td>暴击率 +3%</td></tr>
+    <tr><td>R02</td><td>小盾护符</td><td><span class="pill">Common</span></td><td>护盾值 +2，最大护盾值 +5</td></tr>
+    <tr><td>R03</td><td>嗜血牙</td><td><span class="pill">Uncommon</span></td><td>击杀回 2 HP（精英 +6）</td></tr>
+    <tr><td>R04</td><td>契约硬币</td><td><span class="pill">Common</span></td><td>击杀敌人额外 +1 金币</td></tr>
+    <tr><td>R05</td><td>武库徽章</td><td><span class="pill">Rare</span></td><td>每把 Lv10 武器全局伤害 +4%</td></tr>
+    <tr><td>R06</td><td>精英猎令</td><td><span class="pill">Uncommon</span></td><td>对精英伤害 +10%</td></tr>
+    <tr><td>R07</td><td>再生核心</td><td><span class="pill">Uncommon</span></td><td>hpRegen +0.5/s</td></tr>
+    <tr><td>R08</td><td>弹匣扩槽</td><td><span class="pill">Rare</span></td><td>projectileBonus +1（待定）</td></tr>
+    <tr><td>R09</td><td>时间沙漏</td><td><span class="pill">Legendary</span></td><td>overtime 内全伤 +0.12%/s（按层累加）</td></tr>
+    <tr><td>R10</td><td>铁心</td><td><span class="pill">Legendary</span></td><td>maxHp +12%；护甲 +2</td></tr>
+  </table>
+
+  <h3>稀有度权重 — 按玩家等级</h3>
+  <table>
+    <tr><th>等级</th><th class="num">Common</th><th class="num">Uncommon</th><th class="num">Rare</th><th class="num">Legendary</th></tr>
+    <tr><td>≤ 10</td><td class="num">68%</td><td class="num">26%</td><td class="num">6%</td><td class="num">0%</td></tr>
+    <tr><td>11–25</td><td class="num">50%</td><td class="num">34%</td><td class="num">14%</td><td class="num">2%</td></tr>
+    <tr><td>26–50</td><td class="num">32%</td><td class="num">38%</td><td class="num">24%</td><td class="num">6%</td></tr>
+    <tr><td>51–75</td><td class="num">20%</td><td class="num">32%</td><td class="num">35%</td><td class="num">13%</td></tr>
+    <tr><td>&gt; 75</td><td class="num">12%</td><td class="num">28%</td><td class="num">38%</td><td class="num">22%</td></tr>
+  </table>
+  <p><code>luck_tome</code> 仍偏移 rare / legendary（与 shrine 同思路）。</p>
+
+  <h3>与 Shrine / 消耗品 / 武器槽区分</h3>
+  <table>
+    <tr><th>来源</th><th>占槽</th><th>持续性</th><th>典型效果</th></tr>
+    <tr><td>武器</td><td>占 activeWeaponSlots</td><td>整局</td><td>主动输出 behavior</td></tr>
+    <tr><td>Charge Shrine</td><td>不占</td><td>整局永久</td><td>百分比堆叠（damage / shield / projectile…）</td></tr>
+    <tr><td>遗物</td><td><strong>不占武器槽</strong>；同 ID 可叠层</td><td>整局永久</td><td>构筑方向、条件触发、感官反馈</td></tr>
+    <tr><td>消耗品</td><td>不占</td><td>临时 / 一次性</td><td>含「下一次升级」类（预言之书、匠神锤等）</td></tr>
+  </table>
+</section>
+
+<!-- ============= EXT CONSUMABLES ============= -->
+<section id="ext-consumables">
+  <h2>消耗品 <span class="badge-new">new</span></h2>
+  <p class="sub">怪物概率掉落或地图点拾取；不占武器/遗物槽。同时仅 1 个 timed buff（新覆盖旧）。<code>consumable_tome</code>（拾荒典籍）提高消耗品掉落概率。</p>
+
+  <h3>10 个消耗品</h3>
+  <table>
+    <tr><th>ID</th><th>名称</th><th>类型</th><th>效果</th></tr>
+    <tr><td>F01</td><td>野莓</td><td>即时</td><td>回复 <strong>maxHp 的 15%</strong>（按当前上限计算）</td></tr>
+    <tr><td>F02</td><td>热汤</td><td>15s</td><td><strong>maxHp 的 2%/s</strong> 持续回复（按每秒时的当前 maxHp）</td></tr>
+    <tr><td>F03</td><td>薄荷糖</td><td>20s</td><td>移速 +15%</td></tr>
+    <tr><td>F04</td><td>硬面包</td><td>一次性</td><td><strong>下一次</strong>受到的伤害<strong>归零</strong>（完全格挡 1 次）</td></tr>
+    <tr><td>F05</td><td>能量棒</td><td>25s</td><td>攻速 +20%</td></tr>
+    <tr><td>F06</td><td>磁铁</td><td>25s</td><td>扩大<strong>经验宝石</strong>拾取范围（ attraction / pickup 对 XP 生效）</td></tr>
+    <tr><td>F07</td><td>铁甲餐</td><td>30s</td><td>护甲 +4</td></tr>
+    <tr><td>F08</td><td>狂怒药</td><td>20s</td><td>伤害 +18%；受伤 +10%</td></tr>
+    <tr><td>F09</td><td>预言之书</td><td><strong>一次性</strong></td><td><strong>下一次</strong> level_up：3 选项稀有度 ≥ uncommon，至少 1 rare</td></tr>
+    <tr><td>F10</td><td>匠神锤</td><td><strong>一次性</strong></td><td><strong>下一次</strong> weapon_upgrade：额外 +1 级（不超过 maxLevel）</td></tr>
+  </table>
+
+  <h3>怪物掉落（v0.4）</h3>
+  <table>
+    <tr><th>来源</th><th>基础概率</th><th>说明</th></tr>
+    <tr><td>普通怪</td><td class="num">2%</td><td>从 10 种中均匀 roll（不含 F09/F10 或权重更低）</td></tr>
+    <tr><td>精英</td><td class="num">12%</td><td>权重偏向 F01–F08</td></tr>
+    <tr><td>Mini-Boss</td><td class="num">45%</td><td>保底 1 件；30% 额外再 roll 1 件</td></tr>
+    <tr><td>地图消耗品点</td><td>固定 2～3 个/图</td><td>区别于金币箱 / 遗物箱</td></tr>
+  </table>
+  <p><code>consumable_tome</code> 每级使消耗品掉落率 <strong>+5%</strong>（乘算）：最终掉落率 = 基础概率 × <code>(1 + 0.05 × level)</code>。Lv8 时普通怪约 2.8%，精英约 16.8%，Mini-Boss 约 63%。</p>
+
+  <h3>实现钩子</h3>
+  <pre><code>player.nextLevelUpReroll?: boolean       // F09
+player.nextWeaponUpgradeBonus?: number  // F10（+1 级）
+player.nextHitNullify?: boolean          // F04（下次受伤不掉血）
+player.xpPickupRadiusMult?: number       // F06 timed buff
+player.consumableDropMult?: number       // consumable_tome</code></pre>
+</section>
+
 <!-- ============= ARCHITECTURE ============= -->
 <section id="architecture">
   <h2>架构</h2>
@@ -1669,7 +2417,7 @@ luck 来源 = luck_tome.level + floor(player.luckBonus * 100)</code></pre>
         <ul>
           <li>Three.js 场景 / 模型 / 动画</li>
           <li>InstancedMesh 投射物 / 拾取物</li>
-          <li>VFX 粒子（500 池） + Billboard VFX（64 池，贴图特效）</li>
+          <li>VFX 粒子（500 池）</li>
           <li>HUD / 升级 / 商店 / 任务 UI</li>
           <li>相机系统（屏震 / 顿帧 / 动态 FOV）</li>
           <li>读取 GameState 渲染（不写）</li>
@@ -1745,7 +2493,7 @@ luck 来源 = luck_tome.level + floor(player.luckBonus * 100)</code></pre>
     ├── overtime.ts           ← tickOvertime (gameTime ≥ 540 累加 overtimeSeconds)
     ├── tierTransition.ts     ← tickTierTransition (portal_used → tier++ + 重置场景)
     ├── shrines.ts            ← tickShrines / generateShrines / applyShrineReward (充能神殿 4 选 1)
-    ├── weapons.ts            ← tickWeapons / getWeaponStats / checkWeaponEvolutions
+    ├── weapons.ts            ← tickWeapons / getWeaponStats / bond-aware weapon hooks
     ├── aiSystem.ts           ← tickEnemyAi (modifier → brain dispatch)
     ├── bossAi.ts             ← tickBossAi (phase resolve + attack 调度)
     └── weaponFiring.ts       ← tryFireWeaponEcs (BEHAVIORS map dispatch)</code></pre>
@@ -1903,33 +2651,18 @@ http://localhost:1513/?level=foo</code></pre>
   <p>关卡命名约定见 <a href="https://github.com/Adios94/megabonk-game/blob/master/level-editor/WHITEBOX_SPEC.md">level-editor/WHITEBOX_SPEC.md</a>（前缀：<code>col_</code> / <code>wall_</code> / <code>climb_</code> / <code>ramp_</code> / <code>spawn_*</code>）。</p>
 
   <h3>GM 调试：碰撞盒可视化</h3>
-  <p>关卡设计师调白盒时可以打开叠加层，肉眼校对几何与 col_/wall_ 数据是否对齐。两种触发方式：</p>
-  <pre><code>// 方式 1：浏览器控制台（先用 ?level 进游戏）
-window.__gm.showCollision()
-
-// 方式 2：按 ` 反引号开 GM 面板，点「🟩 切换碰撞盒可视化」</code></pre>
-
-  <h4>视觉规范</h4>
-  <p>每个几何 = <strong>加色透明 fill</strong>（重叠处更亮）+ <strong>高亮边缘线</strong> + <strong>永远置顶</strong>（不被场景遮挡）。spawn 点除了发光球还多一根 5 单位高的细立柱定位针，远处也能看见。</p>
+  <p>关卡设计师调白盒时可以打开 wireframe 叠加层，肉眼校对几何与 col_/wall_ 数据是否对齐：</p>
+  <pre><code>// 浏览器控制台（先加 ?level 进游戏）
+window.__gm.showCollision()</code></pre>
   <table>
-    <tr><th>颜色</th><th>类型</th><th>玩家怎么"用"它</th><th>形状语义</th></tr>
-    <tr><td><span style="color:#0f4">绿</span></td><td><code>col_</code> 平台</td><td>站在顶面</td><td>顶面 = 可走面（平的）</td></tr>
-    <tr><td><span style="color:#f35">红</span></td><td><code>wall_</code> 墙</td><td>横向走不过</td><td>整个体积都挡，可从头顶下穿过</td></tr>
-    <tr><td><span style="color:#3af">蓝</span></td><td><code>climb_</code> 攀爬体</td><td>按 jump 抓墙爬</td><td>整个体积是攀爬带；走不穿</td></tr>
-    <tr><td><span style="color:#fc0">黄</span></td><td><code>ramp_</code> 斜坡</td><td><strong>走</strong>上去（不用跳/爬）</td><td>顶面是斜的：沿 <code>slopeDir</code> 单位向量从 <code>lowY</code> 线性插值到 <code>highY</code>。<strong>支持任意旋转</strong>（不限于世界 X/Z 轴）<br><span style="color:var(--dim);font-size:12px">可视化的黄盒会跟随 slopeDir 旋转，与视觉斜面 mesh 严格对齐</span></td></tr>
-    <tr><td><span style="color:#f3f">品红</span></td><td>spawn 点</td><td>逻辑出生位置</td><td>发光球 + 立柱定位针：<code>spawn_player / boss / altar / chest</code></td></tr>
+    <tr><th>颜色</th><th>含义</th></tr>
+    <tr><td><span style="color:#0f0">绿</span></td><td><code>col_</code> 可站立平台（顶面 = 可走面）</td></tr>
+    <tr><td><span style="color:#f33">红</span></td><td><code>wall_</code> 实心遮挡（横向阻挡，可从下方穿过）</td></tr>
+    <tr><td><span style="color:#39f">蓝</span></td><td><code>climb_</code> 攀爬体（按 jump 键抓墙）</td></tr>
+    <tr><td><span style="color:#fc0">黄</span></td><td><code>ramp_</code> 可行走斜坡</td></tr>
+    <tr><td><span style="color:#f3f">品红球</span></td><td><code>spawn_player / boss / altar / chest</code> 标记</td></tr>
   </table>
-
-  <h4>选哪种几何</h4>
-  <table>
-    <tr><th>高度差 Δh（相邻可站面）</th><th>玩家上去方法</th><th>关卡里放</th></tr>
-    <tr><td>≤ 0.5</td><td>走路自动迈步</td><td>相邻 <code>col_</code></td></tr>
-    <tr><td>0.5 ~ 1.0</td><td>普通跳</td><td>相邻 <code>col_</code></td></tr>
-    <tr><td>1.0 ~ 1.44</td><td>兔子跳（落地 0.3s 内连跳）</td><td>相邻 <code>col_</code> 或 <code>ramp_</code></td></tr>
-    <tr><td>&gt; 1.44</td><td>必须 ramp 或攀爬</td><td><code>ramp_</code> / <code>climb_</code></td></tr>
-  </table>
-
-  <p style="color: var(--dim); font-size: 13px;">注：默认 Neon Crucible 没有 LevelData，命令会 warn 跳过；切到 <code>?level</code> 加载白盒后才会生效。</p>
+  <p style="color: var(--dim); font-size: 13px;">注：默认 Neon Crucible 没有 LevelData，可视化命令在那里会 warn 跳过；切到 <code>?level</code> 加载白盒后才会生效。</p>
 
   <h3>测试覆盖</h3>
   <ul>
@@ -1972,7 +2705,6 @@ window.__gm.showCollision()
     <tr><td>拾取物 InstancedMesh</td><td class="num">300</td><td><code>MAX_PICKUPS</code></td></tr>
     <tr><td>敌人 InstancedMesh（legacy）</td><td class="num">100</td><td><code>MAX_ENEMIES</code></td></tr>
     <tr><td>VFX 粒子</td><td class="num">500</td><td><code>MAX_PARTICLES</code></td></tr>
-    <tr><td>Billboard VFX（贴图特效）</td><td class="num">64</td><td><code>MAX_BILLBOARDS</code></td></tr>
   </table>
 
   <h3>性能指标目标</h3>
@@ -2002,7 +2734,7 @@ pnpm run dev
   <p class="sub">方案 A 重构后，加新东西基本不需要碰 <code>GameInstance.ts</code>。下表对齐 Phase 1-7 实际目录。</p>
   <table>
     <tr><th>想做什么</th><th>改哪里</th></tr>
-    <tr><td>改武器某级数值</td><td><code>config.ts WEAPON_STATS[type][level-1]</code></td></tr>
+    <tr><td>改武器升级数值</td><td><code>WEAPON_BASE_STATS[type]</code>（Lv1）+ <code>WEAPON_UPGRADE_BASE[type]</code>（Common 每级增量）</td></tr>
     <tr><td>加新武器</td><td>① <code>data/weapons.ts</code> 加 <code>WeaponDef</code> ② 如需新行为, <code>behaviors/</code> 加 <code>.ts</code> + 注册到 <code>behaviors/index.ts</code> ③ <code>client/index.ts</code> 颜色/图标 ④ i18n</td></tr>
     <tr><td>加新敌人</td><td>① <code>data/enemies.ts</code> 加 <code>EnemyDef</code>（behavior: chase/ranged/charge/dive） ② 需要叠加召唤等行为时在 <code>ai/modifiers/</code> 加 ③ i18n</td></tr>
     <tr><td>加新典籍</td><td>① <code>types.ts TomeType</code> ② <code>config.ts TOME_MAX_LEVELS</code> ③ <code>data/tomes.ts</code> 加 <code>TomeDef</code>（影响 stat 的返回 modifier 列表; contextual 标 <code>contextOnly: true</code>） ④ i18n</td></tr>
@@ -2036,7 +2768,7 @@ window.__gm.testLightning()    // 在玩家头顶劈一道电（VFX 测试）</c
   <p class="sub">详见 <a data-tab="physics">物理 / 碰撞</a> 页。常用入口：</p>
   <ul>
     <li>启动游戏时加 <code>?level</code> URL 参数 → 加载 <code>public/models/levels/level_whitebox.glb</code>，用 Blender 导出的关卡测试</li>
-    <li><code>window.__gm.showCollision()</code> → 加色透明叠加层（绿 col / 红 wall / 蓝 climb / 黄 ramp / 品红 spawn）。也可在 GM 面板里点按钮触发，详见 <a data-tab="physics">物理 / 碰撞</a> 页</li>
+    <li><code>window.__gm.showCollision()</code> → wireframe 叠加层（绿 col / 红 wall / 蓝 climb / 黄 ramp / 品红 spawn）</li>
     <li>新增 col_/wall_ 类型 → <code>game/core/source/types.ts</code> + <code>systems/collision.ts</code> 的 <code>makeLevelGeometry</code></li>
     <li>调玩家迈步 / 攀爬手感 → <code>config.ts</code> 的 <code>STEP_HEIGHT</code> / <code>CLIMB_SPEED</code> / <code>FALL_RESPAWN_Y</code></li>
   </ul>
@@ -2059,7 +2791,7 @@ window.__gm.testLightning()    // 在玩家头顶劈一道电（VFX 测试）</c
   <p class="sub">来源：<code>public/models/</code> 实际文件 + <code>client/source/index.ts:387 loadModels()</code></p>
 
   <div class="note">
-    资源风格混搭：场景 / 角色 / 敌人为 Quaternius Cyberpunk Game Kit；武器与拾取物为 Quaternius 经典中世纪 OBJ + MTL（金色变体用于进化态）。
+    资源风格混搭：场景 / 角色 / 敌人为 Quaternius Cyberpunk Game Kit；武器与拾取物为 Quaternius 经典中世纪 OBJ + MTL（金色变体作为高稀有度或特效备选，不再代表武器进化）。
   </div>
 
   <h3>实际加载的角色与敌人</h3>
@@ -2074,7 +2806,7 @@ window.__gm.testLightning()    // 在玩家头顶劈一道电（VFX 测试）</c
 
   <h3>武器实例模型（OBJ + MTL）</h3>
   <table>
-    <tr><th>武器</th><th>普通文件</th><th>金色（进化）文件</th></tr>
+    <tr><th>武器</th><th>普通文件</th><th>金色备选文件</th></tr>
     <tr><td>Axe</td><td><code>items/Axe_small.obj</code></td><td><code>Axe_Double_Golden.obj</code></td></tr>
     <tr><td>Sword</td><td><code>items/Sword.obj</code></td><td><code>Sword_Golden.obj</code></td></tr>
     <tr><td>Bow</td><td><code>items/Revolver.glb</code></td><td><code>Bow_Golden.obj</code></td></tr>
@@ -2097,30 +2829,10 @@ window.__gm.testLightning()    // 在玩家头顶劈一道电（VFX 测试）</c
   <h3>纹理</h3>
   <table>
     <tr><th>文件</th><th>是否在用</th></tr>
-    <tr><td><code>textures/particle_circle.png</code></td><td>已退役（保留兼容）</td></tr>
+    <tr><td><code>textures/particle_circle.png</code></td><td><span class="hl">✅ 主粒子贴图</span></td></tr>
     <tr><td><code>particle_flare / star / twirl.png</code></td><td>备选</td></tr>
     <tr><td><code>texture_sign.png</code></td><td>跟随 sign GLTF</td></tr>
   </table>
-
-  <h3>Billboard VFX 贴图（<code>textures/vfx/</code>）</h3>
-  <p class="sub">来源：<a href="https://kenney.nl/assets/particle-pack" target="_blank">Kenney Particle Pack</a>（CC0，可商用，无需署名）。<br>
-  Phase 8 接入，给"单帧贴图特效"用。系统：<code>BillboardVfx</code> 池 + <code>spawnBillboard()</code>（见 <code>client/source/index.ts</code> <code>VFX_TEXTURE_FILES</code> 表）。</p>
-  <table>
-    <tr><th>文件</th><th>用途</th><th>触发点</th></tr>
-    <tr><td><code>vfx/spark.png</code></td><td>通用粒子（主贴图）</td><td>所有点云粒子（替换 <code>particle_circle.png</code>）</td></tr>
-    <tr><td><code>vfx/muzzle.png</code></td><td>击中光晕 / 枪口火光</td><td>击中怪物、bow / shotgun 开火</td></tr>
-    <tr><td><code>vfx/slash.png</code></td><td>剑气贴图</td><td>剑攻击 swing（地面贴花，朝向 swing 方向）</td></tr>
-    <tr><td><code>vfx/smoke.png</code></td><td>死亡烟雾</td><td>怪物死亡</td></tr>
-    <tr><td><code>vfx/scorch.png</code></td><td>死亡烧痕（地面贴花）</td><td>怪物死亡，持续 1.5s</td></tr>
-    <tr><td><code>vfx/star.png</code></td><td>星光</td><td>升级 burst、拾取 sparkle</td></tr>
-    <tr><td><code>vfx/light.png</code></td><td>光环</td><td>升级 burst</td></tr>
-    <tr><td><code>vfx/magic_circle.png</code></td><td>旋转魔法圆</td><td>祭坛 ready / summoning 阶段地面 decal</td></tr>
-    <tr><td><code>vfx/portal_swirl.png</code></td><td>紫色漩涡</td><td>Boss 死亡后传送门（portal_ready）</td></tr>
-    <tr><td><code>vfx/dirt.png</code></td><td>尘土（预留）</td><td>预加载，待接入落地踢尘等</td></tr>
-    <tr><td><code>vfx/flame.png</code></td><td>火焰（预留）</td><td>预加载，待接入 flame_ring 升级特效</td></tr>
-  </table>
-
-  <p style="color: var(--dim);">新增 VFX 贴图流程：① PNG（透明背景）丢到 <code>public/textures/vfx/</code> ② <code>VfxTextureKey</code> union + <code>VFX_TEXTURE_FILES</code> 表加映射 ③ 触发点调 <code>this.spawnBillboard({ texture, x, y, z, scale, lifetime, ... })</code></p>
 
   <details>
     <summary>未启用的备选资源（可清理或留作扩展）</summary>
@@ -2145,10 +2857,27 @@ tv_1.gltf</code></pre>
   Generated from <code>game/core/source/</code> · <code>game/client/source/</code> · <code>public/models/</code>
   <br>
   本页内容会与代码漂移；如有疑问以源码为准。
+  <br>
+  策划 v0.5 · <code>index.html</code> — 侧栏紫色 = 全新栏目，<span class="badge-new">new</span> = 相对旧版有修订。
 </footer>
 
 </main>
 </div>
+
+<script id="tab-bootstrap">
+(function () {
+  var hash = (location.hash || '#overview').replace(/^#/, '') || 'overview';
+  var aliases = { 'ext-progression': 'xp', 'ext-unlock': 'characters', 'ext-traits': 'characters' };
+  var id = aliases[hash] || hash;
+  var el = document.getElementById(id);
+  if (!el || el.tagName !== 'SECTION') {
+    id = 'overview';
+    el = document.getElementById('overview');
+  }
+  document.querySelectorAll('section.active').forEach(function (s) { s.classList.remove('active'); });
+  if (el) el.classList.add('active');
+})();
+</script>
 
 <script>
 // ====================== Data ======================
@@ -2165,7 +2894,6 @@ const WEAPONS = [
       { d: 35, c: 0.50, p: 2, b: 0, ch: 0, r: 4.0, a: 4.0, pi: 999, sp: 0 },
       { d: 42, c: 0.50, p: 3, b: 0, ch: 0, r: 4.5, a: 4.5, pi: 999, sp: 0 },
     ],
-    evo: { name: '死刑执行者', mul: 2.5, dmg: 105, cd: 0.5, p: 4, r: 4.5 },
     fields: ['d','c','p','r','a']
   },
   { id: 'bone_bouncer', name: '弹射骨头 Bone Bouncer', icon: '🦴', color: 'var(--c-bone)',
@@ -2180,7 +2908,6 @@ const WEAPONS = [
       { d: 16, c: 0.80, p: 2, b: 5, ch: 0, r: 0, a: 0, pi: 0, sp: 14 },
       { d: 20, c: 0.80, p: 3, b: 6, ch: 0, r: 0, a: 0, pi: 0, sp: 15 },
     ],
-    evo: { name: '骨暴风', mul: 2.0, dmg: 40, cd: 0.8, p: 4, b: 6 },
     fields: ['d','c','p','b','sp']
   },
   { id: 'axe', name: '旋转飞斧 Axe', icon: '🪓', color: 'var(--c-axe)',
@@ -2195,7 +2922,6 @@ const WEAPONS = [
       { d: 26, c: 1.00, p: 4, b: 0, ch: 0, r: 4.5, a: 1.4, pi: 999, sp: 5.5 },
       { d: 32, c: 0.90, p: 4, b: 0, ch: 0, r: 5.0, a: 1.6, pi: 999, sp: 6 },
     ],
-    evo: { name: '狂战士之斧', mul: 2.0, dmg: 64, cd: 0.9, p: 5, r: 5.0 },
     fields: ['d','c','p','r','a','sp']
   },
   { id: 'bow', name: '左轮手枪 Bow', icon: '🔫', color: 'var(--c-bow)',
@@ -2210,7 +2936,6 @@ const WEAPONS = [
       { d: 48, c: 0.70, p: 3, b: 0, ch: 0, r: 42, a: 0, pi: 3, sp: 32 },
       { d: 58, c: 0.60, p: 3, b: 0, ch: 0, r: 45, a: 0, pi: 4, sp: 35 },
     ],
-    evo: { name: '沙漠之鹰', mul: 3.0, dmg: 174, cd: 0.6, p: 4, pi: 4 },
     fields: ['d','c','p','r','pi','sp']
   },
   { id: 'lightning_staff', name: '闪电法杖 Lightning Staff', icon: '⚡', color: 'var(--c-lightning)',
@@ -2225,7 +2950,6 @@ const WEAPONS = [
       { d: 28, c: 1.50, p: 1, b: 0, ch: 6, r: 14, a: 0, pi: 0, sp: 0 },
       { d: 35, c: 1.20, p: 1, b: 0, ch: 8, r: 40, a: 0, pi: 0, sp: 0 },
     ],
-    evo: { name: '雷神', mul: 2.5, dmg: 88, cd: 1.2, ch: 9, r: 40 },
     fields: ['d','c','ch','r']
   },
   { id: 'flame_ring', name: '烈焰环 Flame Ring', icon: '🔥', color: 'var(--c-flame)',
@@ -2240,7 +2964,6 @@ const WEAPONS = [
       { d: 9,  c: 0.30, p: 0, b: 0, ch: 0, r: 6.5, a: 6.5, pi: 0, sp: 0 },
       { d: 12, c: 0.30, p: 0, b: 0, ch: 0, r: 8.0, a: 8.0, pi: 0, sp: 0 },
     ],
-    evo: null,
     fields: ['d','c','r']
   },
   { id: 'shotgun', name: '霰弹枪 Shotgun', icon: '💥', color: 'var(--c-shotgun)',
@@ -2255,9 +2978,86 @@ const WEAPONS = [
       { d: 18, c: 0.80, p: 8, b: 0, ch: 0, r: 18, a: 0, pi: 1, sp: 21 },
       { d: 22, c: 0.70, p: 9, b: 0, ch: 0, r: 20, a: 0, pi: 2, sp: 22 },
     ],
-    evo: null,
     fields: ['d','c','p','r','pi']
   }
+];
+
+const EXT_WEAPONS = [
+  { id: 'void_ripple', name: '虚空涟漪 Void Ripple', icon: '🌊', color: 'var(--c-void)',
+    desc: '玩家中心扩散环；穿透 99；附带击退',
+    fieldNote: '<code>r</code>=环最大半径 · <code>a</code>=环宽 · <code>b</code>=击退×10',
+    stats: [
+      { d: 10, c: 1.90, p: 0, b: 4, ch: 0, r: 3.8, a: 1.2, pi: 99, sp: 0 },
+      { d: 11, c: 1.82, p: 0, b: 4, ch: 0, r: 4.0, a: 1.4, pi: 99, sp: 0 },
+      { d: 12, c: 1.75, p: 0, b: 4, ch: 0, r: 4.1, a: 1.6, pi: 99, sp: 0 },
+      { d: 14, c: 1.68, p: 0, b: 4, ch: 0, r: 4.2, a: 1.8, pi: 99, sp: 0 },
+      { d: 15, c: 1.61, p: 0, b: 5, ch: 0, r: 4.3, a: 2.0, pi: 99, sp: 0 },
+      { d: 17, c: 1.55, p: 0, b: 5, ch: 0, r: 4.4, a: 2.3, pi: 99, sp: 0 },
+      { d: 19, c: 1.48, p: 0, b: 5, ch: 0, r: 4.5, a: 2.6, pi: 99, sp: 0 },
+      { d: 22, c: 1.42, p: 0, b: 6, ch: 0, r: 4.5, a: 3.0, pi: 99, sp: 0 },
+    ],
+    fields: ['d','c','r','a','b']
+  },
+  { id: 'ray_gun', name: '射线枪 Ray Gun', icon: '🔦', color: 'var(--c-ray)',
+    desc: '直线射线；路径无衰减；射程固定',
+    fieldNote: '<code>r</code>=射程 12 固定 · <code>a</code>=射线宽度',
+    stats: [
+      { d: 24, c: 1.40, p: 1, b: 0, ch: 0, r: 12, a: 0.32, pi: 99, sp: 0 },
+      { d: 27, c: 1.40, p: 1, b: 0, ch: 0, r: 12, a: 0.36, pi: 99, sp: 0 },
+      { d: 30, c: 1.40, p: 1, b: 0, ch: 0, r: 12, a: 0.40, pi: 99, sp: 0 },
+      { d: 34, c: 1.40, p: 1, b: 0, ch: 0, r: 12, a: 0.44, pi: 99, sp: 0 },
+      { d: 38, c: 1.40, p: 1, b: 0, ch: 0, r: 12, a: 0.48, pi: 99, sp: 0 },
+      { d: 42, c: 1.40, p: 1, b: 0, ch: 0, r: 12, a: 0.52, pi: 99, sp: 0 },
+      { d: 47, c: 1.40, p: 1, b: 0, ch: 0, r: 12, a: 0.57, pi: 99, sp: 0 },
+      { d: 52, c: 1.40, p: 1, b: 0, ch: 0, r: 12, a: 0.63, pi: 99, sp: 0 },
+    ],
+    fields: ['d','c','r','a']
+  },
+  { id: 'poison_grenade', name: '毒气弹 Poison Grenade', icon: '☁️', color: 'var(--c-gas)',
+    desc: '投掷毒气弹；落点毒雾无直伤，雾内秒伤平滑扣血',
+    fieldNote: '<code>sp</code>=雾秒伤 · <code>ch</code>=雾持续 s · <code>c</code>=投掷 CD',
+    stats: [
+      { d: 0, c: 1.80, p: 1, b: 0, ch: 3.00, r: 0, a: 0, pi: 0, sp: 10 },
+      { d: 0, c: 1.75, p: 1, b: 0, ch: 3.25, r: 0, a: 0, pi: 0, sp: 11 },
+      { d: 0, c: 1.70, p: 1, b: 0, ch: 3.50, r: 0, a: 0, pi: 0, sp: 12 },
+      { d: 0, c: 1.65, p: 1, b: 0, ch: 3.75, r: 0, a: 0, pi: 0, sp: 13 },
+      { d: 0, c: 1.60, p: 1, b: 0, ch: 4.00, r: 0, a: 0, pi: 0, sp: 15 },
+      { d: 0, c: 1.55, p: 1, b: 0, ch: 4.25, r: 0, a: 0, pi: 0, sp: 17 },
+      { d: 0, c: 1.50, p: 1, b: 0, ch: 4.60, r: 0, a: 0, pi: 0, sp: 19 },
+      { d: 0, c: 1.45, p: 1, b: 0, ch: 5.00, r: 0, a: 0, pi: 0, sp: 21 },
+    ],
+    fields: ['c','sp','ch']
+  },
+  { id: 'paralyze_gun', name: '麻痹枪 Paralyze Gun', icon: '⚡', color: 'var(--c-paralyze)',
+    desc: '优先精英；施加强减速与攻击减慢',
+    fieldNote: '<code>p</code>=同时目标数 · <code>r</code>=强减速 s · <code>a</code>=攻击减慢 s',
+    stats: [
+      { d: 17, c: 2.00, p: 1, b: 0, ch: 0, r: 1.00, a: 5.00, pi: 0, sp: 0 },
+      { d: 19, c: 1.95, p: 1, b: 0, ch: 0, r: 1.15, a: 5.15, pi: 0, sp: 0 },
+      { d: 21, c: 1.90, p: 2, b: 0, ch: 0, r: 1.30, a: 5.30, pi: 0, sp: 0 },
+      { d: 24, c: 1.85, p: 2, b: 0, ch: 0, r: 1.45, a: 5.45, pi: 0, sp: 0 },
+      { d: 27, c: 1.80, p: 3, b: 0, ch: 0, r: 1.60, a: 5.60, pi: 0, sp: 0 },
+      { d: 30, c: 1.75, p: 3, b: 0, ch: 0, r: 1.75, a: 5.75, pi: 0, sp: 0 },
+      { d: 33, c: 1.70, p: 3, b: 0, ch: 0, r: 1.90, a: 5.90, pi: 0, sp: 0 },
+      { d: 36, c: 1.65, p: 5, b: 0, ch: 0, r: 2.05, a: 6.05, pi: 0, sp: 0 },
+    ],
+    fields: ['d','c','p','r','a']
+  },
+  { id: 'scorch_boots', name: '灼地靴 Scorch Boots', icon: '👢', color: 'var(--c-scorch)',
+    desc: '移动留火焰轨迹；被动无武器 CD',
+    fieldNote: '<code>d</code>=轨迹秒伤 · <code>r</code>=轨迹宽 · <code>c</code>=段间隔 s · <code>ch</code>=段持续 s',
+    stats: [
+      { d: 6, c: 0.15, p: 0, b: 0, ch: 2.0, r: 1.0, a: 0, pi: 0, sp: 0 },
+      { d: 7, c: 0.15, p: 0, b: 0, ch: 2.0, r: 1.1, a: 0, pi: 0, sp: 0 },
+      { d: 7, c: 0.15, p: 0, b: 0, ch: 2.0, r: 1.2, a: 0, pi: 0, sp: 0 },
+      { d: 8, c: 0.15, p: 0, b: 0, ch: 2.0, r: 1.3, a: 0, pi: 0, sp: 0 },
+      { d: 8, c: 0.15, p: 0, b: 0, ch: 2.0, r: 1.4, a: 0, pi: 0, sp: 0 },
+      { d: 9, c: 0.15, p: 0, b: 0, ch: 2.0, r: 1.5, a: 0, pi: 0, sp: 0 },
+      { d: 10, c: 0.15, p: 0, b: 0, ch: 2.0, r: 1.6, a: 0, pi: 0, sp: 0 },
+      { d: 11, c: 0.15, p: 0, b: 0, ch: 2.0, r: 1.8, a: 0, pi: 0, sp: 0 },
+    ],
+    fields: ['d','r','c','ch']
+  },
 ];
 
 const FIELD_LABELS = {
@@ -2265,17 +3065,30 @@ const FIELD_LABELS = {
   r: '范围/距离', a: 'AoE 半径', pi: '穿透', sp: '速度'
 };
 
+function extFieldLabel(weaponId, field) {
+  const m = {
+    void_ripple: { r: '环最大半径', a: '环宽', b: '击退×10' },
+    ray_gun: { r: '射程', a: '射线宽度' },
+    poison_grenade: { sp: '雾秒伤', ch: '雾持续 (s)', c: '投掷 CD (s)' },
+    paralyze_gun: { p: '目标数', r: '强减速 (s)', a: '攻击减慢 (s)' },
+    scorch_boots: { d: '轨迹秒伤', r: '轨迹宽', c: '段间隔 (s)', ch: '段持续 (s)' },
+  };
+  return (m[weaponId] && m[weaponId][field]) || FIELD_LABELS[field];
+}
+
 const TOMES = [
-  { id: 'attack_speed_tome', zh: '攻速典籍', icon: '⚡', max: 5, effect: '攻速 +10%/级（影响所有武器 CD）' },
-  { id: 'speed_tome', zh: '速度典籍', icon: '🌬️', max: 5, effect: '移动速度 +8%/级' },
-  { id: 'attraction_tome', zh: '吸引典籍', icon: '🧲', max: 5, effect: '拾取范围 +1.2/级' },
-  { id: 'shield_tome', zh: '护盾典籍', icon: '🛡️', max: 5, effect: '+2 护甲/级 且 受伤再 ×(1−0.05·级) — 双重减伤' },
-  { id: 'precision_tome', zh: '精准典籍', icon: '🎯', max: 5, effect: '暴击率 +5%/级，暴伤 +10%/级' },
-  { id: 'thorns_tome', zh: '荆棘典籍', icon: '🌹', max: 5, effect: '每秒对周围敌人造成 level × 3 反伤' },
-  { id: 'knockback_tome', zh: '击退典籍', icon: '💢', max: 3, effect: '击退力 ×(1 + 0.30·级)' },
-  { id: 'luck_tome', zh: '幸运典籍', icon: '🍀', max: 3, effect: '升级稀有度滚点：common −10、rare/legendary 各 +5/级' },
-  { id: 'xp_gain_tome', zh: '经验典籍', icon: '📚', max: 5, effect: '拾取 XP ×(1 + 0.15·级)' },
-  { id: 'curse_tome', zh: '诅咒典籍', icon: '💀', max: 3, effect: '敌速 +10%/级、击杀 XP +20%/级、刷新间隔 −10%/级' },
+  { id: 'attack_speed_tome', zh: '攻速典籍', icon: '⚡', max: 8, effect: '攻速 +10%/级（影响所有武器 CD）' },
+  { id: 'speed_tome', zh: '速度典籍', icon: '🌬️', max: 8, effect: '移动速度 +8%/级' },
+  { id: 'life_tome', zh: '生命典籍', icon: '❤️', max: 8, effect: '生命值上限 +15/级' },
+  { id: 'consumable_tome', zh: '拾荒典籍', icon: '🎒', max: 8, effect: '消耗品掉落率 +5%/级（乘算）' },
+  { id: 'attraction_tome', zh: '吸引典籍', icon: '🧲', max: 8, effect: '拾取范围 +1.2/级' },
+  { id: 'shield_tome', zh: '护盾典籍', icon: '🛡️', max: 8, effect: '+2 护甲/级 且 受伤再 ×(1−0.05·级) — 双重减伤' },
+  { id: 'precision_tome', zh: '精准典籍', icon: '🎯', max: 8, effect: '暴击率 +5%/级，暴伤 +10%/级' },
+  { id: 'thorns_tome', zh: '荆棘典籍', icon: '🌹', max: 8, effect: '每秒对周围敌人造成 level × 3 反伤' },
+  { id: 'knockback_tome', zh: '击退典籍', icon: '💢', max: 8, effect: '击退力 ×(1 + 0.30·级)' },
+  { id: 'luck_tome', zh: '幸运典籍', icon: '🍀', max: 8, effect: '升级稀有度滚点：common −10、rare/legendary 各 +5/级' },
+  { id: 'xp_gain_tome', zh: '经验典籍', icon: '📚', max: 8, effect: '拾取 XP ×(1 + 0.15·级)' },
+  { id: 'curse_tome', zh: '诅咒典籍', icon: '💀', max: 8, effect: '敌速 +3.75%/级、击杀 XP +7.5%/级、刷新间隔 −3.75%/级（Lv8：+30% / +60% / −30%）' },
 ];
 
 const SHOP = [
@@ -2289,14 +3102,6 @@ const SHOP = [
   { id: 'starting_level', zh: '初始等级', max: 3, eff: '+1 起始等级/级', costs: [500,1000,2000], total: 3500 }
 ];
 
-const EVOLUTIONS = [
-  { base: 'sword', baseZh: '大剑', tome: 'attack_speed_tome', tomeZh: '攻速典籍', lv: 5, name: '死刑执行者', mul: '×2.5', effect: 'massive_aoe' },
-  { base: 'axe', baseZh: '旋转飞斧', tome: 'knockback_tome', tomeZh: '击退典籍', lv: 3, name: '狂战士之斧', mul: '×2.0', effect: 'triple_orbit' },
-  { base: 'bone_bouncer', baseZh: '弹射骨头', tome: 'luck_tome', tomeZh: '幸运典籍', lv: 3, name: '骨暴风', mul: '×2.0', effect: 'explode_on_hit' },
-  { base: 'bow', baseZh: '左轮手枪', tome: 'precision_tome', tomeZh: '精准典籍', lv: 3, name: '沙漠之鹰', mul: '×3.0', effect: 'pierce_all' },
-  { base: 'lightning_staff', baseZh: '闪电法杖', tome: 'curse_tome', tomeZh: '诅咒典籍', lv: 3, name: '雷神', mul: '×2.5', effect: 'chain_all' },
-];
-
 const CHARACTERS = [
   { id: 'megachad', zh: '超级猛男', icon: '💪', hp: 100, speed: 4.0, dmg: 1.2, armor: 0, crit: 0.08, weapon: 'sword' },
   { id: 'roberto', zh: '罗伯托', icon: '🛡️', hp: 150, speed: 3.2, dmg: 1.0, armor: 3, crit: 0.05, weapon: 'axe' },
@@ -2304,9 +3109,14 @@ const CHARACTERS = [
 ];
 
 // ====================== Render ======================
+function safeRender(name, fn) {
+  try { fn(); } catch (err) {
+    console.error('[docs] 渲染失败:', name, err);
+  }
+}
 
 // Characters
-(function renderChars() {
+safeRender('characters', function renderChars() {
   const wrap = document.getElementById('char-cards');
   const maxes = { hp: 200, speed: 6, dmg: 1.5, armor: 5, crit: 0.15 };
   for (const c of CHARACTERS) {
@@ -2323,122 +3133,10 @@ const CHARACTERS = [
     `;
     wrap.appendChild(div);
   }
-})();
-
-// Weapons
-(function renderWeapons() {
-  const wrap = document.getElementById('weapons-grid');
-  for (const w of WEAPONS) {
-    const card = document.createElement('div');
-    card.className = 'wcard';
-    card.style.borderTop = `3px solid ${w.color}`;
-    card.style.marginBottom = '20px';
-
-    const fieldBars = w.fields.map(f => {
-      const values = w.stats.map(s => s[f]);
-      const evoVal = w.evo ? (
-        f === 'd' ? w.evo.dmg :
-        f === 'c' ? w.evo.cd :
-        f === 'p' ? (w.evo.p ?? values[7] + 1) :
-        f === 'r' ? (w.evo.r ?? values[7]) :
-        f === 'a' ? values[7] :
-        f === 'pi' ? (w.evo.pi ?? values[7]) :
-        f === 'sp' ? values[7] :
-        f === 'b' ? (w.evo.b ?? values[7]) :
-        f === 'ch' ? (w.evo.ch ?? values[7]) :
-        values[7]
-      ) : null;
-      const allVals = evoVal !== null ? [...values, evoVal] : values;
-      const max = Math.max(...allVals);
-      const isCooldown = f === 'c';
-      const min = Math.min(...allVals);
-
-      const bars = values.map((v, i) => {
-        const pct = isCooldown
-          ? (max === min ? 50 : 100 * (max - v) / (max - min) + 15)
-          : (max > 0 ? Math.max(8, v / max * 100) : 0);
-        return `<div class="bar" style="height:${pct}%; background:${w.color}; opacity:${0.35 + 0.65 * (i / 7)};">
-          <span class="v">${v}</span><span class="lvl">${i+1}</span>
-        </div>`;
-      }).join('');
-
-      const evoBar = evoVal !== null ? `<div class="bar evolved" style="height:${
-        isCooldown
-          ? (max === min ? 50 : 100 * (max - evoVal) / (max - min) + 15)
-          : (max > 0 ? Math.max(8, evoVal / max * 100) : 0)
-      }%;"><span class="v">${evoVal}</span><span class="lvl">9</span></div>` : '';
-
-      return `
-        <div class="barchart-wrap">
-          <div class="barchart-title">${FIELD_LABELS[f]}${isCooldown ? ' · 越短越好' : ''}</div>
-          <div class="barchart">${bars}${evoBar}</div>
-        </div>
-      `;
-    }).join('');
-
-    const evoLine = w.evo
-      ? `<div style="margin-top:6px;color:var(--accent-2);font-size:13px;font-weight:600;">⚡ 进化 → <strong>${w.evo.name}</strong>（伤害 ${w.evo.mul}，弹数 +1）</div>`
-      : `<div style="margin-top:6px;color:var(--muted);font-size:13px;">— 暂无进化路径 —</div>`;
-
-    const allFields = Object.keys(FIELD_LABELS).filter(f => w.stats.some(s => s[f] !== 0));
-    const headRow = '<tr><th>Lv</th>' + allFields.map(f => `<th>${FIELD_LABELS[f]}</th>`).join('') + '</tr>';
-    const bodyRows = w.stats.map((s, i) => {
-      const cells = allFields.map(f => `<td class="num">${s[f]}</td>`).join('');
-      return `<tr><td>${i+1}</td>${cells}</tr>`;
-    }).join('');
-
-    card.innerHTML = `
-      <div class="wcard-header">
-        <div class="icon">${w.icon}</div>
-        <div style="flex:1;">
-          <h3 class="name">${w.name}</h3>
-          <div class="desc">${w.desc} · <code>${w.id}</code></div>
-        </div>
-      </div>
-      <div class="wcard-body">
-        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:8px;">
-          ${fieldBars}
-        </div>
-        ${evoLine}
-        <details style="margin-top: 14px;">
-          <summary>查看完整数值表（Lv 1–8）</summary>
-          <table style="margin-top: 8px;">
-            <thead>${headRow}</thead>
-            <tbody>${bodyRows}</tbody>
-          </table>
-        </details>
-      </div>
-    `;
-    wrap.appendChild(card);
-  }
-})();
-
-// Evolutions
-(function renderEvo() {
-  const wrap = document.getElementById('evo-grid');
-  for (const e of EVOLUTIONS) {
-    const div = document.createElement('div');
-    div.className = 'evo';
-    div.innerHTML = `
-      <div class="evo-side">
-        <div class="nm">${e.baseZh}</div>
-        <div class="meta">基础武器 · Lv 8 满级</div>
-      </div>
-      <div class="evo-arrow">
-        →
-        <span class="req">${e.tomeZh} Lv ${e.lv}</span>
-      </div>
-      <div class="evo-side gold">
-        <div class="nm">⚡ ${e.name}</div>
-        <div class="meta">${e.mul} 伤害 · 弹数 +1 · ${e.effect}</div>
-      </div>
-    `;
-    wrap.appendChild(div);
-  }
-})();
+});
 
 // Tomes
-(function renderTomes() {
+safeRender('tomes', function renderTomes() {
   const wrap = document.getElementById('tome-grid');
   for (const t of TOMES) {
     const pips = Array.from({length: t.max}).map(() => `<span class="pip on"></span>`).join('');
@@ -2454,10 +3152,10 @@ const CHARACTERS = [
     `;
     wrap.appendChild(div);
   }
-})();
+});
 
 // Shop
-(function renderShop() {
+safeRender('shop', function renderShop() {
   const wrap = document.getElementById('shop-grid');
   const maxTotal = Math.max(...SHOP.map(s => s.total));
   for (const s of SHOP) {
@@ -2479,40 +3177,48 @@ const CHARACTERS = [
     `;
     wrap.appendChild(div);
   }
-})();
+});
 
 // XP curve (SVG, light theme)
-(function renderXpChart() {
+safeRender('xpchart', function renderXpChart() {
   const svg = document.getElementById('xpchart');
-  const W = 800, H = 200, PAD_L = 40, PAD_R = 16, PAD_T = 24, PAD_B = 24;
+  if (!svg) return;
+  const W = 800, H = 200, PAD_L = 46, PAD_R = 18, PAD_T = 36, PAD_B = 24;
+  const maxLevel = 100;
+  const xpForLevelDoc = L => (
+    L <= 40
+      ? Math.floor(10 * (1 + L * 0.35))
+      : Math.floor(150 * Math.pow(1.0725, L - 40))
+  );
+  const yScale = xp => Math.log10(xp + 1);
   const points = [];
-  for (let L = 1; L <= 40; L++) {
-    points.push({ L, xp: Math.floor(10 * (1 + L * 0.35)) });
+  for (let L = 1; L <= maxLevel; L++) {
+    points.push({ L, xp: xpForLevelDoc(L) });
   }
-  const maxXp = Math.max(...points.map(p => p.xp));
-  const x = L => PAD_L + (L - 1) / 39 * (W - PAD_L - PAD_R);
-  const y = xp => H - PAD_B - (xp / maxXp) * (H - PAD_T - PAD_B);
+  const maxY = yScale(Math.max(...points.map(p => p.xp)));
+  const x = L => PAD_L + (L - 1) / (maxLevel - 1) * (W - PAD_L - PAD_R);
+  const y = xp => H - PAD_B - (yScale(xp) / maxY) * (H - PAD_T - PAD_B);
 
   let grid = '';
-  for (let i = 0; i <= 4; i++) {
-    const v = Math.round(maxXp * i / 4);
+  for (const v of [10, 100, 1000, 10000, 100000]) {
     grid += `<line x1="${PAD_L}" x2="${W-PAD_R}" y1="${y(v)}" y2="${y(v)}" stroke="#d9e0ed" stroke-dasharray="3,3"/>`;
-    grid += `<text x="${PAD_L - 6}" y="${y(v)+4}" fill="#8a93ac" font-size="10" text-anchor="end">${v}</text>`;
+    grid += `<text x="${PAD_L - 6}" y="${y(v)+4}" fill="#8a93ac" font-size="10" text-anchor="end">${v >= 1000 ? (v / 1000) + 'k' : v}</text>`;
   }
 
   let xLabels = '';
-  for (const L of [1, 10, 20, 30, 40]) {
+  for (const L of [1, 20, 40, 60, 80, 100]) {
     xLabels += `<text x="${x(L)}" y="${H-6}" fill="#8a93ac" font-size="10" text-anchor="middle">L${L}</text>`;
   }
 
   const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(p.L)} ${y(p.xp)}`).join(' ');
-  const area = path + ` L ${x(40)} ${H - PAD_B} L ${x(1)} ${H - PAD_B} Z`;
+  const area = path + ` L ${x(maxLevel)} ${H - PAD_B} L ${x(1)} ${H - PAD_B} Z`;
 
   let dots = '';
-  for (const L of [1, 5, 10, 20, 30, 40]) {
+  for (const L of [1, 10, 20, 40, 60, 80, 100]) {
     const p = points[L-1];
+    const labelY = y(p.xp) < 44 ? y(p.xp) + 14 : y(p.xp) - 10;
     dots += `<circle cx="${x(L)}" cy="${y(p.xp)}" r="4" fill="#2563eb" stroke="#fff" stroke-width="2"/>`;
-    dots += `<text x="${x(L)}" y="${y(p.xp)-10}" fill="#2563eb" font-size="11" text-anchor="middle" font-weight="600">${p.xp}</text>`;
+    dots += `<text x="${x(L)}" y="${labelY}" fill="#2563eb" font-size="11" text-anchor="middle" font-weight="600">${p.xp}</text>`;
   }
 
   svg.innerHTML = `
@@ -2527,16 +3233,27 @@ const CHARACTERS = [
     <path d="${path}" stroke="#2563eb" stroke-width="2" fill="none"/>
     ${dots}
     ${xLabels}
-    <text x="${W/2}" y="14" fill="#5b6685" font-size="11" text-anchor="middle">每级所需 XP（floor(10 × (1 + L × 0.35)))</text>
+    <text x="${W/2}" y="14" fill="#5b6685" font-size="11" text-anchor="middle">每级所需 XP · 1–100（纵轴 log 缩放，L41+ = floor(150 × 1.0725^(L-40))）</text>
   `;
-})();
+});
 
 // ====================== Tab switching ======================
 (function initTabs() {
-  const links = document.querySelectorAll('#nav a');
-  const sections = document.querySelectorAll('section');
+  const navLinks = document.querySelectorAll('#nav a');
+  const sections = document.querySelectorAll('main > section');
+  const sectionIds = new Set([...sections].map(s => s.id));
+  const TAB_ALIASES = { 'ext-progression': 'xp', 'ext-unlock': 'characters', 'ext-traits': 'characters' };
 
-  function showTab(id) {
+  function resolveSectionId(raw) {
+    if (!raw) return null;
+    if (TAB_ALIASES[raw]) return TAB_ALIASES[raw];
+    if (sectionIds.has(raw)) return raw;
+    return null;
+  }
+
+  function showTab(rawId, hashForUrl) {
+    const id = resolveSectionId(rawId) || 'overview';
+    const hash = hashForUrl || rawId || id;
     let found = false;
     sections.forEach(s => {
       const match = s.id === id;
@@ -2545,27 +3262,67 @@ const CHARACTERS = [
     });
     if (!found && sections[0]) {
       sections[0].classList.add('active');
-      id = sections[0].id;
     }
-    links.forEach(a => a.classList.toggle('active', a.dataset.tab === id));
-    if (history.replaceState) history.replaceState(null, '', '#' + id);
-    window.scrollTo({ top: 0, behavior: 'instant' });
+    navLinks.forEach(a => {
+      const navTarget = resolveSectionId(a.dataset.tab);
+      a.classList.toggle('active', navTarget === id);
+    });
+    if (history.replaceState) {
+      history.replaceState(null, '', '#' + (resolveSectionId(hash) ? hash : id));
+    }
+    window.scrollTo(0, 0);
+    const subAnchor = hashForUrl && hashForUrl !== id
+      ? document.getElementById(hashForUrl)
+      : null;
+    if (subAnchor) {
+      requestAnimationFrame(function () {
+        subAnchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
   }
 
-  links.forEach(a => {
-    a.addEventListener('click', e => {
+  function tabIdFromLink(a) {
+    const fromData = a.dataset.tab;
+    if (fromData) return fromData;
+    const href = a.getAttribute('href') || '';
+    if (href.startsWith('#') && href.length > 1) return href.slice(1);
+    return null;
+  }
+
+  function bindTabLink(a) {
+    if (a.dataset.tabBound) return;
+    const tab = tabIdFromLink(a);
+    if (!tab || !resolveSectionId(tab)) return;
+    a.dataset.tabBound = '1';
+    if (!a.getAttribute('href') || a.getAttribute('href') === '#') {
+      a.setAttribute('href', '#' + tab);
+    }
+    a.addEventListener('click', function (e) {
       e.preventDefault();
-      showTab(a.dataset.tab);
+      showTab(tab, tab);
+    });
+  }
+
+  navLinks.forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      const tab = tabIdFromLink(a);
+      if (tab) showTab(tab, tab);
     });
   });
 
-  window.addEventListener('hashchange', () => {
-    const id = location.hash.substring(1);
-    if (id) showTab(id);
+  document.querySelectorAll('main a[data-tab], main a[href^="#"]').forEach(function (a) {
+    if (a.closest('#nav')) return;
+    bindTabLink(a);
   });
 
-  const initial = location.hash.substring(1) || 'overview';
-  showTab(initial);
+  window.addEventListener('hashchange', function () {
+    const hash = location.hash.substring(1);
+    if (hash && resolveSectionId(hash)) showTab(hash, hash);
+  });
+
+  const initial = location.hash.substring(1);
+  showTab(initial && resolveSectionId(initial) ? initial : 'overview', initial || null);
 })();
 </script>
 

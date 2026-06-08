@@ -59,10 +59,13 @@ import {
   type ShrineRewardOption,
   type LevelData,
   type RelicId,
+  type RampVolume,
 } from '@minigame/core';
 import { PlatformInput } from '@minigame/platform';
 import { installThreeHighDpi } from '@minigame/render-adapter';
 import { initI18n, t, mountDevtools } from '@minigame/i18n';
+import { CameraOrbit } from './systems/cameraOrbit.ts';
+import { PlayerInvincibilityFx } from './systems/playerFx.ts';
 import type { I18nMode } from '@minigame/i18n';
 import { EventEmitter } from './session/EventEmitter.ts';
 
@@ -864,55 +867,87 @@ function analyzeTopSurface(node: THREE.Object3D): {
   return { sloped, lowY, highY, normalSum: { x: nx, y: ny, z: nz }, topVerts };
 }
 
-/** 把分析结果写成 ramp（顶面斜，含旋转 footprint）或 col 实体盒（顶面平）。 */
-function pushColOrRamp(node: THREE.Object3D, box: THREE.Box3, data: LevelData): void {
-  const surf = analyzeTopSurface(node);
-  if (surf.sloped && surf.topVerts.length > 0) {
-    // 1) 上坡方向 = -法线在 XZ 平面投影（法线指上+下坡侧 → 反向得上坡）
-    const nHorizLen = Math.hypot(surf.normalSum.x, surf.normalSum.z);
-    let slopeDirX = 1, slopeDirZ = 0;
-    if (nHorizLen > 1e-4) {
-      slopeDirX = -surf.normalSum.x / nHorizLen;
-      slopeDirZ = -surf.normalSum.z / nHorizLen;
-    }
-    // 2) 法向（slopeDir 旋转 90° CCW）
-    const perpX = -slopeDirZ;
-    const perpZ = slopeDirX;
-    // 3) 把所有顶面顶点投影到 (slopeDir, perp)，找旋转矩形 min/max
-    let minS = Infinity, maxS = -Infinity, minP = Infinity, maxP = -Infinity;
-    for (const v of surf.topVerts) {
-      const s = v.x * slopeDirX + v.z * slopeDirZ;
-      const p = v.x * perpX + v.z * perpZ;
-      if (s < minS) minS = s;
-      if (s > maxS) maxS = s;
-      if (p < minP) minP = p;
-      if (p > maxP) maxP = p;
-    }
-    const centerS = (minS + maxS) / 2;
-    const centerP = (minP + maxP) / 2;
-    // 4) 旋转矩形中心从局部坐标转回世界
-    const cx = centerS * slopeDirX + centerP * perpX;
-    const cz = centerS * slopeDirZ + centerP * perpZ;
-    data.ramps.push({
-      cx, cz,
-      halfSlope: (maxS - minS) / 2,
-      halfPerp: (maxP - minP) / 2,
-      slopeDirX, slopeDirZ,
-      lowY: surf.lowY,
-      highY: surf.highY,
-    });
-  } else {
-    // 平顶 → 实体盒。位置/尺寸用 mesh 整体 AABB（已经传进来）。
-    const cx = (box.min.x + box.max.x) / 2;
-    const cz = (box.min.z + box.max.z) / 2;
-    const halfW = (box.max.x - box.min.x) / 2;
-    const halfD = (box.max.z - box.min.z) / 2;
-    data.collisionRects.push({
-      cx, cz, halfW, halfD,
-      height: box.max.y, // 平顶面 = 可站立高度
-      baseY: box.min.y,  // 底面 = 实体盒下边界
-    });
+/** 从顶面分析结果构建 RampVolume（lowY/highY 取坡道两端均值，避免厚楔形体侧面污染）。 */
+function buildRampFromSurface(surf: ReturnType<typeof analyzeTopSurface>): RampVolume {
+  const nHorizLen = Math.hypot(surf.normalSum.x, surf.normalSum.z);
+  let slopeDirX = 1, slopeDirZ = 0;
+  if (nHorizLen > 1e-4) {
+    slopeDirX = -surf.normalSum.x / nHorizLen;
+    slopeDirZ = -surf.normalSum.z / nHorizLen;
   }
+  const perpX = -slopeDirZ;
+  const perpZ = slopeDirX;
+  let minS = Infinity, maxS = -Infinity, minP = Infinity, maxP = -Infinity;
+  for (const v of surf.topVerts) {
+    const s = v.x * slopeDirX + v.z * slopeDirZ;
+    const p = v.x * perpX + v.z * perpZ;
+    if (s < minS) minS = s;
+    if (s > maxS) maxS = s;
+    if (p < minP) minP = p;
+    if (p > maxP) maxP = p;
+  }
+  const centerS = (minS + maxS) / 2;
+  const centerP = (minP + maxP) / 2;
+  const cx = centerS * slopeDirX + centerP * perpX;
+  const cz = centerS * slopeDirZ + centerP * perpZ;
+  const span = maxS - minS;
+  const sBand = Math.max(span * 0.12, 0.05);
+  // 取端点处的 MAX Y（= 上表面顶点高度），不用平均。
+  // 厚楔形体低端的 upward-facing 三角面顶点同时包含上表面和底边顶点，
+  // 平均值会被底边拉低，导致玩家内嵌在斜坡里。MAX 确保走在上表面。
+  let lowMax = -Infinity, highMax = -Infinity;
+  for (const v of surf.topVerts) {
+    const s = v.x * slopeDirX + v.z * slopeDirZ;
+    if (s <= minS + sBand && v.y > lowMax) lowMax = v.y;
+    if (s >= maxS - sBand && v.y > highMax) highMax = v.y;
+  }
+  return {
+    cx, cz,
+    halfSlope: span / 2,
+    halfPerp: (maxP - minP) / 2,
+    slopeDirX, slopeDirZ,
+    lowY: Number.isFinite(lowMax) ? lowMax : surf.lowY,
+    highY: Number.isFinite(highMax) ? highMax : surf.highY,
+  };
+}
+
+/**
+ * 把 mesh 写成 ramp 或 col 实体盒（严格模式，对齐 WHITEBOX_SPEC §2.4）。
+ * - ramp_ 前缀：可行走斜坡（顶面斜）。
+ * - col_ 前缀：仅平顶平台（AABB 顶面）；顶面倾斜则**不生成碰撞**（纯视觉），
+ *   避免厚楔形体挡路；要走斜坡必须在 Blender 单独摆薄 ramp_。
+ */
+function pushColOrRamp(
+  node: THREE.Object3D,
+  box: THREE.Box3,
+  data: LevelData,
+  isExplicitRamp: boolean,
+): void {
+  const surf = analyzeTopSurface(node);
+  if (isExplicitRamp) {
+    if (!surf.sloped || surf.topVerts.length === 0) {
+      console.warn(`[Level] "${node.name}" 前缀是 ramp_ 但未检测到可行走斜面，已忽略。`);
+      return;
+    }
+    data.ramps.push(buildRampFromSurface(surf));
+    return;
+  }
+  if (surf.sloped) {
+    console.warn(
+      `[Level] "${node.name}" 顶面倾斜但前缀是 col_ → 不生成碰撞（纯视觉）。` +
+      ` 要走斜坡请单独加薄 ramp_（见 WHITEBOX_SPEC §2.4）。`,
+    );
+    return;
+  }
+  const cx = (box.min.x + box.max.x) / 2;
+  const cz = (box.min.z + box.max.z) / 2;
+  const halfW = (box.max.x - box.min.x) / 2;
+  const halfD = (box.max.z - box.min.z) / 2;
+  data.collisionRects.push({
+    cx, cz, halfW, halfD,
+    height: box.max.y,
+    baseY: box.min.y,
+  });
 }
 
 function parseLevelGltf(root: THREE.Object3D): LevelData {
@@ -934,8 +969,7 @@ function parseLevelGltf(root: THREE.Object3D): LevelData {
     if (name.startsWith('col_')) {
       _box.setFromObject(node);
       if (_box.isEmpty()) return;
-      // 顶面平 → 实体盒；顶面斜 → 自动当可行走斜坡（避免倾斜 col_ 变成一堵墙）。
-      pushColOrRamp(node, _box, data);
+      pushColOrRamp(node, _box, data, false);
     } else if (name.startsWith('wall_')) {
       _box.setFromObject(node);
       if (_box.isEmpty()) return;
@@ -961,7 +995,7 @@ function parseLevelGltf(root: THREE.Object3D): LevelData {
     } else if (name.startsWith('ramp_')) {
       _box.setFromObject(node);
       if (_box.isEmpty()) return;
-      pushColOrRamp(node, _box, data);
+      pushColOrRamp(node, _box, data, true);
     } else if (name.startsWith('spawn_')) {
       node.getWorldPosition(_vec);
       const p = { x: _vec.x, z: _vec.z };
@@ -1445,8 +1479,11 @@ export class GameScene {
 
   // Advanced Camera System
   private cameraAngle = 0;
-  private ghostTargetX = 0;
-  private ghostTargetZ = 0;
+  // 镜头朝向 + 跟随逻辑全部封装在 CameraOrbit（systems/cameraOrbit.ts）。
+  // 这里只持有引用；事件监听、yaw/pitch 状态、平滑 lookAt 都在 CameraOrbit 内。
+  private cameraOrbit!: CameraOrbit;
+  // 主角无敌闪烁效果（半透明脉冲，避免硬 visible 频闪）。封装在 PlayerInvincibilityFx。
+  private readonly playerFx = new PlayerInvincibilityFx();
   private currentFOV = 60;
   private targetFOV = 60;
   private hitStopTimer = 0;
@@ -1530,6 +1567,10 @@ export class GameScene {
       if (e.code === 'Space') { this.jumpKeyDown = false; }
       if (e.code === 'ShiftLeft' || e.code === 'ControlLeft') { this.slideKeyDown = false; }
     });
+
+    // 镜头视图系统：FPS pointer lock + 拖拽 + 手机右半屏滑动 + pitch 夹紧。
+    // 所有事件监听、yaw/pitch 状态都封装在内；GameScene 通过 getYaw() / update() 交互。
+    this.cameraOrbit = new CameraOrbit(this.renderer.domElement);
   }
 
   start(): void {
@@ -1571,6 +1612,7 @@ export class GameScene {
       this.animationId = null;
     }
     this.removeDisplayListener?.();
+    this.cameraOrbit?.dispose();
     this.platformInput.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -2579,6 +2621,7 @@ export class GameScene {
 
     // 移动端"激活 Boss / 进入传送门"按钮（PC 不显示，统一通过 KeyE 处理）
     this.interactBtn = document.createElement('div');
+    this.interactBtn.dataset.cameraBlock = 'true';
     this.interactBtn.style.cssText = 'position:absolute;bottom:120px;left:50%;transform:translateX(-50%);color:#fff;font-size:14px;font-weight:bold;background:rgba(170,68,255,0.85);padding:14px 28px;border-radius:30px;cursor:pointer;pointer-events:auto;user-select:none;display:none;text-shadow:0 1px 3px rgba(0,0,0,0.8);box-shadow:0 4px 16px rgba(170,68,255,0.5);min-width:120px;text-align:center;touch-action:manipulation;';
     this.interactBtn.textContent = '';
     // 触屏 / 鼠标点击都触发一次"按下"
@@ -2594,6 +2637,7 @@ export class GameScene {
 
     // Pause button
     this.pauseBtn = document.createElement('div');
+    this.pauseBtn.dataset.cameraBlock = 'true';
     this.pauseBtn.style.cssText = 'position:absolute;top:86px;right:16px;color:#ffffff;font-size:clamp(10px, 2.5vw, 16px);background:rgba(80,80,120,0.6);padding:8px 16px;border-radius:4px;cursor:pointer;pointer-events:auto;user-select:none;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;';
     this.pauseBtn.textContent = t('hud.pause');
     this.pauseBtn.addEventListener('click', () => this.togglePause());
@@ -2860,15 +2904,17 @@ export class GameScene {
     if (Math.abs(mx) < 0.15) mx = 0;
     if (Math.abs(my) < 0.15) my = 0;
 
-    // Fixed camera angle: WASD is world-space movement directly.
-    // Camera looks from -Z toward +Z, so:
-    // W(up on screen/joystick) = +Z (into screen = forward)
-    // S(down) = -Z, A(left) = -X, D(right) = +X
-    // PlatformInput: moveY negative = up on joystick/W key
-    // Need to FLIP moveY so W = +Z (forward into screen)
+    // 镜头相对移动：摇杆/WASD 的"前进"始终朝镜头看向的方向（只用 yaw，不用 pitch，
+    // 即看向天空 W 也是水平前进，第三人称游戏标准做法）。
+    // yaw = 0 时退化为原行为：moveX = -mx（横移），moveY = -my（+Z 前进）。
+    const yaw = this.cameraOrbit.getYaw();
+    const f = -my;
+    const s = -mx;
+    const cy = Math.cos(yaw);
+    const sy = Math.sin(yaw);
     const input: InputState = {
-      moveX: -mx,
-      moveY: -my,
+      moveX: f * sy + s * cy,
+      moveY: f * cy - s * sy,
       dash: false,
       skill1: raw.action3 ?? false,
       skill2: false,
@@ -2955,10 +3001,8 @@ export class GameScene {
       }
       this.wasGrounded = p.isGrounded;
 
-      // === Invincibility flash ===
-      if (p.invincibleTimer > 0) {
-        this.playerMesh.visible = Math.sin(time * 20) > 0;
-      }
+      // === Invincibility flash === 委托给 playerFx（半透明脉冲，避免频闪）
+      this.playerFx.update(this.playerMesh, p.invincibleTimer, time);
 
       // Keep scale at 1 (skeletal animation handles deformation)
       this.playerMesh.scale.set(
@@ -4884,7 +4928,9 @@ export class GameScene {
   }
 
   private showShrineRewardPanel(options: ShrineRewardOption[]): void {
+    this.cameraOrbit.setEnabled(false);
     this.shrinePanel = document.createElement('div');
+    this.shrinePanel.dataset.cameraBlock = 'true';
     this.shrinePanel.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:radial-gradient(ellipse at center,rgba(40,30,80,0.85),rgba(0,0,0,0.85));display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:300;font-family:Arial,sans-serif;';
 
     const title = document.createElement('div');
@@ -4967,6 +5013,7 @@ export class GameScene {
   private hideShrineRewardPanel(): void {
     this.shrinePanel?.remove();
     this.shrinePanel = null;
+    this.cameraOrbit.setEnabled(true);
   }
 
   private spawnPickupBurst(x: number, y: number, z: number, color: number): void {
@@ -5194,42 +5241,9 @@ export class GameScene {
   private updateCamera(state: GameState): void {
     const p = state.player;
 
-    // =======================================================================
-    // MegaBonk camera: FIXED ANGLE third-person.
-    // Camera NEVER rotates. Fixed direction. Only follows player position.
-    // Player is always in lower-center of screen.
-    // =======================================================================
-
-    // Fixed camera offset (never changes direction)
-    const camBehind = 7;   // units behind player (toward -Z world direction)
-    const camHeight = 5;   // units above player
-
-    // Camera target position (fixed angle, only player position moves it)
-    const targetX = p.x;
-    const targetY = p.y + camHeight;
-    const targetZ = p.z - camBehind;
-
-    // Adaptive follow speed — faster when player is far from camera center
-    // This prevents the character from drifting to screen edge during slide/dash
-    const dx = targetX - this.camera.position.x;
-    const dy = targetY - this.camera.position.y;
-    const dz = targetZ - this.camera.position.z;
-    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    // Base 0.08, ramps up to ~0.5 when distance > 3 units
-    const followSpeed = Math.min(0.08 + dist * 0.12, 0.6);
-
-    this.camera.position.x += dx * followSpeed;
-    this.camera.position.y += dy * followSpeed;
-    this.camera.position.z += dz * followSpeed;
-
-    // Look-at: also adaptive speed to stay in sync with camera position
-    const lookDx = p.x - this.ghostTargetX;
-    const lookDz = p.z - this.ghostTargetZ;
-    const lookDist = Math.sqrt(lookDx * lookDx + lookDz * lookDz);
-    const lookSpeed = Math.min(0.08 + lookDist * 0.12, 0.6);
-    this.ghostTargetX += lookDx * lookSpeed;
-    this.ghostTargetZ += lookDz * lookSpeed;
-    this.camera.lookAt(this.ghostTargetX, p.y + 1.5, this.ghostTargetZ + 2);
+    // 镜头位置 + lookAt + 平滑跟随 全部委托给 CameraOrbit（用 frameDt 做 dt-based 平滑）。
+    // 这里只保留游戏特有的 FOV 自适应 + 屏震叠加（与玩法挂钩，不属于镜头通用逻辑）。
+    this.cameraOrbit.update(this.camera, p, this.frameDt);
 
     // === Dynamic FOV based on enemy density (very gentle, no frequent updates) ===
     const enemyCount = state.enemies.length;
@@ -5646,8 +5660,11 @@ export class GameScene {
   }
 
   private showUpgradePanel(options: UpgradeOption[]): void {
+    // 面板打开 → 退出 pointer lock，鼠标恢复正常，方便点卡片选择升级
+    this.cameraOrbit.setEnabled(false);
     const player = this.session.getRenderState().player;
     this.upgradePanel = document.createElement('div');
+    this.upgradePanel.dataset.cameraBlock = 'true';
     this.upgradePanel.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:300;font-family:Arial,sans-serif;';
 
     const title = document.createElement('div');
@@ -5774,6 +5791,8 @@ export class GameScene {
   private hideUpgradePanel(): void {
     this.upgradePanel?.remove();
     this.upgradePanel = null;
+    // 面板关闭 → 恢复镜头输入；鼠标若已在画布上会自动重新获取 lock
+    this.cameraOrbit.setEnabled(true);
   }
 
   // ===========================================================================
@@ -5782,12 +5801,13 @@ export class GameScene {
 
   private showGameOver(result: GameResult): void {
     if (this.gameOverPanel) return;
+    this.cameraOrbit.setEnabled(false);
 
-    // Check quest completions after run ends
     const newQuests = checkQuestCompletion();
     const completedCount = getCompletedQuestCount();
 
     this.gameOverPanel = document.createElement('div');
+    this.gameOverPanel.dataset.cameraBlock = 'true';
     this.gameOverPanel.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:400;font-family:Arial,sans-serif;gap:12px;';
 
     const title = document.createElement('div');
@@ -5874,6 +5894,7 @@ export class GameScene {
   private hideGameOver(): void {
     this.gameOverPanel?.remove();
     this.gameOverPanel = null;
+    this.cameraOrbit.setEnabled(true);
   }
 
   // ===========================================================================
@@ -5885,10 +5906,12 @@ export class GameScene {
       this.session.resume();
       this.isPaused = false;
       this.pauseBtn.textContent = t('hud.pause');
+      this.cameraOrbit.setEnabled(true);
     } else {
       this.session.pause();
       this.isPaused = true;
       this.pauseBtn.textContent = '▶';
+      this.cameraOrbit.setEnabled(false);
     }
   }
 
@@ -7226,6 +7249,7 @@ function toggleGMPanel(): void {
   }
 
   gmPanel = document.createElement('div');
+  gmPanel.dataset.cameraBlock = 'true';
   gmPanel.style.cssText = 'position:fixed;top:60px;left:10px;background:rgba(0,0,0,0.85);color:#0f0;font-family:monospace;font-size:12px;padding:10px;border-radius:8px;z-index:9999;display:flex;flex-direction:column;gap:6px;max-width:160px;border:1px solid #0f0;';
 
   const title = document.createElement('div');

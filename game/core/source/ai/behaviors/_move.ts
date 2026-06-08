@@ -9,7 +9,13 @@
 import type { EnemyState } from '../../types.ts';
 import type { AiContext } from '../types.ts';
 import { tryMoveHorizontally } from '../../systems/horizontalMove.ts';
+import { isBlockedHorizontallyAt } from '../../systems/collision.ts';
 import { getTomePower } from '../../tomeProgression.ts';
+import { STEP_HEIGHT } from '../../config.ts';
+
+const ENEMY_RADIUS = 0.4;
+const DROP_MIN_DELTA = STEP_HEIGHT * 1.2;
+const DROP_ANGLE_OFFSETS = [0, 0.35, -0.35, 0.7, -0.7];
 
 export function applyMovement(enemy: EnemyState, ctx: AiContext): void {
   const dx = enemy.targetX - enemy.x;
@@ -52,8 +58,20 @@ export function applyMovement(enemy: EnemyState, ctx: AiContext): void {
     enemy.x, enemy.z,
     desiredX, desiredZ,
     enemy.y,
-    { radius: 0.4, includeClimb: true },
+    { radius: ENEMY_RADIUS, includeClimb: true },
   );
+
+  // 敌人“下台阶/跳下高差”：
+  // 常规 tryMove 被边缘挡住，且玩家明显在更低层时，尝试若干个朝向玩家的落点。
+  if (
+    moved.x === enemy.x
+    && moved.z === enemy.z
+    && ctx.player.y < enemy.y - STEP_HEIGHT
+  ) {
+    const dropped = tryDropDownTowardTarget(enemy, ctx, nx, nz, actualMove);
+    if (dropped) return;
+  }
+
   enemy.x = moved.x;
   enemy.z = moved.z;
 
@@ -62,4 +80,34 @@ export function applyMovement(enemy: EnemyState, ctx: AiContext): void {
   if (Number.isFinite(h)) {
     enemy.y = h;
   }
+}
+
+function tryDropDownTowardTarget(
+  enemy: EnemyState,
+  ctx: AiContext,
+  dirX: number,
+  dirZ: number,
+  moveDist: number,
+): boolean {
+  for (const a of DROP_ANGLE_OFFSETS) {
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    const vx = dirX * c - dirZ * s;
+    const vz = dirX * s + dirZ * c;
+    const tx = enemy.x + vx * moveDist;
+    const tz = enemy.z + vz * moveDist;
+
+    const terrainY = ctx.getTerrainHeight(tx, tz);
+    if (!Number.isFinite(terrainY)) continue;
+    // 必须真的是“往下掉”，不是平移或上台阶。
+    if (enemy.y - terrainY < DROP_MIN_DELTA) continue;
+    // 在落点高度上做阻挡检查，避免穿进墙体/攀爬体。
+    if (isBlockedHorizontallyAt(ctx.geo, tx, tz, terrainY, true, ENEMY_RADIUS)) continue;
+
+    enemy.x = tx;
+    enemy.z = tz;
+    enemy.y = terrainY;
+    return true;
+  }
+  return false;
 }

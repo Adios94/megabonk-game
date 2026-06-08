@@ -16,6 +16,7 @@ import {
   BOSS_HP,
   BOSS_INTRO_DURATION,
   REGULAR_GAME_DURATION,
+  STEP_HEIGHT,
 } from '../config.ts';
 import { ENEMIES } from '../data/enemies.ts';
 import { spawnEnemy } from '../factories/spawnEnemy.ts';
@@ -23,6 +24,14 @@ import { getTomePower } from '../tomeProgression.ts';
 import type { EnemyType } from '../types.ts';
 import type { Engine } from './types.ts';
 import { hasReadyBossTrigger } from './altars.ts';
+import { isBlockedHorizontallyAt } from './collision.ts';
+
+const SPAWN_MIN_RADIUS = 5;
+const SPAWN_MAX_RADIUS = 10;
+const SPAWN_ATTEMPTS = 24;
+const ENEMY_SPAWN_RADIUS = 0.4;
+const EDGE_CHECK_RING = ENEMY_SPAWN_RADIUS + 0.15;
+const EDGE_MAX_HEIGHT_DELTA = STEP_HEIGHT + 0.25;
 
 export function tickSpawning(engine: Engine, dt: number): void {
   // boss 阶段不刷怪
@@ -124,6 +133,9 @@ function spawnMiniBoss(engine: Engine): void {
     },
     { mode: 'miniBoss' },
   );
+  // 出生首帧直接贴地，避免 y=0 参与阻挡判定导致卡边/卡墙。
+  const h = getCoverSurfaceHeight(engine, enemy.x, enemy.z);
+  if (h !== null) enemy.y = h;
   engine.state.enemies.push(enemy);
 }
 
@@ -173,10 +185,17 @@ function spawnSingleEnemy(engine: Engine, type: string): void {
     },
     { mode: 'wave' },
   );
+  // 出生首帧直接贴地，避免 y=0 参与阻挡判定导致卡边/卡墙。
+  const h = getCoverSurfaceHeight(engine, enemy.x, enemy.z);
+  if (h !== null) enemy.y = h;
   engine.state.enemies.push(enemy);
 }
 
 function getSpawnPosition(engine: Engine): { x: number; z: number } {
+  const aroundPlayer = getSpawnPositionAroundPlayer(engine);
+  if (aroundPlayer) return aroundPlayer;
+  // 极端情况下（玩家站在极小不可行走区域）回退旧边缘刷怪，避免刷怪系统卡死。
+  // 正常关卡会命中 aroundPlayer 路径。
   const halfMap = engine.config.mapSize * 0.5;
   const offset = 5;
   const side = Math.floor(Math.random() * 4);
@@ -187,6 +206,71 @@ function getSpawnPosition(engine: Engine): { x: number; z: number } {
     case 2: return { x: -halfMap - offset, z: along };
     default: return { x: halfMap + offset, z: along };
   }
+}
+
+function getSpawnPositionAroundPlayer(engine: Engine): { x: number; z: number } | null {
+  const p = engine.state.player;
+  const halfMap = engine.config.mapSize * 0.5;
+  for (let i = 0; i < SPAWN_ATTEMPTS; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    // 面积均匀采样环带 [5,10]
+    const r2 = SPAWN_MIN_RADIUS * SPAWN_MIN_RADIUS +
+      Math.random() * (SPAWN_MAX_RADIUS * SPAWN_MAX_RADIUS - SPAWN_MIN_RADIUS * SPAWN_MIN_RADIUS);
+    const radius = Math.sqrt(r2);
+    const x = p.x + Math.cos(angle) * radius;
+    const z = p.z + Math.sin(angle) * radius;
+    if (Math.abs(x) > halfMap || Math.abs(z) > halfMap) continue;
+
+    // 只允许刷在关卡可走面（col_/ramp_）上：必须被 rect 或 ramp 覆盖。
+    const y = getCoverSurfaceHeight(engine, x, z);
+    if (y === null) continue;
+
+    // 额外避开墙/攀爬体等阻挡体，半径与敌人体型一致，防止刷在墙里。
+    if (isBlockedHorizontallyAt(engine.geo, x, z, y, true, ENEMY_SPAWN_RADIUS)) continue;
+    // 边缘稳定性：周围一圈都应有可走面且高度变化不要过陡，避免出生在高差边卡住。
+    if (!hasStableSpawnNeighborhood(engine, x, z, y)) continue;
+    return { x, z };
+  }
+  return null;
+}
+
+function hasStableSpawnNeighborhood(engine: Engine, x: number, z: number, y: number): boolean {
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const sx = x + Math.cos(a) * EDGE_CHECK_RING;
+    const sz = z + Math.sin(a) * EDGE_CHECK_RING;
+    const h = getCoverSurfaceHeight(engine, sx, sz);
+    if (h === null) return false;
+    if (Math.abs(h - y) > EDGE_MAX_HEIGHT_DELTA) return false;
+    if (isBlockedHorizontallyAt(engine.geo, sx, sz, h, true, ENEMY_SPAWN_RADIUS)) return false;
+  }
+  return true;
+}
+
+function getCoverSurfaceHeight(engine: Engine, x: number, z: number): number | null {
+  let best = Number.NEGATIVE_INFINITY;
+  let found = false;
+  // rects = col_ 顶面
+  for (const rect of engine.geo.rects) {
+    const [cx, cz, halfW, halfD, height] = rect;
+    if (Math.abs(x - cx) <= halfW && Math.abs(z - cz) <= halfD) {
+      if (!found || height > best) best = height;
+      found = true;
+    }
+  }
+  // ramps = ramp_ 顶面
+  for (const ramp of engine.geo.ramps) {
+    const dx = x - ramp.cx;
+    const dz = z - ramp.cz;
+    const sCoord = dx * ramp.slopeDirX + dz * ramp.slopeDirZ;
+    const pCoord = dx * (-ramp.slopeDirZ) + dz * ramp.slopeDirX;
+    if (Math.abs(sCoord) > ramp.halfSlope || Math.abs(pCoord) > ramp.halfPerp) continue;
+    const t = ramp.halfSlope > 0 ? (sCoord + ramp.halfSlope) / (ramp.halfSlope * 2) : 0;
+    const h = ramp.lowY + (ramp.highY - ramp.lowY) * t;
+    if (!found || h > best) best = h;
+    found = true;
+  }
+  return found ? best : null;
 }
 
 /**

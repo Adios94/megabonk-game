@@ -24,6 +24,14 @@ import {
 import { applyRelicTargetDamage } from './relics.ts';
 import type { Engine } from './types.ts';
 
+// 垂直命中窗口（防止上下层穿模伤害）：
+// - 近战：要求敌我脚高接近，避免隔楼层咬人
+// - 投射物：要求弹体高度接近玩家身体中心
+const ENEMY_MELEE_MAX_Y_DELTA = 1.2;
+const BOSS_MELEE_MAX_Y_DELTA = 2.0;
+const PLAYER_HIT_CENTER_OFFSET_Y = 0.8;
+const PROJECTILE_HIT_MAX_Y_DELTA = 1.5;
+
 export function processCollisions(engine: Engine): void {
   const player = engine.state.player;
   const enemies = engine.state.enemies;
@@ -116,6 +124,7 @@ export function processCollisions(engine: Engine): void {
   if (player.alive && player.invincibleTimer <= 0) {
     for (const enemy of enemies) {
       if (enemy.hp <= 0 || enemy.attackCooldown > 0) continue;
+      if (Math.abs(enemy.y - player.y) > ENEMY_MELEE_MAX_Y_DELTA) continue;
 
       const dist = distanceBetween(player.x, player.z, enemy.x, enemy.z);
       if (dist < 1.2) {
@@ -133,16 +142,18 @@ export function processCollisions(engine: Engine): void {
 
   // 3. boss 近战 vs player
   if (player.alive && player.invincibleTimer <= 0 && engine.state.boss && engine.state.boss.hp > 0) {
-    const dist = distanceBetween(player.x, player.z, engine.state.boss.x, engine.state.boss.z);
-    if (dist < 2.0 && engine.state.boss.attackCooldown <= 0) {
-      const bossDmg = getBossMeleeDamage(engine.state.boss);
-      const damage = computePlayerHitDamage(engine, bossDmg);
-      const hpDamage = applyShieldAbsorb(player, damage);
-      player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;
-      engine.state.boss.attackCooldown = 2.0;
-      engine.state.stats.damageTaken += hpDamage;
-      addDamageEvent(engine, player.x, 1.5, player.z, hpDamage, false, true);
-      if (player.hp <= 0) checkPlayerDeath(engine);
+    if (Math.abs(engine.state.boss.y - player.y) <= BOSS_MELEE_MAX_Y_DELTA) {
+      const dist = distanceBetween(player.x, player.z, engine.state.boss.x, engine.state.boss.z);
+      if (dist < 2.0 && engine.state.boss.attackCooldown <= 0) {
+        const bossDmg = getBossMeleeDamage(engine.state.boss);
+        const damage = computePlayerHitDamage(engine, bossDmg);
+        const hpDamage = applyShieldAbsorb(player, damage);
+        player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;
+        engine.state.boss.attackCooldown = 2.0;
+        engine.state.stats.damageTaken += hpDamage;
+        addDamageEvent(engine, player.x, 1.5, player.z, hpDamage, false, true);
+        if (player.hp <= 0) checkPlayerDeath(engine);
+      }
     }
   }
 
@@ -153,8 +164,8 @@ export function processCollisions(engine: Engine): void {
       if (proj.fromPlayer) continue;
 
       const dist = distanceBetween(proj.x, proj.z, player.x, player.z);
-      const yDist = Math.abs(proj.y - 0.5);
-      if (dist < proj.radius + 0.5 && yDist < 1.5) {
+      const yDist = Math.abs(proj.y - (player.y + PLAYER_HIT_CENTER_OFFSET_Y));
+      if (dist < proj.radius + 0.5 && yDist < PROJECTILE_HIT_MAX_Y_DELTA) {
         const damage = computePlayerHitDamage(engine, proj.damage);
         const hpDamage = applyShieldAbsorb(player, damage);
         player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;

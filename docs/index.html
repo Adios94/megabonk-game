@@ -1388,12 +1388,13 @@ actualTargetCount = floor(storedTargetCount)
     <tr><td>Lightning 闪电</td><td>伤害 15；链数 3.0；范围 8</td><td>伤害 +2.8；链数 +0.42；范围 +1.6</td><td><code>chains</code> floor</td><td>高品质升级可提前跨链数阈值</td></tr>
     <tr><td>Flame 烈焰环</td><td>秒伤 4；半径 3.5；tick 间隔 0.5</td><td>秒伤 +0.9；半径 +0.45；tick 间隔 −0.02</td><td>无</td><td>不做数量成长，稳定 AoE</td></tr>
     <tr><td>Shotgun 霰弹</td><td>伤害 8；弹丸 5.0；穿透 0.0</td><td>伤害 +1.7；弹丸 +0.42；穿透 +0.18</td><td><code>pelletCount</code> / <code>pierce</code> floor</td><td>品质越高越早增加弹丸密度</td></tr>
-    <tr><td>Void 虚空涟漪</td><td>伤害 10；环宽 1.2；击退 0.4</td><td>伤害 +1.4；环宽 +0.18；CD −0.04</td><td>无</td><td>控制型武器，数量成长交给羁绊</td></tr>
-    <tr><td>Ray 射线枪</td><td>伤害 24；宽度 0.32；射程 12</td><td>伤害 +3.2；宽度 +0.035</td><td>无</td><td>射程固定，路径命中人数由站位决定</td></tr>
-    <tr><td>Poison 毒气弹</td><td>秒伤 10；持续 3.0；投掷数 1.0</td><td>秒伤 +1.3；持续 +0.22；投掷数 +0.16</td><td><code>grenadeCount</code> floor</td><td>高品质可更早多投一枚毒气弹</td></tr>
-    <tr><td>Paralyze 麻痹枪</td><td>伤害 17；目标 1.0；强减速 1.0s</td><td>伤害 +2.2；目标 +0.32；控制 +0.12s</td><td><code>targetCount</code> floor</td><td>目标数采用小数积累，控制效果改为强减速 + 攻击减慢</td></tr>
-    <tr><td>Scorch 灼地靴</td><td>秒伤 6；宽度 1.0；持续 2.0s</td><td>秒伤 +0.75；宽度 +0.10；持续 +0.05s</td><td>无</td><td>跟移动路线绑定，不做攻击数成长</td></tr>
+    <tr><td>Ray 射线枪</td><td>伤害 14；半宽 0.50；射程 18；CD 0.90</td><td>伤害 ≈+4.6；半宽 <strong>+0.05</strong>；射程 +1.1；CD −0.05</td><td>无（pierce 999）</td><td>瞬发激光，沿直线无限穿透；半宽每级 +0.05，敌人成直线时收益极高</td></tr>
+    <tr><td>Poison 毒气弹</td><td>秒伤 6；云半径 3.0；CD 2.00</td><td>秒伤 ≈+4.0（后期陡峭，Lv8=34）；半径 +0.26；CD −0.086</td><td>无</td><td>投出毒气云，云内持续刷新中毒（gas_dot）；DoT 后期成长强，发育越久越猛</td></tr>
+    <tr><td>Paralyze 麻痹枪</td><td>伤害 10；穿透 0；弹速 26；CD 1.10</td><td>伤害 ≈+3.7；穿透 +0.43；CD −0.057</td><td><code>pierce</code> floor</td><td>命中施加强减速（仅剩 20% 速度，1.5s）；精英按 elite_slow_coef 抗性减弱</td></tr>
+    <tr><td>Void 虚空涟漪</td><td>伤害 16；最大半径 6.0；扩散 8.0；CD 2.20</td><td>伤害 ≈+5.7；半径 +0.71；扩散 +0.57；CD −0.10</td><td>无</td><td>以玩家为圆心向外扩散的环波，波前扫到的近处敌人先结算（每敌一次）</td></tr>
+    <tr><td>Scorch 灼地靴</td><td>每击 5；痕迹半径 0.9；CD 0.30</td><td>每击 ≈+2.1；半径 +0.10；CD −0.011</td><td>无</td><td>高频在脚下留灼地痕迹（存活 2.5s，每 0.4s 灼伤一次）；痕迹消失即停</td></tr>
   </table>
+  <p style="color: var(--dim);">说明：新武数值非线性（见 <code>config.ts → WEAPON_STATS</code> 的 8 级表），"每级增量"为 Lv1→Lv8 的平均近似；升级实际取「本级→下一级」表步进 × 品质倍率。</p>
 
   <h3 id="weapons-balance">全武器强度评估（机制加权）</h3>
   <p class="sub">档位 S/A/B/C；所有武器统一对标 Lv10，额外机制由羁绊承担。</p>
@@ -1407,12 +1408,12 @@ actualTargetCount = floor(storedTargetCount)
     <tr><td>Bone 骨头</td><td>B</td><td>A</td><td class="num">~150–220</td><td>弹射</td><td>弹数 + 弹返</td><td><strong>A-</strong></td></tr>
     <tr><td>Axe 飞斧</td><td>B+</td><td>A</td><td class="num">~140×刮</td><td>近轨</td><td>环绕</td><td><strong>A-</strong></td></tr>
     <tr><td>Flame 烈焰环</td><td>C+</td><td>A</td><td class="num">40+/s</td><td>近 AoE</td><td>零操作</td><td><strong>B+</strong></td></tr>
-    <tr><td colspan="7" style="background:var(--accent-2-soft);font-weight:600;">草案 · 5</td></tr>
-    <tr><td>Ray 射线枪</td><td>B+</td><td>A-</td><td class="num">37×N</td><td>线穿透</td><td>无衰减</td><td><strong>B+</strong></td></tr>
-    <tr><td>Poison 毒气弹</td><td>B</td><td>B+</td><td class="num">DoT</td><td>投掷</td><td>毒师联动</td><td><strong>B</strong></td></tr>
-    <tr><td>Paralyze 麻痹枪</td><td>C+</td><td>B</td><td class="num">控场</td><td>多目标</td><td>精英优先</td><td><strong>B</strong></td></tr>
-    <tr><td>Scorch 灼地靴</td><td>C+</td><td>A-</td><td class="num">轨迹</td><td>移动</td><td>跑图 AoE</td><td><strong>B</strong></td></tr>
-    <tr><td>Void 虚空涟漪</td><td>C+</td><td>B+</td><td class="num">环 DPS</td><td>360°</td><td>导体/寸劲</td><td><strong>B</strong></td></tr>
+    <tr><td colspan="7" style="background:var(--accent-2-soft);font-weight:600;">新实现 · 5</td></tr>
+    <tr><td>Ray 射线枪</td><td>B+</td><td>A-</td><td class="num">46×N</td><td>线穿透</td><td>无衰减、无限穿透</td><td><strong>B+</strong></td></tr>
+    <tr><td>Poison 毒气弹</td><td>B</td><td>B+</td><td class="num">34/s DoT</td><td>投掷云</td><td>中毒后期强</td><td><strong>B+</strong></td></tr>
+    <tr><td>Paralyze 麻痹枪</td><td>C+</td><td>B</td><td class="num">36+控场</td><td>多目标</td><td>强减速、精英抗性</td><td><strong>B</strong></td></tr>
+    <tr><td>Scorch 灼地靴</td><td>C+</td><td>A-</td><td class="num">20/击</td><td>移动轨迹</td><td>跑图 AoE</td><td><strong>B</strong></td></tr>
+    <tr><td>Void 虚空涟漪</td><td>C+</td><td>B+</td><td class="num">56/圈</td><td>360° 扩散</td><td>近者先结算</td><td><strong>B</strong></td></tr>
   </table>
 
   <h3>羁绊联动（新武器）</h3>
@@ -1420,15 +1421,17 @@ actualTargetCount = floor(storedTargetCount)
     <tr><th>新武器</th><th>羁绊</th><th>T2</th><th>T3</th></tr>
     <tr><td><code>void_ripple</code></td><td>奥术、寸劲、弧光</td><td>奥秘 / 击退伤 / 导体标记</td><td>计数触发、撞墙、连锁</td></tr>
     <tr><td><code>ray_gun</code></td><td>弧光、猎标</td><td>连锁 / 烙印</td><td>连锁升格、绞杀线</td></tr>
-    <tr><td><code>poison_grenade</code></td><td>毒师、余烬</td><td>毒层 / 火池</td><td>毒雾扩散、叠层</td></tr>
-    <tr><td><code>paralyze_gun</code></td><td>毒师、猎标</td><td>强减速 / 攻击减慢 / 烙印</td><td>精英易伤</td></tr>
+    <tr><td><code>poison_bomb</code></td><td>毒师、余烬</td><td>毒层 / 火池</td><td>毒雾扩散、叠层</td></tr>
+    <tr><td><code>paralysis_gun</code></td><td>毒师、猎标</td><td>强减速 / 烙印</td><td>精英易伤</td></tr>
     <tr><td><code>scorch_boots</code></td><td>余烬、寸劲</td><td>火池 / 贴身</td><td>轨迹强化</td></tr>
   </table>
-  <h3>草案实现备注</h3>
+  <h3>实现备注（已落地）</h3>
   <ul>
-    <li>五把新武：<code>behaviors/</code> + <code>data/weapons.ts</code></li>
-    <li>毒气/控场：<code>StatusEffect</code>（gas_dot、strong_slow、attack_slow、elite_slow_coef）</li>
-    <li><code>scorch_boots</code>：轨迹 system 或复用 flame 逻辑</li>
+    <li>五把新武：<code>behaviors/{rayBeam,poisonGas,paralysisShot,voidRipple,scorchTrail}.ts</code> + <code>data/weapons.ts</code> + <code>config.ts → WEAPON_STATS</code>（各 8 级表）。</li>
+    <li>状态效果 <code>systems/statusEffects.ts</code>：中毒 <code>gas_dot</code>（<code>poisonTimer</code>/<code>poisonDps</code>，每帧 DoT）、强减速 <code>strong_slow</code>（<code>slowTimer</code>/<code>slowFactor</code>，移动减速）、精英减速抗性 <code>elite_slow_coef</code>（<code>ELITE_SLOW_COEF=0.5</code>）。<em>attack_slow（攻击减慢）暂未实现，麻痹以移动强减速代替。</em></li>
+    <li>区域特效 <code>systems/areaEffects.ts</code>：<code>gas_cloud</code> / <code>void_ripple</code>（边扩散边结算，近者先吃）/ <code>scorch_trail</code>（轨迹间歇灼伤，消失即停）/ <code>ray_beam</code>（瞬发激光，纯视觉）。</li>
+    <li>麻痹弹的减速通过 <code>ProjectileState.onHitStatus</code> 在 <code>collisions.ts</code> 命中时统一施加。</li>
+    <li>客户端特效（<code>game/client/source/index.ts</code>）：激光红束、深绿毒气云 + 中毒缠绕粒子、黄色麻痹电花、浅蓝→浅紫扩散环、橙色灼地痕迹。</li>
   </ul>
 </section>
 

@@ -21,6 +21,7 @@ import {
 } from './helpers.ts';
 import { applyPlayerHit } from './consumables.ts';
 import { applyRelicTargetDamage } from './relics.ts';
+import { applyPoison, applySlow } from './statusEffects.ts';
 import type { Engine } from './types.ts';
 
 // 垂直命中窗口（防止上下层穿模伤害）：
@@ -85,6 +86,17 @@ export function processCollisions(engine: Engine): void {
       proj.hitEnemyIds.push(id);
 
       applyKnockback(engine, enemy, proj.x, proj.z);
+
+      // 命中附带状态效果（麻痹枪减速 / 其它中毒投射物）
+      if (proj.onHitStatus) {
+        const s = proj.onHitStatus;
+        if (s.slowFactor !== undefined && s.slowDuration) {
+          applySlow(enemy, s.slowFactor, s.slowDuration);
+        }
+        if (s.poisonDps && s.poisonDuration) {
+          applyPoison(enemy, s.poisonDps, s.poisonDuration);
+        }
+      }
 
       // bone_bouncer 弹跳 — 找下一个最近敌人
       if (proj.weaponType === 'bone_bouncer' && proj.bouncesLeft > 0) {

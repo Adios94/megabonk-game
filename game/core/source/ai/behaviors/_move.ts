@@ -11,6 +11,7 @@ import type { AiContext } from '../types.ts';
 import { tryMoveHorizontally } from '../../systems/horizontalMove.ts';
 import { isBlockedHorizontallyAt } from '../../systems/collision.ts';
 import { getTomePower } from '../../tomeProgression.ts';
+import { getSlowMultiplier } from '../../systems/statusEffects.ts';
 import { STEP_HEIGHT } from '../../config.ts';
 
 const ENEMY_RADIUS = 0.4;
@@ -35,6 +36,9 @@ export function applyMovement(enemy: EnemyState, ctx: AiContext): void {
   if (ctx.finalSwarm) {
     speedMult *= 1.2;
   }
+
+  // 减速状态（麻痹枪 strong_slow / 涟漪等）：乘上有效速度倍率（精英已在施加时按抗性减弱）。
+  speedMult *= getSlowMultiplier(enemy);
 
   const moveSpeed = enemy.speed * speedMult * ctx.dt;
   const actualMove = Math.min(moveSpeed, dist);

@@ -9,7 +9,7 @@
  * **不引入事件总线** —— YAGNI，直接 mutate enemies/boss 的 hp 是 Phase 2-3 期间的合理近路。
  *   Phase 4 enemies 迁移到 ECS 时再用 component mutation 替代。
  */
-import type { PlayerState, EnemyState, BossState, WeaponState, WeaponType, ProjectileState } from '../types.ts';
+import type { PlayerState, EnemyState, BossState, WeaponState, WeaponType, ProjectileState, AreaEffectState } from '../types.ts';
 import type { WeaponLevelStats } from '../config.ts';
 import type { WeaponDef } from '../data/weapons.ts';
 import type { GameWorld } from '../world.ts';
@@ -35,6 +35,11 @@ export interface BehaviorEffects {
    * caller 提供其它字段, **包括 `fromPlayer`**（玩家武器: true, 敌人远程: false）。
    */
   spawnProjectile(p: Omit<ProjectileState, 'id' | 'hitEnemyIds'>): number | null;
+  /**
+   * 推一个区域特效到 state.areaEffects[]（毒气云 / 涟漪 / 灼地痕迹 / 激光线）。
+   * 返回分配的 id。`id` 由实现填充，caller 提供其它字段。
+   */
+  spawnAreaEffect(a: Omit<AreaEffectState, 'id'>): number;
 }
 
 export interface BehaviorContext {

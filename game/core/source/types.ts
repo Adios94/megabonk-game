@@ -38,7 +38,13 @@ export type WeaponType =
   | 'bow'
   | 'lightning_staff'
   | 'flame_ring'
-  | 'shotgun';
+  | 'shotgun'
+  // --- New weapons (data-driven, ECS behavior path) ---
+  | 'ray_gun'        // 射线枪：瞬发激光，沿直线无限穿透
+  | 'poison_bomb'    // 毒气弹：抛投后生成毒气云，持续秒伤 + 中毒
+  | 'paralysis_gun'  // 麻痹枪：命中施加强力减速（麻痹）
+  | 'void_ripple'    // 虚空涟漪：以玩家为圆心向外扩散的环形波
+  | 'scorch_boots';  // 灼地靴：行走留下灼地痕迹，间歇灼伤路过敌人
 
 /**
  * 武器运行时成长累加值（新升级规则）。
@@ -303,6 +309,30 @@ export interface EnemyState {
   // Gargoyle dive state
   diveState: 'flying' | 'diving' | 'landing' | 'rising';
   diveTimer: number;
+  // --- Status effects (新武器引入；全部 optional，旧 fixture / 存档不带也能跑) ---
+  /** 中毒（gas_dot）剩余秒数；> 0 时每帧按 poisonDps 持续掉血。 */
+  poisonTimer?: number;
+  /** 中毒每秒伤害（来自毒气云）。 */
+  poisonDps?: number;
+  /** 减速（strong_slow / elite_slow_coef）剩余秒数。 */
+  slowTimer?: number;
+  /** 减速后的速度倍率（0..1，越小越慢；麻痹接近 0）。多源取最强（最小值）。 */
+  slowFactor?: number;
+}
+
+/**
+ * 命中时给敌人施加的状态效果（投射物携带，碰撞时由 collisions 统一应用）。
+ * 全部 optional —— 普通投射物不带此字段，行为零成本。
+ */
+export interface ProjectileOnHitStatus {
+  /** 中毒每秒伤害。 */
+  poisonDps?: number;
+  /** 中毒持续秒数。 */
+  poisonDuration?: number;
+  /** 减速速度倍率（0..1）。 */
+  slowFactor?: number;
+  /** 减速持续秒数。 */
+  slowDuration?: number;
 }
 
 // --- Projectiles ---
@@ -329,6 +359,62 @@ export interface ProjectileState {
   orbitSpeed?: number;
   gravitational?: boolean;
   gravityStrength?: number;
+  /** 命中敌人时施加的状态效果（麻痹枪等）。 */
+  onHitStatus?: ProjectileOnHitStatus;
+}
+
+// --- Area Effects (持续 / 扩散型武器的世界实体) ---
+/**
+ * 区域特效类型：
+ * - `gas_cloud`    毒气云：固定位置，周期性对范围内敌人造成伤害 + 施加中毒。
+ * - `void_ripple`  虚空涟漪：以中心向外扩散的环形波，波前扫过敌人时结算伤害（近者先吃）。
+ * - `scorch_trail` 灼地痕迹：玩家走过留下的地面痕迹，周期性灼伤路过敌人，痕迹消失即停。
+ * - `ray_beam`     射线光束：纯视觉（伤害已由行为瞬发结算），仅供客户端渲染激光线。
+ */
+export type AreaEffectKind = 'gas_cloud' | 'void_ripple' | 'scorch_trail' | 'ray_beam';
+
+export interface AreaEffectState {
+  id: number;
+  kind: AreaEffectKind;
+  weaponType: WeaponType;
+  x: number;
+  z: number;
+  /** 当前半径（void_ripple 每帧扩大；其它为固定作用半径）。 */
+  radius: number;
+  /** 剩余寿命（秒）。 */
+  lifetime: number;
+  /** 初始寿命（秒），用于客户端做渐隐比例。 */
+  maxLifetime: number;
+  /** 每次结算的伤害。 */
+  damage: number;
+  /** 是否暴击（用于 damageEvent 显示）。 */
+  isCrit?: boolean;
+  /** 周期伤害的计时器（gas_cloud / scorch_trail）。 */
+  tickTimer?: number;
+  /** 周期伤害间隔（秒）。 */
+  tickInterval?: number;
+  // --- void_ripple 扩散参数 ---
+  /** 扩散速度（单位/秒）。 */
+  expandSpeed?: number;
+  /** 最大半径，达到后消失。 */
+  maxRadius?: number;
+  /** 是否每帧把中心锁到玩家脚下（void_ripple 用）。 */
+  followPlayer?: boolean;
+  /** 已结算过伤害的敌人 id（ripple 每个敌人只吃一次）。 */
+  hitEnemyIds?: number[];
+  // --- ray_beam 视觉参数 ---
+  /** 光束方向单位向量。 */
+  dirX?: number;
+  dirZ?: number;
+  /** 光束长度。 */
+  length?: number;
+  /** 光束 / 作用宽度（半宽）。 */
+  width?: number;
+  // --- 命中附带状态 ---
+  /** 命中时施加的中毒每秒伤害。 */
+  poisonDps?: number;
+  /** 中毒持续秒数。 */
+  poisonDuration?: number;
 }
 
 // --- Consumables ---
@@ -526,6 +612,8 @@ export interface GameState {
   player: PlayerState;
   enemies: EnemyState[];
   projectiles: ProjectileState[];
+  /** 持续 / 扩散型武器的区域特效（毒气云 / 涟漪 / 灼地痕迹 / 激光线）。 */
+  areaEffects: AreaEffectState[];
   pickups: PickupState[];
   consumablePickups: ConsumablePickupState[];
   goldMotes: GoldMoteState[];

@@ -258,7 +258,87 @@ export const WEAPON_STATS: Record<string, WeaponLevelStats[]> = {
     { damage: 18, cooldown: 0.8, projectileCount: 8, bounces: 0, chains: 0, range: 18, aoeRadius: 0, pierce: 1, speed: 21 },
     { damage: 22, cooldown: 0.7, projectileCount: 9, bounces: 0, chains: 0, range: 20, aoeRadius: 0, pierce: 2, speed: 22 },
   ],
+  // 射线枪：瞬发激光，沿直线无限穿透（pierce 999）。range = 索敌距离；aoeRadius = 光束半宽（每级 +0.05）。
+  ray_gun: [
+    { damage: 14, cooldown: 0.90, projectileCount: 1, bounces: 0, chains: 0, range: 18, aoeRadius: 0.50, pierce: 999, speed: 0 },
+    { damage: 17, cooldown: 0.85, projectileCount: 1, bounces: 0, chains: 0, range: 19, aoeRadius: 0.55, pierce: 999, speed: 0 },
+    { damage: 20, cooldown: 0.80, projectileCount: 1, bounces: 0, chains: 0, range: 20, aoeRadius: 0.60, pierce: 999, speed: 0 },
+    { damage: 24, cooldown: 0.75, projectileCount: 1, bounces: 0, chains: 0, range: 21, aoeRadius: 0.65, pierce: 999, speed: 0 },
+    { damage: 28, cooldown: 0.70, projectileCount: 1, bounces: 0, chains: 0, range: 22, aoeRadius: 0.70, pierce: 999, speed: 0 },
+    { damage: 33, cooldown: 0.65, projectileCount: 1, bounces: 0, chains: 0, range: 23, aoeRadius: 0.75, pierce: 999, speed: 0 },
+    { damage: 39, cooldown: 0.60, projectileCount: 1, bounces: 0, chains: 0, range: 24, aoeRadius: 0.80, pierce: 999, speed: 0 },
+    { damage: 46, cooldown: 0.55, projectileCount: 1, bounces: 0, chains: 0, range: 26, aoeRadius: 0.85, pierce: 999, speed: 0 },
+  ],
+  // 毒气弹：抛投生成毒气云。damage = 中毒每秒伤害（DoT），后期成长陡峭；aoeRadius = 云半径；range = 投掷距离。
+  poison_bomb: [
+    { damage: 6, cooldown: 2.00, projectileCount: 1, bounces: 0, chains: 0, range: 10, aoeRadius: 3.0, pierce: 0, speed: 0 },
+    { damage: 8, cooldown: 1.90, projectileCount: 1, bounces: 0, chains: 0, range: 11, aoeRadius: 3.0, pierce: 0, speed: 0 },
+    { damage: 11, cooldown: 1.80, projectileCount: 1, bounces: 0, chains: 0, range: 12, aoeRadius: 3.3, pierce: 0, speed: 0 },
+    { damage: 14, cooldown: 1.70, projectileCount: 1, bounces: 0, chains: 0, range: 12, aoeRadius: 3.6, pierce: 0, speed: 0 },
+    { damage: 18, cooldown: 1.60, projectileCount: 1, bounces: 0, chains: 0, range: 13, aoeRadius: 3.9, pierce: 0, speed: 0 },
+    { damage: 22, cooldown: 1.50, projectileCount: 1, bounces: 0, chains: 0, range: 14, aoeRadius: 4.2, pierce: 0, speed: 0 },
+    { damage: 27, cooldown: 1.45, projectileCount: 1, bounces: 0, chains: 0, range: 15, aoeRadius: 4.5, pierce: 0, speed: 0 },
+    { damage: 34, cooldown: 1.40, projectileCount: 1, bounces: 0, chains: 0, range: 16, aoeRadius: 4.8, pierce: 0, speed: 0 },
+  ],
+  // 麻痹枪：自动索敌投射物，命中施加强力减速。damage 直伤；pierce 随等级提升；speed 弹速。
+  paralysis_gun: [
+    { damage: 10, cooldown: 1.10, projectileCount: 1, bounces: 0, chains: 0, range: 24, aoeRadius: 0, pierce: 0, speed: 26 },
+    { damage: 12, cooldown: 1.05, projectileCount: 1, bounces: 0, chains: 0, range: 26, aoeRadius: 0, pierce: 0, speed: 27 },
+    { damage: 15, cooldown: 1.00, projectileCount: 1, bounces: 0, chains: 0, range: 28, aoeRadius: 0, pierce: 1, speed: 28 },
+    { damage: 18, cooldown: 0.95, projectileCount: 1, bounces: 0, chains: 0, range: 30, aoeRadius: 0, pierce: 1, speed: 29 },
+    { damage: 21, cooldown: 0.90, projectileCount: 1, bounces: 0, chains: 0, range: 31, aoeRadius: 0, pierce: 2, speed: 30 },
+    { damage: 25, cooldown: 0.85, projectileCount: 1, bounces: 0, chains: 0, range: 32, aoeRadius: 0, pierce: 2, speed: 31 },
+    { damage: 30, cooldown: 0.78, projectileCount: 1, bounces: 0, chains: 0, range: 33, aoeRadius: 0, pierce: 3, speed: 33 },
+    { damage: 36, cooldown: 0.70, projectileCount: 1, bounces: 0, chains: 0, range: 34, aoeRadius: 0, pierce: 3, speed: 35 },
+  ],
+  // 虚空涟漪：以玩家为圆心向外扩散的环形波。damage 直伤；aoeRadius = 最大半径；speed = 扩散速度。
+  void_ripple: [
+    { damage: 16, cooldown: 2.20, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 4.0, pierce: 0, speed: 8.0 },
+    { damage: 20, cooldown: 2.10, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 4.4, pierce: 0, speed: 8.5 },
+    { damage: 24, cooldown: 2.00, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 4.8, pierce: 0, speed: 9.0 },
+    { damage: 29, cooldown: 1.90, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 5.2, pierce: 0, speed: 9.5 },
+    { damage: 34, cooldown: 1.80, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 5.6, pierce: 0, speed: 10.0 },
+    { damage: 40, cooldown: 1.70, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 6.2, pierce: 0, speed: 10.5 },
+    { damage: 47, cooldown: 1.60, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 6.8, pierce: 0, speed: 11.0 },
+    { damage: 56, cooldown: 1.50, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 7.5, pierce: 0, speed: 12.0 },
+  ],
+  // 灼地靴：高频在脚下留下灼地痕迹（短 cooldown）。damage = 每次灼伤；aoeRadius = 痕迹半径。
+  scorch_boots: [
+    { damage: 5, cooldown: 0.30, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 0.9, pierce: 0, speed: 0 },
+    { damage: 6, cooldown: 0.30, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 1.0, pierce: 0, speed: 0 },
+    { damage: 7, cooldown: 0.28, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 1.1, pierce: 0, speed: 0 },
+    { damage: 9, cooldown: 0.28, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 1.2, pierce: 0, speed: 0 },
+    { damage: 11, cooldown: 0.26, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 1.3, pierce: 0, speed: 0 },
+    { damage: 13, cooldown: 0.26, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 1.4, pierce: 0, speed: 0 },
+    { damage: 16, cooldown: 0.24, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 1.5, pierce: 0, speed: 0 },
+    { damage: 20, cooldown: 0.22, projectileCount: 1, bounces: 0, chains: 0, range: 0, aoeRadius: 1.6, pierce: 0, speed: 0 },
+  ],
 };
+
+// === 状态效果 / 区域特效常量（新武器） ===
+/** 毒气云存活秒数。 */
+export const GAS_CLOUD_LIFETIME = 4.0;
+/** 毒气云刷新中毒状态的间隔（秒）。 */
+export const GAS_CLOUD_TICK_INTERVAL = 0.5;
+/** 毒气云每次刷新写入的中毒持续秒数（略大于 tick 间隔，保证云内持续中毒）。 */
+export const GAS_POISON_REFRESH_DURATION = 1.0;
+/** 麻痹枪命中施加的减速速度倍率（0.2 = 仅剩 20% 速度）。 */
+export const PARALYSIS_SLOW_FACTOR = 0.2;
+/** 麻痹枪减速持续秒数。 */
+export const PARALYSIS_SLOW_DURATION = 1.5;
+/** 灼地痕迹存活秒数。 */
+export const SCORCH_TRAIL_LIFETIME = 2.5;
+/** 灼地痕迹灼伤间隔（秒）。 */
+export const SCORCH_TRAIL_TICK_INTERVAL = 0.4;
+/** ray_beam 视觉存活秒数（伤害已瞬发结算，仅渲染用）。 */
+export const RAY_BEAM_VISUAL_LIFETIME = 0.12;
+/** 射线枪光束最大长度（穿透打到底）。 */
+export const RAY_GUN_BEAM_LENGTH = 60;
+/**
+ * 精英 / 小头目 / Boss 的减速抗性系数（elite_slow_coef）。
+ * 有效减速 = 1 - (1 - factor) × coef；coef 越小，精英越难被减速。
+ */
+export const ELITE_SLOW_COEF = 0.5;
 
 // Tome max levels
 export const TOME_MAX_LEVELS: Record<TomeType, number> = {
@@ -284,6 +364,7 @@ export const ALL_WEAPON_TYPES: WeaponType[] = [
   'sword', 'bone_bouncer', 'axe', 'bow',
   'lightning_staff', 'flame_ring',
   'shotgun',
+  'ray_gun', 'poison_bomb', 'paralysis_gun', 'void_ripple', 'scorch_boots',
 ];
 
 // All tome types available in the game

@@ -32,4 +32,9 @@ export const WEAPONS: Partial<Record<WeaponType, WeaponDef>> = {
   lightning_staff: { tags: ['lightning_staff', 'spell', 'lightning', 'chain'],      behavior: 'lightningChain' },
   flame_ring:      { tags: ['flame_ring', 'spell', 'fire', 'aoe'],                  behavior: 'flameAura' },
   shotgun:         { tags: ['shotgun', 'projectile', 'spread'],                     behavior: 'spreadShot' },
+  ray_gun:         { tags: ['ray_gun', 'beam', 'energy', 'piercing'],               behavior: 'rayBeam' },
+  poison_bomb:     { tags: ['poison_bomb', 'spell', 'poison', 'aoe', 'dot'],        behavior: 'poisonGas' },
+  paralysis_gun:   { tags: ['paralysis_gun', 'projectile', 'energy', 'control'],    behavior: 'paralysisShot' },
+  void_ripple:     { tags: ['void_ripple', 'spell', 'void', 'aoe'],                 behavior: 'voidRipple' },
+  scorch_boots:    { tags: ['scorch_boots', 'fire', 'aoe', 'trail', 'dot'],         behavior: 'scorchTrail' },
 };

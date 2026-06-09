@@ -18,6 +18,7 @@ export { makePlayer, makeEnemy, makeBoss } from '../../ai/__tests__/_fixtures.ts
 
 export interface MockAiEffects extends AiEffects {
   spawnProjectileSpy: ReturnType<typeof vi.fn>;
+  spawnAreaEffectSpy: ReturnType<typeof vi.fn>;
   spawnEnemyByTypeSpy: ReturnType<typeof vi.fn>;
   damagePlayerSpy: ReturnType<typeof vi.fn>;
   applyKnockbackSpy: ReturnType<typeof vi.fn>;
@@ -34,7 +35,7 @@ function defaultState(player: PlayerState, character: GameConfig['character'] = 
     tick: 0, gameTime: 0, overtimeSeconds: 0, running: false, paused: false, finished: false,
     phase: 'playing',
     player,
-    enemies: [], projectiles: [], pickups: [], consumablePickups: [], goldMotes: [], boss: null,
+    enemies: [], projectiles: [], areaEffects: [], pickups: [], consumablePickups: [], goldMotes: [], boss: null,
     upgradeOptions: null, damageEvents: [], levelUpCompensationEvents: [],
     chestOpenEvents: [], pendingChestReward: null,
     stats: { killCount: 0, damageDealt: 0, damageTaken: 0, shieldAbsorbed: 0, silverEarned: 0 },
@@ -61,15 +62,18 @@ export function makeEngine(overrides: Partial<Engine> = {}): Engine {
   const applyKnockbackSpy = vi.fn();
   const addDamageEventSpy = vi.fn();
   const addDamageDealtSpy = vi.fn();
+  const spawnAreaEffectSpy = vi.fn().mockReturnValue(1);
 
   const effects: MockAiEffects = {
     addDamageEvent: addDamageEventSpy,
     applyKnockback: applyKnockbackSpy,
     addDamageDealt: addDamageDealtSpy,
     spawnProjectile: spawnProjectileSpy,
+    spawnAreaEffect: spawnAreaEffectSpy,
     spawnEnemyByType: spawnEnemyByTypeSpy,
     damagePlayer: damagePlayerSpy,
     spawnProjectileSpy,
+    spawnAreaEffectSpy,
     spawnEnemyByTypeSpy,
     damagePlayerSpy,
     applyKnockbackSpy,
@@ -89,6 +93,7 @@ export function makeEngine(overrides: Partial<Engine> = {}): Engine {
     nextProjectileId: 100,
     nextPickupId: 100,
     nextChestId: 100,
+    nextAreaEffectId: 100,
     spawnTimer: 0,
     chestRespawnTimer: 999,
     aiGroup: 0,
@@ -113,6 +118,11 @@ export function withRealEffects(engine: Engine): Engine {
     spawnProjectile: (proj) => {
       const id = engine.nextProjectileId++;
       engine.state.projectiles.push({ id, hitEnemyIds: [], ...proj });
+      return id;
+    },
+    spawnAreaEffect: (a) => {
+      const id = engine.nextAreaEffectId++;
+      engine.state.areaEffects.push({ id, ...a });
       return id;
     },
     spawnEnemyByType: () => null,

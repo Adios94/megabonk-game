@@ -11,6 +11,11 @@ import { orbitingAxe } from './orbitingAxe.ts';
 import { spreadShot } from './spreadShot.ts';
 import { lightningChain } from './lightningChain.ts';
 import { flameAura } from './flameAura.ts';
+import { rayBeam } from './rayBeam.ts';
+import { poisonGas } from './poisonGas.ts';
+import { paralysisShot } from './paralysisShot.ts';
+import { voidRipple } from './voidRipple.ts';
+import { scorchTrail } from './scorchTrail.ts';
 
 export const BEHAVIORS = {
   sweepArc,
@@ -20,6 +25,11 @@ export const BEHAVIORS = {
   spreadShot,
   lightningChain,
   flameAura,
+  rayBeam,
+  poisonGas,
+  paralysisShot,
+  voidRipple,
+  scorchTrail,
 } as const;
 
 export type BehaviorId = keyof typeof BEHAVIORS;

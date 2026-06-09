@@ -262,6 +262,11 @@ const WEAPON_PROJECTILE_COLORS: Record<string, number> = {
   lightning_staff: 0x44aaff,
   flame_ring: 0xff6600,
   shotgun: 0xffee44,
+  ray_gun: 0xff3366,        // 激光红
+  poison_bomb: 0x4caf3a,    // 深绿
+  paralysis_gun: 0xffdd22,  // 麻痹黄
+  void_ripple: 0x00ffff,    // 青色虚空涟漪
+  scorch_boots: 0xff7a1a,   // 灼地橙
 };
 
 const PICKUP_COLORS: Record<string, number> = {
@@ -304,6 +309,7 @@ const CONSUMABLE_EMOJI: Record<string, string> = {
 };
 
 const consumableEmojiTextureCache = new Map<string, THREE.Texture>();
+let paralysisTriangleTexture: THREE.Texture | null = null;
 
 function getConsumableEmojiTexture(consumableId: string): THREE.Texture {
   const cached = consumableEmojiTextureCache.get(consumableId);
@@ -343,6 +349,56 @@ function getConsumableEmojiTexture(consumableId: string): THREE.Texture {
   texture.colorSpace = THREE.SRGBColorSpace;
   consumableEmojiTextureCache.set(consumableId, texture);
   return texture;
+}
+
+function getParalysisTriangleTexture(): THREE.Texture {
+  if (paralysisTriangleTexture) return paralysisTriangleTexture;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, 128, 128);
+
+  ctx.shadowColor = 'rgba(0,0,0,0.75)';
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = 'rgba(30,20,8,0.95)';
+  ctx.beginPath();
+  ctx.moveTo(20, 26);
+  ctx.lineTo(108, 26);
+  ctx.lineTo(64, 110);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(194,128,32,0.92)';
+  ctx.beginPath();
+  ctx.moveTo(29, 34);
+  ctx.lineTo(99, 34);
+  ctx.lineTo(64, 98);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(12,8,4,0.98)';
+  ctx.lineWidth = 8;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(20, 26);
+  ctx.lineTo(108, 26);
+  ctx.lineTo(64, 110);
+  ctx.closePath();
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(238,190,72,0.85)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(38, 43);
+  ctx.lineTo(90, 43);
+  ctx.stroke();
+
+  paralysisTriangleTexture = new THREE.CanvasTexture(canvas);
+  paralysisTriangleTexture.colorSpace = THREE.SRGBColorSpace;
+  return paralysisTriangleTexture;
 }
 
 const RARITY_COLORS: Record<string, string> = {
@@ -672,6 +728,11 @@ const WEAPON_ICONS: Record<string, string> = {
   lightning_staff: '⚡',
   flame_ring: '🔥',
   shotgun: '💥',
+  ray_gun: '🔴',
+  poison_bomb: '☠️',
+  paralysis_gun: '⚠️',
+  void_ripple: '🌀',
+  scorch_boots: '🥾',
 };
 
 const TOME_ICONS: Record<string, string> = {
@@ -1452,9 +1513,11 @@ export class GameScene {
   private enemyMixers: Map<number, THREE.AnimationMixer> = new Map(); // id → animation mixer
   private enemyAnimStates: Map<number, string> = new Map(); // id → current anim name
   private enemyAnimActions: Map<number, Map<string, THREE.AnimationAction>> = new Map(); // id → actions map
+  private paralysisTriangleSprites: Map<number, THREE.Sprite[]> = new Map(); // enemy id → paralysis marker sprites
   private projectileMesh!: THREE.InstancedMesh;
   private axeObjects: Map<number, THREE.Object3D> = new Map(); // axe projectile id → cloned model
   private weaponObjects: Map<number, THREE.Object3D> = new Map(); // other weapon projectiles → cloned model
+  private areaEffectObjects: Map<number, THREE.Object3D> = new Map(); // area effect id → mesh (gas/ripple/scorch/beam)
   private pickupMesh!: THREE.InstancedMesh;
   private consumableSprites: Map<number, THREE.Sprite> = new Map();
   private goldMoteTexture!: THREE.Texture;
@@ -3732,10 +3795,69 @@ export class GameScene {
       }
     }
 
+    this.updateParalysisTriangleSprites(enemies);
+
     // Hide InstancedMesh (legacy — keep count at 0)
     for (const [, mesh] of this.enemyMeshes) {
       mesh.count = 0;
       mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  private updateParalysisTriangleSprites(enemies: EnemyState[]): void {
+    const markedIds = new Set<number>();
+    const offsets = [
+      { x: 0.0, y: 1.45, z: 0.0, scale: 0.46, phase: 0.0 },
+      { x: -0.34, y: 1.15, z: 0.18, scale: 0.36, phase: 1.2 },
+      { x: 0.34, y: 1.05, z: -0.18, scale: 0.36, phase: 2.4 },
+      { x: -0.24, y: 0.72, z: -0.24, scale: 0.3, phase: 3.1 },
+      { x: 0.24, y: 0.78, z: 0.24, scale: 0.3, phase: 4.0 },
+    ];
+    const time = performance.now() * 0.004;
+
+    for (const enemy of enemies) {
+      if (enemy.hp <= 0 || (enemy.slowTimer ?? 0) <= 0) continue;
+      markedIds.add(enemy.id);
+
+      let sprites = this.paralysisTriangleSprites.get(enemy.id);
+      if (!sprites) {
+        const texture = getParalysisTriangleTexture();
+        sprites = offsets.map((offset, index) => {
+          const material = new THREE.SpriteMaterial({
+            map: texture,
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.86,
+            depthWrite: false,
+            depthTest: true,
+          });
+          const sprite = new THREE.Sprite(material);
+          sprite.name = `ParalysisTriangle_${enemy.id}_${index}`;
+          sprite.renderOrder = 6;
+          this.scene.add(sprite);
+          return sprite;
+        });
+        this.paralysisTriangleSprites.set(enemy.id, sprites);
+      }
+
+      sprites.forEach((sprite, index) => {
+        const offset = offsets[index];
+        const bob = Math.sin(time * 2.5 + enemy.id * 0.37 + offset.phase) * 0.045;
+        const pulse = 0.88 + Math.sin(time * 3.4 + offset.phase) * 0.12;
+        sprite.position.set(enemy.x + offset.x, enemy.y + offset.y + bob, enemy.z + offset.z);
+        sprite.scale.setScalar(offset.scale * pulse);
+        sprite.material.opacity = 0.74 + Math.sin(time * 5.0 + offset.phase) * 0.16;
+        sprite.visible = true;
+      });
+    }
+
+    for (const [id, sprites] of this.paralysisTriangleSprites) {
+      if (markedIds.has(id)) continue;
+      for (const sprite of sprites) {
+        this.scene.remove(sprite);
+        sprite.material.dispose();
+      }
+      this.paralysisTriangleSprites.delete(id);
     }
   }
 
@@ -4302,6 +4424,11 @@ export class GameScene {
     lightning_staff: [0.3, 0.8, 1.0],
     flame_ring: [1.0, 0.5, 0.0],
     shotgun: [1.0, 0.8, 0.2],
+    ray_gun: [1.0, 0.25, 0.45],
+    poison_bomb: [0.35, 0.8, 0.25],
+    paralysis_gun: [1.0, 0.88, 0.15],
+    void_ripple: [0.0, 1.0, 1.0],
+    scorch_boots: [1.0, 0.5, 0.12],
   };
 
   private static readonly PICKUP_VFX_COLORS: Record<string, [number, number, number]> = {
@@ -4820,6 +4947,8 @@ export class GameScene {
   }
 
   private renderChests(chests: ChestState[]): void {
+    const visibleChestIds = new Set<number>();
+
     for (const chest of chests) {
       let obj = this.chestObjects.get(chest.id);
 
@@ -4833,6 +4962,8 @@ export class GameScene {
         continue;
       }
 
+      visibleChestIds.add(chest.id);
+
       if (!obj) {
         obj = this.createReadableChestObject();
         obj.name = `Chest_${chest.id}`;
@@ -4842,14 +4973,19 @@ export class GameScene {
         const maxDim = Math.max(size.x, size.y, size.z, 0.01);
         const scale = 1.2 / maxDim;
         obj.scale.set(scale, scale, scale);
-        obj.position.set(chest.x, 0.1, chest.z);
         this.scene.add(obj);
         this.chestObjects.set(chest.id, obj);
       }
 
       // Gentle hover animation
       const time = performance.now() * 0.001;
-      obj.position.y = 0.1 + Math.sin(time * 1.5 + chest.id) * 0.05;
+      obj.position.set(chest.x, 0.1 + Math.sin(time * 1.5 + chest.id) * 0.05, chest.z);
+    }
+
+    for (const [id, obj] of this.chestObjects) {
+      if (visibleChestIds.has(id)) continue;
+      this.scene.remove(obj);
+      this.chestObjects.delete(id);
     }
   }
 
@@ -5152,9 +5288,159 @@ export class GameScene {
     }
   }
 
+  /**
+   * 渲染区域特效（毒气云 / 虚空涟漪 / 灼地痕迹 / 激光线）。
+   * 按 id 维护 Mesh，新增即创建、消失即移除，每帧更新位置 / 半径 / 透明度。
+   */
+  private updateAreaEffects(state: GameState, _dt: number): void {
+    const live = new Set<number>();
+
+    for (const ae of state.areaEffects) {
+      live.add(ae.id);
+      let obj = this.areaEffectObjects.get(ae.id);
+      const ratio = ae.maxLifetime > 0 ? Math.max(0, ae.lifetime / ae.maxLifetime) : 1;
+
+      if (!obj) {
+        obj = this.createAreaEffectMesh(ae);
+        this.scene.add(obj);
+        this.areaEffectObjects.set(ae.id, obj);
+      }
+
+      switch (ae.kind) {
+        case 'ray_beam': {
+          // 细长发光盒：从玩家沿 dir 延伸 length，宽度 = width*2
+          const dx = ae.dirX ?? 0, dz = ae.dirZ ?? 1;
+          const len = ae.length ?? 40;
+          obj.position.set(ae.x + dx * len * 0.5, 1.0, ae.z + dz * len * 0.5);
+          obj.rotation.set(0, Math.atan2(dx, dz), 0);
+          const w = (ae.width ?? 0.5) * 2;
+          obj.scale.set(w, w, len);
+          const m = (obj as THREE.Mesh).material as THREE.MeshBasicMaterial;
+          m.opacity = 0.85 * ratio;
+          break;
+        }
+        case 'gas_cloud': {
+          obj.position.set(ae.x, 0.1, ae.z);
+          obj.scale.setScalar(ae.radius);
+          const m = (obj as THREE.Mesh).material as THREE.MeshBasicMaterial;
+          m.opacity = 0.32 * ratio;
+          obj.rotation.z += 0.01;
+          // 飘动的绿色毒气粒子
+          if (state.tick % 3 === 0) {
+            const a = Math.random() * Math.PI * 2;
+            const r = Math.random() * ae.radius;
+            this.spawnParticle(
+              ae.x + Math.cos(a) * r, 0.3 + Math.random() * 0.8, ae.z + Math.sin(a) * r,
+              0, 0.3 + Math.random() * 0.4, 0,
+              0.6, 0.5, 0.25, 0.7, 0.12,
+            );
+          }
+          break;
+        }
+        case 'void_ripple': {
+          obj.position.set(ae.x, 0.08, ae.z);
+          obj.scale.setScalar(Math.max(0.01, ae.radius));
+          const m = (obj as THREE.Mesh).material as THREE.MeshBasicMaterial;
+          m.color.setHex(0x00ffff);
+          m.opacity = 0.6 * ratio;
+          break;
+        }
+        case 'scorch_trail': {
+          obj.position.set(ae.x, 0.06, ae.z);
+          obj.scale.setScalar(ae.radius);
+          const m = (obj as THREE.Mesh).material as THREE.MeshBasicMaterial;
+          m.opacity = 0.7 * ratio;
+          break;
+        }
+      }
+    }
+
+    // 清除已消失的区域特效 mesh
+    for (const [id, obj] of this.areaEffectObjects) {
+      if (!live.has(id)) {
+        this.scene.remove(obj);
+        const mesh = obj as THREE.Mesh;
+        if (mesh.material) (mesh.material as THREE.Material).dispose?.();
+        this.areaEffectObjects.delete(id);
+      }
+    }
+  }
+
+  private createAreaEffectMesh(ae: GameState['areaEffects'][number]): THREE.Object3D {
+    switch (ae.kind) {
+      case 'ray_beam': {
+        // 单位长方体（z 长 1），靠 scale 拉伸；红色激光 + 加色混合
+        const geo = new THREE.BoxGeometry(1, 1, 1);
+        const mat = new THREE.MeshBasicMaterial({
+          color: 0xff3366, transparent: true, opacity: 0.85,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        });
+        return new THREE.Mesh(geo, mat);
+      }
+      case 'gas_cloud': {
+        const geo = new THREE.CircleGeometry(1, 24);
+        const mat = new THREE.MeshBasicMaterial({
+          color: 0x2f7d24, transparent: true, opacity: 0.3,
+          side: THREE.DoubleSide, depthWrite: false,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.rotation.x = -Math.PI / 2;
+        return mesh;
+      }
+      case 'void_ripple': {
+        // 单位环（内 0.82 外 1），靠 scale 放大
+        const geo = new THREE.RingGeometry(0.82, 1.0, 48);
+        const mat = new THREE.MeshBasicMaterial({
+          color: 0x00ffff, transparent: true, opacity: 0.6,
+          side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.rotation.x = -Math.PI / 2;
+        return mesh;
+      }
+      case 'scorch_trail':
+      default: {
+        const geo = new THREE.CircleGeometry(1, 20);
+        const mat = new THREE.MeshBasicMaterial({
+          color: 0xff6a1a, transparent: true, opacity: 0.7,
+          side: THREE.DoubleSide, depthWrite: false,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.rotation.x = -Math.PI / 2;
+        return mesh;
+      }
+    }
+  }
+
+  /** 给中毒 / 麻痹的敌人喷少量状态粒子（绿色毒雾 / 黄色麻痹电花）。 */
+  private updateEnemyStatusVfx(state: GameState): void {
+    for (const e of state.enemies) {
+      if (e.hp <= 0) continue;
+      if ((e.poisonTimer ?? 0) > 0 && state.tick % 4 === 0) {
+        const a = Math.random() * Math.PI * 2;
+        this.spawnParticle(
+          e.x + Math.cos(a) * 0.4, e.y + 0.6 + Math.random() * 0.6, e.z + Math.sin(a) * 0.4,
+          0, 0.4 + Math.random() * 0.4, 0,
+          0.4, 0.45, 0.3, 0.85, 0.2,
+        );
+      }
+      if ((e.slowTimer ?? 0) > 0 && state.tick % 5 === 0) {
+        const a = Math.random() * Math.PI * 2;
+        this.spawnParticle(
+          e.x + Math.cos(a) * 0.5, e.y + 0.8 + Math.random() * 0.5, e.z + Math.sin(a) * 0.5,
+          (Math.random() - 0.5) * 1.2, 0.6, (Math.random() - 0.5) * 1.2,
+          0.4, 0.18, 1.0, 0.85, 0.1,
+        );
+      }
+    }
+  }
+
   private updateVFX(state: GameState, dt: number): void {
     const enemies = state.enemies;
     const player = state.player;
+
+    this.updateAreaEffects(state, dt);
+    this.updateEnemyStatusVfx(state);
 
     // --- Emit particles based on game events ---
 

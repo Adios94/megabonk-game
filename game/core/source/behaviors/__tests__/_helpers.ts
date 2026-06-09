@@ -6,7 +6,7 @@
  */
 import type { BehaviorContext, BehaviorEffects } from '../types.ts';
 import type {
-  PlayerState, EnemyState, BossState, WeaponState, WeaponType, ProjectileState,
+  PlayerState, EnemyState, BossState, WeaponState, WeaponType, ProjectileState, AreaEffectState,
 } from '../../types.ts';
 import type { WeaponLevelStats } from '../../config.ts';
 import type { WeaponDef } from '../../data/weapons.ts';
@@ -74,11 +74,13 @@ export function makeDef(behavior: BehaviorId, tags: readonly string[]): WeaponDe
 }
 
 export type SpawnedProjectile = Omit<ProjectileState, 'id' | 'fromPlayer' | 'hitEnemyIds'>;
+export type SpawnedAreaEffect = Omit<AreaEffectState, 'id'>;
 
 export interface SpyEffects extends BehaviorEffects {
   damageEvents: Array<Parameters<BehaviorEffects['addDamageEvent']>>;
   knockbacks: Array<[EnemyState, number, number]>;
   projectiles: SpawnedProjectile[];
+  areaEffects: SpawnedAreaEffect[];
   damageDealtTotal: number;
 }
 
@@ -86,6 +88,7 @@ export function makeEffects(): SpyEffects {
   const damageEvents: Array<Parameters<BehaviorEffects['addDamageEvent']>> = [];
   const knockbacks: Array<[EnemyState, number, number]> = [];
   const projectiles: SpawnedProjectile[] = [];
+  const areaEffects: SpawnedAreaEffect[] = [];
   let damageDealtTotal = 0;
   let nextId = 1;
   return {
@@ -96,7 +99,11 @@ export function makeEffects(): SpyEffects {
       projectiles.push(p);
       return nextId++;
     },
-    damageEvents, knockbacks, projectiles,
+    spawnAreaEffect: (a) => {
+      areaEffects.push(a);
+      return nextId++;
+    },
+    damageEvents, knockbacks, projectiles, areaEffects,
     get damageDealtTotal() { return damageDealtTotal; },
   } as SpyEffects;
 }

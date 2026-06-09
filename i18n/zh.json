@@ -100,7 +100,17 @@
       "flame_ring": "烈焰环",
       "flame_ring_desc": "周围持续火焰伤害",
       "shotgun": "霰弹枪",
-      "shotgun_desc": "面前方向扇形散射"
+      "shotgun_desc": "面前方向扇形散射",
+      "ray_gun": "射线枪",
+      "ray_gun_desc": "瞬发激光，沿直线无限穿透",
+      "poison_bomb": "毒气弹",
+      "poison_bomb_desc": "投出毒气云，持续毒伤敌人",
+      "paralysis_gun": "麻痹枪",
+      "paralysis_gun_desc": "自动索敌弹，命中强力减速",
+      "void_ripple": "虚空涟漪",
+      "void_ripple_desc": "以你为圆心扩散的环波，近处敌人先结算",
+      "scorch_boots": "灼地靴",
+      "scorch_boots_desc": "走过留下灼地痕迹，灼伤路过的敌人"
     },
     "tome": {
       "attack_speed_tome": "攻速典籍",

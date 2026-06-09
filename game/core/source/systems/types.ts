@@ -31,6 +31,8 @@ export interface Engine {
   nextProjectileId: number;
   nextPickupId: number;
   nextChestId: number;
+  /** 区域特效自增 id（毒气云 / 涟漪 / 灼地痕迹 / 激光线）。 */
+  nextAreaEffectId: number;
 
   // ─── 时序 / 帧间状态 ───
   spawnTimer: number;

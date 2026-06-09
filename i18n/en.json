@@ -100,7 +100,17 @@
       "flame_ring": "Flame Ring",
       "flame_ring_desc": "Continuous fire damage around you",
       "shotgun": "Shotgun",
-      "shotgun_desc": "Spread shot in facing direction"
+      "shotgun_desc": "Spread shot in facing direction",
+      "ray_gun": "Ray Gun",
+      "ray_gun_desc": "Instant laser, infinite pierce in a straight line",
+      "poison_bomb": "Poison Bomb",
+      "poison_bomb_desc": "Lobs a gas cloud, poisons enemies over time",
+      "paralysis_gun": "Paralysis Gun",
+      "paralysis_gun_desc": "Auto-aim shots that heavily slow on hit",
+      "void_ripple": "Void Ripple",
+      "void_ripple_desc": "Expanding ring around you, hits closer foes first",
+      "scorch_boots": "Scorch Boots",
+      "scorch_boots_desc": "Leaves a burning trail that scorches passing enemies"
     },
     "tome": {
       "attack_speed_tome": "Attack Speed Tome",

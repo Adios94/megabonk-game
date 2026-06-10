@@ -72,6 +72,11 @@ export const CHEST_RESPAWN_MAX_SECONDS = 60;
 export const CHEST_INTERACT_RADIUS = 2.5;
 export const CHEST_SILVER_MIN = 50;
 export const CHEST_SILVER_MAX = 200;
+export const CHEST_PLAYER_MIN_DISTANCE = 12;     // Min distance from player when spawning fallback chests
+export const CHEST_PLAYER_MAX_DISTANCE = 35;     // Max distance from player when spawning fallback chests
+export const CHEST_SURFACE_GRID_SIZE = 20;       // Sampling grid when scattering chests across level surfaces
+export const CHEST_LEVEL_MAX = 24;               // Cap on chests generated from level data
+export const CHEST_MIN_SEPARATION = 6;           // Min distance between two unopened chests
 
 // Altar (formerly Teleporter) settings
 /** 召唤 Boss 的读条秒数（防误触）。 */

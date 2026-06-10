@@ -9,15 +9,15 @@ import {
   CHEST_INTERACT_RADIUS,
   CHEST_RESPAWN_MIN_SECONDS,
   CHEST_RESPAWN_MAX_SECONDS,
+  CHEST_PLAYER_MIN_DISTANCE,
+  CHEST_PLAYER_MAX_DISTANCE,
+  CHEST_SURFACE_GRID_SIZE,
+  CHEST_LEVEL_MAX,
+  CHEST_MIN_SEPARATION,
 } from '../config.ts';
 import type { ChestState, GameConfig, LevelData, RampVolume } from '../types.ts';
 import type { Engine } from './types.ts';
 import { getChestGoldCost, rollRelicForPlayer } from './relics.ts';
-
-const CHEST_PLAYER_MIN_DISTANCE = 12;
-const CHEST_PLAYER_MAX_DISTANCE = 35;
-const CHEST_GRID_SIZE = 20;
-const MAX_LEVEL_CHESTS = 24;
 
 interface ChestSpawnPoint {
   x: number;
@@ -36,7 +36,20 @@ export function nextChestId(chests: readonly ChestState[]): number {
 
 export function generateChests(config: GameConfig): ChestState[] {
   if (config.level) {
-    const points = generateLevelSurfaceChestPoints(config.level).slice(0, MAX_LEVEL_CHESTS);
+    // 优先使用关卡数据中显式标注的 chest 出生点（chest_ marker 解析得到）。
+    const placed = config.level.chestSpawns ?? [];
+    if (placed.length > 0) {
+      return placed.slice(0, CHEST_LEVEL_MAX).map((p, i) => ({
+        id: i + 1,
+        x: p.x,
+        y: 0,
+        z: p.z,
+        opened: false,
+      }));
+    }
+
+    // 否则按可站立表面采样生成。
+    const points = generateLevelSurfaceChestPoints(config.level).slice(0, CHEST_LEVEL_MAX);
     if (points.length > 0) {
       return points.map((p, i) => ({
         id: i + 1,
@@ -79,7 +92,7 @@ function generateLevelSurfaceChestPoints(level: LevelData): ChestSpawnPoint[] {
 
   const pushPoint = (x: number, y: number, z: number) => {
     // 同一 X/Z 可能有多层平台；高度层也纳入 key，避免漏掉上下层宝箱。
-    const key = `${Math.floor(x / CHEST_GRID_SIZE)}:${Math.floor(z / CHEST_GRID_SIZE)}:${Math.round(y * 2)}`;
+    const key = `${Math.floor(x / CHEST_SURFACE_GRID_SIZE)}:${Math.floor(z / CHEST_SURFACE_GRID_SIZE)}:${Math.round(y * 2)}`;
     if (occupied.has(key)) return;
     occupied.add(key);
     points.push({ x, y, z });
@@ -136,7 +149,7 @@ function sampleAxis(min: number, max: number): number[] {
   const width = max - min;
   if (width <= 0) return [];
   const samples: number[] = [];
-  const count = Math.max(1, Math.ceil(width / CHEST_GRID_SIZE));
+  const count = Math.max(1, Math.ceil(width / CHEST_SURFACE_GRID_SIZE));
   for (let i = 0; i < count; i++) {
     samples.push(min + (i + Math.random()) * width / count);
   }
@@ -189,7 +202,7 @@ export function tickChests(engine: Engine, dt = 0): void {
 
 function tickChestRespawn(engine: Engine, dt: number): void {
   const activeCount = engine.state.chests.filter(c => !c.opened).length;
-  const maxActive = engine.config.level ? MAX_LEVEL_CHESTS : CHEST_MAX_ACTIVE;
+  const maxActive = engine.config.level ? CHEST_LEVEL_MAX : CHEST_MAX_ACTIVE;
   if (activeCount >= maxActive) {
     engine.chestRespawnTimer = nextChestRespawnDelay();
     return;
@@ -211,18 +224,20 @@ function tickChestRespawn(engine: Engine, dt: number): void {
 
 function chooseChestSpawn(engine: Engine): ChestSpawnPoint {
   if (engine.config.level) {
-    const candidates = generateLevelSurfaceChestPoints(engine.config.level)
-      .filter(p => isGoodChestSpawn(engine, p.x, p.z));
-    if (candidates.length > 0) return candidates[Math.floor(Math.random() * candidates.length)];
-  }
-
-  const placed = engine.config.level?.chestSpawns ?? [];
-  if (placed.length > 0) {
-    const candidates = placed.filter(p => isGoodChestSpawn(engine, p.x, p.z));
-    if (candidates.length > 0) {
-      const p = candidates[Math.floor(Math.random() * candidates.length)];
-      return { x: p.x, y: 0, z: p.z };
+    // 优先使用关卡显式标注的 chest 出生点。
+    const placed = engine.config.level.chestSpawns ?? [];
+    if (placed.length > 0) {
+      const candidates = placed.filter(p => isGoodChestSpawn(engine, p.x, p.z));
+      if (candidates.length > 0) {
+        const p = candidates[Math.floor(Math.random() * candidates.length)];
+        return { x: p.x, y: 0, z: p.z };
+      }
     }
+
+    // 回退：可站立表面采样。
+    const surface = generateLevelSurfaceChestPoints(engine.config.level)
+      .filter(p => isGoodChestSpawn(engine, p.x, p.z));
+    if (surface.length > 0) return surface[Math.floor(Math.random() * surface.length)];
   }
 
   const player = engine.state.player;
@@ -249,7 +264,7 @@ function isGoodChestSpawn(engine: Engine, x: number, z: number): boolean {
   if (playerDist < CHEST_PLAYER_MIN_DISTANCE) return false;
   for (const chest of engine.state.chests) {
     if (chest.opened) continue;
-    if (distanceBetween(chest.x, chest.z, x, z) < 6) return false;
+    if (distanceBetween(chest.x, chest.z, x, z) < CHEST_MIN_SEPARATION) return false;
   }
   return true;
 }

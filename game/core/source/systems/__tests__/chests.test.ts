@@ -50,6 +50,30 @@ describe('generateChests', () => {
     expect(chests).toHaveLength(24);
   });
 
+  it('level.chestSpawns 优先于表面采样', () => {
+    const config = makeEngine().config;
+    config.level = {
+      collisionRects: [{ cx: 0, cz: 0, halfW: 60, halfD: 60, height: 0, baseY: -1 }],
+      walls: [],
+      climbVolumes: [],
+      ramps: [],
+      spawnPoints: {},
+      chestSpawns: [
+        { x: 5, z: 0 },
+        { x: -5, z: 0 },
+        { x: 0, z: 5 },
+      ],
+    };
+    const chests = generateChests(config);
+    expect(chests).toHaveLength(3);
+    expect(chests.map(c => ({ x: c.x, z: c.z }))).toEqual([
+      { x: 5, z: 0 },
+      { x: -5, z: 0 },
+      { x: 0, z: 5 },
+    ]);
+    expect(chests.every(c => c.y === 0)).toBe(true);
+  });
+
   it('关卡 ramp_ 斜面会生成带坡面高度的 chest', () => {
     const config = makeEngine().config;
     config.level = {

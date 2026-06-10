@@ -1849,13 +1849,13 @@ luck 来源 = luck_tome.level + floor(player.luckBonus * 100)</code></pre>
   <table>
     <tr><th>实装路径</th><th>字段</th></tr>
     <tr>
-      <td>直接写 stat 字段<br><span style="color: var(--warn);">⚠️ 会被下次 tome 升级 recompute 重置 — TODO Phase 8 拆 ShrineBonus 二次合并</span></td>
+      <td>累加到 <code>player.shrineBonuses</code><br><span style="color: var(--good);">✅ 由 recomputePlayerStats 末尾二次合并，不再被 tome 升级 / 开宝箱 recompute 清掉</span></td>
       <td>
-        <code>damage</code> → <code>damageMultiplier *= 1+v</code><br>
-        <code>attack_speed</code> → <code>attackSpeedMultiplier *= 1+v</code><br>
-        <code>movement_speed</code> → <code>speed *= 1+v</code><br>
-        <code>pickup_range</code> → <code>pickupRadius *= 1+v</code><br>
-        <code>crit_damage</code> → <code>critDamage += v</code>
+        <code>damage</code> → <code>shrineBonuses.damageMult *= 1+v</code><br>
+        <code>attack_speed</code> → <code>attackSpeedMult *= 1+v</code><br>
+        <code>movement_speed</code> → <code>speedMult *= 1+v</code><br>
+        <code>pickup_range</code> → <code>pickupRadiusMult *= 1+v</code><br>
+        <code>crit_damage</code> → <code>critDamageAdd += v</code>
       </td>
     </tr>
     <tr>
@@ -2528,12 +2528,12 @@ player.consumableDropMult?: number       // consumable_tome</code></pre>
     </div>
 
     <h4>GSAP 动画方法</h4>
-    <p><code>game/client/source/gsap-animations.ts</code> 提供 12 个专业动画方法：</p>
+    <p><code>game/client/source/gsap-animations.ts</code> 提供一组专业动画方法：</p>
     <ul>
       <li><code>fadeInElement()</code> / <code>fadeOutElement()</code> - 基础淡入淡出</li>
       <li><code>animateHealthBar()</code> - 健康条平滑过渡</li>
-      <li><code>showDamageNumber()</code> - 伤害数字特效</li>
-      <li><code>playLevelUpEffect()</code> - 升级特效</li>
+      <li><code>showDamageNumber()</code> / <code>showFloatText()</code> - 伤害数字 / 补偿飘字（共用环形池）</li>
+      <li><code>playLevelLabelPulse()</code> - 升级标签脉冲</li>
       <li><code>animateTeleporterIndicator()</code> - 传送门指示器</li>
       <li><code>animateOvertimeBanner()</code> - 超时横幅</li>
       <li><code>screenFlash()</code> - 屏幕闪光</li>
@@ -2712,7 +2712,7 @@ fadeOutElement(element: HTMLElement, duration?: number): void
 // 特定 UI 动画
 animateHealthBar(element: HTMLElement, newHealthPercent: number): void
 showDamageNumber(element: HTMLElement, options: DamageNumberOptions): void
-playLevelUpEffect(container: HTMLElement): void
+showFloatText(element: HTMLElement, options: FloatTextOptions): void
 playLevelLabelPulse(element: HTMLElement): gsap.core.Timeline
 
 // 高级动画
@@ -2947,6 +2947,7 @@ window.__gm.showCollision()</code></pre>
   <table>
     <tr><th>对象</th><th class="num">池大小</th><th>来源常量</th></tr>
     <tr><td>投射物 InstancedMesh</td><td class="num">200</td><td><code>MAX_PROJECTILES</code></td></tr>
+    <tr><td>区域特效（毒气/涟漪/灼地/激光）</td><td class="num">150</td><td><code>MAX_AREA_EFFECTS</code></td></tr>
     <tr><td>拾取物 InstancedMesh</td><td class="num">300</td><td><code>MAX_PICKUPS</code></td></tr>
     <tr><td>敌人 InstancedMesh（legacy）</td><td class="num">100</td><td><code>MAX_ENEMIES</code></td></tr>
     <tr><td>VFX 粒子</td><td class="num">500</td><td><code>MAX_PARTICLES</code></td></tr>
@@ -2961,7 +2962,7 @@ window.__gm.showCollision()</code></pre>
   </table>
 
   <div class="note" style="border-left: 4px solid var(--good); background: var(--good-soft); color: #065f46;">
-    <strong>✅ 已实现：</strong>AI错峰优化已完成！所有敌人类型（chase/ranged/charge/dive）均已实现4帧错峰计算。每个敌人生成时分配固定<code>aiPhase</code>（0-3），每帧只有对应<code>aiPhase === aiGroup</code>的敌人重算目标，减少75%的AI计算量。
+    <strong>✅ 已实现：</strong>AI 错峰优化。每个敌人生成时按 <code>aiPhase = id % 4</code> 确定性分配相位（0-3，零 RNG、回放稳定），每帧只有 <code>aiPhase === aiGroup</code> 的敌人重算<strong>目标</strong>，约省 75% 目标重算开销。注：charge/dive 的<strong>状态机切换</strong>（起跳 / 蓄力判定）每帧都跑、不参与错峰，以免起手延迟。
   </div>
 </section>
 

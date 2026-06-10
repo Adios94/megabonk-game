@@ -651,8 +651,8 @@ luck 来源 = luck_tome.level + floor(player.luckBonus * 100)
 
 | 实装路径 | 字段 |
 |---|---|
-| 直接写 stat 字段（会被下次 tome 升级 recompute 重置 —— TODO Phase 8 拆 ShrineBonus 二次合并） | `damage` → `damageMultiplier *= 1+v`<br>`attack_speed` → `attackSpeedMultiplier *= 1+v`<br>`movement_speed` → `speed *= 1+v`<br>`pickup_range` → `pickupRadius *= 1+v`<br>`crit_damage` → `critDamage += v` |
-| 累加到玩家专属字段（不被 recompute 触碰） | `shield` → `maxShield += v`、补满 `shield`<br>`hp_regen` → `hpRegenRate += v`<br>`projectile_count` → `projectileBonus += v`<br>`knockback` → `knockbackMult *= 1+v`<br>`elite_damage` → `eliteDamageMult *= 1+v`<br>`lifesteal` → `lifestealPct += v`（capped 1.0）<br>`luck` → `luckBonus += v` |
+| 累加到 `player.shrineBonuses`，由 `recomputePlayerStats` 末尾二次合并（**不再**被 tome 升级 / 开宝箱触发的 recompute 清掉） | `damage` → `shrineBonuses.damageMult *= 1+v`<br>`attack_speed` → `attackSpeedMult *= 1+v`<br>`movement_speed` → `speedMult *= 1+v`<br>`pickup_range` → `pickupRadiusMult *= 1+v`<br>`crit_damage` → `critDamageAdd += v` |
+| 累加到玩家专属字段（不被 recompute 触碰） | `shield` → `maxShield += v`、补满 `shield`<br>`hp_regen` → `hpRegenRate += v`<br>`projectile_count` → `projectileBonus += v`<br>`knockback` → `knockbackMult *= 1+v`<br>`elite_damage` → `eliteDamageMult *= 1+v`（在 `applyRelicTargetDamage` 与 elite_writ 遗物相乘生效）<br>`lifesteal` → `lifestealPct += v`（capped 1.0）<br>`luck` → `luckBonus += v` |
 | 仅存值，运行时未消费（Phase 8 wire） | `jump_height` / `duration` / `powerup_multiplier` / `difficulty` |
 
 ### 6. UI 流程

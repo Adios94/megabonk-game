@@ -1030,8 +1030,8 @@ function analyzeTopSurface(node: THREE.Object3D): {
   return { sloped, lowY, highY, normalSum: { x: nx, y: ny, z: nz }, topVerts };
 }
 
-/** 从顶面分析结果构建 RampVolume（lowY/highY 取坡道两端均值，避免厚楔形体侧面污染）。 */
-function buildRampFromSurface(surf: ReturnType<typeof analyzeTopSurface>): RampVolume {
+/** 从顶面分析结果构建 RampVolume，并为三角/梯形剖面的左右侧面生成实体侧墙。 */
+function buildRampFromSurface(surf: ReturnType<typeof analyzeTopSurface>, box: THREE.Box3): RampVolume {
   const nHorizLen = Math.hypot(surf.normalSum.x, surf.normalSum.z);
   let slopeDirX = 1, slopeDirZ = 0;
   if (nHorizLen > 1e-4) {
@@ -1064,13 +1064,30 @@ function buildRampFromSurface(surf: ReturnType<typeof analyzeTopSurface>): RampV
     if (s <= minS + sBand && v.y > lowMax) lowMax = v.y;
     if (s >= maxS - sBand && v.y > highMax) highMax = v.y;
   }
+  const halfSlope = span / 2;
+  const halfPerp = (maxP - minP) / 2;
+  const wallThickness = 0.12;
+  const makeSideWall = (side: -1 | 1) => {
+    const wallCenterP = side * (halfPerp + wallThickness * 0.5);
+    return {
+      cx: centerS * slopeDirX + wallCenterP * perpX,
+      cz: centerS * slopeDirZ + wallCenterP * perpZ,
+      dirX: slopeDirX,
+      dirZ: slopeDirZ,
+      halfLength: halfSlope,
+      halfThickness: wallThickness,
+      bottomY: box.min.y,
+      topY: box.max.y,
+    };
+  };
   return {
     cx, cz,
-    halfSlope: span / 2,
-    halfPerp: (maxP - minP) / 2,
+    halfSlope,
+    halfPerp,
     slopeDirX, slopeDirZ,
     lowY: Number.isFinite(lowMax) ? lowMax : surf.lowY,
     highY: Number.isFinite(highMax) ? highMax : surf.highY,
+    sideWalls: [makeSideWall(-1), makeSideWall(1)],
   };
 }
 
@@ -1092,7 +1109,7 @@ function pushColOrRamp(
       console.warn(`[Level] "${node.name}" 前缀是 ramp_ 但未检测到可行走斜面，已忽略。`);
       return;
     }
-    data.ramps.push(buildRampFromSurface(surf));
+    data.ramps.push(buildRampFromSurface(surf, box));
     return;
   }
   if (surf.sloped) {
@@ -4914,7 +4931,7 @@ export class GameScene {
         if (obj) {
           this.scene.remove(obj);
           this.chestObjects.delete(chest.id);
-          this.spawnPickupBurst(chest.x, 0.6, chest.z, 0xffdd00);
+          this.spawnPickupBurst(chest.x, (chest.y ?? 0) + 0.6, chest.z, 0xffdd00);
         }
         continue;
       }
@@ -4928,14 +4945,14 @@ export class GameScene {
         const maxDim = Math.max(size.x, size.y, size.z, 0.01);
         const scale = 1.2 / maxDim;
         obj.scale.set(scale, scale, scale);
-        obj.position.set(chest.x, 0.1, chest.z);
+        obj.position.set(chest.x, (chest.y ?? 0) + 0.1, chest.z);
         this.scene.add(obj);
         this.chestObjects.set(chest.id, obj);
       }
 
       // Gentle hover animation
       const time = performance.now() * 0.001;
-      obj.position.y = 0.1 + Math.sin(time * 1.5 + chest.id) * 0.05;
+      obj.position.y = (chest.y ?? 0) + 0.1 + Math.sin(time * 1.5 + chest.id) * 0.05;
     }
   }
 

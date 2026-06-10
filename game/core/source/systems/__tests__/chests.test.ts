@@ -20,6 +20,60 @@ describe('generateChests', () => {
       expect(c.opened).toBe(false);
     }
   });
+
+  it('关卡 col_ 平台按每 20x20 单元生成 chest', () => {
+    const config = makeEngine().config;
+    config.level = {
+      collisionRects: [{ cx: 0, cz: 0, halfW: 20, halfD: 20, height: 2, baseY: 1 }],
+      walls: [],
+      climbVolumes: [],
+      ramps: [],
+      spawnPoints: {},
+      chestSpawns: [],
+    };
+    const chests = generateChests(config);
+    expect(chests).toHaveLength(4);
+    expect(chests.every((c) => c.y === 2)).toBe(true);
+  });
+
+  it('关卡 surface chest 总数不超过 24 个', () => {
+    const config = makeEngine().config;
+    config.level = {
+      collisionRects: [{ cx: 0, cz: 0, halfW: 60, halfD: 60, height: 0, baseY: -1 }],
+      walls: [],
+      climbVolumes: [],
+      ramps: [],
+      spawnPoints: {},
+      chestSpawns: [],
+    };
+    const chests = generateChests(config);
+    expect(chests).toHaveLength(24);
+  });
+
+  it('关卡 ramp_ 斜面会生成带坡面高度的 chest', () => {
+    const config = makeEngine().config;
+    config.level = {
+      collisionRects: [],
+      walls: [],
+      climbVolumes: [],
+      ramps: [{
+        cx: 0,
+        cz: 0,
+        halfSlope: 5,
+        halfPerp: 2.5,
+        slopeDirX: 1,
+        slopeDirZ: 0,
+        lowY: 0,
+        highY: 10,
+      }],
+      spawnPoints: {},
+      chestSpawns: [],
+    };
+    const chests = generateChests(config);
+    expect(chests).toHaveLength(1);
+    expect(chests[0].y).toBeGreaterThanOrEqual(0);
+    expect(chests[0].y).toBeLessThanOrEqual(10);
+  });
 });
 
 describe('tickChests', () => {

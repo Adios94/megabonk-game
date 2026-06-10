@@ -36,7 +36,7 @@ function defaultState(player: PlayerState, character: GameConfig['character'] = 
     phase: 'playing',
     player,
     enemies: [], projectiles: [], areaEffects: [], pickups: [], consumablePickups: [], goldMotes: [], boss: null,
-    upgradeOptions: null, damageEvents: [], levelUpCompensationEvents: [],
+    upgradeOptions: null, damageEvents: [], bondVfxEvents: [], levelUpCompensationEvents: [],
     chestOpenEvents: [], pendingChestReward: null,
     stats: { killCount: 0, damageDealt: 0, damageTaken: 0, shieldAbsorbed: 0, silverEarned: 0 },
     waveIndex: 0, altars: [], shrines: [], activeShrineId: null, chests: [],

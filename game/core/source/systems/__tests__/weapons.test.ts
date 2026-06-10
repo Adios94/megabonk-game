@@ -1,11 +1,11 @@
 /**
- * weapons.{tickWeapons, getWeaponStats, checkWeaponEvolutions} 单元测试.
+ * weapons.{tickWeapons, getWeaponStats, applyWeaponUpgrade} 单元测试.
+ * （武器进化已被羁绊系统取代，相关测试移到 bonds 体系。）
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   tickWeapons,
   getWeaponStats,
-  checkWeaponEvolutions,
   applyWeaponUpgrade,
   emptyWeaponGrowth,
 } from '../weapons.ts';
@@ -27,13 +27,6 @@ describe('getWeaponStats', () => {
   it('lv > 表长度 → clamp 到最后一档', () => {
     const stats = getWeaponStats({ type: 'sword', level: 99, cooldownTimer: 0, evolved: false });
     expect(stats).toEqual(WEAPON_STATS.sword[7]);
-  });
-
-  it('evolved=true → max stats × 进化乘子 + projectileCount +1', () => {
-    const stats = getWeaponStats({ type: 'sword', level: 9, cooldownTimer: 0, evolved: true });
-    const baseMax = WEAPON_STATS.sword[7];
-    expect(stats.damage).toBeGreaterThan(baseMax.damage);
-    expect(stats.projectileCount).toBe(baseMax.projectileCount + 1);
   });
 
   it('未知 weapon → fallback bone_bouncer 第一档', () => {
@@ -130,49 +123,5 @@ describe('tickWeapons', () => {
     const engine = makeEngine({ state: { ...makeEngine().state, player } });
     tickWeapons(engine, 0.1);
     expect(player.weapons[0].cooldownTimer).toBe(0);  // 没动
-  });
-});
-
-describe('checkWeaponEvolutions', () => {
-  it('level < 8 不进化', () => {
-    const player = makePlayer({
-      weapons: [{ type: 'bow', level: 7, cooldownTimer: 0, evolved: false }],
-      tomes: [{ type: 'precision_tome', level: 3 }],
-    });
-    const engine = makeEngine({ state: { ...makeEngine().state, player } });
-    checkWeaponEvolutions(engine);
-    expect(player.weapons[0].evolved).toBe(false);
-  });
-
-  it('level 8 + 对应 tome 满足 → evolved + level 封顶 WEAPON_MAX_LEVEL', () => {
-    // bow 进化需要 precision_tome lv 3
-    const player = makePlayer({
-      weapons: [{ type: 'bow', level: 8, cooldownTimer: 0, evolved: false }],
-      tomes: [{ type: 'precision_tome', level: 3 }],
-    });
-    const engine = makeEngine({ state: { ...makeEngine().state, player } });
-    checkWeaponEvolutions(engine);
-    expect(player.weapons[0].evolved).toBe(true);
-    expect(player.weapons[0].level).toBe(WEAPON_MAX_LEVEL);
-  });
-
-  it('level 8 但 tome 不够 → 不进化', () => {
-    const player = makePlayer({
-      weapons: [{ type: 'bow', level: 8, cooldownTimer: 0, evolved: false }],
-      tomes: [{ type: 'precision_tome', level: 2 }],  // 需要 3
-    });
-    const engine = makeEngine({ state: { ...makeEngine().state, player } });
-    checkWeaponEvolutions(engine);
-    expect(player.weapons[0].evolved).toBe(false);
-  });
-
-  it('已 evolved 不重复', () => {
-    const player = makePlayer({
-      weapons: [{ type: 'bow', level: 9, cooldownTimer: 0, evolved: true }],
-      tomes: [{ type: 'precision_tome', level: 3 }],
-    });
-    const engine = makeEngine({ state: { ...makeEngine().state, player } });
-    checkWeaponEvolutions(engine);
-    expect(player.weapons[0].level).toBe(9);  // 不变
   });
 });

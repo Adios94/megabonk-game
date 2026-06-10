@@ -2020,9 +2020,12 @@ luck 来源 = luck_tome.level + floor(player.luckBonus * 100)</code></pre>
          ↓ goldMote 自动飞向玩家 → player.gold
   level++（上限 100，无自动治疗）
          ↓
-  buildAvailableOptions → 有选项？→ 3 选 1（upgrade / new_weapon / tome / bond_activate / bond_upgrade）
+  buildRegularOptions → 3 选 1（upgrade / new_weapon / tome）
          ↓ 无
   roll 金币 or 银币（50/50，数量随 level 缩放）
+         ↓
+  pickBondExtra → 若有「可激活」羁绊，额外追加 1 张随机可激活羁绊卡（金黄发光框，不占常规名额）；
+                  否则若有「可升级」羁绊，追加 1 张随机可升级卡
 
   宝箱 ──→ 消耗 gold（等级曲线 + 已开启宝箱数递增）──→ chest_reward 暂停 ──→ 留下：grantRelic / 丢弃：不记录
          ↓ 场上未开 &lt; 6 时 30～60s 补刷 1 个
@@ -2080,7 +2083,7 @@ luck 来源 = luck_tome.level + floor(player.luckBonus * 100)</code></pre>
   <p class="sub">单把最高 <strong>Lv10</strong>。T2/T3 的 <code>k</code> 与 <code>L_sum</code> 随羁绊规模调整。</p>
   <table>
     <tr><th>档位</th><th>N=2</th><th>N=3</th><th>N=4</th></tr>
-    <tr><td><strong>T1</strong></td><td><code>k ≥ 1</code></td><td><code>k ≥ 2</code></td><td><code>k ≥ 2</code></td></tr>
+    <tr><td><strong>T1</strong></td><td><code>k = 2</code></td><td><code>k ≥ 2</code></td><td><code>k ≥ 2</code></td></tr>
     <tr><td><strong>T2</strong></td><td><code>k = 2</code> 且 <code>L_sum ≥ 8</code></td><td><code>k = 3</code> 且 <code>L_sum ≥ 12</code></td><td><code>k ≥ 3</code> 且 <code>L_sum ≥ 12</code></td></tr>
     <tr><td><strong>T3</strong></td><td><code>k = 2</code> 且 <code>L_sum ≥ 14</code> 且 <code>L_min ≥ 5</code></td><td><code>k = 3</code> 且 <code>L_sum ≥ 18</code> 且 <code>L_min ≥ 5</code></td><td><code>k = 4</code> 且 <code>L_sum ≥ 20</code> 且 <code>L_min ≥ 4</code></td></tr>
   </table>
@@ -2173,8 +2176,8 @@ scale(k, N) = 0.6 + 0.4 × (k / N)²</code></pre>
       <table>
         <tr><th>档</th><th>类型</th><th>效果</th></tr>
         <tr><td>T1</td><td>激活</td><td>羁绊内武器伤害 <strong>+6%</strong>；攻击间隔微量降低</td></tr>
-        <tr><td>T2</td><td>机制</td><td><code>conductor_mark</code>：<code>void_ripple</code> 攻击过的敌人获得 <strong>「导体」标记</strong>（<strong>3s</strong>）；标记数量上限 = 当前羁绊内武器等级总和 <code>L_sum</code>；被羁绊内<strong>其他</strong>武器命中时，所有带导体标记的敌人额外受到本次伤害的 <strong>8%</strong>（<strong>连锁伤害</strong>）</td></tr>
-        <tr><td>T3</td><td>升格</td><td>连锁伤害 <strong>8%→16%</strong>；导体标记持续 <strong>3s→6s</strong>，数量上限仍为当前羁绊内武器等级总和</td></tr>
+        <tr><td>T2</td><td>机制</td><td><code>conductor_mark</code>：<code>void_ripple</code> 攻击过的敌人获得 <strong>「导体」标记</strong>（<strong>3s</strong>）；标记数量上限 = <code>min(L_sum, 10)</code>（场上最多 10 个，避免连锁超模）；被羁绊内<strong>其他</strong>武器命中时，所有带导体标记的敌人额外受到本次伤害的 <strong>8%</strong>（<strong>连锁伤害</strong>）。被标记敌人有蓝色发光描边。</td></tr>
+        <tr><td>T3</td><td>升格</td><td>连锁伤害 <strong>8%→16%</strong>；导体标记持续 <strong>3s→6s</strong>，数量上限仍为 <code>min(L_sum, 10)</code></td></tr>
       </table>
     </div>
     <div class="card">
@@ -2229,10 +2232,20 @@ scale(k, N) = 0.6 + 0.4 × (k / N)²</code></pre>
     <tr><td><code>ember_detonate</code></td><td>余烬</td><td>击杀原地爆炸</td><td>爆炸↑、3s 灼地痕</td></tr>
     <tr><td><code>volley_tempo</code></td><td>弹幕</td><td>每武等级 +1% 攻速</td><td>可打敌方弹幕</td></tr>
     <tr><td><code>bone_crush_priority</code></td><td>碎骨震</td><td>优先 hp&gt;70% + 5s 易伤 16%</td><td>骨弹高血量不耗弹射</td></tr>
-    <tr><td><code>conductor_mark</code></td><td>弧光导体</td><td>虚空导体标记 3s + 8% 连锁；数量上限 = L_sum</td><td>连锁 16%、标记 6s</td></tr>
+    <tr><td><code>conductor_mark</code></td><td>弧光导体</td><td>虚空导体标记 3s + 8% 连锁；数量上限 = min(L_sum, 10)</td><td>连锁 16%、标记 6s</td></tr>
     <tr><td><code>neuro_toxin</code></td><td>毒师</td><td>神经毒素叠层 + 周期强减速/攻击减慢；精英系数 ×0.5</td><td>层数/持续↑、控制幅度↑</td></tr>
     <tr><td><code>hunter_brand</code></td><td>猎标烙印</td><td>麻痹枪不可解除烙印</td><td>烙印 HP&lt;16% 绞杀</td></tr>
   </table>
+
+  <h3>HUD / VFX 视觉反馈</h3>
+  <ul>
+    <li><strong>HUD 菱形格</strong>：已激活羁绊在左上角金币下方<strong>竖向</strong>排列；菱形边框按档位着色 —— T1 铜 / T2 银 / T3 金；悬停显示武器（已获取亮、未获取暗）+ 三档效果（已生效白、未生效灰）+ 下一档门槛或 MAX。</li>
+    <li><strong>奥术奥秘</strong>（T2+）：玩家头顶以<strong>蓝紫渐变数字</strong>显示当前奥秘值；爆发时一颗<strong>蓝紫光球</strong>从头顶飞向目标，命中点生成蓝紫范围烟雾。</li>
+    <li><strong>毒师神经毒素</strong>：中毒敌人头顶<strong>墨绿色倒三角</strong>（形似麻痹标记，配色改墨绿）。</li>
+    <li><strong>猎标烙印</strong>：烙印敌人头顶<strong>红色瞄准标识</strong>（圆环 + 十字）。</li>
+    <li><strong>弧光导体</strong>：被标记敌人周身<strong>蓝色发光</strong>。</li>
+    <li><strong>余烬爆炸</strong>：触发爆炸的敌人死亡烟雾改为<strong>红色</strong>。</li>
+  </ul>
 
   <h3>数据结构与激活</h3>
   <pre><code>// data/bonds.ts
@@ -2285,9 +2298,10 @@ on bond_upgrade 2→3:
 
   <h4>升级界面优先级</h4>
   <ol>
-    <li>若有<strong>可激活羁绊</strong>，3 选 1 中至少 1 张为 <code>bond_activate</code>（legendary 边框）</li>
-    <li>否则照常 roll 武器 / 典籍</li>
-    <li>同屏不重复出现多条相同羁绊</li>
+    <li>常规 3 张 = 武器升级 / 新武 / 典籍（羁绊<strong>不</strong>挤占这 3 张）</li>
+    <li>若有<strong>可激活羁绊</strong>，<strong>额外</strong>追加 1 张随机可激活羁绊卡（<code>bond_activate</code>）</li>
+    <li>否则若有可升级羁绊，额外追加 1 张随机 <code>bond_upgrade</code></li>
+    <li>羁绊卡使用<strong>金黄发光边框</strong>，卡面显示羁绊名 + 该档效果文案（不显示内部变量名）</li>
   </ol>
 
   <details>

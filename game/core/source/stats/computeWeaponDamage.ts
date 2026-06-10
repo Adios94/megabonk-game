@@ -9,7 +9,9 @@
  */
 import { StatBlock } from './StatBlock.ts';
 import { finalize } from './Stat.ts';
-import type { PlayerState } from '../types.ts';
+import { bondConditionalDamageInc } from '../data/bonds.ts';
+import type { BondDamageTarget } from '../data/bonds.ts';
+import type { PlayerState, WeaponType } from '../types.ts';
 
 /**
  * 计算单次攻击的最终伤害。
@@ -18,12 +20,14 @@ import type { PlayerState } from '../types.ts';
  * @param player      玩家状态（读 damageMultiplier 与 critDamage）
  * @param weaponTags  武器 tag（如 sword: ['sword','melee','physical']）—— 决定哪些 tag-限定的修饰符生效
  * @param isCrit      是否暴击（caller 决定，通常 Math.random() < player.critChance）
+ * @param target      可选命中目标（敌人/boss）—— 用于羁绊的条件/机制增伤（贴身、高血量、易伤、烙印…）
  */
 export function computeWeaponDamage(
   weaponBase: number,
   player: PlayerState,
   weaponTags: readonly string[],
   isCrit: boolean,
+  target?: BondDamageTarget | null,
 ): number {
   const block = new StatBlock();
   block.setBase('damage', weaponBase);
@@ -35,6 +39,19 @@ export function computeWeaponDamage(
       stat: 'damage',
       value: player.damageMultiplier - 1,
     });
+  }
+
+  // 羁绊无条件 T1 伤害（按武器 type 限定的 increased，已预算到 bondDamageMods）
+  if (player.bondDamageMods) {
+    for (const m of player.bondDamageMods) block.applyModifier(m);
+  }
+
+  // 羁绊条件/机制增伤（贴身、高血量、易伤、烙印、铁血叠层/暴怒…）
+  // 约定 weaponTags[0] === 武器 type（见 data/weapons.ts）。
+  const weaponType = weaponTags[0] as WeaponType;
+  const condInc = bondConditionalDamageInc(player, weaponType, target);
+  if (condInc !== 0) {
+    block.applyModifier({ kind: 'increased', stat: 'damage', value: condInc });
   }
 
   const stat = block.getStat('damage', weaponTags);

@@ -374,23 +374,8 @@ export const ALL_TOME_TYPES: TomeType[] = [
   'knockback_tome', 'speed_tome',
 ];
 
-// === Weapon Evolution System ===
-export interface WeaponEvolution {
-  baseWeapon: WeaponType;
-  requiredTome: TomeType;
-  requiredTomeLevel: number;
-  evolvedName: string;
-  damageMultiplier: number;
-  specialEffect: string;
-}
-
-export const WEAPON_EVOLUTIONS: WeaponEvolution[] = [
-  { baseWeapon: 'sword', requiredTome: 'attack_speed_tome', requiredTomeLevel: 5, evolvedName: 'Dexecutioner', damageMultiplier: 2.5, specialEffect: 'massive_aoe' },
-  { baseWeapon: 'axe', requiredTome: 'knockback_tome', requiredTomeLevel: 3, evolvedName: 'Berserker Axe', damageMultiplier: 2.0, specialEffect: 'triple_orbit' },
-  { baseWeapon: 'bone_bouncer', requiredTome: 'luck_tome', requiredTomeLevel: 3, evolvedName: 'Bone Storm', damageMultiplier: 2.0, specialEffect: 'explode_on_hit' },
-  { baseWeapon: 'bow', requiredTome: 'precision_tome', requiredTomeLevel: 3, evolvedName: 'Deagle', damageMultiplier: 3.0, specialEffect: 'pierce_all' },
-  { baseWeapon: 'lightning_staff', requiredTome: 'curse_tome', requiredTomeLevel: 3, evolvedName: 'Thunder God', damageMultiplier: 2.5, specialEffect: 'chain_all' },
-];
+// 旧的武器进化系统（WEAPON_EVOLUTIONS / WeaponEvolution）已被「羁绊系统」取代。
+// 见 data/bonds.ts + systems/bonds.ts。
 
 export const DEFAULT_GAME_CONFIG: GameConfig = {
   mapSize: MAP_SIZE,

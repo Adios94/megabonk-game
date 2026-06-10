@@ -17,7 +17,10 @@ export interface SaveData {
     bestSurvivalTime: number;
     highestLevel: number;
     bossesDefeated: number;
+    /** @deprecated 武器进化已被羁绊取代；保留字段仅为旧存档迁移。 */
     totalEvolutions: number;
+    /** 累计激活过的羁绊次数（跨局；替代 totalEvolutions 驱动羁绊任务）。 */
+    bondsActivated: number;
     noDamageRuns: number;
     /** 累计使用过的不同武器 type（跨局去重）。 */
     uniqueWeaponsUsed: string[];
@@ -44,6 +47,7 @@ export function getDefaultSave(): SaveData {
       highestLevel: 0,
       bossesDefeated: 0,
       totalEvolutions: 0,
+      bondsActivated: 0,
       noDamageRuns: 0,
       uniqueWeaponsUsed: [],
     },
@@ -57,11 +61,17 @@ export function loadSave(): SaveData {
     const parsed = JSON.parse(raw) as SaveData;
     // Ensure all fields exist (handles save version migrations)
     const defaults = getDefaultSave();
+    const mergedStats = { ...defaults.stats, ...(parsed.stats ?? {}) };
+    // 迁移：羁绊取代武器进化。旧存档无 bondsActivated → 用历史进化计数种子，
+    // 使「激活羁绊 N 次」任务延续旧玩家的进度（旧 5 个进化视为已激活对应羁绊）。
+    if (parsed.stats?.bondsActivated == null) {
+      mergedStats.bondsActivated = parsed.stats?.totalEvolutions ?? 0;
+    }
     return {
       ...defaults,
       ...parsed,
       extraWeaponSlots: Math.min(1, parsed.extraWeaponSlots ?? 0),
-      stats: { ...defaults.stats, ...(parsed.stats ?? {}) },
+      stats: mergedStats,
     };
   } catch {
     return getDefaultSave();

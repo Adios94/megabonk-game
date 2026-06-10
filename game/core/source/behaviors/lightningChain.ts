@@ -24,18 +24,19 @@ import type { GameWorld } from '../world.ts';
 const CHAIN_DECAY = 0.7;
 
 export function lightningChain(_world: GameWorld, ctx: BehaviorContext): void {
-  const { player, enemies, boss, def, stats, effects } = ctx;
+  const { player, enemies, boss, weapon, def, stats, effects } = ctx;
 
   const target = findNearestEnemy(player.x, player.z, enemies, stats.range);
   if (!target) return;
 
   // 主命中
   const isCrit = Math.random() < player.critChance;
-  const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit);
+  const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit, target);
   target.hp -= damage;
   target.hitFlashTimer = 0.15;
   effects.addDamageDealt(damage);
   effects.addDamageEvent(target.x, 1.5, target.z, damage, isCrit, false, 'lightning_staff');
+  effects.bondHit?.(weapon.type, target, damage, isCrit);
 
   // 链
   const hitIds = new Set<number>([target.id]);
@@ -50,11 +51,12 @@ export function lightningChain(_world: GameWorld, ctx: BehaviorContext): void {
     if (!nearestEnemy) break;
 
     const chainCrit = Math.random() < player.critChance;
-    const chainDmg = computeWeaponDamage(stats.damage * CHAIN_DECAY, player, def.tags, chainCrit);
+    const chainDmg = computeWeaponDamage(stats.damage * CHAIN_DECAY, player, def.tags, chainCrit, nearestEnemy);
     nearestEnemy.hp -= chainDmg;
     nearestEnemy.hitFlashTimer = 0.15;
     effects.addDamageDealt(chainDmg);
     effects.addDamageEvent(nearestEnemy.x, 1.5, nearestEnemy.z, chainDmg, chainCrit, false, 'lightning_staff');
+    effects.bondHit?.(weapon.type, nearestEnemy, chainDmg, chainCrit);
 
     hitIds.add(nearestEnemy.id);
     currentX = nearestEnemy.x;
@@ -67,7 +69,7 @@ export function lightningChain(_world: GameWorld, ctx: BehaviorContext): void {
     const bossDist = distanceBetween(currentX, currentZ, boss.x, boss.z);
     if (bossDist < stats.range) {
       const bossCrit = Math.random() < player.critChance;
-      const bossDmg = computeWeaponDamage(stats.damage * CHAIN_DECAY, player, def.tags, bossCrit);
+      const bossDmg = computeWeaponDamage(stats.damage * CHAIN_DECAY, player, def.tags, bossCrit, boss);
       boss.hp -= bossDmg;
       boss.hitFlashTimer = 0.15;
       effects.addDamageDealt(bossDmg);

@@ -51,7 +51,8 @@ import {
   tickLevelUp,
   setPlayerSpawn,
 } from './systems/player.ts';
-import { tickWeapons, checkWeaponEvolutions, applyWeaponUpgrade, emptyWeaponGrowth } from './systems/weapons.ts';
+import { tickWeapons, applyWeaponUpgrade, emptyWeaponGrowth } from './systems/weapons.ts';
+import { tickBonds, applyBondUpgrade, onBondWeaponHit } from './systems/bonds.ts';
 import { tickProjectiles } from './systems/projectiles.ts';
 import { processCollisions } from './systems/collisions.ts';
 import { tickStatusEffects } from './systems/statusEffects.ts';
@@ -90,6 +91,7 @@ export class GameInstance {
       boss: null,
       upgradeOptions: null,
       damageEvents: [],
+      bondVfxEvents: [],
       levelUpCompensationEvents: [],
       chestOpenEvents: [],
       pendingChestReward: null,
@@ -177,6 +179,7 @@ export class GameInstance {
     state.consumablePickups = [];
     state.goldMotes = [];
     state.damageEvents = [];
+    state.bondVfxEvents = [];
     state.levelUpCompensationEvents = [];
     state.chestOpenEvents = [];
     state.pendingChestReward = null;
@@ -236,6 +239,7 @@ export class GameInstance {
 
     // 清上一帧事件（client 在两帧之间读）
     state.damageEvents = [];
+    state.bondVfxEvents = [];
     state.levelUpCompensationEvents = [];
     state.chestOpenEvents = [];
 
@@ -251,6 +255,7 @@ export class GameInstance {
     tickProjectiles(engine, dt);
     tickAreaEffects(engine, dt);
     tickStatusEffects(engine, dt);
+    tickBonds(engine, dt);
     processCollisions(engine);
     processDeaths(engine);
     tickPickups(engine, dt);
@@ -338,11 +343,17 @@ export class GameInstance {
           recomputePlayerStats(player, engine.config.character, getShopBonuses());
         }
         break;
+      case 'bond_activate':
+      case 'bond_upgrade':
+        if (option.bondId) {
+          applyBondUpgrade(player, option.bondId, option.newLevel as 1 | 2 | 3);
+          recomputePlayerStats(player, engine.config.character, getShopBonuses());
+        }
+        break;
     }
 
     state.upgradeOptions = null;
     state.phase = state.boss ? 'boss_fight' : 'playing';
-    checkWeaponEvolutions(engine);
   }
 
   /**
@@ -469,6 +480,9 @@ function makeEffects(engine: Engine): AiEffects {
       const id = engine.nextAreaEffectId++;
       engine.state.areaEffects.push({ id, ...a });
       return id;
+    },
+    bondHit: (weaponType, enemy, damage, isCrit) => {
+      onBondWeaponHit(engine, weaponType, enemy, damage, isCrit);
     },
     spawnEnemyByType: (type, x, z, opts) => {
       const newEnemy = spawnEnemy(

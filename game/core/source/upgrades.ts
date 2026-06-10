@@ -3,9 +3,10 @@
  * Uses MegaBonk-style tomes (passive items) and weapons.
  */
 
-import type { PlayerState, UpgradeOption, UpgradeRarity, WeaponType, TomeType } from './types.ts';
+import type { PlayerState, UpgradeOption, UpgradeRarity } from './types.ts';
 import { XP_BASE, XP_GROWTH, TOME_MAX_LEVELS, WEAPON_MAX_LEVEL, MAX_WEAPONS_CAP, ALL_WEAPON_TYPES, ALL_TOME_TYPES } from './config.ts';
 import { getTomePower } from './tomeProgression.ts';
+import { getBondUpgradeOptions } from './systems/bonds.ts';
 
 const RARITY_WEIGHTS: { rarity: UpgradeRarity; weight: number }[] = [
   { rarity: 'common', weight: 55 },
@@ -128,7 +129,26 @@ function buildAvailableOptions(player: PlayerState): UpgradeOption[] {
     }
   }
 
+  // 羁绊激活/升级不在此池——它们作为「额外卡片」追加，不占用常规武器/典籍名额。
   return options;
+}
+
+/** 是否为构筑相关选项（武器）—— 用于常规池的保底。 */
+function isBuildOption(o: UpgradeOption): boolean {
+  return o.kind === 'weapon_upgrade' || o.kind === 'new_weapon';
+}
+
+/**
+ * 选出一张「额外」羁绊卡片（不占用常规名额）。
+ * 优先随机一个「可激活」羁绊；若没有可激活但有可升级羁绊，则随机一个可升级。
+ * 没有任何羁绊目标时返回 null。
+ */
+function pickBondExtra(player: PlayerState): UpgradeOption | null {
+  const bondOptions = getBondUpgradeOptions(player);
+  if (bondOptions.length === 0) return null;
+  const activatable = bondOptions.filter(o => o.kind === 'bond_activate');
+  const pool = activatable.length > 0 ? activatable : bondOptions;
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 export interface GenerateUpgradeOptionsOpts {
@@ -201,22 +221,30 @@ export function generateUpgradeOptions(
   count: number,
   opts?: GenerateUpgradeOptionsOpts,
 ): UpgradeOption[] {
-  if (opts?.prophecy) {
-    return buildProphecyOptions(player, count);
-  }
+  const result = opts?.prophecy
+    ? buildProphecyOptions(player, count)
+    : buildRegularOptions(player, count);
 
+  // 羁绊激活/升级作为「额外」一张卡片追加，不占用常规武器/典籍名额。
+  const bondExtra = pickBondExtra(player);
+  if (bondExtra) result.push(bondExtra);
+
+  return result;
+}
+
+/** 常规升级池（武器 + 典籍），保证至少 1 张武器相关。 */
+function buildRegularOptions(player: PlayerState, count: number): UpgradeOption[] {
   const allOptions = buildAvailableOptions(player);
   if (allOptions.length === 0) return [];
 
-  // Separate weapon options from tome options
-  const weaponOptions = allOptions.filter(o => o.kind === 'weapon_upgrade' || o.kind === 'new_weapon');
   const result: UpgradeOption[] = [];
   const usedIds = new Set<string>();
 
-  // Guarantee at least 1 weapon-related option if available
-  if (weaponOptions.length > 0) {
-    const idx = Math.floor(Math.random() * weaponOptions.length);
-    const pick = weaponOptions[idx];
+  // 保证至少 1 张构筑相关（武器升级 / 新武）
+  const buildOptions = allOptions.filter(isBuildOption);
+  if (buildOptions.length > 0) {
+    const idx = Math.floor(Math.random() * buildOptions.length);
+    const pick = buildOptions[idx];
     result.push(pick);
     usedIds.add(pick.id);
   }

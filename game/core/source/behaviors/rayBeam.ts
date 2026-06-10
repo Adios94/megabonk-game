@@ -19,7 +19,7 @@ const ENEMY_RADIUS = 0.4;
 const BOSS_RADIUS = 1.5;
 
 export function rayBeam(_world: GameWorld, ctx: BehaviorContext): void {
-  const { player, enemies, boss, def, stats, effects } = ctx;
+  const { player, enemies, boss, weapon, def, stats, effects } = ctx;
 
   // 方向：优先索敌（range 仅用于挑方向），否则沿朝向
   const target = findNearestEnemy(player.x, player.z, enemies, stats.range);
@@ -49,16 +49,17 @@ export function rayBeam(_world: GameWorld, ctx: BehaviorContext): void {
     if (enemy.hp <= 0) continue;
     if (!hitAlongBeam(enemy.x, enemy.z, ENEMY_RADIUS)) continue;
     const isCrit = Math.random() < player.critChance;
-    const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit);
+    const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit, enemy);
     enemy.hp -= damage;
     enemy.hitFlashTimer = 0.12;
     effects.addDamageDealt(damage);
     effects.addDamageEvent(enemy.x, 1.0, enemy.z, damage, isCrit, false, 'ray_gun');
+    effects.bondHit?.(weapon.type, enemy, damage, isCrit);
   }
 
   if (boss && boss.hp > 0 && hitAlongBeam(boss.x, boss.z, BOSS_RADIUS)) {
     const isCrit = Math.random() < player.critChance;
-    const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit);
+    const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit, boss);
     boss.hp -= damage;
     boss.hitFlashTimer = 0.15;
     effects.addDamageDealt(damage);

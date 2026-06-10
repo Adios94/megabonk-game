@@ -1,15 +1,16 @@
 /**
- * 武器系统 —— fireWeapons + getWeaponStats + checkWeaponEvolutions.
+ * 武器系统 —— fireWeapons + getWeaponStats.
  *
  * - tickWeapons: 扫 player.weapons, cooldown 到 → 调 tryFireWeaponEcs (走 ECS 武器路径)
- * - getWeaponStats: 武器等级查表 + evolved 时套 evolution multiplier
- * - checkWeaponEvolutions: 升级 / 选 tome 后调用, level 8 + 对应 tome 满足 → evolved=true, level=9
+ * - getWeaponStats: 武器等级查表（base + growth 累加）
+ *
+ * 旧的武器进化（WEAPON_EVOLUTIONS / checkWeaponEvolutions）已被「羁绊系统」取代，见 systems/bonds.ts。
  */
-import { WEAPON_STATS, WEAPON_EVOLUTIONS, WEAPON_MAX_LEVEL } from '../config.ts';
+import { WEAPON_STATS, WEAPON_MAX_LEVEL } from '../config.ts';
 import type { WeaponLevelStats } from '../config.ts';
 import { tryFireWeaponEcs } from './weaponFiring.ts';
-import { loadSave, saveSave } from '../save.ts';
 import { getRelicDamageMultiplier } from './relics.ts';
+import { bondAttackSpeedMult } from './bonds.ts';
 import type { WeaponState, WeaponGrowth, UpgradeRarity } from '../types.ts';
 import type { Engine } from './types.ts';
 
@@ -73,8 +74,9 @@ export function tickWeapons(engine: Engine, dt: number): void {
   const player = engine.state.player;
   if (!player.alive) return;
 
+  const bondAtkSpeed = bondAttackSpeedMult(player);
   for (const weapon of player.weapons) {
-    weapon.cooldownTimer -= dt * player.attackSpeedMultiplier * (player.consumableAttackSpeedMult ?? 1);
+    weapon.cooldownTimer -= dt * player.attackSpeedMultiplier * (player.consumableAttackSpeedMult ?? 1) * bondAtkSpeed;
     if (weapon.cooldownTimer <= 0) {
       const baseStats = getWeaponStats(weapon);
       const stats = {
@@ -95,6 +97,8 @@ export function tickWeapons(engine: Engine, dt: number): void {
       } finally {
         player.damageMultiplier = baseDamageMultiplier;
       }
+      // 铁血 T2「下次斩击」叠层在本次剑攻击中已结算，消费掉。
+      if (weapon.type === 'sword') player.bondIronStacks = 0;
     }
   }
 }
@@ -119,42 +123,10 @@ export function getWeaponStats(weapon: WeaponState): WeaponLevelStats {
       speed: base.speed + g.speed,
     };
   } else {
-    // 兼容旧路径（无 growth）：等级查表；evolved 用 max level。
-    const idx = Math.max(0, Math.min((weapon.evolved ? levelStats.length - 1 : weapon.level - 1), levelStats.length - 1));
+    // 兼容旧路径（无 growth）：等级查表。
+    const idx = Math.max(0, Math.min(weapon.level - 1, levelStats.length - 1));
     effective = levelStats[idx];
   }
 
-  if (weapon.evolved) {
-    const evolution = WEAPON_EVOLUTIONS.find(e => e.baseWeapon === weapon.type);
-    if (evolution) {
-      return {
-        ...effective,
-        damage: Math.round(effective.damage * evolution.damageMultiplier),
-        projectileCount: effective.projectileCount + 1,
-      };
-    }
-  }
   return effective;
-}
-
-/** 升级 / 选 tome 后调，level 8 + 对应 tome 满 → 进化（写 save 统计）. */
-export function checkWeaponEvolutions(engine: Engine): void {
-  const player = engine.state.player;
-  for (const weapon of player.weapons) {
-    if (weapon.evolved) continue;
-    if (weapon.level < 8) continue;
-
-    const evolution = WEAPON_EVOLUTIONS.find(e => e.baseWeapon === weapon.type);
-    if (!evolution) continue;
-
-    const tome = player.tomes.find(t => t.type === evolution.requiredTome);
-    if (!tome || tome.level < evolution.requiredTomeLevel) continue;
-
-    weapon.evolved = true;
-    weapon.level = WEAPON_MAX_LEVEL;
-
-    const save = loadSave();
-    save.stats.totalEvolutions += 1;
-    saveSave(save);
-  }
 }

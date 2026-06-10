@@ -14,7 +14,7 @@ import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
 
 export function flameAura(_world: GameWorld, ctx: BehaviorContext): void {
-  const { player, enemies, boss, def, stats, effects } = ctx;
+  const { player, enemies, boss, weapon, def, stats, effects } = ctx;
 
   for (const enemy of enemies) {
     if (enemy.hp <= 0) continue;
@@ -22,18 +22,19 @@ export function flameAura(_world: GameWorld, ctx: BehaviorContext): void {
     if (dist > stats.aoeRadius) continue;
 
     const isCrit = Math.random() < player.critChance;
-    const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit);
+    const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit, enemy);
     enemy.hp -= damage;
     enemy.hitFlashTimer = 0.1;
     effects.addDamageDealt(damage);
     effects.addDamageEvent(enemy.x, 1.0, enemy.z, damage, isCrit, false, 'flame_ring');
+    effects.bondHit?.(weapon.type, enemy, damage, isCrit);
   }
 
   if (boss && boss.hp > 0) {
     const dist = distanceBetween(player.x, player.z, boss.x, boss.z);
     if (dist <= stats.aoeRadius) {
       const isCrit = Math.random() < player.critChance;
-      const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit);
+      const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit, boss);
       boss.hp -= damage;
       boss.hitFlashTimer = 0.15;
       effects.addDamageDealt(damage);

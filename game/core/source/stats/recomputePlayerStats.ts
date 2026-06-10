@@ -15,6 +15,7 @@ import { StatBlock } from './StatBlock.ts';
 import { applyCharacterTrait } from './applyCharacterTrait.ts';
 import { TOMES } from '../data/tomes.ts';
 import { getRelicStack } from '../data/relics.ts';
+import { bondGlobalModifiers, bondWeaponDamageMods } from '../data/bonds.ts';
 import { getTomePower } from '../tomeProgression.ts';
 import {
   PLAYER_BASE_CRIT_DAMAGE,
@@ -82,6 +83,13 @@ export function recomputePlayerStats(
     block.applyModifier({ kind: 'increased', stat: 'maxHp', value: 0.12 * ironHeart });
     block.applyModifier({ kind: 'added', stat: 'armor', value: 2 * ironHeart });
   }
+
+  // ─── 2b. 羁绊全局 stat 修饰符（护甲 / damageMult / 攻速 / 暴击）───
+  for (const m of bondGlobalModifiers(player)) {
+    block.applyModifier(m);
+  }
+  // 羁绊「按武器 type」的无条件伤害修饰符缓存到 player，供 computeWeaponDamage 读取。
+  player.bondDamageMods = bondWeaponDamageMods(player);
 
   // ─── 3. finalize → 写回 player ───
   player.speed                 = block.getFinal('moveSpeed');

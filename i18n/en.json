@@ -197,7 +197,8 @@
       "xpGain": "XP",
       "curseSpawn": "Spawn",
       "luck": "Luck",
-      "generic": "Level"
+      "generic": "Level",
+      "bondTier": "Tier"
     }
   },
   "evolution": {
@@ -207,6 +208,78 @@
     "bone_bouncer": "Bone Storm",
     "bow": "Deagle",
     "lightning_staff": "Thunder God"
+  },
+  "bond": {
+    "activate": "Activate Bond",
+    "upgrade": "Strengthen Bond",
+    "weaponsLabel": "Weapons",
+    "effectsLabel": "Effects",
+    "next": "To T{{tier}}",
+    "max": "MAX",
+    "tier": {
+      "1": "Bronze",
+      "2": "Silver",
+      "3": "Gold"
+    },
+    "cond": {
+      "weapons": "Own ≥{{k}} bond weapons ({{have}}/{{k}})",
+      "sum": "Total weapon level ≥{{sum}} ({{have}}/{{sum}})",
+      "min": "Each weapon ≥{{min}} ({{have}}/{{min}})"
+    },
+    "iron_blood": {
+      "name": "Iron Blood",
+      "t1": "+10 armor; +6% damage with Katana & Axe.",
+      "t2": "On taking a hit, instantly reset Katana cooldown and add a stack — the next swing deals +8% damage per stack.",
+      "t3": "Being hit also triggers Rage for 10s: +15% damage and +15% attack speed."
+    },
+    "arcane": {
+      "name": "Arcane",
+      "t1": "+4% damage with arcane weapons; +0.1 damage multiplier.",
+      "t2": "Arcane hits build Mystery (max 15/s). At 100, blast the highest-HP enemy nearby; surrounding foes take 50% splash.",
+      "t3": "Mystery threshold 100 → 60; burst damage ×1.5."
+    },
+    "zero_range": {
+      "name": "Point-Blank",
+      "t1": "+8% damage with these weapons against enemies within 3m.",
+      "t2": "Hits add knockback and deal bonus impact damage based on push distance.",
+      "t3": "Knockback ×1.6; slamming a foe into terrain deals heavy collision damage."
+    },
+    "ember_trail": {
+      "name": "Ember Trail",
+      "t1": "+8% damage with Flame Ring & Scorch Boots.",
+      "t2": "Enemies killed by these weapons explode for 40% of their max HP to nearby foes.",
+      "t3": "Explosion radius ×1.5 and damage ×1.6; leaves a 3s scorch patch."
+    },
+    "volley": {
+      "name": "Volley",
+      "t1": "+5% damage and +5% attack speed with these weapons.",
+      "t2": "+1% attack speed per level of owned bond weapons (on top of T1).",
+      "t3": "Bond weapons can shoot down enemy projectiles."
+    },
+    "bone_crush": {
+      "name": "Bone Crush",
+      "t1": "+8% damage with these weapons against enemies above 50% HP.",
+      "t2": "Prioritize foes above 70% HP; hits make them take +16% from bond weapons for 5s.",
+      "t3": "Bone Bouncer ricochets off enemies above 50% HP without spending bounces."
+    },
+    "arc_conductor": {
+      "name": "Arc Conductor",
+      "t1": "+6% damage and slightly faster attacks with these weapons.",
+      "t2": "Void Ripple marks foes as Conductors (3s). Other bond weapon hits chain 8% damage to all marked foes.",
+      "t3": "Chain damage 8% → 16%; mark lasts 3s → 6s."
+    },
+    "poison_master": {
+      "name": "Poison Master",
+      "t1": "+0.8s duration on debuffs from these weapons.",
+      "t2": "Apply Neurotoxin (5s, 5 stacks): pulses a 1s hard slow every 2s; each stack drains 1% max HP/s (×0.5 on elites).",
+      "t3": "Duration +2s, +2 max stacks (7 total); stronger slow."
+    },
+    "hunter_mark": {
+      "name": "Hunter's Mark",
+      "t1": "+5% crit chance and +10% crit damage with these weapons.",
+      "t2": "Paralysis Gun brands foes: they are targeted first and take +16% from bond weapons.",
+      "t3": "Bond weapons execute branded foes below 16% HP (elite-immune)."
+    }
   },
   "shop": {
     "title": "Permanent Upgrades",

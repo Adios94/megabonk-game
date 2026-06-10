@@ -40,6 +40,12 @@ export interface BehaviorEffects {
    * 返回分配的 id。`id` 由实现填充，caller 提供其它字段。
    */
   spawnAreaEffect(a: Omit<AreaEffectState, 'id'>): number;
+  /**
+   * 羁绊命中钩子（可选）：羁绊内武器命中敌人、伤害已结算后调用，
+   * 触发 T2/T3 机制（奥秘计数 / 导体连锁 / 易伤 / 烙印 / 神经毒素 / 击退冲击 / 余烬引爆）。
+   * 旧测试 / mock 不提供此方法 → 行为零成本。
+   */
+  bondHit?(weaponType: WeaponType, enemy: EnemyState, damage: number, isCrit: boolean): void;
 }
 
 export interface BehaviorContext {

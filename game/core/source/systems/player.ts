@@ -102,6 +102,8 @@ export function createInitialPlayer(config: GameConfig): PlayerState {
     activeWeaponSlots: computeActiveWeaponSlots(startLevel, maxWeaponSlots),
     gold: 0,
     relicStacks: {},
+    bonds: [],
+    bondDamageMods: [],
     comboCount: 0, comboTimer: 0,
     // Shrine bonuses (默认值；charge shrine 奖励会累计到这些字段上)
     shield: 0,

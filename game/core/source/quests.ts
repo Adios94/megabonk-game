@@ -9,7 +9,7 @@ import type { SaveData } from './save.ts';
 export interface Quest {
   id: string;
   description: string;
-  type: 'kill' | 'survive' | 'collect' | 'evolve' | 'level' | 'no_damage' | 'boss' | 'weapons_used';
+  type: 'kill' | 'survive' | 'collect' | 'bond' | 'level' | 'no_damage' | 'boss' | 'weapons_used';
   target: number;
   reward: QuestReward;
 }
@@ -46,11 +46,11 @@ export const QUESTS: Quest[] = [
   { id: 'q13', description: 'quest.reach_level_30', type: 'level', target: 30, reward: { type: 'silver', value: 300 } },
   { id: 'q14', description: 'quest.reach_level_40', type: 'level', target: 40, reward: { type: 'silver', value: 500 } },
 
-  // Evolution quests
-  { id: 'q15', description: 'quest.first_evolution', type: 'evolve', target: 1, reward: { type: 'silver', value: 200 } },
-  { id: 'q16', description: 'quest.evolve_3', type: 'evolve', target: 3, reward: { type: 'weapon_unlock', value: 'shotgun' } },
-  { id: 'q17', description: 'quest.evolve_5', type: 'evolve', target: 5, reward: { type: 'silver', value: 500 } },
-  { id: 'q18', description: 'quest.evolve_8', type: 'evolve', target: 8, reward: { type: 'character_unlock', value: 'skateboard_skeleton' } },
+  // Bond quests（替代旧武器进化任务）
+  { id: 'q15', description: 'quest.first_bond', type: 'bond', target: 1, reward: { type: 'silver', value: 200 } },
+  { id: 'q16', description: 'quest.bond_3', type: 'bond', target: 3, reward: { type: 'weapon_unlock', value: 'shotgun' } },
+  { id: 'q17', description: 'quest.bond_5', type: 'bond', target: 5, reward: { type: 'silver', value: 500 } },
+  { id: 'q18', description: 'quest.bond_8', type: 'bond', target: 8, reward: { type: 'character_unlock', value: 'skateboard_skeleton' } },
 
   // Boss quests
   { id: 'q19', description: 'quest.defeat_boss', type: 'boss', target: 1, reward: { type: 'silver', value: 200 } },
@@ -82,8 +82,8 @@ function getQuestStatProgress(save: SaveData, quest: Quest): number {
       return save.stats.bestSurvivalTime;
     case 'level':
       return save.stats.highestLevel;
-    case 'evolve':
-      return save.stats.totalEvolutions;
+    case 'bond':
+      return save.stats.bondsActivated;
     case 'boss':
       return save.stats.bossesDefeated;
     case 'no_damage':

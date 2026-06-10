@@ -14,6 +14,7 @@ import { CONSUMABLES, rollConsumableForEnemy, rollMiniBossBonusConsumable } from
 import { getTomePower } from '../tomeProgression.ts';
 import { applyCharacterTrait } from '../stats/applyCharacterTrait.ts';
 import { addDamageEvent, checkPlayerDeath } from './helpers.ts';
+import { onPlayerHitBonds } from './bonds.ts';
 import type { ConsumableId, ConsumablePickupState, EnemyState } from '../types.ts';
 import type { Engine } from './types.ts';
 
@@ -234,6 +235,8 @@ export function applyPlayerHit(engine: Engine, rawDamage: number): number {
   player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;
   engine.state.stats.damageTaken += hpDamage + absorbed;
   engine.state.stats.shieldAbsorbed += absorbed;
+  // 铁血反击：受击（含护盾吸收）即触发。
+  onPlayerHitBonds(engine);
   if (hpDamage > 0) {
     addDamageEvent(engine, player.x, 1.5, player.z, hpDamage, false, true);
   }

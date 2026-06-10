@@ -1,5 +1,7 @@
 // === MegaBonk Survivor - Type Definitions ===
 
+import type { Modifier } from './stats/Modifier.ts';
+
 // --- Input ---
 export interface InputState {
   moveX: number; // -1~1
@@ -119,6 +121,29 @@ export type RelicId =
   | 'hourglass'
   | 'iron_heart';
 
+// --- Bonds (羁绊系统; replaces weapon evolutions) ---
+/** 9 条语义羁绊的 id（见 data/bonds.ts）。 */
+export type BondId =
+  | 'iron_blood'      // B1 铁血    N=2  sword / axe
+  | 'arcane'          // B2 奥术    N=4  lightning / flame / void / scorch
+  | 'zero_range'      // B3 零距寸劲 N=4  sword / axe / void / shotgun
+  | 'ember_trail'     // B4 余烬轨迹 N=2  flame / scorch
+  | 'volley'          // B5 弹幕    N=4  bow / shotgun / bone / poison
+  | 'bone_crush'      // B6 碎骨震   N=3  bow / sword / bone
+  | 'arc_conductor'   // B7 弧光导体 N=3  ray / lightning / void
+  | 'poison_master'   // B8 毒师    N=2  poison / paralysis
+  | 'hunter_mark';    // B9 猎标烙印 N=3  bow / ray / paralysis
+
+/** 羁绊等级：0=未激活，1/2/3=已激活档位。 */
+export type BondTier = 0 | 1 | 2 | 3;
+
+/** 局内已激活的羁绊进度。 */
+export interface BondProgress {
+  bondId: BondId;
+  /** 当前激活档位（1..3）。 */
+  tier: BondTier;
+}
+
 // --- Player ---
 export interface PlayerState {
   x: number;
@@ -192,6 +217,25 @@ export interface PlayerState {
   gold: number;
   /** 已获得遗物层数。同 ID 可无限叠加。 */
   relicStacks: Partial<Record<RelicId, number>>;
+  // --- Bonds (羁绊系统) ---
+  /** 局内已激活的羁绊（tier 1..3）。createInitialPlayer 初始化为 []。 */
+  bonds?: BondProgress[];
+  /**
+   * 由 recomputeBondState 预算出的「无条件、按武器 type 限定」的伤害增益修饰符。
+   * computeWeaponDamage 直接读取并按 tag superset-AND 过滤生效。
+   */
+  bondDamageMods?: Modifier[];
+  // --- Bond runtime state（全部 optional；激活对应羁绊后由 systems/bonds 维护）---
+  /** B2 奥术：累计「奥秘」点数。 */
+  bondMystery?: number;
+  /** B2 奥术：本秒已获得的奥秘点数（每秒上限 15）。 */
+  bondMysterySecGain?: number;
+  /** B2 奥术：本秒计时累积。 */
+  bondMysterySecTimer?: number;
+  /** B1 铁血 T2：下次斩击的叠层加成数（受击刷新）。 */
+  bondIronStacks?: number;
+  /** B1 铁血 T3：受击后的暴怒计时（攻速/伤害提升）。 */
+  bondIronRageTimer?: number;
   comboCount: number;
   comboTimer: number;
   // --- Shrine bonuses (累积来自 Charge Shrine 的奖励) ---
@@ -328,6 +372,21 @@ export interface EnemyState {
   slowTimer?: number;
   /** 减速后的速度倍率（0..1，越小越慢；麻痹接近 0）。多源取最强（最小值）。 */
   slowFactor?: number;
+  // --- Bond marks（羁绊 T2/T3 机制；全部 optional）---
+  /** B7 弧光导体：导体标记剩余秒数（被 void_ripple 命中后获得）。 */
+  conductorMarkTimer?: number;
+  /** B6 碎骨震：易伤剩余秒数（受到羁绊内武器伤害 +bondVulnPct）。 */
+  bondVulnTimer?: number;
+  /** B6 碎骨震：易伤增伤比例（如 0.16）。 */
+  bondVulnPct?: number;
+  /** B8 毒师：神经毒素层数。 */
+  neuroStacks?: number;
+  /** B8 毒师：神经毒素剩余秒数。 */
+  neuroTimer?: number;
+  /** B8 毒师：神经毒素周期触发计时器。 */
+  neuroPulseTimer?: number;
+  /** B9 猎标烙印：是否被烙印（不可解除，受羁绊内武器伤害 +16%、优先索敌）。 */
+  hunterBranded?: boolean;
 }
 
 /**
@@ -538,7 +597,7 @@ export type TeleporterState = AltarState;
 
 // --- Upgrades ---
 export type UpgradeRarity = 'common' | 'uncommon' | 'rare' | 'legendary';
-export type UpgradeKind = 'weapon_upgrade' | 'new_weapon' | 'tome';
+export type UpgradeKind = 'weapon_upgrade' | 'new_weapon' | 'tome' | 'bond_activate' | 'bond_upgrade';
 
 export interface UpgradeOption {
   id: string;
@@ -548,6 +607,8 @@ export interface UpgradeOption {
   tomeType?: TomeType;
   /** @deprecated use tomeType */
   passiveType?: TomeType;
+  /** bond_activate / bond_upgrade 选项指向的羁绊。 */
+  bondId?: BondId;
   currentLevel: number;
   newLevel: number;
 }
@@ -595,6 +656,18 @@ export interface DamageEvent {
   isShield?: boolean;
 }
 
+/**
+ * 羁绊视觉特效事件（client 读取后渲染，由 tick 在帧间清空）。
+ *   - arcane_burst：蓝紫光球从玩家头顶飞向目标，命中处生成蓝紫烟雾。
+ *   - ember_explode：余烬羁绊敌人爆炸 —— 在原地生成红色烟雾。
+ */
+export interface BondVfxEvent {
+  kind: 'arcane_burst' | 'ember_explode';
+  x: number;
+  y: number;
+  z: number;
+}
+
 // --- Game State ---
 export type GamePhase = 'menu' | 'playing' | 'level_up' | 'shrine_reward' | 'chest_reward' | 'boss_intro' | 'boss_fight' | 'portal_open' | 'victory' | 'defeat' | 'paused';
 
@@ -631,6 +704,8 @@ export interface GameState {
   boss: BossState | null;
   upgradeOptions: UpgradeOption[] | null;
   damageEvents: DamageEvent[];
+  /** 羁绊视觉特效事件（client 读完后由 tick 清空）。 */
+  bondVfxEvents: BondVfxEvent[];
   /** 空池升级补偿事件（client 读完后由 tick 清空）。 */
   levelUpCompensationEvents: LevelUpCompensationEvent[];
   /** 宝箱开启事件（client 读完后由 tick 清空，用于揭示动画）。 */

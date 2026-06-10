@@ -22,6 +22,8 @@ import {
 import { applyPlayerHit } from './consumables.ts';
 import { applyRelicTargetDamage } from './relics.ts';
 import { applyPoison, applySlow } from './statusEffects.ts';
+import { onBondWeaponHit } from './bonds.ts';
+import { bondConditionalDamageInc } from '../data/bonds.ts';
 import type { Engine } from './types.ts';
 
 // 垂直命中窗口（防止上下层穿模伤害）：
@@ -78,7 +80,11 @@ export function processCollisions(engine: Engine): void {
       const enemy = findEnemyById(engine, id);
       if (!enemy || enemy.hp <= 0) continue;
 
-      const damage = applyRelicTargetDamage(engine, proj.damage, enemy);
+      // 投射物伤害在 spawn 时已折算无条件加成；此处补上「目标相关」的羁绊条件/机制增伤
+      // （贴身、高血量、易伤、烙印…），因为投射物 spawn 时无目标上下文。
+      const condInc = bondConditionalDamageInc(player, proj.weaponType, enemy);
+      const bondScaled = condInc !== 0 ? Math.round(proj.damage * (1 + condInc)) : proj.damage;
+      const damage = applyRelicTargetDamage(engine, bondScaled, enemy);
       enemy.hp -= damage;
       enemy.hitFlashTimer = 0.15;
       engine.state.stats.damageDealt += damage;
@@ -86,6 +92,9 @@ export function processCollisions(engine: Engine): void {
       proj.hitEnemyIds.push(id);
 
       applyKnockback(engine, enemy, proj.x, proj.z);
+
+      // 羁绊命中机制（奥秘 / 导体 / 易伤 / 烙印 / 神经毒素 / 击退冲击 / 余烬引爆）
+      onBondWeaponHit(engine, proj.weaponType, enemy, damage, false);
 
       // 命中附带状态效果（麻痹枪减速 / 其它中毒投射物）
       if (proj.onHitStatus) {

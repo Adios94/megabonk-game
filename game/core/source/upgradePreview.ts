@@ -196,6 +196,9 @@ export function getUpgradePreviewLines(option: UpgradeOption, player: PlayerStat
       return option.weaponType ? previewNewWeapon(option.weaponType) : [];
     case 'tome':
       return previewTome(option);
+    case 'bond_activate':
+    case 'bond_upgrade':
+      return [{ labelKey: 'upgrade.stat.bondTier', value: `T${option.currentLevel} → T${option.newLevel}` }];
     default:
       return [];
   }

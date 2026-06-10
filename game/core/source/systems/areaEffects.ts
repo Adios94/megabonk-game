@@ -13,6 +13,7 @@
 import { distanceBetween } from '../physics.ts';
 import { addDamageEvent } from './helpers.ts';
 import { applyPoison } from './statusEffects.ts';
+import { onBondWeaponHit } from './bonds.ts';
 import { GAS_POISON_REFRESH_DURATION } from '../config.ts';
 import type { AreaEffectState, EnemyState, BossState } from '../types.ts';
 import type { Engine } from './types.ts';
@@ -48,6 +49,7 @@ export function tickAreaEffects(engine: Engine, dt: number): void {
             if (enemy.hp <= 0) continue;
             if (distanceBetween(ae.x, ae.z, enemy.x, enemy.z) > ae.radius) continue;
             applyPoison(enemy, dps, ae.poisonDuration ?? GAS_POISON_REFRESH_DURATION);
+            onBondWeaponHit(engine, ae.weaponType, enemy, Math.round(dps), false);
           }
           // boss 不可中毒 → 直接结算等量直伤
           if (boss && boss.hp > 0 && distanceBetween(ae.x, ae.z, boss.x, boss.z) <= ae.radius) {
@@ -71,6 +73,7 @@ export function tickAreaEffects(engine: Engine, dt: number): void {
           if (distanceBetween(ae.x, ae.z, enemy.x, enemy.z) <= ae.radius) {
             damageEnemy(engine, enemy, ae.damage, ae);
             ae.hitEnemyIds.push(enemy.id);
+            onBondWeaponHit(engine, ae.weaponType, enemy, ae.damage, ae.isCrit ?? false);
           }
         }
         if (boss && boss.hp > 0 && !ae.hitEnemyIds.includes(-1)) {
@@ -94,6 +97,7 @@ export function tickAreaEffects(engine: Engine, dt: number): void {
             if (enemy.hp <= 0) continue;
             if (distanceBetween(ae.x, ae.z, enemy.x, enemy.z) > ae.radius) continue;
             damageEnemy(engine, enemy, ae.damage, ae);
+            onBondWeaponHit(engine, ae.weaponType, enemy, ae.damage, ae.isCrit ?? false);
           }
           if (boss && boss.hp > 0 && distanceBetween(ae.x, ae.z, boss.x, boss.z) <= ae.radius) {
             damageBoss(engine, boss, ae.damage, ae);

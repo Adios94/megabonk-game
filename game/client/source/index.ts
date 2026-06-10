@@ -18,13 +18,17 @@ import {
   DEFAULT_GAME_CONFIG,
   CHARACTER_CONFIGS,
   WEAPON_STATS,
-  WEAPON_EVOLUTIONS,
   TOME_MAX_LEVELS,
   SHOP_UPGRADES,
   QUESTS,
   TIER_CONFIGS,
   CHEST_INTERACT_RADIUS,
   RELICS,
+  BONDS,
+  evalBondCounts,
+  bondThresholds,
+  type BondId,
+  type BondTier,
   getChestGoldCost,
   loadSave,
   purchaseUpgrade,
@@ -317,6 +321,10 @@ const CONSUMABLE_EMOJI: Record<string, string> = {
 
 const consumableEmojiTextureCache = new Map<string, THREE.Texture>();
 let paralysisTriangleTexture: THREE.Texture | null = null;
+let neuroTriangleTexture: THREE.Texture | null = null;
+let hunterCrosshairTexture: THREE.Texture | null = null;
+let conductorGlowTexture: THREE.Texture | null = null;
+let arcaneOrbTexture: THREE.Texture | null = null;
 
 function getConsumableEmojiTexture(consumableId: string): THREE.Texture {
   const cached = consumableEmojiTextureCache.get(consumableId);
@@ -408,11 +416,149 @@ function getParalysisTriangleTexture(): THREE.Texture {
   return paralysisTriangleTexture;
 }
 
+/** 毒师神经毒素：墨绿色倒三角标记（形似麻痹三角，配色改墨绿）。 */
+function getNeuroTriangleTexture(): THREE.Texture {
+  if (neuroTriangleTexture) return neuroTriangleTexture;
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, 128, 128);
+
+  ctx.shadowColor = 'rgba(0,0,0,0.7)';
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = 'rgba(6,28,12,0.95)';
+  ctx.beginPath();
+  ctx.moveTo(20, 26);
+  ctx.lineTo(108, 26);
+  ctx.lineTo(64, 110);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(31,94,42,0.95)'; // 墨绿
+  ctx.beginPath();
+  ctx.moveTo(29, 34);
+  ctx.lineTo(99, 34);
+  ctx.lineTo(64, 98);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(4,18,8,0.98)';
+  ctx.lineWidth = 8;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(20, 26);
+  ctx.lineTo(108, 26);
+  ctx.lineTo(64, 110);
+  ctx.closePath();
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(120,200,110,0.85)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(38, 43);
+  ctx.lineTo(90, 43);
+  ctx.stroke();
+
+  neuroTriangleTexture = new THREE.CanvasTexture(canvas);
+  neuroTriangleTexture.colorSpace = THREE.SRGBColorSpace;
+  return neuroTriangleTexture;
+}
+
+/** 猎标烙印：红色狙击瞄准标识（圆环 + 十字）。 */
+function getHunterCrosshairTexture(): THREE.Texture {
+  if (hunterCrosshairTexture) return hunterCrosshairTexture;
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, 128, 128);
+
+  ctx.shadowColor = 'rgba(255,40,40,0.7)';
+  ctx.shadowBlur = 8;
+  ctx.strokeStyle = 'rgba(255,40,40,0.95)';
+  ctx.lineWidth = 7;
+  ctx.beginPath();
+  ctx.arc(64, 64, 40, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+  ctx.lineWidth = 5;
+  // 十字（四段，留出中心空隙）
+  ctx.beginPath();
+  ctx.moveTo(64, 8); ctx.lineTo(64, 40);
+  ctx.moveTo(64, 88); ctx.lineTo(64, 120);
+  ctx.moveTo(8, 64); ctx.lineTo(40, 64);
+  ctx.moveTo(88, 64); ctx.lineTo(120, 64);
+  ctx.stroke();
+
+  // 中心点
+  ctx.fillStyle = 'rgba(255,60,60,0.95)';
+  ctx.beginPath();
+  ctx.arc(64, 64, 5, 0, Math.PI * 2);
+  ctx.fill();
+
+  hunterCrosshairTexture = new THREE.CanvasTexture(canvas);
+  hunterCrosshairTexture.colorSpace = THREE.SRGBColorSpace;
+  return hunterCrosshairTexture;
+}
+
+/** 弧光导体：蓝色径向发光（加色混合贴敌人身上）。 */
+function getConductorGlowTexture(): THREE.Texture {
+  if (conductorGlowTexture) return conductorGlowTexture;
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, 128, 128);
+  const grad = ctx.createRadialGradient(64, 64, 4, 64, 64, 62);
+  grad.addColorStop(0, 'rgba(120,200,255,0.85)');
+  grad.addColorStop(0.4, 'rgba(40,120,255,0.45)');
+  grad.addColorStop(1, 'rgba(20,60,200,0.0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(64, 64, 62, 0, Math.PI * 2);
+  ctx.fill();
+  conductorGlowTexture = new THREE.CanvasTexture(canvas);
+  conductorGlowTexture.colorSpace = THREE.SRGBColorSpace;
+  return conductorGlowTexture;
+}
+
+/** 奥术奥秘爆发光球：蓝紫径向发光。 */
+function getArcaneOrbTexture(): THREE.Texture {
+  if (arcaneOrbTexture) return arcaneOrbTexture;
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, 128, 128);
+  const grad = ctx.createRadialGradient(64, 64, 2, 64, 64, 62);
+  grad.addColorStop(0, 'rgba(220,210,255,0.95)');
+  grad.addColorStop(0.35, 'rgba(150,90,255,0.8)');
+  grad.addColorStop(0.7, 'rgba(80,60,230,0.35)');
+  grad.addColorStop(1, 'rgba(60,40,180,0.0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(64, 64, 62, 0, Math.PI * 2);
+  ctx.fill();
+  arcaneOrbTexture = new THREE.CanvasTexture(canvas);
+  arcaneOrbTexture.colorSpace = THREE.SRGBColorSpace;
+  return arcaneOrbTexture;
+}
+
 const RARITY_COLORS: Record<string, string> = {
   common: '#aaaaaa',
   uncommon: '#44cc44',
   rare: '#4488ff',
   legendary: '#ffaa00',
+};
+
+// 羁绊档位边框：T1 铜 / T2 银 / T3 金
+const BOND_TIER_COLORS: Record<number, string> = {
+  1: '#cd7f32',
+  2: '#c8c8d4',
+  3: '#ffcc00',
 };
 
 const SHRINE_REWARD_ICONS: Record<string, string> = {
@@ -1635,6 +1781,12 @@ export class GameScene {
   private enemyAnimStates: Map<number, string> = new Map(); // id → current anim name
   private enemyAnimActions: Map<number, Map<string, THREE.AnimationAction>> = new Map(); // id → actions map
   private paralysisTriangleSprites: Map<number, THREE.Sprite[]> = new Map(); // enemy id → paralysis marker sprites
+  private neuroMarkerSprites: Map<number, THREE.Sprite> = new Map(); // 毒师神经毒素 墨绿倒三角
+  private hunterMarkerSprites: Map<number, THREE.Sprite> = new Map(); // 猎标烙印 红色瞄准圈
+  private conductorGlowSprites: Map<number, THREE.Sprite> = new Map(); // 弧光导体 蓝色发光
+  private mysteryNumberSprite: THREE.Sprite | null = null; // 奥术奥秘计数（玩家头顶）
+  private mysteryNumberValue = -1;
+  private arcaneBurstOrbs: { sprite: THREE.Sprite; from: THREE.Vector3; to: THREE.Vector3; t: number; life: number }[] = [];
   private projectileMesh!: THREE.InstancedMesh;
   private axeObjects: Map<number, THREE.Object3D> = new Map(); // axe projectile id → cloned model
   private weaponObjects: Map<number, THREE.Object3D> = new Map(); // other weapon projectiles → cloned model
@@ -1684,6 +1836,7 @@ export class GameScene {
   private weaponSlotsContainer!: HTMLDivElement;
   private tomesSlotsContainer!: HTMLDivElement;
   private relicSlotsContainer!: HTMLDivElement;
+  private bondSlotsContainer!: HTMLDivElement;
   private itemTooltip: HTMLDivElement | null = null;
   private itemTooltipContent = new WeakMap<HTMLElement, string>();
   private bossHpContainer!: HTMLDivElement;
@@ -2842,6 +2995,12 @@ export class GameScene {
     this.goldLabel.style.cssText += 'position:absolute;top:40px;left:16px;';
     this.hudContainer.appendChild(this.goldLabel);
 
+    // Bond diamonds (top-left, below the gold badge — does not overlap difficulty/gold)
+    this.bondSlotsContainer = document.createElement('div');
+    this.bondSlotsContainer.dataset.cameraBlock = 'true';
+    this.bondSlotsContainer.style.cssText = 'position:absolute;top:72px;left:14px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;pointer-events:auto;';
+    this.hudContainer.appendChild(this.bondSlotsContainer);
+
     // Weapon slots container (bottom-left)
     this.weaponSlotsContainer = document.createElement('div');
     this.weaponSlotsContainer.dataset.cameraBlock = 'true';
@@ -2873,6 +3032,7 @@ export class GameScene {
     this.installItemTooltipHandlers(this.weaponSlotsContainer);
     this.installItemTooltipHandlers(this.tomesSlotsContainer);
     this.installItemTooltipHandlers(this.relicSlotsContainer);
+    this.installItemTooltipHandlers(this.bondSlotsContainer);
 
     // Boss HP bar (top-center, hidden by default)
     this.bossHpContainer = document.createElement('div');
@@ -3932,6 +4092,7 @@ export class GameScene {
     }
 
     this.updateParalysisTriangleSprites(enemies);
+    this.updateBondEnemyMarkers(enemies);
 
     // Hide InstancedMesh (legacy — keep count at 0)
     for (const [, mesh] of this.enemyMeshes) {
@@ -3995,6 +4156,68 @@ export class GameScene {
       }
       this.paralysisTriangleSprites.delete(id);
     }
+  }
+
+  /** 维护单精灵覆盖标记（neuro / hunter / conductor），随敌人位置浮动并脉冲。 */
+  private updateSingleMarkerSprites(
+    enemies: EnemyState[],
+    store: Map<number, THREE.Sprite>,
+    makeTexture: () => THREE.Texture,
+    predicate: (e: EnemyState) => boolean,
+    cfg: { y: number; scale: number; renderOrder: number; additive: boolean; baseOpacity: number },
+  ): void {
+    const alive = new Set<number>();
+    const time = performance.now() * 0.004;
+    for (const e of enemies) {
+      if (e.hp <= 0 || !predicate(e)) continue;
+      alive.add(e.id);
+      let sprite = store.get(e.id);
+      if (!sprite) {
+        const material = new THREE.SpriteMaterial({
+          map: makeTexture(),
+          color: 0xffffff,
+          transparent: true,
+          opacity: cfg.baseOpacity,
+          depthWrite: false,
+          depthTest: true,
+          blending: cfg.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+        });
+        sprite = new THREE.Sprite(material);
+        sprite.renderOrder = cfg.renderOrder;
+        this.scene.add(sprite);
+        store.set(e.id, sprite);
+      }
+      const pulse = 0.85 + Math.sin(time * 3.2 + e.id * 0.5) * 0.15;
+      sprite.position.set(e.x, e.y + cfg.y, e.z);
+      sprite.scale.setScalar(cfg.scale * pulse);
+      sprite.material.opacity = cfg.baseOpacity * (0.85 + Math.sin(time * 4 + e.id) * 0.15);
+      sprite.visible = true;
+    }
+    for (const [id, sprite] of store) {
+      if (alive.has(id)) continue;
+      this.scene.remove(sprite);
+      sprite.material.dispose();
+      store.delete(id);
+    }
+  }
+
+  /** 羁绊敌人覆盖标记：毒师墨绿倒三角 / 猎标红色瞄准圈 / 弧光导体蓝色发光。 */
+  private updateBondEnemyMarkers(enemies: EnemyState[]): void {
+    this.updateSingleMarkerSprites(
+      enemies, this.neuroMarkerSprites, getNeuroTriangleTexture,
+      (e) => (e.neuroStacks ?? 0) > 0,
+      { y: 1.5, scale: 0.5, renderOrder: 6, additive: false, baseOpacity: 0.9 },
+    );
+    this.updateSingleMarkerSprites(
+      enemies, this.hunterMarkerSprites, getHunterCrosshairTexture,
+      (e) => e.hunterBranded === true,
+      { y: 1.9, scale: 0.55, renderOrder: 7, additive: false, baseOpacity: 0.95 },
+    );
+    this.updateSingleMarkerSprites(
+      enemies, this.conductorGlowSprites, getConductorGlowTexture,
+      (e) => (e.conductorMarkTimer ?? 0) > 0,
+      { y: 0.9, scale: 1.8, renderOrder: 2, additive: true, baseOpacity: 0.8 },
+    );
   }
 
   private renderProjectiles(projectiles: ProjectileState[]): void {
@@ -5564,12 +5787,192 @@ export class GameScene {
     }
   }
 
+  /** 生成奥术「奥秘」计数贴图（蓝紫渐变描边数字）。 */
+  private makeMysteryNumberTexture(value: number): THREE.Texture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 96;
+    const ctx = canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, 128, 96);
+    const text = String(value);
+    ctx.font = 'bold 60px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const grad = ctx.createLinearGradient(0, 18, 0, 78);
+    grad.addColorStop(0, '#c79bff');
+    grad.addColorStop(1, '#5a8cff');
+    ctx.lineWidth = 7;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(10,4,30,0.92)';
+    ctx.strokeText(text, 64, 50);
+    ctx.fillStyle = grad;
+    ctx.fillText(text, 64, 50);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
+  /** 奥术 T2+：在玩家头顶显示当前奥秘数值（蓝紫渐变）。 */
+  private updateMysteryNumber(state: GameState): void {
+    const player = state.player;
+    const arcaneTier = player.bonds?.find(b => b.bondId === 'arcane')?.tier ?? 0;
+    const value = Math.floor(player.bondMystery ?? 0);
+    if (arcaneTier < 2 || !player.alive) {
+      if (this.mysteryNumberSprite) this.mysteryNumberSprite.visible = false;
+      return;
+    }
+    if (!this.mysteryNumberSprite) {
+      const mat = new THREE.SpriteMaterial({ transparent: true, depthWrite: false, depthTest: false, opacity: 0.96 });
+      this.mysteryNumberSprite = new THREE.Sprite(mat);
+      this.mysteryNumberSprite.renderOrder = 20;
+      this.scene.add(this.mysteryNumberSprite);
+    }
+    const sprite = this.mysteryNumberSprite;
+    if (value !== this.mysteryNumberValue) {
+      this.mysteryNumberValue = value;
+      const oldMap = sprite.material.map;
+      sprite.material.map = this.makeMysteryNumberTexture(value);
+      sprite.material.needsUpdate = true;
+      oldMap?.dispose();
+    }
+    sprite.visible = true;
+    sprite.position.set(player.x, player.y + 2.5, player.z);
+    sprite.scale.set(1.15, 0.86, 1);
+  }
+
+  /** 消费羁绊 VFX 事件：奥术光球 / 余烬红色爆炸烟雾。 */
+  private processBondVfxEvents(state: GameState): void {
+    const player = state.player;
+    for (const evt of state.bondVfxEvents ?? []) {
+      if (evt.kind === 'arcane_burst') {
+        const from = new THREE.Vector3(player.x, player.y + 2.5, player.z);
+        const to = new THREE.Vector3(evt.x, evt.y, evt.z);
+        const mat = new THREE.SpriteMaterial({
+          map: getArcaneOrbTexture(), transparent: true, depthWrite: false,
+          blending: THREE.AdditiveBlending, opacity: 1,
+        });
+        const sprite = new THREE.Sprite(mat);
+        sprite.renderOrder = 18;
+        sprite.scale.setScalar(1.8);
+        sprite.position.copy(from);
+        this.scene.add(sprite);
+        // 起手闪光，强调发射
+        this.spawnBillboard({
+          texture: 'muzzle', x: from.x, y: from.y, z: from.z,
+          scale: 1.6, endScale: 2.6, lifetime: 0.22, opacityCurve: 'flash',
+          opacity: 0.95, color: 0xa97bff, rotation: Math.random() * Math.PI * 2,
+        });
+        this.arcaneBurstOrbs.push({ sprite, from, to, t: 0, life: 0.42 });
+      } else if (evt.kind === 'ember_explode') {
+        this.emitEmberExplosion(evt.x, evt.y, evt.z);
+      }
+    }
+  }
+
+  /** 推进奥术光球；沿途留蓝紫尾迹，抵达目标时生成蓝紫烟雾。 */
+  private updateArcaneBurstOrbs(dt: number): void {
+    for (let i = this.arcaneBurstOrbs.length - 1; i >= 0; i--) {
+      const orb = this.arcaneBurstOrbs[i];
+      const prevK = Math.min(1, orb.t / orb.life);
+      orb.t += dt;
+      const k = Math.min(1, orb.t / orb.life);
+      orb.sprite.position.lerpVectors(orb.from, orb.to, k);
+      orb.sprite.position.y += Math.sin(k * Math.PI) * 0.8; // 抛物线小拱
+      // 脉动放大，强调存在感
+      orb.sprite.scale.setScalar(1.7 + Math.sin(orb.t * 40) * 0.25);
+
+      // 尾迹：在本帧位移区间补几颗蓝紫拖尾粒子（独立于帧率）
+      const pos = orb.sprite.position;
+      const trailCount = 3;
+      for (let s = 0; s < trailCount; s++) {
+        const kk = prevK + (k - prevK) * (s / trailCount);
+        const tx = orb.from.x + (orb.to.x - orb.from.x) * kk + (Math.random() - 0.5) * 0.25;
+        const ty = orb.from.y + (orb.to.y - orb.from.y) * kk + Math.sin(kk * Math.PI) * 0.8 + (Math.random() - 0.5) * 0.25;
+        const tz = orb.from.z + (orb.to.z - orb.from.z) * kk + (Math.random() - 0.5) * 0.25;
+        this.spawnParticle(
+          tx, ty, tz,
+          (Math.random() - 0.5) * 0.6, (Math.random() - 0.3) * 0.6, (Math.random() - 0.5) * 0.6,
+          1.4 + Math.random() * 0.8, 0.3 + Math.random() * 0.2,
+          0.62 + Math.random() * 0.2, 0.45 + Math.random() * 0.15, 1.0,
+        );
+      }
+      // 朝相机的发光拖影
+      this.spawnBillboard({
+        texture: 'smoke', x: pos.x, y: pos.y, z: pos.z,
+        scale: 1.3, endScale: 0.5, lifetime: 0.28, opacityCurve: 'fadeOut',
+        opacity: 0.65, color: 0x9a6bff, blending: 'additive',
+        rotation: Math.random() * Math.PI * 2,
+      });
+
+      if (k >= 1) {
+        this.emitArcaneSmoke(orb.to.x, orb.to.y, orb.to.z);
+        this.scene.remove(orb.sprite);
+        orb.sprite.material.dispose(); // 贴图为共享缓存，不 dispose
+        this.arcaneBurstOrbs.splice(i, 1);
+      }
+    }
+  }
+
+  /** 蓝紫色范围烟雾（奥秘爆发命中点）。 */
+  private emitArcaneSmoke(x: number, y: number, z: number): void {
+    for (let i = 0; i < 18; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 2.2 + Math.random() * 3.0;
+      this.spawnParticle(
+        x, y, z,
+        Math.cos(a) * sp, 0.6 + Math.random() * 2.2, Math.sin(a) * sp,
+        2.6 + Math.random() * 1.8, 0.45 + Math.random() * 0.35,
+        0.55 + Math.random() * 0.2, 0.4 + Math.random() * 0.2, 0.98,
+      );
+    }
+    // 命中爆闪（朝相机，强对比强调命中）
+    this.spawnBillboard({
+      texture: 'muzzle', x, y, z, scale: 2.0, endScale: 3.6, lifetime: 0.22,
+      opacityCurve: 'flash', opacity: 1.0, color: 0xc8a0ff,
+      rotation: Math.random() * Math.PI * 2, blending: 'additive',
+    });
+    // 蓝紫扩散烟团
+    this.spawnBillboard({
+      texture: 'smoke', x, y, z, scale: 2.0, endScale: 4.4, lifetime: 0.6,
+      opacityCurve: 'fadeOut', opacity: 0.8, color: 0x8a5cff,
+      rotation: Math.random() * Math.PI * 2, blending: 'additive',
+    });
+    // 地面蓝紫光环
+    this.spawnBillboard({
+      texture: 'scorch', x, y: 0.06, z, scale: 1.6, endScale: 3.0, lifetime: 0.45,
+      opacityCurve: 'fadeOut', opacity: 0.6, color: 0x6a4cff,
+      facing: 'up', rotation: Math.random() * Math.PI * 2, blending: 'additive',
+    });
+  }
+
+  /** 红色爆炸烟雾（余烬羁绊敌人爆炸）。 */
+  private emitEmberExplosion(x: number, y: number, z: number): void {
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 2 + Math.random() * 2.5;
+      this.spawnParticle(
+        x, y, z,
+        Math.cos(a) * sp, 0.8 + Math.random() * 1.8, Math.sin(a) * sp,
+        2.4 + Math.random() * 1.5, 0.3 + Math.random() * 0.25,
+        0.95, 0.25 + Math.random() * 0.2, 0.12,
+      );
+    }
+    this.spawnBillboard({
+      texture: 'smoke', x, y, z, scale: 1.8, endScale: 3.6, lifetime: 0.55,
+      opacityCurve: 'fadeOut', opacity: 0.8, color: 0xcc2a1a,
+      rotation: Math.random() * Math.PI * 2, blending: 'normal',
+    });
+  }
+
   private updateVFX(state: GameState, dt: number): void {
     const enemies = state.enemies;
     const player = state.player;
 
     this.updateAreaEffects(state, dt);
     this.updateEnemyStatusVfx(state);
+    this.updateMysteryNumber(state);
+    this.processBondVfxEvents(state);
+    this.updateArcaneBurstOrbs(dt);
 
     // --- Emit particles based on game events ---
 
@@ -5967,6 +6370,25 @@ export class GameScene {
       this.relicSlotsContainer.appendChild(slot);
     }
 
+    // --- Bond Diamonds (top-left, below gold) ---
+    this.bondSlotsContainer.innerHTML = '';
+    for (const prog of p.bonds ?? []) {
+      const def = BONDS[prog.bondId];
+      if (!def) continue;
+      const tierColor = BOND_TIER_COLORS[prog.tier] ?? BOND_TIER_COLORS[1];
+      const slot = document.createElement('div');
+      slot.style.cssText = 'width:32px;height:32px;position:relative;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:help;';
+      this.setItemTooltip(slot, this.createBondTooltipHtml(prog.bondId, prog.tier, state));
+      const diamond = document.createElement('div');
+      diamond.style.cssText = `position:absolute;inset:2px;transform:rotate(45deg);background:rgba(10,10,22,0.82);border:2px solid ${tierColor};border-radius:5px;box-shadow:0 0 10px ${tierColor}66;`;
+      slot.appendChild(diamond);
+      const icon = document.createElement('span');
+      icon.style.cssText = 'position:relative;z-index:1;font-size:14px;line-height:1;';
+      icon.textContent = def.icon;
+      slot.appendChild(icon);
+      this.bondSlotsContainer.appendChild(slot);
+    }
+
     // --- Boss HP Bar with GSAP animation ---
     if (state.boss && state.boss.hp > 0) {
       // 使用 GSAP 淡入显示
@@ -6283,18 +6705,11 @@ export class GameScene {
         speed: base.speed + g.speed,
       };
     } else {
-      const idx = Math.max(0, Math.min((weapon.evolved ? levelStats.length - 1 : weapon.level - 1), levelStats.length - 1));
+      const idx = Math.max(0, Math.min(weapon.level - 1, levelStats.length - 1));
       effective = levelStats[idx];
     }
 
-    if (!weapon.evolved) return effective;
-    const evolution = WEAPON_EVOLUTIONS.find(e => e.baseWeapon === weapon.type);
-    if (!evolution) return effective;
-    return {
-      ...effective,
-      damage: Math.round(effective.damage * evolution.damageMultiplier),
-      projectileCount: effective.projectileCount + 1,
-    };
+    return effective;
   }
 
   private createWeaponTooltipHtml(weapon: WeaponState): string {
@@ -6430,6 +6845,77 @@ export class GameScene {
     });
   }
 
+  private createBondTooltipHtml(bondId: BondId, tier: BondTier, state: GameState): string {
+    const def = BONDS[bondId];
+    const player = state.player;
+    const tierColor = BOND_TIER_COLORS[tier] ?? BOND_TIER_COLORS[1];
+    const name = t(`bond.${bondId}.name`);
+    const tierName = t(`bond.tier.${tier}`);
+
+    // 武器：已获取正常显示（含等级），未获取黯淡
+    const weaponRows = def.weapons.map((wt) => {
+      const owned = player.weapons.find(w => w.type === wt);
+      const wname = t(`upgrade.weapon.${wt}`);
+      if (owned) {
+        return `<div style="color:#e8e4ff;">• ${escapeTooltipText(wname)} <span style="color:#9aa0c0;">Lv.${owned.level}</span></div>`;
+      }
+      return `<div style="color:#65657c;">• ${escapeTooltipText(wname)}</div>`;
+    }).join('');
+
+    // 三档效果：已生效白色高亮，未生效灰色
+    const effectRow = (n: BondTier): string => {
+      const active = tier >= n;
+      const textColor = active ? '#ffffff' : '#65657c';
+      const badgeColor = active ? (BOND_TIER_COLORS[n] ?? '#cd7f32') : '#4a4a5a';
+      const txt = t(`bond.${bondId}.t${n}`);
+      return `<div style="display:flex;gap:6px;margin-top:4px;">
+        <span style="flex-shrink:0;color:${badgeColor};font-weight:700;">T${n}</span>
+        <span style="color:${textColor};">${escapeTooltipText(txt)}</span>
+      </div>`;
+    };
+
+    const nextHtml = this.bondNextConditionHtml(bondId, tier, player);
+
+    return `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+        <div style="width:7px;height:24px;border-radius:999px;background:${tierColor};box-shadow:0 0 12px ${tierColor}aa;"></div>
+        <div>
+          <div style="font-size:14px;font-weight:800;color:#fff;">${escapeTooltipText(def.icon)} ${escapeTooltipText(name)}</div>
+          <div style="font-size:10px;color:${tierColor};font-weight:700;letter-spacing:0.4px;">${escapeTooltipText(tierName)} · T${tier}</div>
+        </div>
+      </div>
+      <div style="color:#b9b4cc;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;margin:6px 0 2px;">${escapeTooltipText(t('bond.weaponsLabel'))}</div>
+      ${weaponRows}
+      <div style="color:#b9b4cc;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;margin:8px 0 0;">${escapeTooltipText(t('bond.effectsLabel'))}</div>
+      ${effectRow(1 as BondTier)}${effectRow(2 as BondTier)}${effectRow(3 as BondTier)}
+      <div style="border-top:1px solid rgba(255,255,255,0.12);margin-top:8px;padding-top:6px;">${nextHtml}</div>
+    `;
+  }
+
+  private bondNextConditionHtml(bondId: BondId, tier: BondTier, player: GameState['player']): string {
+    if (tier >= 3) {
+      return `<span style="color:#ffcc00;font-weight:700;">${escapeTooltipText(t('bond.max'))}</span>`;
+    }
+    const def = BONDS[bondId];
+    const th = bondThresholds(def.weapons.length);
+    const counts = evalBondCounts(player, def);
+    const toTier = (tier + 1) as BondTier;
+    const lines: string[] = [];
+    if (toTier === 1) {
+      lines.push(t('bond.cond.weapons', { k: String(th.t1k), have: String(counts.k) }));
+    } else if (toTier === 2) {
+      lines.push(t('bond.cond.weapons', { k: String(th.t2k), have: String(counts.k) }));
+      lines.push(t('bond.cond.sum', { sum: String(th.t2sum), have: String(counts.lSum) }));
+    } else {
+      lines.push(t('bond.cond.weapons', { k: String(th.t3k), have: String(counts.k) }));
+      lines.push(t('bond.cond.sum', { sum: String(th.t3sum), have: String(counts.lSum) }));
+      lines.push(t('bond.cond.min', { min: String(th.t3min), have: String(counts.lMin) }));
+    }
+    const header = t('bond.next', { tier: String(toTier) });
+    const rows = lines.map(l => `<div style="color:#cfd3e8;">${escapeTooltipText(l)}</div>`).join('');
+    return `<div style="color:#b9b4cc;font-weight:700;margin-bottom:2px;">${escapeTooltipText(header)}</div>${rows}`;
+  }
+
   // ===========================================================================
   // Damage Numbers
   // ===========================================================================
@@ -6522,21 +7008,29 @@ export class GameScene {
 
   private createUpgradeCard(option: UpgradeOption, player: GameState['player']): HTMLDivElement {
     const card = document.createElement('div');
-    const borderColor = RARITY_COLORS[option.rarity] ?? '#aaaaaa';
+    const isBond = option.kind === 'bond_activate' || option.kind === 'bond_upgrade';
+    // 羁绊卡片：发光金黄边框，与普通武器/典籍卡片区分
+    const borderColor = isBond ? '#ffd633' : (RARITY_COLORS[option.rarity] ?? '#aaaaaa');
+    const restShadow = isBond
+      ? '0 0 18px rgba(255,210,40,0.65),0 4px 12px rgba(0,0,0,0.5)'
+      : '0 4px 12px rgba(0,0,0,0.5)';
+    const hoverShadow = isBond
+      ? '0 0 26px rgba(255,210,40,0.9),0 6px 20px rgba(255,210,40,0.5)'
+      : `0 6px 20px ${borderColor}44`;
 
     card.style.cssText = `
       width:160px;padding:16px;background:rgba(20,20,40,0.95);border:2px solid ${borderColor};
       border-radius:12px;cursor:pointer;text-align:center;transition:transform 0.15s,box-shadow 0.15s;
-      box-shadow:0 4px 12px rgba(0,0,0,0.5);
+      box-shadow:${restShadow};
     `;
 
     card.addEventListener('mouseenter', () => {
       card.style.transform = 'scale(1.05)';
-      card.style.boxShadow = `0 6px 20px ${borderColor}44`;
+      card.style.boxShadow = hoverShadow;
     });
     card.addEventListener('mouseleave', () => {
       card.style.transform = 'scale(1)';
-      card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
+      card.style.boxShadow = restShadow;
     });
 
     // Icon / Kind indicator
@@ -6544,6 +7038,9 @@ export class GameScene {
     iconEl.style.cssText = 'font-size:24px;margin-bottom:6px;';
     if (option.kind === 'new_weapon') iconEl.textContent = '⚔️';
     else if (option.kind === 'weapon_upgrade') iconEl.textContent = '⬆️';
+    else if (option.kind === 'bond_activate' || option.kind === 'bond_upgrade') {
+      iconEl.textContent = option.bondId ? BONDS[option.bondId].icon : '🔗';
+    }
     else iconEl.textContent = '📖';
     card.appendChild(iconEl);
 
@@ -6606,6 +7103,10 @@ export class GameScene {
     if (option.kind === 'new_weapon' || option.kind === 'weapon_upgrade') {
       return t(`upgrade.weapon.${option.weaponType}`);
     }
+    if (option.kind === 'bond_activate' || option.kind === 'bond_upgrade') {
+      const label = option.kind === 'bond_activate' ? t('bond.activate') : t('bond.upgrade');
+      return option.bondId ? `${t(`bond.${option.bondId}.name`)} — ${label}` : label;
+    }
     const tomeType = option.tomeType ?? option.passiveType;
     return t(`upgrade.tome.${tomeType}`);
   }
@@ -6613,6 +7114,9 @@ export class GameScene {
   private getUpgradeDesc(option: UpgradeOption): string {
     if (option.kind === 'new_weapon' || option.kind === 'weapon_upgrade') {
       return t(`upgrade.weapon.${option.weaponType}_desc`);
+    }
+    if (option.kind === 'bond_activate' || option.kind === 'bond_upgrade') {
+      return option.bondId ? t(`bond.${option.bondId}.t${option.newLevel}`) : '';
     }
     const tomeType = option.tomeType ?? option.passiveType;
     return t(`upgrade.tome.${tomeType}_desc`);
@@ -7869,7 +8373,7 @@ function getQuestCategory(type: Quest['type']): QuestCategory {
       return 'challenge';
     case 'survive':
     case 'level':
-    case 'evolve':
+    case 'bond':
       return 'growth';
     case 'collect':
       return 'wealth';

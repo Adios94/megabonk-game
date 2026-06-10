@@ -11,13 +11,14 @@ import { chase } from '../behaviors/chase.ts';
 import { makeEnemy, makeAiContext, makePlayer } from './_fixtures.ts';
 
 describe('chase brain', () => {
-  it('在错峰帧 (i%4===aiGroup) 把 target 设为 player 坐标', () => {
+  it('在错峰帧 (enemy.aiPhase===aiGroup) 把 target 设为 player 坐标', () => {
     const player = makePlayer({ x: 5, z: 7 });
     const enemy = makeEnemy(1, 'skeleton_soldier', 0, 0);
+    enemy.aiPhase = 0;       // 与 ctx.aiGroup=0 相同 → 错峰帧
     enemy.targetX = -999;
     enemy.targetZ = -999;
     const ctx = makeAiContext({ player, aiGroup: 0 });
-    chase(enemy, ctx, 0);  // i=0, aiGroup=0 → 0%4===0
+    chase(enemy, ctx, 0);
     expect(enemy.targetX).toBe(5);
     expect(enemy.targetZ).toBe(7);
   });
@@ -25,10 +26,11 @@ describe('chase brain', () => {
   it('非错峰帧不重算 target', () => {
     const player = makePlayer({ x: 5, z: 7 });
     const enemy = makeEnemy(1, 'skeleton_soldier', 0, 0);
+    enemy.aiPhase = 1;       // 与 ctx.aiGroup=0 不同 → 非错峰帧
     enemy.targetX = 10;
     enemy.targetZ = 10;
     const ctx = makeAiContext({ player, aiGroup: 0 });
-    chase(enemy, ctx, 1);  // i=1, aiGroup=0 → 1%4!==0
+    chase(enemy, ctx, 1);
     // target 保持
     expect(enemy.targetX).toBe(10);
     expect(enemy.targetZ).toBe(10);

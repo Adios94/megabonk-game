@@ -25,22 +25,22 @@ export const dive: EnemyBehaviorFn = (enemy, ctx, i) => {
   switch (enemy.diveState) {
     case 'flying': {
       enemy.y = 3;
-      // 错峰重算target（只在对应aiPhase帧计算）
+      // 错峰重算 target（只在对应 aiPhase 帧计算，节省 CPU）
       if (enemy.aiPhase === ctx.aiGroup) {
         enemy.targetX = player.x;
         enemy.targetZ = player.z;
-
-        // 错峰检查攻击冷却
-        if (enemy.attackCooldown <= 0) {
-          enemy.diveState = 'diving';
-          enemy.diveTimer = 0.4;
-          enemy.chargeTargetX = player.x;
-          enemy.chargeTargetZ = player.z;
-        }
       }
       applyMovement(enemy, ctx);
       // applyMovement 不会改 enemy.y（type==='gargoyle' 跳过地形 y）
       // speedMult dive=1.5 在 applyMovement 里生效, 等价 legacy moveEnemy
+
+      // 起跳判定每帧检查（不可错峰，否则俯冲起手从 60Hz 降到 15Hz，节奏卡顿）
+      if (enemy.attackCooldown <= 0) {
+        enemy.diveState = 'diving';
+        enemy.diveTimer = 0.4;
+        enemy.chargeTargetX = player.x;
+        enemy.chargeTargetZ = player.z;
+      }
       break;
     }
     case 'diving': {

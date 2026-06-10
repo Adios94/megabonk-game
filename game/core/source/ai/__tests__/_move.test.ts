@@ -61,8 +61,8 @@ describe('applyMovement 横向阻挡（阶段 2/3）', () => {
     enemy.speed = 6;
     const ctx = makeAiContext({ dt: 1 / 60, geo });
     applyMovement(enemy, ctx);
-    // gargoyle 直接走 dt 距离，z 从 0 推进 0.1
-    expect(enemy.z).toBeCloseTo(0.1, 5);
+    // gargoyle behavior='dive' → speedMult 1.5：z 从 0 推进 speed 6 * 1.5 * dt 1/60 = 0.15
+    expect(enemy.z).toBeCloseTo(0.15, 5);
     // y 不变（飞行单位不贴地）
     expect(enemy.y).toBe(3);
   });

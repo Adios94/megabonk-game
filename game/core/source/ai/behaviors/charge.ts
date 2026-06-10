@@ -19,22 +19,24 @@ export const charge: EnemyBehaviorFn = (enemy, ctx, i) => {
 
   switch (enemy.chargeState) {
     case 'idle': {
-      // 错峰重算target（只在对应aiPhase帧计算）
-      if (enemy.aiPhase === ctx.aiGroup) {
-        const dx = enemy.x - player.x;
-        const dz = enemy.z - player.z;
-        const dist = Math.sqrt(dx * dx + dz * dz);
-        if (dist < 15 && enemy.attackCooldown <= 0) {
-          enemy.chargeState = 'windup';
-          enemy.chargeTimer = 0.8;
-          enemy.chargeTargetX = player.x;
-          enemy.chargeTargetZ = player.z;
-        } else {
+      // 蓄力起手判定每帧检查（不可错峰，否则起手从 60Hz 降到 15Hz）。
+      const dx = enemy.x - player.x;
+      const dz = enemy.z - player.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < 15 && enemy.attackCooldown <= 0) {
+        // 进入蓄力的当帧不移动（等价 legacy：windup 起手前最后一帧站定）
+        enemy.chargeState = 'windup';
+        enemy.chargeTimer = 0.8;
+        enemy.chargeTargetX = player.x;
+        enemy.chargeTargetZ = player.z;
+      } else {
+        // 错峰重算 target（只在对应 aiPhase 帧计算），但每帧都朝 target 移动。
+        if (enemy.aiPhase === ctx.aiGroup) {
           enemy.targetX = player.x;
           enemy.targetZ = player.z;
         }
+        applyMovement(enemy, ctx);
       }
-      applyMovement(enemy, ctx);
       break;
     }
     case 'windup': {

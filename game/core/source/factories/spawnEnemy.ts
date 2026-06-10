@@ -114,8 +114,9 @@ export function spawnEnemy(
     }
   }
 
+  const id = ctx.nextId();
   return {
-    id: ctx.nextId(),
+    id,
     type,
     x,
     y: type === 'gargoyle' ? 3 : 0,
@@ -130,8 +131,8 @@ export function spawnEnemy(
     attackCooldownMax: def.attackCooldown,
     targetX: ctx.player.x,
     targetZ: ctx.player.z,
-    /** AI错峰计算相位（0-3），随机分配 */
-    aiPhase: Math.floor(Math.random() * 4),
+    /** AI 错峰计算相位（0-3）：用 id % 4 确定性分配，零 RNG 消耗，保证回放/seed 稳定 */
+    aiPhase: id % 4,
     chargeState: 'idle',
     chargeTimer: 0,
     chargeTargetX: 0,

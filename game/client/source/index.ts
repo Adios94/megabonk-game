@@ -1887,6 +1887,9 @@ export class GameScene {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
     }
+    // kill 所有 GSAP tween/timeline（含 repeat:-1 的无限脉冲），否则它们会指向已移除 DOM 永久 tick、跨局泄漏
+    gsapAnimations.cleanup();
+    this.levelPulseAnimation = null;
     this.removeDisplayListener?.();
     this.cameraOrbit?.dispose();
     this.platformInput.dispose();
@@ -2963,6 +2966,7 @@ export class GameScene {
     for (let i = 0; i < DAMAGE_NUM_POOL_SIZE; i++) {
       const el = document.createElement('div');
       el.style.cssText = 'position:fixed;pointer-events:none;font-size:16px;font-weight:bold;opacity:0;transition:none;z-index:200;text-shadow:0 1px 3px rgba(0,0,0,0.9);white-space:nowrap;';
+      el.dataset.animId = String(i);  // 稳定 id：GSAP 按元素 keying，池复用时 cancel 上一个 tween
       document.body.appendChild(el);
       this.damageNums.push(el);
     }
@@ -4947,22 +4951,17 @@ export class GameScene {
       ? t('upgrade.compensationSilver', { amount: String(evt.amount) })
       : t('upgrade.compensationGold', { amount: String(evt.amount) });
 
-    el.textContent = label;
-    el.style.color = isSilver ? '#cce0ff' : '#ffd700';
-    el.style.left = `${screenX}px`;
-    el.style.top = `${screenY}px`;
-    el.style.fontSize = '20px';
-    el.style.fontWeight = 'bold';
-    el.style.textShadow = isSilver
-      ? '0 0 8px rgba(120,160,255,0.9)'
-      : '0 0 8px rgba(255,200,0,0.9)';
-    el.style.opacity = '1';
-    el.style.transform = 'translateY(0px) scale(1.1)';
-    el.style.transition = 'none';
-    void el.offsetWidth;
-    el.style.transition = 'opacity 0.7s ease-out, transform 0.7s ease-out';
-    el.style.opacity = '0';
-    el.style.transform = 'translateY(-70px) scale(0.85)';
+    // 走 GSAP（与伤害数字共用同一池 + 同一 keying），避免 CSS transition 与 GSAP 争 transform。
+    gsapAnimations.showFloatText(el, {
+      text: label,
+      color: isSilver ? '#cce0ff' : '#ffd700',
+      x: screenX,
+      y: screenY,
+      fontSize: 20,
+      textShadow: isSilver
+        ? '0 0 8px rgba(120,160,255,0.9)'
+        : '0 0 8px rgba(255,200,0,0.9)',
+    });
   }
 
   private showCompensationToast(evt: LevelUpCompensationEvent): void {

@@ -31,6 +31,11 @@ const CAM_HEIGHT_BASE = 5;
 const LOOK_AT_HEIGHT = 1.5;
 const LOOK_AT_LEAD = 2;
 const FOLLOW_RATE = 14;
+// 碰撞推镜：墙/平台挡在镜头与角色之间时，沿视线把镜头平滑拉近。
+const CAM_COLLISION_BUFFER = 0.35; // 镜头离遮挡物的余量
+const CAM_MIN_FRAC = 0.18;         // 最近不小于满臂长的此比例（别钻进角色）
+const CAM_SHRINK_RATE = 30;        // 拉近：快（避免穿墙 / 角色被挡）
+const CAM_GROW_RATE = 3.5;         // 恢复：慢（去顿挫）
 
 export class CameraOrbit {
   private yaw = 0;
@@ -43,6 +48,13 @@ export class CameraOrbit {
   private dragLastX = 0;
   private dragLastY = 0;
   private enabled = true;
+  // 碰撞推镜状态
+  private occluders: THREE.Object3D[] = [];
+  private readonly raycaster = new THREE.Raycaster();
+  private camFrac = 1; // 当前臂长比例（平滑），1=满臂长
+  private readonly _pivot = new THREE.Vector3();
+  private readonly _fullCam = new THREE.Vector3();
+  private readonly _dir = new THREE.Vector3();
   /** 当前指针是否位于可交互 UI 上（HUD 按钮 / 面板 / 菜单等）。 */
   private pointerOverUi = false;
   private cleanups: Array<() => void> = [];
@@ -137,10 +149,37 @@ export class CameraOrbit {
     const cp = Math.cos(this.pitch);
     const sp = Math.sin(this.pitch);
 
-    camera.position.set(
+    // 期望（无碰撞）镜头位 + 以角色上身为枢轴
+    this._fullCam.set(
       this.ghostX - sy * cp * CAM_DISTANCE,
       this.ghostY + CAM_HEIGHT_BASE + sp * CAM_DISTANCE,
       this.ghostZ - cy * cp * CAM_DISTANCE,
+    );
+    this._pivot.set(this.ghostX, this.ghostY + LOOK_AT_HEIGHT, this.ghostZ);
+
+    // 碰撞推镜：从枢轴朝镜头射线，命中遮挡物则按命中距离收臂长
+    let targetFrac = 1;
+    if (this.occluders.length > 0) {
+      this._dir.copy(this._fullCam).sub(this._pivot);
+      const fullLen = this._dir.length();
+      if (fullLen > 1e-3) {
+        this._dir.multiplyScalar(1 / fullLen);
+        this.raycaster.set(this._pivot, this._dir);
+        this.raycaster.far = fullLen;
+        const hits = this.raycaster.intersectObjects(this.occluders, true);
+        if (hits.length > 0) {
+          targetFrac = Math.min(1, Math.max(CAM_MIN_FRAC, (hits[0].distance - CAM_COLLISION_BUFFER) / fullLen));
+        }
+      }
+    }
+    // 拉近快、恢复慢（去顿挫）
+    const rate = targetFrac < this.camFrac ? CAM_SHRINK_RATE : CAM_GROW_RATE;
+    this.camFrac += (targetFrac - this.camFrac) * (1 - Math.exp(-rate * Math.max(dt, 1e-4)));
+
+    camera.position.set(
+      this._pivot.x + (this._fullCam.x - this._pivot.x) * this.camFrac,
+      this._pivot.y + (this._fullCam.y - this._pivot.y) * this.camFrac,
+      this._pivot.z + (this._fullCam.z - this._pivot.z) * this.camFrac,
     );
 
     camera.lookAt(
@@ -148,6 +187,11 @@ export class CameraOrbit {
       this.ghostY + LOOK_AT_HEIGHT,
       this.ghostZ + cy * LOOK_AT_LEAD,
     );
+  }
+
+  /** 设置碰撞推镜的射线目标（关卡静态遮挡物：墙/平台等，不含怪/特效/地面）。 */
+  setOccluders(objects: THREE.Object3D[]): void {
+    this.occluders = objects;
   }
 
   dispose(): void {

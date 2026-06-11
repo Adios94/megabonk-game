@@ -1949,6 +1949,8 @@ export class GameScene {
   // 镜头朝向 + 跟随逻辑全部封装在 CameraOrbit（systems/cameraOrbit.ts）。
   // 这里只持有引用；事件监听、yaw/pitch 状态、平滑 lookAt 都在 CameraOrbit 内。
   private cameraOrbit!: CameraOrbit;
+  /** 碰撞推镜的静态遮挡物（关卡平台/支柱 + 加载关卡根；不含怪/特效/地面）。 */
+  private cameraOccluders: THREE.Object3D[] = [];
   // 主角无敌闪烁效果（半透明脉冲，避免硬 visible 频闪）。封装在 PlayerInvincibilityFx。
   private readonly playerFx = new PlayerInvincibilityFx();
   private currentFOV = 60;
@@ -2201,9 +2203,13 @@ export class GameScene {
       const levelScene = cloneSkeleton(loadedLevel.scene) as THREE.Object3D;
       levelScene.name = 'LevelRoot';
       this.scene.add(levelScene);
+      this.cameraOccluders.push(levelScene); // 加载关卡整根作为镜头遮挡目标
     } else {
       this.buildArena();
     }
+
+    // 把收集到的静态遮挡物交给镜头做碰撞推镜
+    this.cameraOrbit.setOccluders(this.cameraOccluders);
 
     // =========================================================================
     // 3. Hidden grid lines (required by type)
@@ -2226,6 +2232,10 @@ export class GameScene {
     clone.rotation.y = rotY;
     clone.scale.set(scale, scale, scale);
     this.scene.add(clone);
+    // 只把结构性大件（平台/支柱）登记为镜头遮挡物，避免管道/招牌等小道具造成噪声推镜。
+    if (modelKey.startsWith('platform_') || (modelKey as string).startsWith('support')) {
+      this.cameraOccluders.push(clone);
+    }
   }
 
   private buildArena(): void {

@@ -867,8 +867,8 @@ function createToonGradientMap(): THREE.DataTexture {
   // MeshToonMaterial 按 NdotL 采样此 ramp 的 .r 通道；NearestFilter 保证硬断层不被插值糊掉。
   // 暗端用高地板（130 而非 0）：背光面仍明亮、阴影不发黑发闷 —— 荒野乱斗的高亮通透感。
   const colors = new Uint8Array([
-    130, 130, 130, 255,  // 阴影（高地板，不死黑）
-    195, 195, 195, 255,  // 中间调
+    85, 85, 85, 255,     // 阴影（拉开对比找回立体感，但不死黑）
+    180, 180, 180, 255,  // 中间调
     255, 255, 255, 255,  // 高光
   ]);
   const gradMap = new THREE.DataTexture(colors, colors.length / 4, 1, THREE.RGBAFormat);
@@ -1991,9 +1991,9 @@ export class GameScene {
 
     // Outline Effect (cel-shading edge lines)
     this.outlineEffect = new OutlineEffect(this.renderer, {
-      defaultThickness: 0.0045, // 黑描边（比原始 0.003 略粗，但不过粗）
+      defaultThickness: 0.003, // 黑描边（细一点，更轻）
       defaultColor: [0, 0, 0],
-      defaultAlpha: 0.9,
+      defaultAlpha: 0.8,
     });
 
     // Scene

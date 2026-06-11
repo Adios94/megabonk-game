@@ -920,13 +920,41 @@ function convertToToonMaterials(root: THREE.Object3D): void {
     const mesh = child as THREE.Mesh;
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     const toonMats = materials.map((mat) => {
-      if (mat instanceof THREE.MeshToonMaterial) return mat; // already toon
+      if (mat instanceof THREE.MeshToonMaterial) {
+        if (mat.map) {
+          mat.map.anisotropy = 8;
+          mat.map.minFilter = THREE.LinearMipmapLinearFilter;
+          mat.map.magFilter = THREE.LinearFilter;
+        }
+        if (mat.emissiveMap) {
+          mat.emissiveMap.anisotropy = 8;
+          mat.emissiveMap.minFilter = THREE.LinearMipmapLinearFilter;
+          mat.emissiveMap.magFilter = THREE.LinearFilter;
+        }
+        return mat; // already toon
+      }
       const oldMat = mat as THREE.MeshStandardMaterial | THREE.MeshPhongMaterial | THREE.MeshLambertMaterial;
       const color = (oldMat.color ?? new THREE.Color(0xffffff)).clone();
       boostMaterialSaturation(color, 1.5); // 敌人/场景/道具统一高饱和（与玩家 ×1.6 对齐）
+
+      const map = oldMat.map ?? null;
+      if (map) {
+        map.anisotropy = 8;
+        map.minFilter = THREE.LinearMipmapLinearFilter;
+        map.magFilter = THREE.LinearFilter;
+      }
+      const emissiveMap = (oldMat as any).emissiveMap ?? null;
+      if (emissiveMap) {
+        emissiveMap.anisotropy = 8;
+        emissiveMap.minFilter = THREE.LinearMipmapLinearFilter;
+        emissiveMap.magFilter = THREE.LinearFilter;
+      }
+
       const toon = new THREE.MeshToonMaterial({
         color,
-        map: oldMat.map ?? null,
+        map,
+        emissive: (oldMat as any).emissive ?? new THREE.Color(0x000000),
+        emissiveMap,
         gradientMap: toonGradientMap,
         side: oldMat.side ?? THREE.FrontSide,
         transparent: oldMat.transparent ?? false,
@@ -1757,6 +1785,7 @@ export class GameScene {
   /** Boss 的 base scale（auto-scaled to TARGET_BOSS_HEIGHT），attack/enrage 脉冲基于此值。 */
   private bossBaseScale = 1.0;
   private playerSpotLight!: THREE.SpotLight;
+  private dirLight!: THREE.DirectionalLight;
 
   // Weapon orbs (legacy — disabled, kept to avoid breaking older saves)
   private weaponOrbMesh!: THREE.InstancedMesh;
@@ -1978,7 +2007,7 @@ export class GameScene {
 
     // Renderer
     this.renderer = new THREE.WebGLRenderer({
-      antialias: false,
+      antialias: true,
       powerPreference: 'high-performance',
     });
     this.renderer.shadowMap.enabled = true;
@@ -2125,19 +2154,21 @@ export class GameScene {
     this.scene.add(ambient);
 
     // 暖色方向主光（被阶梯化的那束）——降低强度/对比，明暗反差柔和但断层仍在。
-    const dir = new THREE.DirectionalLight('#FFF5E0', 1.5);
-    dir.name = 'DirectionalLight';
-    dir.position.set(5, 10, 5);
-    dir.castShadow = true;
-    dir.shadow.mapSize.set(2048, 2048);
-    dir.shadow.bias = -0.001;
-    dir.shadow.camera.near = 0.5;
-    dir.shadow.camera.far = 80;
-    dir.shadow.camera.left = -60;
-    dir.shadow.camera.right = 60;
-    dir.shadow.camera.top = 60;
-    dir.shadow.camera.bottom = -60;
-    this.scene.add(dir);
+    this.dirLight = new THREE.DirectionalLight('#FFF5E0', 1.5);
+    this.dirLight.name = 'DirectionalLight';
+    this.dirLight.position.set(5, 10, 5);
+    this.dirLight.castShadow = true;
+    this.dirLight.shadow.mapSize.set(2048, 2048);
+    // 缩小并跟随玩家的 shadow frustum，把 2048 阴影分辨率集中到近景，减少锯齿。
+    this.dirLight.shadow.bias = -0.0005;
+    this.dirLight.shadow.camera.near = 0.5;
+    this.dirLight.shadow.camera.far = 80;
+    this.dirLight.shadow.camera.left = -25;
+    this.dirLight.shadow.camera.right = 25;
+    this.dirLight.shadow.camera.top = 25;
+    this.dirLight.shadow.camera.bottom = -25;
+    this.scene.add(this.dirLight);
+    this.scene.add(this.dirLight.target);
 
     // 半球补光：天蓝/地暖给暗部一点通透的环境色（删去第二个冗余半球）。
     const hemi = new THREE.HemisphereLight('#bfe4ff', '#b8a888', 0.7);
@@ -3586,6 +3617,13 @@ export class GameScene {
     // === Spotlight follows player ===
     this.playerSpotLight.position.set(p.x, p.y + 12, p.z);
     this.playerSpotLight.target.position.set(p.x, p.y, p.z);
+
+    // === Directional light and shadow camera follow player ===
+    if (this.dirLight) {
+      // Keep offsets relative to player to maintain lighting angle (east-south light direction)
+      this.dirLight.position.set(p.x + 15, p.y + 30, p.z + 15);
+      this.dirLight.target.position.set(p.x, p.y, p.z);
+    }
 
     // Ring pulse when many pickups attracted
     const ringMat = this.playerRing.material as THREE.MeshBasicMaterial;

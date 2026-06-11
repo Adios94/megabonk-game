@@ -2067,15 +2067,15 @@ export class GameScene {
   // ===========================================================================
 
   private setupLighting(): void {
-    // 低环境光：只给阴影侧一个不至于全黑的底，避免平滑环境光淹没 toon 阶梯。
-    // （MeshToonMaterial 只对“直接光”按 gradientMap 量化阶梯；ambient/hemi 是平滑的，
-    //  过强会把 2-3 段明暗台阶冲淡成近似线性。）
-    const ambient = new THREE.AmbientLight('#bfcfe6', 0.35);
+    // 通透阳光基底：抬高环境光让暗部仍有色彩（不死黑）。
+    // 仍低于平行光，使 toon 阶梯保留：平行光被 gradientMap 量化成断层、主导明面；
+    // 环境光只是给阴影侧兜底色彩。
+    const ambient = new THREE.AmbientLight('#e8eeff', 0.6);
     ambient.name = 'AmbientLight';
     this.scene.add(ambient);
 
-    // 强暖色方向主光 —— 这是“被阶梯化”的那束光，主导画面 → 台阶清晰。
-    const dir = new THREE.DirectionalLight('#FFF5E0', 2.6);
+    // 暖色方向主光（被阶梯化的那束）——降低强度/对比，明暗反差柔和但断层仍在。
+    const dir = new THREE.DirectionalLight('#FFF5E0', 1.5);
     dir.name = 'DirectionalLight';
     dir.position.set(5, 10, 5);
     dir.castShadow = true;
@@ -2089,8 +2089,8 @@ export class GameScene {
     dir.shadow.camera.bottom = -60;
     this.scene.add(dir);
 
-    // 单个弱半球补光（平滑光，压低以免冲淡 toon 阶梯）；删去第二个冗余半球。
-    const hemi = new THREE.HemisphereLight('#87CEEB', '#8B7355', 0.4);
+    // 半球补光：天蓝/地暖给暗部一点通透的环境色（删去第二个冗余半球）。
+    const hemi = new THREE.HemisphereLight('#87CEEB', '#8B7355', 0.5);
     hemi.name = 'HemisphereLight';
     this.scene.add(hemi);
 

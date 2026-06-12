@@ -1329,7 +1329,7 @@ async function loadModels(): Promise<void> {
 //     col_*   → 可站立地面（height = 包围盒顶面 box.max.y）
 //     wall_*  → 实心遮挡（bottomY~topY = 包围盒）
 //     climb_* → 攀爬体（同 wall_）
-//     spawn_player / spawn_boss / spawn_altar / spawn_chest / spawn_enemy_*
+//     spawn_player / spawn_altar / spawn_chest / spawn_enemy_*
 //     其它    → 视觉模型（直接随场景渲染）
 //
 // === 双文件模式（推荐生产用）===
@@ -1338,7 +1338,7 @@ async function loadModels(): Promise<void> {
 //
 //   - 双文件都存在 → 视觉用 visual 文件，碰撞 100% 来自 col 文件（视觉文件里的 col_*
 //     prefix 会被忽略，避免双源冲突）
-//   - 只有 visual  → 单文件模式（向后兼容），从 visual 同时解析视觉 + 碰撞
+//   - 只有 visual  → 不启用关卡逻辑，避免误读视觉 GLB 里的旧 spawn_* Empty
 //   - 只有 col     → 灰盒/纯碰撞测试，col 同时充当视觉
 //   - 都不在       → 回退到内置 Neon Crucible
 
@@ -1564,16 +1564,16 @@ function parseLevelGltf(root: THREE.Object3D): LevelData {
       pushColOrRamp(node, _box, data, true);
     } else if (name.startsWith('spawn_')) {
       node.getWorldPosition(_vec);
-      const p = { x: _vec.x, z: _vec.z };
-      if (name.startsWith('spawn_player')) data.spawnPoints.player = p;
-      else if (name.startsWith('spawn_boss')) data.spawnPoints.boss = p;
+      const p = { x: _vec.x, y: _vec.y, z: _vec.z };
+      if (name.startsWith('spawn_player')) (data.spawnPoints.players ??= []).push(p);
+      else if (name.startsWith('spawn_boss')) (data.spawnPoints.bosses ??= []).push(p);
       else if (name.startsWith('spawn_altar') || name.startsWith('spawn_teleporter')) {
         (data.spawnPoints.altars ??= []).push(p);
       } else if (name.startsWith('spawn_chest')) {
         data.chestSpawns.push(p);
       } else if (name.startsWith('spawn_enemy_')) {
         const key = name.replace(/\.\d+$/, '');
-        (data.spawnPoints.enemyZones ??= {})[key] = p;
+        ((data.spawnPoints.enemyZones ??= {})[key] ??= []).push(p);
       }
     }
   });
@@ -1584,13 +1584,12 @@ function parseLevelGltf(root: THREE.Object3D): LevelData {
 /**
  * 尝试加载关卡 glb。支持「双文件模式」：
  *   - level_${name}.glb       视觉高模（必须，缺则尝试只用 col）
- *   - level_${name}_col.glb   碰撞低模（可选；存在则碰撞数据 100% 来自这里）
+ *   - level_${name}_col.glb   碰撞低模（关卡逻辑 / spawn_* 只从这里解析）
  *
- * 任一文件 404 都会被静默捕获，并按可用文件降级。两个都没有 → 回退到内置 arena。
+ * 碰撞文件缺失时回退到内置 arena，避免视觉 GLB 里的旧 Empty 影响逻辑。
  *
- * 白盒迭代单文件：把导出的关卡丢到 public/models/levels/level_whitebox.glb 即可。
- * 生产双文件：再导出一个低模到 level_whitebox_col.glb；视觉文件里的 col_/wall_/climb_/ramp_
- * 不必清理（双文件模式下会被忽略），但建议清理掉避免迷惑。
+ * 生产双文件：导出视觉 level_whitebox.glb + 碰撞 level_whitebox_col.glb；
+ * 视觉文件里的 col_/wall_/climb_/ramp_/spawn_* 一律不参与逻辑。
  */
 async function tryLoadLevel(name: string = DEFAULT_LEVEL_NAME): Promise<void> {
   const visualPath = `/models/levels/level_${name}.glb`;
@@ -1605,18 +1604,20 @@ async function tryLoadLevel(name: string = DEFAULT_LEVEL_NAME): Promise<void> {
     visualResult.status === 'fulfilled' ? visualResult.value.scene : null;
   const colScene = colResult.status === 'fulfilled' ? colResult.value.scene : null;
 
-  if (!visualScene && !colScene) {
+  if (!colScene) {
     loadedLevel = null;
-    console.log(`[Level] No level at ${visualPath} (or ${colPath}) — using built-in arena.`);
+    console.warn(
+      `[Level] Missing collision level ${colPath}; using built-in arena. ` +
+      `Spawn/collision markers are never read from ${visualPath}.`,
+    );
     return;
   }
 
   // 决定视觉源 / 碰撞源：
   //   两个都在 → visual 渲染，col 解析（双源分离）
-  //   只有 visual → 都用 visual（单文件兼容模式）
   //   只有 col → 都用 col（纯灰盒）
-  const renderScene = visualScene ?? colScene!;
-  const colSource = colScene ?? visualScene!;
+  const renderScene = visualScene ?? colScene;
+  const colSource = colScene;
 
   renderScene.name = 'LoadedLevel';
   convertToToonMaterials(renderScene);
@@ -1645,12 +1646,12 @@ async function tryLoadLevel(name: string = DEFAULT_LEVEL_NAME): Promise<void> {
     });
   }
 
-  const mode = visualScene && colScene ? 'two-file' : visualScene ? 'visual-only' : 'col-only';
+  const mode = visualScene ? 'two-file' : 'col-only';
   console.log(
     `[Level] Loaded (${mode}) ${visualScene ? visualPath : ''}${visualScene && colScene ? ' + ' : ''}${colScene ? colPath : ''}: ` +
       `${data.collisionRects.length} col, ${data.walls.length} wall, ` +
       `${data.climbVolumes.length} climb, ${data.ramps.length} ramp, ${data.chestSpawns.length} chest, ` +
-      `player=${!!data.spawnPoints.player} boss=${!!data.spawnPoints.boss}`,
+      `player=${data.spawnPoints.players?.length ?? 0} altar=${data.spawnPoints.altars?.length ?? 0} logic=collision`,
   );
 }
 
@@ -2120,7 +2121,7 @@ export class GameScene {
 
     // Renderer
     this.renderer = new THREE.WebGLRenderer({
-      antialias: false,
+      antialias: true,
       powerPreference: 'high-performance',
     });
     // 关实时方向光阴影（每帧多渲一遍全场景，手机最贵的一项）——改用脚下 blob 圆阴影。
@@ -3598,15 +3599,15 @@ export class GameScene {
       pillar.renderOrder = 10001;
       group.add(pillar);
     };
-    if (data.spawnPoints?.player) markSpawn(data.spawnPoints.player.x, data.spawnPoints.player.z, 'player');
-    if (data.spawnPoints?.boss) markSpawn(data.spawnPoints.boss.x, data.spawnPoints.boss.z, 'boss');
+    for (const p of data.spawnPoints?.players ?? []) markSpawn(p.x, p.z, 'player');
+    for (const p of data.spawnPoints?.bosses ?? []) markSpawn(p.x, p.z, 'boss');
     for (const a of data.spawnPoints?.altars ?? []) markSpawn(a.x, a.z, 'altar');
     for (const c of data.chestSpawns ?? []) markSpawn(c.x, c.z, 'chest');
 
     console.log(
       `[GM] CollisionDebug: ${data.collisionRects.length} col, ${data.walls?.length ?? 0} wall, ` +
       `${data.climbVolumes?.length ?? 0} climb, ${data.ramps?.length ?? 0} ramp, ` +
-      `${(data.spawnPoints?.altars?.length ?? 0) + (data.chestSpawns?.length ?? 0) + (data.spawnPoints?.player ? 1 : 0) + (data.spawnPoints?.boss ? 1 : 0)} spawn`,
+      `${(data.spawnPoints?.players?.length ?? 0) + (data.spawnPoints?.bosses?.length ?? 0) + (data.spawnPoints?.altars?.length ?? 0) + (data.chestSpawns?.length ?? 0)} spawn`,
     );
     return group;
   }

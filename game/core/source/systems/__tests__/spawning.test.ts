@@ -51,6 +51,30 @@ describe('tickSpawning', () => {
     expect(engine.spawnTimer).toBeGreaterThan(0);
   });
 
+  it('关卡模式仍按玩家附近环带刷怪，不使用 spawn_enemy_* Empty', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const engine = makeEngine();
+    engine.config.level = {
+      collisionRects: [{ cx: 0, cz: 0, halfW: 20, halfD: 20, height: 0, baseY: -1 }],
+      walls: [],
+      climbVolumes: [],
+      ramps: [],
+      spawnPoints: {
+        enemyZones: {
+          spawn_enemy: [{ x: 12, z: -8 }],
+        },
+      },
+      chestSpawns: [],
+    };
+    engine.state.gameTime = 5;
+    engine.spawnTimer = -0.1;
+    tickSpawning(engine, 0.05);
+    expect(engine.state.enemies.length).toBeGreaterThan(0);
+    expect(engine.state.enemies.every(e => e.x !== 12 || e.z !== -8)).toBe(true);
+    expect(engine.state.enemies.every(e => Math.hypot(e.x - engine.state.player.x, e.z - engine.state.player.z) >= 5)).toBe(true);
+    expect(engine.state.enemies.every(e => Math.hypot(e.x - engine.state.player.x, e.z - engine.state.player.z) <= 10)).toBe(true);
+  });
+
   it('finalSwarm 时间窗 (480-540) 设 finalSwarm=true', () => {
     const engine = makeEngine();
     engine.state.gameTime = 500;
@@ -197,6 +221,30 @@ describe('checkBossSpawn', () => {
     expect(engine.state.enemies).toHaveLength(0);
     // Boss 出场点应该贴近触发祭坛
     expect(engine.state.boss!.x).toBeCloseTo(5);
-    expect(engine.state.boss!.z).toBeCloseTo(3); // 7 - 4
+    expect(engine.state.boss!.z).toBeCloseTo(7);
+  });
+
+  it('Boss 绑定触发祭坛，忽略旧 spawn_boss 标记', () => {
+    const engine = makeEngine();
+    engine.config = {
+      ...engine.config,
+      tier: 1,
+      level: {
+        collisionRects: [],
+        walls: [],
+        climbVolumes: [],
+        ramps: [],
+        spawnPoints: {
+          bosses: [{ x: 20, z: 30 }],
+        },
+        chestSpawns: [],
+      },
+    };
+    engine.state.altars = [{
+      x: 5, z: 7, phase: 'boss_active', summonTimer: ALTAR_SUMMON_DURATION, summonDuration: ALTAR_SUMMON_DURATION,
+    }];
+    checkBossSpawn(engine);
+    expect(engine.state.boss!.x).toBeCloseTo(5);
+    expect(engine.state.boss!.z).toBeCloseTo(7);
   });
 });

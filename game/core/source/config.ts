@@ -69,8 +69,8 @@ export const HEALTH_DROP_CHANCE = 0.03;       // 3% chance for full heart (50 HP
 export const HEALTH_SMALL_DROP_CHANCE = 0.08; // 8% chance for half heart (25 HP)
 
 // Chest settings
-export const CHEST_COUNT = 6;                 // Initial chests per game
-export const CHEST_MAX_ACTIVE = 6;            // Maximum unopened chests in the field
+export const CHEST_COUNT = 10;                // Initial chests per game
+export const CHEST_MAX_ACTIVE = 10;           // Maximum unopened chests in the field
 export const CHEST_RESPAWN_MIN_SECONDS = 30;
 export const CHEST_RESPAWN_MAX_SECONDS = 60;
 export const CHEST_INTERACT_RADIUS = 2.5;

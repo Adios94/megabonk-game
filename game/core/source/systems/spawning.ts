@@ -324,14 +324,13 @@ export function checkBossSpawn(engine: Engine): void {
 
   const tierCfg = TIER_CONFIGS[engine.config.tier];
 
-  // Boss 出场点优先用关卡 spawn_boss；否则选第一个 boss_active 祭坛附近，再否则地图中心偏北。
+  // Boss 与触发的 spawn_altar 绑定；关卡模式不再需要单独的 spawn_boss 标记。
   // 注：boss.y 始终为 0 —— Boss 没有重力 / 跟地循环（无任何 boss.y 重新赋值），
   // 用 getTerrainHeight 取出来的非 0 值会让 boss 卡在半空。需要 boss 站到高平台上时
   // 应在 client renderBoss 里基于 boss.x/z 即时贴地，而不是把高度写进逻辑状态。
-  const bossSpawn = engine.config.level?.spawnPoints?.boss;
   const triggerAltar = engine.state.altars.find(a => a.phase === 'boss_active');
-  const bossX = bossSpawn ? bossSpawn.x : triggerAltar ? triggerAltar.x : 0;
-  const bossZ = bossSpawn ? bossSpawn.z : triggerAltar ? triggerAltar.z - 4 : -engine.config.mapSize * 0.3;
+  const bossX = triggerAltar ? triggerAltar.x : 0;
+  const bossZ = triggerAltar ? triggerAltar.z : -engine.config.mapSize * 0.3;
 
   engine.state.boss = {
     x: bossX,

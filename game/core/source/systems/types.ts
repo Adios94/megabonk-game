@@ -37,6 +37,10 @@ export interface Engine {
   // ─── 时序 / 帧间状态 ───
   spawnTimer: number;
   chestRespawnTimer: number;
+  /** 最近完整开启的一组 3 个 chest spawn key；补刷时暂不回池。 */
+  chestLockedSpawnKeys: string[];
+  /** 正在累计的新开 chest spawn key；满 3 个后替换 locked 组。 */
+  chestPendingSpawnKeys: string[];
   /** 错峰组 0..3, 每帧末 cycle. ranged/chase 行为用 (i % 4 === aiGroup) 错峰 */
   aiGroup: number;
   miniBossTimer: number;

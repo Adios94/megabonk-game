@@ -96,6 +96,8 @@ export function makeEngine(overrides: Partial<Engine> = {}): Engine {
     nextAreaEffectId: 100,
     spawnTimer: 0,
     chestRespawnTimer: 999,
+    chestLockedSpawnKeys: [],
+    chestPendingSpawnKeys: [],
     aiGroup: 0,
     miniBossTimer: 0,
     landingTimer: 0,

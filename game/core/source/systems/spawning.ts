@@ -20,6 +20,7 @@ import {
 } from '../config.ts';
 import { ENEMIES } from '../data/enemies.ts';
 import { spawnEnemy } from '../factories/spawnEnemy.ts';
+import { pickRandomOne } from '../spawnPick.ts';
 import { getTomePower } from '../tomeProgression.ts';
 import type { EnemyType } from '../types.ts';
 import type { Engine } from './types.ts';
@@ -125,6 +126,7 @@ function spawnMiniBoss(engine: Engine): void {
 
   const baseType = allTypes[Math.floor(Math.random() * allTypes.length)];
   const spawnPos = getSpawnPosition(engine);
+  if (!spawnPos) return;
   const enemy = spawnEnemy(
     baseType,
     spawnPos.x, spawnPos.z,
@@ -177,6 +179,7 @@ function pickWeightedEnemy(engine: Engine, types: string[]): string {
 function spawnSingleEnemy(engine: Engine, type: string): void {
   if (!ENEMIES[type as EnemyType]) return;
   const spawnPos = getSpawnPosition(engine);
+  if (!spawnPos) return;
   const enemy = spawnEnemy(
     type as EnemyType,
     spawnPos.x, spawnPos.z,
@@ -195,7 +198,11 @@ function spawnSingleEnemy(engine: Engine, type: string): void {
   engine.state.enemies.push(enemy);
 }
 
-function getSpawnPosition(engine: Engine): { x: number; z: number } {
+function getSpawnPosition(engine: Engine): { x: number; z: number } | null {
+  if (engine.config.level) {
+    return getLevelEnemySpawnPosition(engine);
+  }
+
   const aroundPlayer = getSpawnPositionAroundPlayer(engine);
   if (aroundPlayer) return aroundPlayer;
   // 极端情况下（玩家站在极小不可行走区域）回退旧边缘刷怪，避免刷怪系统卡死。
@@ -210,6 +217,13 @@ function getSpawnPosition(engine: Engine): { x: number; z: number } {
     case 2: return { x: -halfMap - offset, z: along };
     default: return { x: halfMap + offset, z: along };
   }
+}
+
+function getLevelEnemySpawnPosition(engine: Engine): { x: number; z: number } | null {
+  const zones = engine.config.level?.spawnPoints?.enemyZones;
+  if (!zones) return null;
+  const points = Object.values(zones).flat();
+  return pickRandomOne(points) ?? null;
 }
 
 function getSpawnPositionAroundPlayer(engine: Engine): { x: number; z: number } | null {
@@ -310,14 +324,13 @@ export function checkBossSpawn(engine: Engine): void {
 
   const tierCfg = TIER_CONFIGS[engine.config.tier];
 
-  // Boss 出场点优先用关卡 spawn_boss；否则选第一个 boss_active 祭坛附近，再否则地图中心偏北。
+  // Boss 与触发的 spawn_altar 绑定；关卡模式不再需要单独的 spawn_boss 标记。
   // 注：boss.y 始终为 0 —— Boss 没有重力 / 跟地循环（无任何 boss.y 重新赋值），
   // 用 getTerrainHeight 取出来的非 0 值会让 boss 卡在半空。需要 boss 站到高平台上时
   // 应在 client renderBoss 里基于 boss.x/z 即时贴地，而不是把高度写进逻辑状态。
-  const bossSpawn = engine.config.level?.spawnPoints?.boss;
   const triggerAltar = engine.state.altars.find(a => a.phase === 'boss_active');
-  const bossX = bossSpawn ? bossSpawn.x : triggerAltar ? triggerAltar.x : 0;
-  const bossZ = bossSpawn ? bossSpawn.z : triggerAltar ? triggerAltar.z - 4 : -engine.config.mapSize * 0.3;
+  const bossX = triggerAltar ? triggerAltar.x : 0;
+  const bossZ = triggerAltar ? triggerAltar.z : -engine.config.mapSize * 0.3;
 
   engine.state.boss = {
     x: bossX,

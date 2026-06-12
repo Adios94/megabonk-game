@@ -3,6 +3,7 @@
  * （从 systems/teleporters.ts 拆出来；旧文件已变成 deprecated 兼容 shim。）
  */
 import { distanceBetween } from '../physics.ts';
+import { pickRandomSubset } from '../spawnPick.ts';
 import {
   CHEST_COUNT,
   CHEST_MAX_ACTIVE,
@@ -11,11 +12,9 @@ import {
   CHEST_RESPAWN_MAX_SECONDS,
   CHEST_PLAYER_MIN_DISTANCE,
   CHEST_PLAYER_MAX_DISTANCE,
-  CHEST_SURFACE_GRID_SIZE,
-  CHEST_LEVEL_MAX,
   CHEST_MIN_SEPARATION,
 } from '../config.ts';
-import type { ChestState, GameConfig, LevelData, RampVolume } from '../types.ts';
+import type { ChestState, GameConfig } from '../types.ts';
 import type { Engine } from './types.ts';
 import { getChestGoldCost, rollRelicForPlayer } from './relics.ts';
 
@@ -36,29 +35,14 @@ export function nextChestId(chests: readonly ChestState[]): number {
 
 export function generateChests(config: GameConfig): ChestState[] {
   if (config.level) {
-    // 优先使用关卡数据中显式标注的 chest 出生点（chest_ marker 解析得到）。
-    const placed = config.level.chestSpawns ?? [];
-    if (placed.length > 0) {
-      return placed.slice(0, CHEST_LEVEL_MAX).map((p, i) => ({
-        id: i + 1,
-        x: p.x,
-        y: 0,
-        z: p.z,
-        opened: false,
-      }));
-    }
-
-    // 否则按可站立表面采样生成。
-    const points = generateLevelSurfaceChestPoints(config.level).slice(0, CHEST_LEVEL_MAX);
-    if (points.length > 0) {
-      return points.map((p, i) => ({
-        id: i + 1,
-        x: p.x,
-        y: p.y,
-        z: p.z,
-        opened: false,
-      }));
-    }
+    const placed = (config.level.chestSpawns ?? []).map(normalizeChestSpawnPoint);
+    return selectLevelChestSpawns(placed, CHEST_COUNT).map((p, i) => ({
+      id: i + 1,
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      opened: false,
+    }));
   }
 
   const chests: ChestState[] = [];
@@ -86,83 +70,6 @@ function randomChestPosition(config: GameConfig): ChestSpawnPoint {
   };
 }
 
-function generateLevelSurfaceChestPoints(level: LevelData): ChestSpawnPoint[] {
-  const points: ChestSpawnPoint[] = [];
-  const occupied = new Set<string>();
-
-  const pushPoint = (x: number, y: number, z: number) => {
-    // 同一 X/Z 可能有多层平台；高度层也纳入 key，避免漏掉上下层宝箱。
-    const key = `${Math.floor(x / CHEST_SURFACE_GRID_SIZE)}:${Math.floor(z / CHEST_SURFACE_GRID_SIZE)}:${Math.round(y * 2)}`;
-    if (occupied.has(key)) return;
-    occupied.add(key);
-    points.push({ x, y, z });
-  };
-
-  for (const rect of level.collisionRects ?? []) {
-    sampleRectSurface(rect.cx, rect.cz, rect.halfW, rect.halfD, rect.height, pushPoint);
-  }
-  for (const ramp of level.ramps ?? []) {
-    sampleRampSurface(ramp, pushPoint);
-  }
-
-  shuffleInPlace(points);
-  return points;
-}
-
-function sampleRectSurface(
-  cx: number,
-  cz: number,
-  halfW: number,
-  halfD: number,
-  height: number,
-  pushPoint: (x: number, y: number, z: number) => void,
-): void {
-  const minX = cx - halfW;
-  const maxX = cx + halfW;
-  const minZ = cz - halfD;
-  const maxZ = cz + halfD;
-  for (const x of sampleAxis(minX, maxX)) {
-    for (const z of sampleAxis(minZ, maxZ)) {
-      pushPoint(x, height, z);
-    }
-  }
-}
-
-function sampleRampSurface(
-  ramp: RampVolume,
-  pushPoint: (x: number, y: number, z: number) => void,
-): void {
-  const perpX = -ramp.slopeDirZ;
-  const perpZ = ramp.slopeDirX;
-  for (const s of sampleAxis(-ramp.halfSlope, ramp.halfSlope)) {
-    for (const p of sampleAxis(-ramp.halfPerp, ramp.halfPerp)) {
-      const x = ramp.cx + ramp.slopeDirX * s + perpX * p;
-      const z = ramp.cz + ramp.slopeDirZ * s + perpZ * p;
-      const t = ramp.halfSlope > 0 ? (s + ramp.halfSlope) / (ramp.halfSlope * 2) : 0;
-      const y = ramp.lowY + (ramp.highY - ramp.lowY) * t;
-      pushPoint(x, y, z);
-    }
-  }
-}
-
-function sampleAxis(min: number, max: number): number[] {
-  const width = max - min;
-  if (width <= 0) return [];
-  const samples: number[] = [];
-  const count = Math.max(1, Math.ceil(width / CHEST_SURFACE_GRID_SIZE));
-  for (let i = 0; i < count; i++) {
-    samples.push(min + (i + Math.random()) * width / count);
-  }
-  return samples;
-}
-
-function shuffleInPlace<T>(items: T[]): void {
-  for (let i = items.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [items[i], items[j]] = [items[j], items[i]];
-  }
-}
-
 export function tickChests(engine: Engine, dt = 0): void {
   const player = engine.state.player;
   if (!player.alive) return;
@@ -183,6 +90,7 @@ export function tickChests(engine: Engine, dt = 0): void {
     chest.opened = true;
     chest.relicId = relic.id;
     chest.relicRarity = relic.rarity;
+    recordOpenedChestSpawn(engine, chest);
     const reward = {
       chestId: chest.id,
       x: chest.x,
@@ -201,8 +109,23 @@ export function tickChests(engine: Engine, dt = 0): void {
 }
 
 function tickChestRespawn(engine: Engine, dt: number): void {
+  if (engine.config.level) {
+    while (engine.state.chests.filter(c => !c.opened).length < CHEST_MAX_ACTIVE) {
+      const spawn = chooseChestSpawn(engine);
+      if (!spawn) return;
+      engine.state.chests.push({
+        id: engine.nextChestId++,
+        x: spawn.x,
+        y: spawn.y,
+        z: spawn.z,
+        opened: false,
+      });
+    }
+    return;
+  }
+
   const activeCount = engine.state.chests.filter(c => !c.opened).length;
-  const maxActive = engine.config.level ? CHEST_LEVEL_MAX : CHEST_MAX_ACTIVE;
+  const maxActive = CHEST_MAX_ACTIVE;
   if (activeCount >= maxActive) {
     engine.chestRespawnTimer = nextChestRespawnDelay();
     return;
@@ -212,6 +135,10 @@ function tickChestRespawn(engine: Engine, dt: number): void {
   if (engine.chestRespawnTimer > 0) return;
 
   const spawn = chooseChestSpawn(engine);
+  if (!spawn) {
+    engine.chestRespawnTimer = nextChestRespawnDelay();
+    return;
+  }
   engine.state.chests.push({
     id: engine.nextChestId++,
     x: spawn.x,
@@ -222,22 +149,16 @@ function tickChestRespawn(engine: Engine, dt: number): void {
   engine.chestRespawnTimer = nextChestRespawnDelay();
 }
 
-function chooseChestSpawn(engine: Engine): ChestSpawnPoint {
+function chooseChestSpawn(engine: Engine): ChestSpawnPoint | undefined {
   if (engine.config.level) {
-    // 优先使用关卡显式标注的 chest 出生点。
-    const placed = engine.config.level.chestSpawns ?? [];
-    if (placed.length > 0) {
-      const candidates = placed.filter(p => isGoodChestSpawn(engine, p.x, p.z));
-      if (candidates.length > 0) {
-        const p = candidates[Math.floor(Math.random() * candidates.length)];
-        return { x: p.x, y: 0, z: p.z };
-      }
-    }
-
-    // 回退：可站立表面采样。
-    const surface = generateLevelSurfaceChestPoints(engine.config.level)
-      .filter(p => isGoodChestSpawn(engine, p.x, p.z));
-    if (surface.length > 0) return surface[Math.floor(Math.random() * surface.length)];
+    const placed = (engine.config.level.chestSpawns ?? []).map(normalizeChestSpawnPoint);
+    const candidates = placed.filter(p => isAvailableLevelChestSpawn(engine, p));
+    const active = engine.state.chests
+      .filter(c => !c.opened)
+      .map(c => normalizeChestSpawnPoint(c));
+    const picked = selectLevelChestSpawns(candidates, 1, active)[0];
+    if (picked) return picked;
+    return undefined;
   }
 
   const player = engine.state.player;
@@ -258,6 +179,100 @@ function chooseChestSpawn(engine: Engine): ChestSpawnPoint {
   };
 }
 
+function recordOpenedChestSpawn(engine: Engine, chest: ChestState): void {
+  if (!engine.config.level) return;
+  const key = chestSpawnKey(chest);
+  if (engine.chestPendingSpawnKeys.includes(key)) return;
+  engine.chestPendingSpawnKeys.push(key);
+  if (engine.chestPendingSpawnKeys.length < 3) return;
+  engine.chestLockedSpawnKeys = engine.chestPendingSpawnKeys.splice(0, 3);
+}
+
+function isAvailableLevelChestSpawn(engine: Engine, point: ChestSpawnPoint): boolean {
+  const key = chestSpawnKey(point);
+  if (engine.chestLockedSpawnKeys.includes(key)) return false;
+  if (engine.chestPendingSpawnKeys.includes(key)) return false;
+  for (const chest of engine.state.chests) {
+    if (chest.opened) continue;
+    if (chestSpawnKey(chest) === key) return false;
+  }
+  return true;
+}
+
+function selectLevelChestSpawns(
+  points: readonly ChestSpawnPoint[],
+  count: number,
+  existing: readonly ChestSpawnPoint[] = [],
+): ChestSpawnPoint[] {
+  const pool = pickRandomSubset(points, points.length);
+  const selected: ChestSpawnPoint[] = [];
+  const layerCount = new Map<string, number>();
+  for (const point of existing) {
+    const layer = heightLayerKey(point);
+    layerCount.set(layer, (layerCount.get(layer) ?? 0) + 1);
+  }
+
+  const layerTotal = new Set(pool.map(heightLayerKey)).size;
+  const layerCap = layerTotal > 1 ? Math.ceil(count / Math.min(layerTotal, count)) : count;
+
+  while (selected.length < count && pool.length > 0) {
+    const picked =
+      pickBestLevelChestSpawn(pool, selected, existing, layerCount, layerCap, true, true) ??
+      pickBestLevelChestSpawn(pool, selected, existing, layerCount, layerCap, false, true) ??
+      pickBestLevelChestSpawn(pool, selected, existing, layerCount, layerCap, false, false);
+    if (!picked) break;
+    pool.splice(pool.indexOf(picked), 1);
+    selected.push(picked);
+    const layer = heightLayerKey(picked);
+    layerCount.set(layer, (layerCount.get(layer) ?? 0) + 1);
+  }
+
+  return selected;
+}
+
+function pickBestLevelChestSpawn(
+  pool: readonly ChestSpawnPoint[],
+  selected: readonly ChestSpawnPoint[],
+  existing: readonly ChestSpawnPoint[],
+  layerCount: ReadonlyMap<string, number>,
+  layerCap: number,
+  enforceLayerCap: boolean,
+  enforceDistance: boolean,
+): ChestSpawnPoint | undefined {
+  const refs = [...existing, ...selected];
+  let best: ChestSpawnPoint | undefined;
+  let bestScore = -Infinity;
+
+  for (const point of pool) {
+    const layer = heightLayerKey(point);
+    const countOnLayer = layerCount.get(layer) ?? 0;
+    if (enforceLayerCap && countOnLayer >= layerCap) continue;
+
+    const minDist = minPlanarDistance(point, refs);
+    if (enforceDistance && minDist < CHEST_MIN_SEPARATION) continue;
+
+    const score = minDist + (countOnLayer === 0 ? CHEST_MIN_SEPARATION * 2 : 0) - countOnLayer;
+    if (score > bestScore) {
+      best = point;
+      bestScore = score;
+    }
+  }
+
+  return best;
+}
+
+function minPlanarDistance(point: ChestSpawnPoint, refs: readonly ChestSpawnPoint[]): number {
+  if (refs.length === 0) return Number.MAX_SAFE_INTEGER;
+  return refs.reduce(
+    (best, ref) => Math.min(best, distanceBetween(point.x, point.z, ref.x, ref.z)),
+    Infinity,
+  );
+}
+
+function normalizeChestSpawnPoint(point: { x: number; y?: number; z: number }): ChestSpawnPoint {
+  return { x: point.x, y: point.y ?? 0, z: point.z };
+}
+
 function isGoodChestSpawn(engine: Engine, x: number, z: number): boolean {
   const player = engine.state.player;
   const playerDist = distanceBetween(player.x, player.z, x, z);
@@ -267,6 +282,18 @@ function isGoodChestSpawn(engine: Engine, x: number, z: number): boolean {
     if (distanceBetween(chest.x, chest.z, x, z) < CHEST_MIN_SEPARATION) return false;
   }
   return true;
+}
+
+function chestSpawnKey(point: { x: number; y?: number; z: number }): string {
+  return `${roundCoord(point.x)}:${roundCoord(point.y ?? 0)}:${roundCoord(point.z)}`;
+}
+
+function heightLayerKey(point: { y?: number }): string {
+  return `${roundCoord(point.y ?? 0)}`;
+}
+
+function roundCoord(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
 
 function clamp(value: number, mapSize: number): number {

@@ -67,6 +67,7 @@ import { tickOvertime } from './systems/overtime.ts';
 import { tickTierTransition } from './systems/tierTransition.ts';
 import { tickShrines, generateShrines, applyShrineReward } from './systems/shrines.ts';
 import { addDamageEvent, applyKnockback, checkGameOver } from './systems/helpers.ts';
+import { pickRandomOne } from './spawnPick.ts';
 
 export class GameInstance {
   private engine: Engine;
@@ -122,6 +123,8 @@ export class GameInstance {
       nextAreaEffectId: 1,
       spawnTimer: 1.0,
       chestRespawnTimer: nextChestRespawnDelay(),
+      chestLockedSpawnKeys: [],
+      chestPendingSpawnKeys: [],
       aiGroup: 0,
       miniBossTimer: 0,
       landingTimer: 0,
@@ -146,7 +149,7 @@ export class GameInstance {
     const level = engine.config.level;
     engine.geo = makeLevelGeometry(level);
     if (level) {
-      const spawn = level.spawnPoints?.player;
+      const spawn = pickRandomOne(level.spawnPoints?.players ?? []);
       if (spawn) {
         engine.state.player.x = spawn.x;
         engine.state.player.z = spawn.z;
@@ -186,15 +189,16 @@ export class GameInstance {
     state.boss = null;
     state.upgradeOptions = null;
     state.stats = { killCount: 0, damageDealt: 0, damageTaken: 0, shieldAbsorbed: 0, silverEarned: 0 };
+    state.character = config.character;
+    state.finalSwarm = false;
+    state.player = createInitialPlayer(config);
+    this.applyLevelConfig();
     state.waveIndex = 0;
-    state.altars = generateAltars(config);
+    state.altars = generateAltars(config, state.player);
     state.shrines = generateShrines(config);
     state.activeShrineId = null;
     state.chests = generateChests(config);
     engine.nextChestId = nextChestId(state.chests);
-    state.character = config.character;
-    state.finalSwarm = false;
-    state.player = createInitialPlayer(config);
     engine.nextEnemyId = 1;
     engine.nextProjectileId = 1;
     engine.nextPickupId = 1;
@@ -202,11 +206,11 @@ export class GameInstance {
     engine.nextChestId = nextChestId(state.chests);
     engine.spawnTimer = 1.0;
     engine.chestRespawnTimer = nextChestRespawnDelay();
+    engine.chestLockedSpawnKeys = [];
+    engine.chestPendingSpawnKeys = [];
     engine.aiGroup = 0;
     engine.landingTimer = 0;
     engine.miniBossTimer = 0;
-
-    this.applyLevelConfig();
   }
 
   tick(): boolean {

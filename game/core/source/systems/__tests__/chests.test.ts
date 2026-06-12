@@ -21,7 +21,7 @@ describe('generateChests', () => {
     }
   });
 
-  it('关卡 col_ 平台按每 20x20 单元生成 chest', () => {
+  it('关卡无 chest 标记时不生成宝箱', () => {
     const config = makeEngine().config;
     config.level = {
       collisionRects: [{ cx: 0, cz: 0, halfW: 20, halfD: 20, height: 2, baseY: 1 }],
@@ -32,28 +32,13 @@ describe('generateChests', () => {
       chestSpawns: [],
     };
     const chests = generateChests(config);
-    expect(chests).toHaveLength(4);
-    expect(chests.every((c) => c.y === 2)).toBe(true);
+    expect(chests).toHaveLength(0);
   });
 
-  it('关卡 surface chest 总数不超过 24 个', () => {
+  it('关卡 chestSpawns 随机抽取固定数量', () => {
     const config = makeEngine().config;
     config.level = {
-      collisionRects: [{ cx: 0, cz: 0, halfW: 60, halfD: 60, height: 0, baseY: -1 }],
-      walls: [],
-      climbVolumes: [],
-      ramps: [],
-      spawnPoints: {},
-      chestSpawns: [],
-    };
-    const chests = generateChests(config);
-    expect(chests).toHaveLength(24);
-  });
-
-  it('level.chestSpawns 优先于表面采样', () => {
-    const config = makeEngine().config;
-    config.level = {
-      collisionRects: [{ cx: 0, cz: 0, halfW: 60, halfD: 60, height: 0, baseY: -1 }],
+      collisionRects: [],
       walls: [],
       climbVolumes: [],
       ramps: [],
@@ -62,41 +47,47 @@ describe('generateChests', () => {
         { x: 5, z: 0 },
         { x: -5, z: 0 },
         { x: 0, z: 5 },
+        { x: 0, z: -5 },
+        { x: 10, z: 10 },
+        { x: -10, z: -10 },
+        { x: 12, z: 0 },
+        { x: -12, z: 0 },
+        { x: 14, z: 0 },
+        { x: -14, z: 0 },
+        { x: 16, z: 0 },
+        { x: -16, z: 0 },
       ],
     };
     const chests = generateChests(config);
-    expect(chests).toHaveLength(3);
-    expect(chests.map(c => ({ x: c.x, z: c.z }))).toEqual([
-      { x: 5, z: 0 },
-      { x: -5, z: 0 },
-      { x: 0, z: 5 },
-    ]);
+    expect(chests).toHaveLength(CHEST_COUNT);
     expect(chests.every(c => c.y === 0)).toBe(true);
+    const coords = chests.map(c => `${c.x},${c.z}`);
+    expect(new Set(coords).size).toBe(CHEST_COUNT);
   });
 
-  it('关卡 ramp_ 斜面会生成带坡面高度的 chest', () => {
+  it('关卡 chestSpawns 会尽量分散并覆盖多个高度层', () => {
     const config = makeEngine().config;
     config.level = {
       collisionRects: [],
       walls: [],
       climbVolumes: [],
-      ramps: [{
-        cx: 0,
-        cz: 0,
-        halfSlope: 5,
-        halfPerp: 2.5,
-        slopeDirX: 1,
-        slopeDirZ: 0,
-        lowY: 0,
-        highY: 10,
-      }],
+      ramps: [],
       spawnPoints: {},
-      chestSpawns: [],
+      chestSpawns: [
+        ...Array.from({ length: 12 }, (_, i) => ({ x: i * 10, y: 0, z: 0 })),
+        ...Array.from({ length: 12 }, (_, i) => ({ x: i * 10, y: 8, z: 40 })),
+      ],
     };
     const chests = generateChests(config);
-    expect(chests).toHaveLength(1);
-    expect(chests[0].y).toBeGreaterThanOrEqual(0);
-    expect(chests[0].y).toBeLessThanOrEqual(10);
+    expect(chests).toHaveLength(CHEST_COUNT);
+    expect(new Set(chests.map(c => c.y))).toEqual(new Set([0, 8]));
+    for (let i = 0; i < chests.length; i++) {
+      for (let j = i + 1; j < chests.length; j++) {
+        const dx = chests[i].x - chests[j].x;
+        const dz = chests[i].z - chests[j].z;
+        expect(Math.hypot(dx, dz)).toBeGreaterThanOrEqual(6);
+      }
+    }
   });
 });
 
@@ -202,5 +193,58 @@ describe('tickChests', () => {
     engine.input.interact = true;
     tickChests(engine);
     expect(chest.opened).toBe(false);
+  });
+
+  it('关卡模式保持 10 个未开启宝箱，并按每 3 个开启点轮换回池', () => {
+    const engine = makeEngine();
+    engine.config.level = {
+      collisionRects: [],
+      walls: [],
+      climbVolumes: [],
+      ramps: [],
+      spawnPoints: {},
+      chestSpawns: Array.from({ length: 50 }, (_, i) => ({ x: i * 4, z: 0 })),
+    };
+    engine.state.chests = engine.config.level.chestSpawns.slice(0, CHEST_COUNT).map((p, i) => ({
+      id: i + 1,
+      x: p.x,
+      y: 0,
+      z: p.z,
+      opened: false,
+    }));
+    engine.nextChestId = 11;
+
+    const openAt = (index: number) => {
+      const chest = engine.state.chests.find(c => !c.opened && c.x === index * 4)!;
+      engine.state.player.x = chest.x;
+      engine.state.player.z = chest.z;
+      engine.state.player.gold = 99999;
+      engine.input.interact = true;
+      tickChests(engine, 0);
+      engine.state.phase = 'playing';
+      engine.state.pendingChestReward = null;
+      engine.input.interact = false;
+      tickChests(engine, 0);
+    };
+
+    openAt(0);
+    openAt(1);
+    openAt(2);
+
+    expect(engine.state.chests.filter(c => !c.opened)).toHaveLength(CHEST_COUNT);
+    expect(engine.chestLockedSpawnKeys).toEqual(['0:0:0', '4:0:0', '8:0:0']);
+    const activeKeysAfterFirstBatch = engine.state.chests
+      .filter(c => !c.opened)
+      .map(c => `${c.x}:${c.z}`);
+    expect(activeKeysAfterFirstBatch).not.toContain('0:0');
+    expect(activeKeysAfterFirstBatch).not.toContain('4:0');
+    expect(activeKeysAfterFirstBatch).not.toContain('8:0');
+
+    openAt(3);
+    openAt(4);
+    openAt(5);
+
+    expect(engine.chestLockedSpawnKeys).toEqual(['12:0:0', '16:0:0', '20:0:0']);
+    expect(engine.chestPendingSpawnKeys).toHaveLength(0);
   });
 });

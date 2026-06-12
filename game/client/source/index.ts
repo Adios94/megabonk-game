@@ -1240,7 +1240,7 @@ async function loadModels(): Promise<void> {
 //     col_*   → 可站立地面（height = 包围盒顶面 box.max.y）
 //     wall_*  → 实心遮挡（bottomY~topY = 包围盒）
 //     climb_* → 攀爬体（同 wall_）
-//     spawn_player / spawn_boss / spawn_altar / spawn_chest / spawn_enemy_*
+//     spawn_player / spawn_altar / spawn_chest / spawn_enemy_*
 //     其它    → 视觉模型（直接随场景渲染）
 //
 // === 双文件模式（推荐生产用）===
@@ -1475,16 +1475,16 @@ function parseLevelGltf(root: THREE.Object3D): LevelData {
       pushColOrRamp(node, _box, data, true);
     } else if (name.startsWith('spawn_')) {
       node.getWorldPosition(_vec);
-      const p = { x: _vec.x, z: _vec.z };
-      if (name.startsWith('spawn_player')) data.spawnPoints.player = p;
-      else if (name.startsWith('spawn_boss')) data.spawnPoints.boss = p;
+      const p = { x: _vec.x, y: _vec.y, z: _vec.z };
+      if (name.startsWith('spawn_player')) (data.spawnPoints.players ??= []).push(p);
+      else if (name.startsWith('spawn_boss')) (data.spawnPoints.bosses ??= []).push(p);
       else if (name.startsWith('spawn_altar') || name.startsWith('spawn_teleporter')) {
         (data.spawnPoints.altars ??= []).push(p);
       } else if (name.startsWith('spawn_chest')) {
         data.chestSpawns.push(p);
       } else if (name.startsWith('spawn_enemy_')) {
         const key = name.replace(/\.\d+$/, '');
-        (data.spawnPoints.enemyZones ??= {})[key] = p;
+        ((data.spawnPoints.enemyZones ??= {})[key] ??= []).push(p);
       }
     }
   });
@@ -1561,7 +1561,7 @@ async function tryLoadLevel(name: string = DEFAULT_LEVEL_NAME): Promise<void> {
     `[Level] Loaded (${mode}) ${visualScene ? visualPath : ''}${visualScene && colScene ? ' + ' : ''}${colScene ? colPath : ''}: ` +
       `${data.collisionRects.length} col, ${data.walls.length} wall, ` +
       `${data.climbVolumes.length} climb, ${data.ramps.length} ramp, ${data.chestSpawns.length} chest, ` +
-      `player=${!!data.spawnPoints.player} boss=${!!data.spawnPoints.boss}`,
+      `player=${data.spawnPoints.players?.length ?? 0} altar=${data.spawnPoints.altars?.length ?? 0}`,
   );
 }
 
@@ -3396,15 +3396,15 @@ export class GameScene {
       pillar.renderOrder = 10001;
       group.add(pillar);
     };
-    if (data.spawnPoints?.player) markSpawn(data.spawnPoints.player.x, data.spawnPoints.player.z, 'player');
-    if (data.spawnPoints?.boss) markSpawn(data.spawnPoints.boss.x, data.spawnPoints.boss.z, 'boss');
+    for (const p of data.spawnPoints?.players ?? []) markSpawn(p.x, p.z, 'player');
+    for (const p of data.spawnPoints?.bosses ?? []) markSpawn(p.x, p.z, 'boss');
     for (const a of data.spawnPoints?.altars ?? []) markSpawn(a.x, a.z, 'altar');
     for (const c of data.chestSpawns ?? []) markSpawn(c.x, c.z, 'chest');
 
     console.log(
       `[GM] CollisionDebug: ${data.collisionRects.length} col, ${data.walls?.length ?? 0} wall, ` +
       `${data.climbVolumes?.length ?? 0} climb, ${data.ramps?.length ?? 0} ramp, ` +
-      `${(data.spawnPoints?.altars?.length ?? 0) + (data.chestSpawns?.length ?? 0) + (data.spawnPoints?.player ? 1 : 0) + (data.spawnPoints?.boss ? 1 : 0)} spawn`,
+      `${(data.spawnPoints?.players?.length ?? 0) + (data.spawnPoints?.bosses?.length ?? 0) + (data.spawnPoints?.altars?.length ?? 0) + (data.chestSpawns?.length ?? 0)} spawn`,
     );
     return group;
   }

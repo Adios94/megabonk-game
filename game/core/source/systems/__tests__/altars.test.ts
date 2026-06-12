@@ -44,6 +44,50 @@ describe('generateAltars', () => {
       }
     }
   });
+
+  it('关卡 spawn_altar 标记随机抽取固定数量', () => {
+    const config = makeEngine().config;
+    config.level = {
+      collisionRects: [],
+      walls: [],
+      climbVolumes: [],
+      ramps: [],
+      spawnPoints: {
+        altars: [
+          { x: 10, z: 0 },
+          { x: -10, z: 0 },
+          { x: 0, z: 10 },
+        ],
+      },
+      chestSpawns: [],
+    };
+    const altars = generateAltars({ ...config, tier: 1 });
+    expect(altars).toHaveLength(1);
+    expect(altars[0].phase).toBe('ready');
+  });
+
+  it('关卡 spawn_altar 会排除离玩家出生点最近的候选', () => {
+    const config = makeEngine().config;
+    config.level = {
+      collisionRects: [],
+      walls: [],
+      climbVolumes: [],
+      ramps: [],
+      spawnPoints: {
+        altars: [
+          { x: 1, z: 0 },
+          { x: 10, z: 0 },
+          { x: 20, z: 0 },
+          { x: 30, z: 0 },
+          { x: 40, z: 0 },
+        ],
+      },
+      chestSpawns: [],
+    };
+    const altars = generateAltars({ ...config, tier: 1 }, { x: 0, z: 0 });
+    expect(altars).toHaveLength(1);
+    expect(altars[0]).not.toMatchObject({ x: 1, z: 0 });
+  });
 });
 
 describe('tickAltars — 状态机', () => {

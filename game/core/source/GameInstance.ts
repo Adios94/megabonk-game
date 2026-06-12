@@ -155,14 +155,16 @@ export class GameInstance {
       if (spawn) {
         engine.state.player.x = spawn.x;
         engine.state.player.z = spawn.z;
-        const groundAt = getTerrainHeightAt(engine.geo, spawn.x, spawn.z);
-        engine.state.player.y = Number.isFinite(groundAt) ? groundAt : 0;
-        setPlayerSpawn(spawn.x, spawn.z);
+        const spawnY = Number.isFinite(spawn.y)
+          ? spawn.y!
+          : getTerrainHeightAt(engine.geo, spawn.x, spawn.z);
+        engine.state.player.y = Number.isFinite(spawnY) ? spawnY : 0;
+        setPlayerSpawn(spawn.x, engine.state.player.y, spawn.z);
       } else {
-        setPlayerSpawn(engine.state.player.x, engine.state.player.z);
+        setPlayerSpawn(engine.state.player.x, engine.state.player.y, engine.state.player.z);
       }
     } else {
-      setPlayerSpawn(engine.state.player.x, engine.state.player.z);
+      setPlayerSpawn(engine.state.player.x, engine.state.player.y, engine.state.player.z);
     }
     engine.state.player.isClimbing = false;
   }

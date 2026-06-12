@@ -46,14 +46,16 @@ import type { Engine } from './types.ts';
 
 /** 出生点 / 跌落复活点（模块级；GameInstance 开局通过 setPlayerSpawn 注入）。 */
 let spawnX = 0;
+let spawnY = 0;
 let spawnZ = 0;
 
 /** 蹬墙跳离后短暂禁止自动再抓墙（秒），确保能离开 climb 范围再下落。 */
 let climbReleaseTimer = 0;
 
 /** 设置玩家出生点（同时作为掉出虚空后的复活点）。 */
-export function setPlayerSpawn(x: number, z: number): void {
+export function setPlayerSpawn(x: number, y: number, z: number): void {
   spawnX = x;
+  spawnY = y;
   spawnZ = z;
 }
 
@@ -242,8 +244,7 @@ export function tickPlayerMovement(engine: Engine, dt: number): void {
       // 掉出关卡虚空 → 传送回出生点。
       player.x = spawnX;
       player.z = spawnZ;
-      const groundAt = getTerrainHeightAt(engine.geo, spawnX, spawnZ);
-      player.y = Number.isFinite(groundAt) ? groundAt : 0;
+      player.y = spawnY;
       player.velocityY = 0;
       player.isGrounded = true;
       player.isJumping = false;

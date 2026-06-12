@@ -20,7 +20,6 @@ import {
 } from '../config.ts';
 import { ENEMIES } from '../data/enemies.ts';
 import { spawnEnemy } from '../factories/spawnEnemy.ts';
-import { pickRandomOne } from '../spawnPick.ts';
 import { getTomePower } from '../tomeProgression.ts';
 import type { EnemyType } from '../types.ts';
 import type { Engine } from './types.ts';
@@ -140,7 +139,6 @@ function spawnMiniBoss(engine: Engine): void {
 
   const baseType = allTypes[Math.floor(Math.random() * allTypes.length)];
   const spawnPos = getSpawnPosition(engine);
-  if (!spawnPos) return;
   const enemy = spawnEnemy(
     baseType,
     spawnPos.x, spawnPos.z,
@@ -193,7 +191,6 @@ function pickWeightedEnemy(engine: Engine, types: string[]): string {
 function spawnSingleEnemy(engine: Engine, type: string): void {
   if (!ENEMIES[type as EnemyType]) return;
   const spawnPos = getSpawnPosition(engine);
-  if (!spawnPos) return;
   const enemy = spawnEnemy(
     type as EnemyType,
     spawnPos.x, spawnPos.z,
@@ -212,11 +209,7 @@ function spawnSingleEnemy(engine: Engine, type: string): void {
   engine.state.enemies.push(enemy);
 }
 
-function getSpawnPosition(engine: Engine): { x: number; z: number } | null {
-  if (engine.config.level) {
-    return getLevelEnemySpawnPosition(engine);
-  }
-
+function getSpawnPosition(engine: Engine): { x: number; z: number } {
   const aroundPlayer = getSpawnPositionAroundPlayer(engine);
   if (aroundPlayer) return aroundPlayer;
   // 极端情况下（玩家站在极小不可行走区域）回退旧边缘刷怪，避免刷怪系统卡死。
@@ -231,13 +224,6 @@ function getSpawnPosition(engine: Engine): { x: number; z: number } | null {
     case 2: return { x: -halfMap - offset, z: along };
     default: return { x: halfMap + offset, z: along };
   }
-}
-
-function getLevelEnemySpawnPosition(engine: Engine): { x: number; z: number } | null {
-  const zones = engine.config.level?.spawnPoints?.enemyZones;
-  if (!zones) return null;
-  const points = Object.values(zones).flat();
-  return pickRandomOne(points) ?? null;
 }
 
 function getSpawnPositionAroundPlayer(engine: Engine): { x: number; z: number } | null {

@@ -855,12 +855,12 @@ export interface ClimbVolume {
 /** 关卡出生点。坐标已转换为游戏坐标系（x, z）。 */
 export interface LevelSpawnPoints {
   /** spawn_player 标记（开局随机选 1 个）。 */
-  players?: { x: number; z: number }[];
+  players?: { x: number; y?: number; z: number }[];
   /** @deprecated Boss 已绑定触发的 spawn_altar；旧 spawn_boss 仅作兼容解析。 */
   bosses?: { x: number; z: number }[];
   /** spawn_altar 标记（开局随机选固定数量）。 */
   altars?: { x: number; z: number }[];
-  /** spawn_enemy_* 标记（关卡刷怪只从这些 Empty 点位中取）。 */
+  /** spawn_enemy_* 标记（仅解析保留；当前刷怪仍按玩家附近环带）。 */
   enemyZones?: Record<string, { x: number; z: number }[]>;
 }
 

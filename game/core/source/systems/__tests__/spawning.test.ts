@@ -51,11 +51,11 @@ describe('tickSpawning', () => {
     expect(engine.spawnTimer).toBeGreaterThan(0);
   });
 
-  it('关卡模式只从 spawn_enemy_* Empty 点刷怪', () => {
+  it('关卡模式仍按玩家附近环带刷怪，不使用 spawn_enemy_* Empty', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
     const engine = makeEngine();
     engine.config.level = {
-      collisionRects: [],
+      collisionRects: [{ cx: 0, cz: 0, halfW: 20, halfD: 20, height: 0, baseY: -1 }],
       walls: [],
       climbVolumes: [],
       ramps: [],
@@ -70,24 +70,9 @@ describe('tickSpawning', () => {
     engine.spawnTimer = -0.1;
     tickSpawning(engine, 0.05);
     expect(engine.state.enemies.length).toBeGreaterThan(0);
-    expect(engine.state.enemies.every(e => e.x === 12 && e.z === -8)).toBe(true);
-  });
-
-  it('关卡模式没有 spawn_enemy_* Empty 时不回退随机刷怪', () => {
-    vi.spyOn(Math, 'random').mockReturnValue(0);
-    const engine = makeEngine();
-    engine.config.level = {
-      collisionRects: [],
-      walls: [],
-      climbVolumes: [],
-      ramps: [],
-      spawnPoints: {},
-      chestSpawns: [],
-    };
-    engine.state.gameTime = 5;
-    engine.spawnTimer = -0.1;
-    tickSpawning(engine, 0.05);
-    expect(engine.state.enemies).toHaveLength(0);
+    expect(engine.state.enemies.every(e => e.x !== 12 || e.z !== -8)).toBe(true);
+    expect(engine.state.enemies.every(e => Math.hypot(e.x - engine.state.player.x, e.z - engine.state.player.z) >= 5)).toBe(true);
+    expect(engine.state.enemies.every(e => Math.hypot(e.x - engine.state.player.x, e.z - engine.state.player.z) <= 10)).toBe(true);
   });
 
   it('finalSwarm 时间窗 (480-540) 设 finalSwarm=true', () => {

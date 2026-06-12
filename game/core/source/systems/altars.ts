@@ -33,8 +33,17 @@ import {
   ALTAR_MAX_DISTANCE_RATIO,
   TIER_CONFIGS,
 } from '../config.ts';
+import { getTerrainHeightAt } from './collision.ts';
+import type { LevelGeometry } from './collision.ts';
 import type { AltarState, GameConfig } from '../types.ts';
 import type { Engine } from './types.ts';
+
+/** 祭坛贴地：用竖直查询求 (x,z) 处地表高度（台顶）。无 geo（如单测）回退 0。 */
+function groundY(geo: LevelGeometry | undefined, x: number, z: number): number {
+  if (!geo) return 0;
+  const y = getTerrainHeightAt(geo, x, z);
+  return Number.isFinite(y) ? y : 0;
+}
 
 interface AvoidPoint {
   x: number;
@@ -45,7 +54,7 @@ interface AvoidPoint {
  * 一局开始 / tier 推进时调用，按 tier 配置生成祭坛。
  * 位置：远离出生点（≥ ALTAR_MIN_DISTANCE）但在地图内（halfMap * ratio 内）。
  */
-export function generateAltars(config: GameConfig, avoidNearestTo?: AvoidPoint): AltarState[] {
+export function generateAltars(config: GameConfig, avoidNearestTo?: AvoidPoint, geo?: LevelGeometry): AltarState[] {
   const tierCfg = TIER_CONFIGS[config.tier];
   const count = tierCfg.teleporterCount;
   const altars: AltarState[] = [];
@@ -61,6 +70,7 @@ export function generateAltars(config: GameConfig, avoidNearestTo?: AvoidPoint):
       altars.push({
         x: point.x,
         z: point.z,
+        y: groundY(geo, point.x, point.z),
         phase: 'ready',
         summonTimer: 0,
         summonDuration: ALTAR_SUMMON_DURATION,
@@ -77,9 +87,12 @@ export function generateAltars(config: GameConfig, avoidNearestTo?: AvoidPoint):
     // 平均分布角度避免重叠，再加一点抖动
     const angle = (i / Math.max(1, count)) * Math.PI * 2 + Math.random() * 0.8;
     const distance = minRadius + Math.random() * Math.max(1, maxRadius - minRadius);
+    const x = Math.cos(angle) * distance;
+    const z = Math.sin(angle) * distance;
     altars.push({
-      x: Math.cos(angle) * distance,
-      z: Math.sin(angle) * distance,
+      x,
+      z,
+      y: groundY(geo, x, z),
       phase: 'ready',
       summonTimer: 0,
       summonDuration: ALTAR_SUMMON_DURATION,

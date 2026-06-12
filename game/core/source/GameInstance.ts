@@ -201,7 +201,7 @@ export class GameInstance {
     state.player = createInitialPlayer(config);
     this.applyLevelConfig();
     state.waveIndex = 0;
-    state.altars = generateAltars(config, state.player);
+    state.altars = generateAltars(config, state.player, engine.geo);
     state.shrines = generateShrines(config);
     state.activeShrineId = null;
     state.chests = generateChests(config);

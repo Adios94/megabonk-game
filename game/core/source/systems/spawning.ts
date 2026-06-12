@@ -24,7 +24,7 @@ import { getTomePower } from '../tomeProgression.ts';
 import type { EnemyType } from '../types.ts';
 import type { Engine } from './types.ts';
 import { hasReadyBossTrigger } from './altars.ts';
-import { isBlockedHorizontallyAt } from './collision.ts';
+import { isBlockedHorizontallyAt, getTerrainHeightAt } from './collision.ts';
 
 const SPAWN_MIN_RADIUS = 5;
 const SPAWN_MAX_RADIUS = 10;
@@ -334,16 +334,17 @@ export function checkBossSpawn(engine: Engine): void {
   const tierCfg = TIER_CONFIGS[engine.config.tier];
 
   // Boss 与触发的 spawn_altar 绑定；关卡模式不再需要单独的 spawn_boss 标记。
-  // 注：boss.y 始终为 0 —— Boss 没有重力 / 跟地循环（无任何 boss.y 重新赋值），
-  // 用 getTerrainHeight 取出来的非 0 值会让 boss 卡在半空。需要 boss 站到高平台上时
-  // 应在 client renderBoss 里基于 boss.x/z 即时贴地，而不是把高度写进逻辑状态。
+  // boss.y 用竖直查询 getTerrainHeightAt 取出生点地表高度（祭坛常摆在高平台上）。
+  // 之后每帧由 bossAi 的 getSupportHeightAt 跟地——但 support 只认“够得着的面”，
+  // 若 spawn 时给 0，台顶（高出迈步范围）够不着，boss 会被钉在台底；故必须在此赋台顶高度。
   const triggerAltar = engine.state.altars.find(a => a.phase === 'boss_active');
   const bossX = triggerAltar ? triggerAltar.x : 0;
   const bossZ = triggerAltar ? triggerAltar.z : -engine.config.mapSize * 0.3;
+  const bossY = getTerrainHeightAt(engine.geo, bossX, bossZ);
 
   engine.state.boss = {
     x: bossX,
-    y: 0,
+    y: Number.isFinite(bossY) ? bossY : 0,
     z: bossZ,
     hp: Math.round(BOSS_HP * tierCfg.bossHpMultiplier),
     maxHp: Math.round(BOSS_HP * tierCfg.bossHpMultiplier),

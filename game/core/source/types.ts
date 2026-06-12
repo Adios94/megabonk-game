@@ -599,6 +599,8 @@ export type AltarPhase = 'ready' | 'summoning' | 'boss_active' | 'cooldown' | 'p
 export interface AltarState {
   x: number;
   z: number;
+  /** 祭坛所在地表高度（贴地用）。关卡模式由 getTerrainHeightAt 求得；平面 arena / 缺省为 0。 */
+  y?: number;
   phase: AltarPhase;
   /** 召唤读条进度（秒），仅 `summoning` 阶段递增。 */
   summonTimer: number;

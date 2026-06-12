@@ -5058,16 +5058,19 @@ export class GameScene {
         const pillar = this.teleporterGlowMeshes[i];
         const decal = this.altarDecals[i];
 
+        // 祭坛贴地：标记常摆在高平台上，y 由 core 的 getTerrainHeightAt 求得（缺省 0）。
+        const ay = tp.y ?? 0;
+
         ring.visible = true;
-        ring.position.set(tp.x, 0.1, tp.z);
+        ring.position.set(tp.x, ay + 0.1, tp.z);
         ring.rotation.z = time;
 
         pillar.visible = true;
-        pillar.position.set(tp.x, 2, tp.z);
+        pillar.position.set(tp.x, ay + 2, tp.z);
 
         // 地面 decal 始终可见（除 portal_used 终态）
         decal.visible = tp.phase !== 'portal_used';
-        decal.position.set(tp.x, 0.06, tp.z);
+        decal.position.set(tp.x, ay + 0.06, tp.z);
 
         // Color based on phase.
         // 注意：ring 可能是 GLB 模型（Object3D，无 .material）也可能是 fallback 的

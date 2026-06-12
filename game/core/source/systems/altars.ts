@@ -24,6 +24,7 @@
  *   - portal_used 由 GameInstance 在 tick 末尾检测并触发 tier 推进。
  */
 import { distanceBetween } from '../physics.ts';
+import { pickRandomSubset } from '../spawnPick.ts';
 import {
   ALTAR_BOSS_RESPAWN_COOLDOWN,
   ALTAR_SUMMON_DURATION,
@@ -35,22 +36,31 @@ import {
 import type { AltarState, GameConfig } from '../types.ts';
 import type { Engine } from './types.ts';
 
+interface AvoidPoint {
+  x: number;
+  z: number;
+}
+
 /**
  * 一局开始 / tier 推进时调用，按 tier 配置生成祭坛。
  * 位置：远离出生点（≥ ALTAR_MIN_DISTANCE）但在地图内（halfMap * ratio 内）。
  */
-export function generateAltars(config: GameConfig): AltarState[] {
+export function generateAltars(config: GameConfig, avoidNearestTo?: AvoidPoint): AltarState[] {
   const tierCfg = TIER_CONFIGS[config.tier];
   const count = tierCfg.teleporterCount;
   const altars: AltarState[] = [];
 
-  // 关卡手摆了 spawn_altar → 用它们（最多取 count 个）。
+  // 关卡手摆了 spawn_altar → 排除离玩家出生点最近的点，再随机选 count 个。
   const placed = config.level?.spawnPoints?.altars;
-  if (placed && placed.length > 0) {
-    for (let i = 0; i < Math.min(count, placed.length); i++) {
+  if (config.level) {
+    if (!placed || placed.length === 0) return altars;
+    const candidates = avoidNearestTo && placed.length > count
+      ? placed.filter((point) => point !== nearestPoint(placed, avoidNearestTo))
+      : placed;
+    for (const point of pickRandomSubset(candidates, count)) {
       altars.push({
-        x: placed[i].x,
-        z: placed[i].z,
+        x: point.x,
+        z: point.z,
         phase: 'ready',
         summonTimer: 0,
         summonDuration: ALTAR_SUMMON_DURATION,
@@ -76,6 +86,21 @@ export function generateAltars(config: GameConfig): AltarState[] {
     });
   }
   return altars;
+}
+
+function nearestPoint<T extends AvoidPoint>(points: readonly T[], origin: AvoidPoint): T | undefined {
+  let best: T | undefined;
+  let bestDistSq = Infinity;
+  for (const point of points) {
+    const dx = point.x - origin.x;
+    const dz = point.z - origin.z;
+    const distSq = dx * dx + dz * dz;
+    if (distSq < bestDistSq) {
+      best = point;
+      bestDistSq = distSq;
+    }
+  }
+  return best;
 }
 
 /**

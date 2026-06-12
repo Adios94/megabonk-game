@@ -48,10 +48,12 @@ export function tickTierTransition(engine: Engine): void {
   state.gameTime = 0;
 
   // 重新生成祭坛和宝箱
-  state.altars = generateAltars(config);
+  state.altars = generateAltars(config, state.player);
   state.chests = generateChests(config);
   engine.nextChestId = nextChestId(state.chests);
   engine.chestRespawnTimer = nextChestRespawnDelay();
+  engine.chestLockedSpawnKeys = [];
+  engine.chestPendingSpawnKeys = [];
 
   // engine 内部计时器复位
   engine.spawnTimer = 1.0;

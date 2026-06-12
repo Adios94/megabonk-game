@@ -1875,6 +1875,9 @@ export class GameScene {
   /** Boss 的 base scale（auto-scaled to TARGET_BOSS_HEIGHT），attack/enrage 脉冲基于此值。 */
   private bossBaseScale = 1.0;
   private playerSpotLight!: THREE.SpotLight;
+  // 常驻共享闪电闪光灯：永远在场景里、待命强度 0。闪电复用它而非每道新建/移除 PointLight
+  // —— 场景光源数恒定，避免每次触发引发全场材质 shader 重编译（掉帧主因）。
+  private lightningFlashLight!: THREE.PointLight;
 
   // Weapon orbs (legacy — disabled, kept to avoid breaking older saves)
   private weaponOrbMesh!: THREE.InstancedMesh;
@@ -1893,7 +1896,6 @@ export class GameScene {
   private lightningBolts: Array<{
     core: THREE.Mesh;
     glow: THREE.Mesh;
-    light: THREE.PointLight;
     ring: THREE.Mesh;
     endX: number;
     endY: number;
@@ -2282,6 +2284,12 @@ export class GameScene {
     this.playerSpotLight.position.set(0, 12, 0);
     this.scene.add(this.playerSpotLight);
     this.scene.add(this.playerSpotLight.target);
+
+    // 常驻闪电闪光灯（强度 0 待命）：闪电复用它，避免动态增删光源触发全场 shader 重编译。
+    this.lightningFlashLight = new THREE.PointLight(0x88ccff, 0, 10, 2);
+    this.lightningFlashLight.name = 'LightningFlashLight';
+    this.lightningFlashLight.visible = true; // 必须始终可见，否则光源数变化仍会重编译
+    this.scene.add(this.lightningFlashLight);
   }
 
   /**
@@ -4002,7 +4010,8 @@ export class GameScene {
     const path = this.buildLightningPath(x, y, z, height, segments, jitter);
 
     // ---- Outer glow tube: thick, light blue, low opacity ----
-    const glowGeo = new THREE.TubeGeometry(path, segments * 2, 0.45, 6, false);
+    // 段数收敛（tubular 12 / radial 4）：TubeGeometry 构建是 CPU 重活，多道齐发时省开销。
+    const glowGeo = new THREE.TubeGeometry(path, 12, 0.45, 4, false);
     const glowMat = new THREE.MeshBasicMaterial({
       color: 0x66bbff,
       transparent: true,
@@ -4014,7 +4023,7 @@ export class GameScene {
     glow.name = 'LightningGlow';
 
     // ---- Inner core tube: thin, white, full bright ----
-    const coreGeo = new THREE.TubeGeometry(path, segments * 2, 0.11, 6, false);
+    const coreGeo = new THREE.TubeGeometry(path, 12, 0.11, 4, false);
     const coreMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
@@ -4025,10 +4034,9 @@ export class GameScene {
     const core = new THREE.Mesh(coreGeo, coreMat);
     core.name = 'LightningCore';
 
-    // ---- Impact point light: lights up nearby ground/enemies for one flash ----
-    const light = new THREE.PointLight(0x88ccff, 6, 10, 2);
-    light.position.set(x, y + 0.5, z);
-    light.name = 'LightningLight';
+    // 闪光由常驻共享灯负责（不再每道新建 PointLight）：定位 + 点亮，强度在 update 里衰减。
+    this.lightningFlashLight.position.set(x, y + 0.5, z);
+    this.lightningFlashLight.intensity = 6;
 
     // ---- Ground impact ring: expands outward and fades ----
     const ringGeo = new THREE.RingGeometry(0.3, 0.5, 32);
@@ -4047,11 +4055,10 @@ export class GameScene {
 
     this.scene.add(glow);
     this.scene.add(core);
-    this.scene.add(light);
     this.scene.add(ring);
 
     this.lightningBolts.push({
-      core, glow, light, ring,
+      core, glow, ring,
       endX: x, endY: y, endZ: z, height,
       life: maxLife, maxLife,
       flickerTimer: 0.05,
@@ -4134,7 +4141,9 @@ export class GameScene {
       (e.mesh.material as THREE.MeshBasicMaterial).opacity = 0.9 * t;
     }
 
-    // Lightning bolts: jagged path flickers (regenerates every ~60ms), tubes/light/ring fade together
+    // Lightning bolts: jagged path flickers, tubes/ring fade together. 闪光交给常驻共享灯。
+    let flashIntensity = 0; // 本帧所有闪电对共享灯的最强贡献
+    let flashX = 0, flashY = 0, flashZ = 0;
     for (let i = this.lightningBolts.length - 1; i >= 0; i--) {
       const e = this.lightningBolts[i];
       e.life -= dt;
@@ -4143,7 +4152,6 @@ export class GameScene {
       if (e.life <= 0) {
         this.scene.remove(e.core);
         this.scene.remove(e.glow);
-        this.scene.remove(e.light);
         this.scene.remove(e.ring);
         e.core.geometry.dispose();
         (e.core.material as THREE.Material).dispose();
@@ -4160,28 +4168,32 @@ export class GameScene {
       // 标准二次衰减
       const fade = t * t;
 
-      // 1. Flicker: regenerate path every ~60ms
+      // 1. Flicker: 只在寿命中段重建一次路径（之前每 60ms 重建两根 tube，CPU 太重）。
       if (e.flickerTimer <= 0) {
-        e.flickerTimer = 0.06;
+        e.flickerTimer = Number.POSITIVE_INFINITY; // 只重建一次
         const newPath = this.buildLightningPath(e.endX, e.endY, e.endZ, e.height, 12, 0.4);
         e.core.geometry.dispose();
         e.glow.geometry.dispose();
-        e.core.geometry = new THREE.TubeGeometry(newPath, 24, 0.11, 6, false);
-        e.glow.geometry = new THREE.TubeGeometry(newPath, 24, 0.45, 6, false);
+        e.core.geometry = new THREE.TubeGeometry(newPath, 12, 0.11, 4, false);
+        e.glow.geometry = new THREE.TubeGeometry(newPath, 12, 0.45, 4, false);
       }
 
       // 2. Opacity
       (e.core.material as THREE.MeshBasicMaterial).opacity = fade;
       (e.glow.material as THREE.MeshBasicMaterial).opacity = 0.5 * fade;
 
-      // 3. Point light intensity decays
-      e.light.intensity = 6 * fade;
+      // 3. 收集对共享闪光灯的贡献（取最亮的一道定位）
+      const lit = 6 * fade;
+      if (lit > flashIntensity) { flashIntensity = lit; flashX = e.endX; flashY = e.endY + 0.5; flashZ = e.endZ; }
 
       // 4. Ground ring: expand and fade
       const ringScale = 0.3 + inv * 5;
       e.ring.scale.set(ringScale, ringScale, 1);
       (e.ring.material as THREE.MeshBasicMaterial).opacity = 0.7 * fade;
     }
+    // 驱动常驻共享灯：有闪电就跟最亮那道，否则归零（光源数始终不变，无重编译）。
+    this.lightningFlashLight.intensity = flashIntensity;
+    if (flashIntensity > 0) this.lightningFlashLight.position.set(flashX, flashY, flashZ);
   }
 
   private spawnSlideDust(x: number, y: number, z: number): void {

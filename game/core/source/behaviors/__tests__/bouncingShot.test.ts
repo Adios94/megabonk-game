@@ -12,13 +12,14 @@ describe('bouncingShot', () => {
   afterEach(() => { mathRandomSpy.mockRestore(); });
 
   it('1 enemy → 1 projectile aimed at enemy with bouncesLeft', () => {
-    const player = makePlayer();
+    const player = makePlayer({ y: 2 });
     const enemy = makeEnemy(1, 0, 5);
     const ctx = makeCtx(player, [enemy], null, makeStats({ damage: 8, projectileCount: 1, bounces: 2, speed: 12 }), 'bone_bouncer', 'bouncingShot', ['bone_bouncer']);
     bouncingShot(createWorld(), ctx);
     expect(ctx.effects.projectiles).toHaveLength(1);
     const p = ctx.effects.projectiles[0];
     expect(p.weaponType).toBe('bone_bouncer');
+    expect(p.y).toBe(3);
     expect(p.damage).toBe(8);
     expect(p.bouncesLeft).toBe(2);
     expect(p.lifetime).toBe(4.0);

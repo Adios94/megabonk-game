@@ -1,5 +1,5 @@
 /**
- * tierTransition.ts 单元测试 —— portal_used → tier++ + 重置场景。
+ * tierTransition.ts 单元测试 —— portal_used → stage++ + 重置场景。
  */
 import { describe, it, expect } from 'vitest';
 import { tickTierTransition } from '../tierTransition.ts';
@@ -14,29 +14,35 @@ describe('tickTierTransition', () => {
     }];
     engine.state.gameTime = 100;
     const beforeTier = engine.config.tier;
+    const beforeStage = engine.state.stage;
     tickTierTransition(engine);
     expect(engine.config.tier).toBe(beforeTier);
+    expect(engine.state.stage).toBe(beforeStage);
     expect(engine.state.gameTime).toBe(100);
   });
 
-  it('portal_used → tier++（最高 3）', () => {
+  it('portal_used → stage++（最高 2），难度保持不变', () => {
     const engine = makeEngine();
-    engine.config.tier = 1;
+    engine.config.tier = 2;
+    engine.state.tier = 2;
+    engine.state.stage = 1;
     engine.state.altars = [{
       x: 0, z: 0, phase: 'portal_used', summonTimer: 0, summonDuration: ALTAR_SUMMON_DURATION,
     }];
     tickTierTransition(engine);
     expect(engine.config.tier).toBe(2);
+    expect(engine.state.tier).toBe(2);
+    expect(engine.state.stage).toBe(2);
   });
 
-  it('portal_used 时 tier 已是 3 → 保持 3', () => {
+  it('portal_used 时 stage 已是 2 → 保持 2', () => {
     const engine = makeEngine();
-    engine.config.tier = 3;
+    engine.state.stage = 2;
     engine.state.altars = [{
       x: 0, z: 0, phase: 'portal_used', summonTimer: 0, summonDuration: ALTAR_SUMMON_DURATION,
     }];
     tickTierTransition(engine);
-    expect(engine.config.tier).toBe(3);
+    expect(engine.state.stage).toBe(2);
   });
 
   it('portal_used → 重置 gameTime / overtimeSeconds / 清场', () => {

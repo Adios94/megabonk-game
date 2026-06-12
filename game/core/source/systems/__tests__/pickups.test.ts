@@ -32,6 +32,17 @@ describe('processDeaths', () => {
     expect(xpPickup).toBeDefined();
   });
 
+  it('高处死亡的敌人会在死亡高度生成 XP pickup', () => {
+    const engine = makeEngine();
+    engine.state.enemies = [makeEnemy(1, 'skeleton_soldier', 5, 5, { hp: 0, y: 4 })];
+    processDeaths(engine);
+    const xpPickup = engine.state.pickups.find(p =>
+      p.type === 'xp_green' || p.type === 'xp_blue' || p.type === 'xp_purple' || p.type === 'xp_orange'
+    );
+    expect(xpPickup).toBeDefined();
+    expect(xpPickup!.y).toBeCloseTo(4.2, 5);
+  });
+
   it('死敌不生成 gold pickup，而是在死亡点生成 gold mote', () => {
     const engine = makeEngine();
     engine.state.enemies = [makeEnemy(1, 'skeleton_soldier', 5, 5, { hp: 0 })];
@@ -81,6 +92,17 @@ describe('tickPickups: 拾取吸附 + collect', () => {
     tickPickups(engine, 0.05);
     expect(pickup.attracted).toBe(true);
     expect(pickup.x).toBeLessThan(3);  // 已移动
+  });
+
+  it('吸附时 pickup 高度向玩家所在表面靠拢', () => {
+    const player = makePlayer({ x: 0, y: 1, z: 0, pickupRadius: 5 });
+    const engine = makeEngine({ state: { ...makeEngine().state, player } });
+    const pickup = { id: 1, type: 'xp_green' as const, x: 3, y: 4.2, z: 0, value: 1, lifetime: 5, attracted: false };
+    engine.state.pickups.push(pickup);
+    tickPickups(engine, 0.05);
+    expect(pickup.attracted).toBe(true);
+    expect(pickup.y).toBeLessThan(4.2);
+    expect(pickup.y).toBeGreaterThan(1.2);
   });
 
   it('XP pickup 距离 < 0.5 时 collect → player.xp 增加', () => {

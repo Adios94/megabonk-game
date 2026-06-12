@@ -2,9 +2,9 @@
  * chests.{tickChests, generateChests} 单元测试.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { tickChests, generateChests } from '../chests.ts';
-import { makeEngine } from './_fixtures.ts';
-import { CHEST_COUNT, CHEST_INTERACT_RADIUS } from '../../config.ts';
+import { tickChests, generateChests, spawnBossChest } from '../chests.ts';
+import { makeEngine, makeBoss } from './_fixtures.ts';
+import { CHEST_COUNT, CHEST_INTERACT_RADIUS, CHEST_MAX_ACTIVE } from '../../config.ts';
 import { getChestGoldCost } from '../relics.ts';
 import type { ChestState } from '../../types.ts';
 
@@ -161,6 +161,44 @@ describe('tickChests', () => {
     expect(target.opened).toBe(true);
     expect(engine.state.player.gold).toBe(0);
     expect(engine.state.pendingChestReward?.cost).toBe(cost);
+  });
+
+  it('Boss 掉落宝箱不增加普通宝箱费用增长计数', () => {
+    const engine = makeEngine();
+    const bossChest: ChestState = { id: 9, x: 0, z: 0, opened: true, bossDrop: true };
+    const target: ChestState = { id: 10, x: 0, z: 0, opened: false };
+    engine.state.chests = [bossChest, target];
+    const baseCost = getChestGoldCost(engine.state.player.level);
+    engine.state.player.gold = baseCost;
+    engine.input.interact = true;
+    tickChests(engine);
+    expect(target.opened).toBe(true);
+    expect(engine.state.player.gold).toBe(0);
+    expect(engine.state.pendingChestReward?.cost).toBe(baseCost);
+  });
+
+  it('Boss 掉落宝箱无需金币即可开启', () => {
+    const engine = makeEngine();
+    const bossChest: ChestState = { id: 9, x: 0, z: 0, opened: false, bossDrop: true };
+    engine.state.chests = [bossChest];
+    engine.state.player.gold = 0;
+    engine.input.interact = true;
+    tickChests(engine);
+    expect(bossChest.opened).toBe(true);
+    expect(engine.state.player.gold).toBe(0);
+    expect(engine.state.pendingChestReward?.cost).toBe(0);
+    expect(engine.state.pendingChestReward?.bossDrop).toBe(true);
+  });
+
+  it('Boss 掉落宝箱不占普通宝箱刷新上限', () => {
+    const engine = makeEngine();
+    engine.state.chests = [];
+    for (let i = 0; i < CHEST_MAX_ACTIVE; i++) {
+      engine.state.chests.push({ id: i + 1, x: 20 + i * 10, z: 0, opened: false });
+    }
+    spawnBossChest(engine, makeBoss(0, 0, 100));
+    expect(engine.state.chests.filter(c => !c.opened && !c.bossDrop)).toHaveLength(CHEST_MAX_ACTIVE);
+    expect(engine.state.chests.some(c => c.bossDrop)).toBe(true);
   });
 
   it('已 opened 不重复 roll', () => {

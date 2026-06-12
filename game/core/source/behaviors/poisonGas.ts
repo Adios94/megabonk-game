@@ -10,6 +10,7 @@
 import { computeWeaponDamage } from '../stats/index.ts';
 import { findNearestEnemy } from './queries.ts';
 import {
+  AOE_MAX_Y_DELTA,
   GAS_CLOUD_LIFETIME,
   GAS_CLOUD_TICK_INTERVAL,
   GAS_POISON_REFRESH_DURATION,
@@ -20,7 +21,7 @@ import type { GameWorld } from '../world.ts';
 export function poisonGas(_world: GameWorld, ctx: BehaviorContext): void {
   const { player, enemies, def, stats, effects } = ctx;
 
-  const target = findNearestEnemy(player.x, player.z, enemies, stats.range);
+  const target = findNearestEnemy(player.x, player.z, enemies, stats.range, player.y, AOE_MAX_Y_DELTA);
   let tx: number, tz: number;
   if (target) {
     tx = target.x;
@@ -38,6 +39,7 @@ export function poisonGas(_world: GameWorld, ctx: BehaviorContext): void {
     kind: 'gas_cloud',
     weaponType: 'poison_bomb',
     x: tx,
+    y: target?.y ?? player.y,
     z: tz,
     radius: stats.aoeRadius,
     lifetime: GAS_CLOUD_LIFETIME,

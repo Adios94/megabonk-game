@@ -18,19 +18,27 @@ const RARITY_WEIGHTS: { rarity: UpgradeRarity; weight: number }[] = [
 const TOTAL_RARITY_WEIGHT = RARITY_WEIGHTS.reduce((sum, r) => sum + r.weight, 0);
 
 const MAX_TOME_TYPES = 6;
-const XP_LATE_BASE = 150;
 const XP_LATE_GROWTH = 1.0725;
+const XP_STEEPEN_START = 10;
 const XP_CURVE_BREAK = 40;
+const XP_MID_QUADRATIC = 0.5;
+
+function xpMidgame(level: number): number {
+  const linear = XP_BASE * (1 + level * XP_GROWTH);
+  if (level <= XP_STEEPEN_START) return linear;
+  const steepLevels = level - XP_STEEPEN_START;
+  return linear + steepLevels * steepLevels * XP_MID_QUADRATIC;
+}
 
 /**
  * Calculate XP required to reach the next level.
- * L ≤ 40: floor(10 × (1 + L × 0.35)); L > 40: floor(150 × 1.0725^(L - 40)).
+ * L ≤ 10 keeps the early ramp; L 11-40 adds a quadratic midgame tax; L > 40 continues exponentially.
  */
 export function xpForLevel(level: number): number {
   if (level <= XP_CURVE_BREAK) {
-    return Math.floor(XP_BASE * (1 + level * XP_GROWTH));
+    return Math.floor(xpMidgame(level));
   }
-  return Math.floor(XP_LATE_BASE * Math.pow(XP_LATE_GROWTH, level - XP_CURVE_BREAK));
+  return Math.floor(xpMidgame(XP_CURVE_BREAK) * Math.pow(XP_LATE_GROWTH, level - XP_CURVE_BREAK));
 }
 
 /**

@@ -11,7 +11,8 @@
  */
 
 import type { EnemyState, PlayerState, ProjectileState, WeaponType, DamageEvent } from './types.ts';
-import { WEAPON_STATS } from './config.ts';
+import { AOE_MAX_Y_DELTA, WEAPON_STATS } from './config.ts';
+import { enemyDamageEventY, playerProjectileY, PLAYER_PROJECTILE_OFFSET_Y, targetHitCenterY } from './combatHeight.ts';
 import { distanceBetween, normalizeDirection } from './physics.ts';
 
 /**
@@ -45,7 +46,7 @@ export function fireWeapon(
           angle += ((i - (count - 1) / 2) * 0.4);
         }
 
-        const target = findNearestEnemyInRange(playerState.x, playerState.z, enemies, stats.range);
+        const target = findNearestEnemyInRange(playerState.x, playerState.z, enemies, stats.range, playerState.y);
         let vx: number, vz: number;
         if (target) {
           const dir = normalizeDirection(target.x - playerState.x, target.z - playerState.z);
@@ -60,7 +61,7 @@ export function fireWeapon(
         projectiles.push({
           id: currentId++,
           weaponType: 'sword',
-          x: playerState.x, y: 1.0, z: playerState.z,
+          x: playerState.x, y: playerProjectileY(playerState), z: playerState.z,
           vx, vy: 0, vz,
           damage: finalDamage,
           bouncesLeft: 0,
@@ -77,7 +78,7 @@ export function fireWeapon(
     case 'bone_bouncer': {
       const count = stats.projectileCount;
       for (let i = 0; i < count; i++) {
-        const target = findNearestEnemy(playerState.x, playerState.z, enemies, -1);
+        const target = findNearestEnemy(playerState.x, playerState.z, enemies, -1, playerState.y);
         let vx: number;
         let vz: number;
 
@@ -104,7 +105,7 @@ export function fireWeapon(
         projectiles.push({
           id: currentId++,
           weaponType: 'bone_bouncer',
-          x: playerState.x, y: 1.0, z: playerState.z,
+          x: playerState.x, y: playerProjectileY(playerState), z: playerState.z,
           vx, vy: 0, vz,
           damage: finalDamage,
           bouncesLeft: stats.bounces,
@@ -128,7 +129,7 @@ export function fireWeapon(
           id: currentId++,
           weaponType: 'axe',
           x: playerState.x + Math.cos(startAngle) * stats.range,
-          y: 1.0,
+          y: playerProjectileY(playerState),
           z: playerState.z + Math.sin(startAngle) * stats.range,
           vx: 0, vy: 0, vz: 0,
           damage: finalDamage,
@@ -157,7 +158,7 @@ export function fireWeapon(
         }
 
         // Aim at nearest enemy if possible
-        const target = findNearestEnemyInRange(playerState.x, playerState.z, enemies, stats.range);
+        const target = findNearestEnemyInRange(playerState.x, playerState.z, enemies, stats.range, playerState.y);
         let vx: number, vz: number;
         if (target && i === 0) {
           const dir = normalizeDirection(target.x - playerState.x, target.z - playerState.z);
@@ -172,7 +173,7 @@ export function fireWeapon(
         projectiles.push({
           id: currentId++,
           weaponType: 'bow',
-          x: playerState.x, y: 1.0, z: playerState.z,
+          x: playerState.x, y: playerProjectileY(playerState), z: playerState.z,
           vx, vy: 0, vz,
           damage: finalDamage,
           bouncesLeft: 0,
@@ -192,6 +193,7 @@ export function fireWeapon(
       const inRange: typeof enemies = [];
       for (const enemy of enemies) {
         if (enemy.hp <= 0) continue;
+        if (Math.abs(enemy.y - playerState.y) > AOE_MAX_Y_DELTA) continue;
         const dist = distanceBetween(playerState.x, playerState.z, enemy.x, enemy.z);
         if (dist <= stats.range) inRange.push(enemy);
       }
@@ -206,7 +208,7 @@ export function fireWeapon(
         target.hp -= finalDamage;
         target.hitFlashTimer = 0.15;
         damageEvents.push({
-          x: target.x, y: 1.0, z: target.z,
+          x: target.x, y: enemyDamageEventY(target), z: target.z,
           damage: finalDamage, isCrit, isPlayerDamage: false,
           weaponType: 'lightning_staff',
         });
@@ -235,7 +237,7 @@ export function fireWeapon(
         projectiles.push({
           id: currentId++,
           weaponType: 'shotgun',
-          x: playerState.x, y: 1.0, z: playerState.z,
+          x: playerState.x, y: playerProjectileY(playerState), z: playerState.z,
           vx, vy: 0, vz,
           damage: finalDamage,
           bouncesLeft: 0,
@@ -271,6 +273,7 @@ export function applyBounce(
     const enemy = enemies[i];
     if (enemy.hp <= 0) continue;
     if (projectile.hitEnemyIds.indexOf(enemy.id) !== -1) continue;
+    if (Math.abs(projectile.y - targetHitCenterY(enemy)) > AOE_MAX_Y_DELTA) continue;
 
     const dist = distanceBetween(projectile.x, projectile.z, enemy.x, enemy.z);
     if (dist < nearestDist) {
@@ -290,10 +293,12 @@ export function updateOrbitingProjectile(
   playerX: number,
   playerZ: number,
   dt: number,
+  playerY?: number,
 ): void {
   if (!proj.orbiting || proj.orbitAngle === undefined || proj.orbitRadius === undefined || proj.orbitSpeed === undefined) return;
   proj.orbitAngle += proj.orbitSpeed * dt;
   proj.x = playerX + Math.cos(proj.orbitAngle) * proj.orbitRadius;
+  if (playerY !== undefined) proj.y = playerY + PLAYER_PROJECTILE_OFFSET_Y;
   proj.z = playerZ + Math.sin(proj.orbitAngle) * proj.orbitRadius;
 }
 
@@ -326,6 +331,7 @@ function findNearestEnemy(
   z: number,
   enemies: EnemyState[],
   excludeId: number,
+  sourceY?: number,
 ): EnemyState | null {
   let nearest: EnemyState | null = null;
   let nearestDist = Infinity;
@@ -333,6 +339,7 @@ function findNearestEnemy(
   for (let i = 0; i < enemies.length; i++) {
     const enemy = enemies[i];
     if (enemy.hp <= 0 || enemy.id === excludeId) continue;
+    if (sourceY !== undefined && Math.abs(enemy.y - sourceY) > AOE_MAX_Y_DELTA) continue;
 
     const dist = distanceBetween(x, z, enemy.x, enemy.z);
     if (dist < nearestDist) {
@@ -349,6 +356,7 @@ function findNearestEnemyInRange(
   z: number,
   enemies: EnemyState[],
   range: number,
+  sourceY?: number,
 ): EnemyState | null {
   let nearest: EnemyState | null = null;
   let nearestDist = range;
@@ -356,6 +364,7 @@ function findNearestEnemyInRange(
   for (let i = 0; i < enemies.length; i++) {
     const enemy = enemies[i];
     if (enemy.hp <= 0) continue;
+    if (sourceY !== undefined && Math.abs(enemy.y - sourceY) > AOE_MAX_Y_DELTA) continue;
 
     const dist = distanceBetween(x, z, enemy.x, enemy.z);
     if (dist < nearestDist) {

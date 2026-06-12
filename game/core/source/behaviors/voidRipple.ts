@@ -26,6 +26,7 @@ export function voidRipple(_world: GameWorld, ctx: BehaviorContext): void {
     kind: 'void_ripple',
     weaponType: 'void_ripple',
     x: player.x,
+    y: player.y,
     z: player.z,
     radius: 0,
     lifetime,

@@ -3,7 +3,7 @@
  *
  * 验证：
  *  - 错峰帧根据 dist 重算 target（后撤 / 追 / 站定）
- *  - cooldown ≤0 + dist 在 [range×0.5, range×1.5] 内时调 spawnProjectile
+ *  - cooldown ≤0 + dist 在 [range×0.5, min(range×1.5, 10m)] 内时调 spawnProjectile
  *  - cooldown 重置到 attackCooldownMax
  *  - skeleton_archer 投射物速度 8, necromancer 速度 6
  */
@@ -66,6 +66,16 @@ describe('ranged brain', () => {
     const effects = makeAiEffects();
     const enemy = makeEnemy(1, 'skeleton_archer', 8, 0, {
       speed: 0, attackCooldown: 1.5, attackCooldownMax: 3,
+    });
+    const ctx = makeAiContext({ effects });
+    ranged(enemy, ctx, 0);
+    expect(effects.spawnProjectileSpy).not.toHaveBeenCalled();
+  });
+
+  it('距离超过 10m 时不发射', () => {
+    const effects = makeAiEffects();
+    const enemy = makeEnemy(1, 'skeleton_archer', 11, 0, {
+      speed: 0, attackCooldown: 0, attackCooldownMax: 3,
     });
     const ctx = makeAiContext({ effects });
     ranged(enemy, ctx, 0);

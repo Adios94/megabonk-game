@@ -10,6 +10,7 @@
  * 数学等价于 fireAxe，由 parity 测试锁定。
  */
 import { computeWeaponDamage } from '../stats/index.ts';
+import { playerProjectileY } from '../combatHeight.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
 
@@ -25,7 +26,7 @@ export function orbitingAxe(_world: GameWorld, ctx: BehaviorContext): void {
     const id = effects.spawnProjectile({
       weaponType: 'axe',
       x: player.x + Math.cos(startAngle) * stats.range,
-      y: 1.0,
+      y: playerProjectileY(player),
       z: player.z + Math.sin(startAngle) * stats.range,
       vx: 0, vy: 0, vz: 0,
       damage,

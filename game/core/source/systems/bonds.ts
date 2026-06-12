@@ -16,6 +16,8 @@ import {
 } from '../data/bonds.ts';
 import { loadSave, saveSave } from '../save.ts';
 import { distanceBetween } from '../physics.ts';
+import { AOE_MAX_Y_DELTA } from '../config.ts';
+import { bossDamageEventY, enemyDamageEventY } from '../combatHeight.ts';
 import type { Engine } from './types.ts';
 import type {
   PlayerState, EnemyState, BossState, WeaponType, BondId, BondTier, UpgradeOption, UpgradeRarity,
@@ -38,6 +40,10 @@ function targetIsEnemy(t: BondTarget): t is EnemyState {
 /** boss 在毒师/处决等机制里按精英对待（DoT 系数减半、免疫处决）。 */
 function targetIsElite(t: BondTarget): boolean {
   return targetIsEnemy(t) ? (t.isElite || t.isMiniBoss) : true;
+}
+
+function targetDamageEventY(t: BondTarget): number {
+  return targetIsEnemy(t) ? enemyDamageEventY(t) : bossDamageEventY(t);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -99,11 +105,15 @@ function activeTierFor(player: PlayerState, weaponType: WeaponType, bondId: Bond
 }
 
 /** 给一个目标（敌人或 boss）结算一次羁绊机制额外伤害（含飘字与统计）。 */
-function dealBondDamage(engine: Engine, target: BondTarget, dmg: number, weaponType: WeaponType, y = 1.0): void {
+function dealBondDamage(engine: Engine, target: BondTarget, dmg: number, weaponType: WeaponType): void {
   target.hp -= dmg;
   target.hitFlashTimer = 0.12;
   engine.effects.addDamageDealt(dmg);
-  engine.effects.addDamageEvent(target.x, targetIsEnemy(target) ? y : 2, target.z, dmg, false, false, weaponType);
+  engine.effects.addDamageEvent(target.x, targetDamageEventY(target), target.z, dmg, false, false, weaponType);
+}
+
+function sameCombatHeight(a: BondTarget, b: BondTarget): boolean {
+  return Math.abs(a.y - b.y) <= AOE_MAX_Y_DELTA;
 }
 
 /**
@@ -157,10 +167,16 @@ export function onBondWeaponHit(
           const chainDmg = Math.max(1, Math.round(damage * pct));
           for (const e of engine.state.enemies) {
             if (e === target || e.hp <= 0) continue;
-            if ((e.conductorMarkTimer ?? 0) > 0) dealBondDamage(engine, e, chainDmg, weaponType);
+            if ((e.conductorMarkTimer ?? 0) > 0 && sameCombatHeight(target, e)) {
+              dealBondDamage(engine, e, chainDmg, weaponType);
+            }
           }
           const boss = engine.state.boss;
-          if (boss && boss !== target && boss.hp > 0 && (boss.conductorMarkTimer ?? 0) > 0) {
+          if (
+            boss && boss !== target && boss.hp > 0
+            && (boss.conductorMarkTimer ?? 0) > 0
+            && sameCombatHeight(target, boss)
+          ) {
             dealBondDamage(engine, boss, chainDmg, weaponType);
           }
         }
@@ -222,13 +238,17 @@ function onBondKill(engine: Engine, weaponType: WeaponType, killed: BondTarget):
 
   for (const e of engine.state.enemies) {
     if (e === killed || e.hp <= 0) continue;
-    if (distanceBetween(killed.x, killed.z, e.x, e.z) <= radius) {
+    if (distanceBetween(killed.x, killed.z, e.x, e.z) <= radius && sameCombatHeight(killed, e)) {
       dealBondDamage(engine, e, dmg, weaponType);
     }
   }
   // 爆炸也波及 boss（若被击杀的不是 boss 本身）
   const boss = engine.state.boss;
-  if (boss && boss !== killed && boss.hp > 0 && distanceBetween(killed.x, killed.z, boss.x, boss.z) <= radius) {
+  if (
+    boss && boss !== killed && boss.hp > 0
+    && distanceBetween(killed.x, killed.z, boss.x, boss.z) <= radius
+    && sameCombatHeight(killed, boss)
+  ) {
     dealBondDamage(engine, boss, dmg, weaponType);
   }
 
@@ -237,7 +257,7 @@ function onBondKill(engine: Engine, weaponType: WeaponType, killed: BondTarget):
     engine.effects.spawnAreaEffect({
       kind: 'scorch_trail',
       weaponType: 'scorch_boots',
-      x: killed.x, z: killed.z,
+      x: killed.x, y: killed.y, z: killed.z,
       radius,
       lifetime: p.t3ScorchDuration,
       maxLifetime: p.t3ScorchDuration,
@@ -317,10 +337,15 @@ function tickArcaneBurst(engine: Engine): void {
   for (const e of engine.state.enemies) {
     if (e.hp <= 0) continue;
     if (distanceBetween(player.x, player.z, e.x, e.z) > RANGE) continue;
+    if (Math.abs(e.y - player.y) > AOE_MAX_Y_DELTA) continue;
     if (!target || e.hp > target.hp) target = e;
   }
   const boss = engine.state.boss;
-  if (boss && boss.hp > 0 && distanceBetween(player.x, player.z, boss.x, boss.z) <= RANGE) {
+  if (
+    boss && boss.hp > 0
+    && distanceBetween(player.x, player.z, boss.x, boss.z) <= RANGE
+    && Math.abs(boss.y - player.y) <= AOE_MAX_Y_DELTA
+  ) {
     if (!target || boss.hp > target.hp) target = boss;
   }
   if (!target) return;
@@ -332,28 +357,32 @@ function tickArcaneBurst(engine: Engine): void {
   const RADIUS = 3.0;
 
   // 蓝紫光球 VFX：从玩家头顶飞向目标，命中处生成蓝紫烟雾
-  engine.state.bondVfxEvents.push({ kind: 'arcane_burst', x: target.x, y: 1.4, z: target.z });
+  engine.state.bondVfxEvents.push({ kind: 'arcane_burst', x: target.x, y: targetDamageEventY(target), z: target.z });
 
   // 主目标吃满额爆发，周围（含 boss）吃溅射
   target.hp -= burst;
   target.hitFlashTimer = 0.2;
   engine.effects.addDamageDealt(burst);
-  engine.effects.addDamageEvent(target.x, 1.4, target.z, burst, true, false, 'void_ripple');
+  engine.effects.addDamageEvent(target.x, targetDamageEventY(target), target.z, burst, true, false, 'void_ripple');
 
   for (const e of engine.state.enemies) {
     if (e.hp <= 0 || e === target) continue;
-    if (distanceBetween(target.x, target.z, e.x, e.z) <= RADIUS) {
+    if (distanceBetween(target.x, target.z, e.x, e.z) <= RADIUS && Math.abs(e.y - target.y) <= AOE_MAX_Y_DELTA) {
       e.hp -= splash;
       e.hitFlashTimer = 0.15;
       engine.effects.addDamageDealt(splash);
-      engine.effects.addDamageEvent(e.x, 1.0, e.z, splash, false, false, 'void_ripple');
+      engine.effects.addDamageEvent(e.x, enemyDamageEventY(e), e.z, splash, false, false, 'void_ripple');
     }
   }
-  if (boss && boss.hp > 0 && boss !== target && distanceBetween(target.x, target.z, boss.x, boss.z) <= RADIUS) {
+  if (
+    boss && boss.hp > 0 && boss !== target
+    && distanceBetween(target.x, target.z, boss.x, boss.z) <= RADIUS
+    && Math.abs(boss.y - target.y) <= AOE_MAX_Y_DELTA
+  ) {
     boss.hp -= splash;
     boss.hitFlashTimer = 0.15;
     engine.effects.addDamageDealt(splash);
-    engine.effects.addDamageEvent(boss.x, 2, boss.z, splash, false, false, 'void_ripple');
+    engine.effects.addDamageEvent(boss.x, bossDamageEventY(boss), boss.z, splash, false, false, 'void_ripple');
   }
 }
 

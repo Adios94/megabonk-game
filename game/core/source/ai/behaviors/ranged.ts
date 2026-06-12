@@ -10,9 +10,12 @@ import { ENEMIES } from '../../data/enemies.ts';
 import type { EnemyBehaviorFn } from '../types.ts';
 import { applyMovement } from './_move.ts';
 
+const MAX_RANGED_ATTACK_DISTANCE = 10;
+
 export const ranged: EnemyBehaviorFn = (enemy, ctx, i) => {
   const def = ENEMIES[enemy.type];
   const preferredRange = def?.preferredRange ?? 8;
+  const maxAttackRange = Math.min(preferredRange * 1.5, MAX_RANGED_ATTACK_DISTANCE);
   const dist = distanceBetween(enemy.x, enemy.z, ctx.player.x, ctx.player.z);
 
   // 错峰重算 target（每帧只有对应aiPhase的敌人重算，节省CPU）
@@ -33,7 +36,7 @@ export const ranged: EnemyBehaviorFn = (enemy, ctx, i) => {
   // 远程攻击（每帧检查, 不只在 aiGroup 帧）
   if (
     enemy.attackCooldown <= 0
-    && dist <= preferredRange * 1.5
+    && dist <= maxAttackRange
     && dist >= preferredRange * 0.5
   ) {
     const dir = normalizeDirection(ctx.player.x - enemy.x, ctx.player.z - enemy.z);

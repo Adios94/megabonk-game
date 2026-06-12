@@ -460,6 +460,8 @@ export interface AreaEffectState {
   kind: AreaEffectKind;
   weaponType: WeaponType;
   x: number;
+  /** 效果所在支撑面高度（玩家脚下 / 敌人死亡点）；用于垂直分层 AoE 结算与客户端贴地渲染。 */
+  y: number;
   z: number;
   /** 当前半径（void_ripple 每帧扩大；其它为固定作用半径）。 */
   radius: number;
@@ -559,6 +561,8 @@ export interface ChestState {
   y?: number;
   z: number;
   opened: boolean;
+  /** Boss 死亡掉落的宝箱，不计入普通宝箱刷新上限和费用增长。 */
+  bossDrop?: boolean;
   relicId?: RelicId;
   relicRarity?: RelicRarity;
 }
@@ -569,6 +573,8 @@ export interface ChestOpenEvent {
   y: number;
   z: number;
   cost: number;
+  /** Boss 死亡掉落的免费宝箱。 */
+  bossDrop?: boolean;
   relicId: RelicId;
   rarity: RelicRarity;
 }
@@ -584,10 +590,11 @@ export interface PendingChestReward extends ChestOpenEvent {
  * - `ready`         玩家未交互；进入半径时 UI 显示 `[E] 召唤 Boss`
  * - `summoning`     玩家按住 E 触发的短读条（防误触），离开半径会回 `ready`
  * - `boss_active`   Boss 已生成；祭坛此时锁住、不可再交互
+ * - `cooldown`      第二关及以后 Boss 死亡后的再召唤冷却
  * - `portal_ready`  Boss 死亡后祭坛变成传送门；UI 显示 `[E] 进入下一关`
  * - `portal_used`   玩家进入传送门；终态，会被 tier 推进流程消费
  */
-export type AltarPhase = 'ready' | 'summoning' | 'boss_active' | 'portal_ready' | 'portal_used';
+export type AltarPhase = 'ready' | 'summoning' | 'boss_active' | 'cooldown' | 'portal_ready' | 'portal_used';
 
 export interface AltarState {
   x: number;
@@ -597,6 +604,10 @@ export interface AltarState {
   summonTimer: number;
   /** 召唤读条总时长（秒），= `ALTAR_SUMMON_DURATION`。 */
   summonDuration: number;
+  /** 再召唤冷却剩余秒数，仅 `cooldown` 阶段递减。 */
+  cooldownTimer?: number;
+  /** 再召唤冷却总时长，供 client 显示进度。 */
+  cooldownDuration?: number;
 }
 
 /**
@@ -712,10 +723,14 @@ export interface GameStats {
 export interface GameState {
   tick: number;
   gameTime: number;
+  /** 当前难度档位（普通/困难/噩梦），整局保持为玩家选择的难度。 */
+  tier: DifficultyTier;
+  /** 当前是第几关：第一关 Boss 死亡开传送门，第二关及以后 Boss 死亡进入祭坛冷却。 */
+  stage: RunStage;
   /**
    * Overtime 累积时长（秒）。
    * 玩家击败 Boss 但拒绝进入传送门、且 `gameTime ≥ 540s` 后开始累加。
-   * 用于驱动敌人难度系数（每 30s 一档）。
+   * 用于驱动敌人难度系数（按秒连续提升）。
    */
   overtimeSeconds: number;
   running: boolean;
@@ -759,6 +774,8 @@ export interface GameState {
 
 // --- Difficulty ---
 export type DifficultyTier = 1 | 2 | 3;
+
+export type RunStage = 1 | 2;
 
 // --- Config ---
 // --- Level data (data-driven levels parsed from Blender .glb) ---

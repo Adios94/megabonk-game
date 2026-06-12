@@ -11,6 +11,7 @@ import {
 } from '../altars.ts';
 import { makeEngine } from './_fixtures.ts';
 import {
+  ALTAR_BOSS_RESPAWN_COOLDOWN,
   ALTAR_INTERACT_RADIUS,
   ALTAR_SUMMON_DURATION,
   TIER_CONFIGS,
@@ -167,11 +168,26 @@ describe('tickAltars — 状态机', () => {
     tickAltars(engine, 0.05);
     expect(engine.state.altars[0].phase).toBe('ready');
   });
+
+  it('cooldown 结束后恢复 ready', () => {
+    const engine = makeEngine();
+    engine.state.altars = [altar({
+      phase: 'cooldown',
+      cooldownTimer: 0.05,
+      cooldownDuration: ALTAR_BOSS_RESPAWN_COOLDOWN,
+    })];
+    tickAltars(engine, 0.1);
+    expect(engine.state.altars[0].phase).toBe('ready');
+    expect(engine.state.altars[0].cooldownTimer).toBe(0);
+  });
 });
 
 describe('onBossDefeated', () => {
-  it('boss_active → portal_ready；其它 phase 不动', () => {
+  it('第一关 boss_active → portal_ready；其它 phase 不动', () => {
     const engine = makeEngine();
+    engine.config.tier = 2;
+    engine.state.tier = 2;
+    engine.state.stage = 1;
     engine.state.altars = [
       altar({ phase: 'boss_active' }),
       altar({ phase: 'ready' }),
@@ -181,6 +197,16 @@ describe('onBossDefeated', () => {
     expect(engine.state.altars[0].phase).toBe('portal_ready');
     expect(engine.state.altars[1].phase).toBe('ready');
     expect(engine.state.altars[2].phase).toBe('portal_ready');
+  });
+
+  it('第二关 boss_active → cooldown，不生成进入下一关的传送门', () => {
+    const engine = makeEngine();
+    engine.state.stage = 2;
+    engine.state.altars = [altar({ phase: 'boss_active', summonTimer: ALTAR_SUMMON_DURATION })];
+    onBossDefeated(engine);
+    expect(engine.state.altars[0].phase).toBe('cooldown');
+    expect(engine.state.altars[0].summonTimer).toBe(0);
+    expect(engine.state.altars[0].cooldownTimer).toBe(ALTAR_BOSS_RESPAWN_COOLDOWN);
   });
 });
 

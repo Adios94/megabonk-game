@@ -9,9 +9,12 @@
  */
 import { distanceBetween, normalizeDirection } from '../physics.ts';
 import { getTomePower } from '../tomeProgression.ts';
+import { AOE_MAX_Y_DELTA } from '../config.ts';
+import { targetHitCenterY } from '../combatHeight.ts';
 import type { EnemyState, WeaponType } from '../types.ts';
 import type { Engine } from './types.ts';
 import { onBossDefeated } from './altars.ts';
+import { spawnBossChest } from './chests.ts';
 import { tryMoveHorizontally } from './horizontalMove.ts';
 
 /** 敌人横向碰撞半径（与 _move.ts 一致）。 */
@@ -41,12 +44,14 @@ export function findNearestEnemyExcluding(
   x: number,
   z: number,
   excludeIds: readonly number[],
+  sourceY?: number,
 ): EnemyState | null {
   let nearest: EnemyState | null = null;
   let nearestDist = 20;
   for (const enemy of engine.state.enemies) {
     if (enemy.hp <= 0) continue;
     if (excludeIds.includes(enemy.id)) continue;
+    if (sourceY !== undefined && Math.abs(sourceY - targetHitCenterY(enemy)) > AOE_MAX_Y_DELTA) continue;
     const dist = distanceBetween(x, z, enemy.x, enemy.z);
     if (dist < nearestDist) {
       nearestDist = dist;
@@ -118,14 +123,15 @@ export function checkGameOver(engine: Engine): void {
     engine.state.running = false;
     return;
   }
-  // Boss 死亡 → 祭坛变传送门，进入 portal_open 中间态。
-  // 不再是 victory 终态：玩家可选择进传送门继续下一关，或留下来等 overtime。
+  // Boss 死亡：第一关开传送门进入下一关；第二关及以后只恢复祭坛召唤能力。
   if (engine.state.boss && engine.state.boss.hp <= 0) {
+    const defeatedBoss = engine.state.boss;
+    spawnBossChest(engine, defeatedBoss);
     engine.state.boss = null;
     engine.state.stats.silverEarned += 50;
-    if (engine.state.phase === 'boss_fight' || engine.state.phase === 'boss_intro') {
-      engine.state.phase = 'portal_open';
-    }
     onBossDefeated(engine);
+    if (engine.state.phase === 'boss_fight' || engine.state.phase === 'boss_intro') {
+      engine.state.phase = (engine.state.stage ?? 1) === 1 ? 'portal_open' : 'playing';
+    }
   }
 }

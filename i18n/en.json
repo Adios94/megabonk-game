@@ -83,6 +83,8 @@
     "silver": "Silver: {{count}}",
     "finalSwarm": "FINAL SWARM!",
     "combo": "COMBO x{{count}}",
+    "quest": "Find the altar, summon and defeat the BOSS",
+    "weaponSlotLocked": "Unlocked after completing the \"equip 7 different weapons\" quest",
     "compass": {
       "altar": "Altar",
       "portal": "Portal"
@@ -330,6 +332,10 @@
     "reach_level_20": "Reach level 20",
     "reach_level_30": "Reach level 30",
     "reach_level_40": "Reach level 40",
+    "first_bond": "Activate 1 bond",
+    "bond_3": "Activate 3 bonds",
+    "bond_5": "Activate 5 bonds",
+    "bond_8": "Activate 8 bonds",
     "first_evolution": "Evolve a weapon",
     "evolve_3": "Evolve 3 weapons",
     "evolve_5": "Evolve 5 weapons",
@@ -370,6 +376,10 @@
     "choose": "Select",
     "chosen": "Selected",
     "transition": "Tier {{value}}",
+    "notice": {
+      "title": "Tier {{value}}",
+      "body": "Difficulty increased! Enemy HP x{{hp}} / damage x{{damage}} / speed x{{speed}}"
+    },
     "stat": {
       "enemyHp": "Enemy HP: {{value}}x",
       "enemyDamage": "Enemy damage: {{value}}x",
@@ -383,13 +393,18 @@
   },
   "altar": {
     "summoning": "Summoning Boss...",
+    "cooldown": "Altar cooldown {{seconds}}s",
     "prompt": {
       "summon": "[E] Summon Boss",
       "enterPortal": "[E] Enter Portal"
     }
   },
   "overtime": {
-    "banner": "Overtime"
+    "banner": "Overtime",
+    "notice": {
+      "title": "Overtime",
+      "body": "Monsters are ramping fast: health, numbers, and movement speed keep rising"
+    }
   },
   "shrine": {
     "title": "Charge Shrine Rewards",
@@ -446,6 +461,33 @@
     "quests": "Quests completed: {{count}}",
     "retry": "Try Again",
     "menu": "Main Menu"
+  },
+  "pause": {
+    "title": "Paused",
+    "resume": "Resume",
+    "exit": "Exit",
+    "restart": "Restart",
+    "confirmExitMessage": "Quit this run? You will not receive any rewards from this run!",
+    "cancel": "Cancel",
+    "inventory": "Inventory",
+    "weapons": "Weapons",
+    "tomes": "Tomes",
+    "relics": "Relics",
+    "bonds": "Bonds",
+    "attributes": "Attributes",
+    "empty": "None",
+    "attr": {
+      "maxHp": "Max HP",
+      "shield": "Shield",
+      "damage": "Damage",
+      "attackSpeed": "Attack Speed",
+      "critChance": "Crit Rate",
+      "critDamage": "Crit Damage",
+      "armor": "Armor",
+      "moveSpeed": "Move Speed",
+      "pickupRadius": "Pickup Range",
+      "projectileBonus": "Extra Ammo"
+    }
   },
   "tutorial": {
     "move": "← Joystick to move",

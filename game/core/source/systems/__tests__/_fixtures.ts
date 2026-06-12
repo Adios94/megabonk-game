@@ -30,9 +30,13 @@ function defaultInput(): InputState {
   return { moveX: 0, moveY: 0, dash: false, skill1: false, skill2: false, jump: false, slide: false, interact: false };
 }
 
-function defaultState(player: PlayerState, character: GameConfig['character'] = 'megachad'): GameState {
+function defaultState(
+  player: PlayerState,
+  character: GameConfig['character'] = 'megachad',
+  tier: GameConfig['tier'] = 1,
+): GameState {
   return {
-    tick: 0, gameTime: 0, overtimeSeconds: 0, running: false, paused: false, finished: false,
+    tick: 0, gameTime: 0, tier, stage: 1, overtimeSeconds: 0, running: false, paused: false, finished: false,
     phase: 'playing',
     player,
     enemies: [], projectiles: [], areaEffects: [], pickups: [], consumablePickups: [], goldMotes: [], boss: null,
@@ -54,7 +58,7 @@ function defaultState(player: PlayerState, character: GameConfig['character'] = 
 export function makeEngine(overrides: Partial<Engine> = {}): Engine {
   const config: GameConfig = overrides.config ?? { ...DEFAULT_GAME_CONFIG };
   const player = overrides.state?.player ?? makePlayer();
-  const state = overrides.state ?? defaultState(player, config.character);
+  const state = overrides.state ?? defaultState(player, config.character, config.tier);
 
   const spawnProjectileSpy = vi.fn().mockReturnValue(1);
   const spawnEnemyByTypeSpy = vi.fn().mockReturnValue(null);

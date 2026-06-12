@@ -10,6 +10,8 @@
  */
 import { computeWeaponDamage } from '../stats/index.ts';
 import { distanceBetween } from '../physics.ts';
+import { AOE_MAX_Y_DELTA } from '../config.ts';
+import { bossDamageEventY, enemyDamageEventY } from '../combatHeight.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
 
@@ -20,25 +22,26 @@ export function flameAura(_world: GameWorld, ctx: BehaviorContext): void {
     if (enemy.hp <= 0) continue;
     const dist = distanceBetween(player.x, player.z, enemy.x, enemy.z);
     if (dist > stats.aoeRadius) continue;
+    if (Math.abs(enemy.y - player.y) > AOE_MAX_Y_DELTA) continue;
 
     const isCrit = Math.random() < player.critChance;
     const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit, enemy);
     enemy.hp -= damage;
     enemy.hitFlashTimer = 0.1;
     effects.addDamageDealt(damage);
-    effects.addDamageEvent(enemy.x, 1.0, enemy.z, damage, isCrit, false, 'flame_ring');
+    effects.addDamageEvent(enemy.x, enemyDamageEventY(enemy), enemy.z, damage, isCrit, false, 'flame_ring');
     effects.bondHit?.(weapon.type, enemy, damage, isCrit);
   }
 
   if (boss && boss.hp > 0) {
     const dist = distanceBetween(player.x, player.z, boss.x, boss.z);
-    if (dist <= stats.aoeRadius) {
+    if (dist <= stats.aoeRadius && Math.abs(boss.y - player.y) <= AOE_MAX_Y_DELTA) {
       const isCrit = Math.random() < player.critChance;
       const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit, boss);
       boss.hp -= damage;
       boss.hitFlashTimer = 0.15;
       effects.addDamageDealt(damage);
-      effects.addDamageEvent(boss.x, 2, boss.z, damage, isCrit, false, 'flame_ring');
+      effects.addDamageEvent(boss.x, bossDamageEventY(boss), boss.z, damage, isCrit, false, 'flame_ring');
       effects.bondHit?.(weapon.type, boss, damage, isCrit);
     }
   }

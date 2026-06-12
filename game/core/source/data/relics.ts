@@ -32,7 +32,7 @@ export const RELICS: Record<RelicId, RelicDef> = {
     name: '嗜血牙',
     rarity: 'uncommon',
     emoji: '🦷',
-    description: '击杀回 2 HP（精英 +6）',
+    description: '击杀回 2 HP（精英 +3）',
   },
   pact_coin: {
     id: 'pact_coin',

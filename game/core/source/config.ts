@@ -26,6 +26,8 @@ export const JUMP_FORCE = 6.0;
 export const GRAVITY = 18.0;
 /** 自动迈步高度：相邻地面高度差 ≤ 此值时走路无缝上去；超过则被当作墙挡住。 */
 export const STEP_HEIGHT = 0.5;
+/** 地面 AoE（烈焰环 / 涟漪 / 灼地痕）垂直命中容差：目标与效果面高度差超过此值不结算。 */
+export const AOE_MAX_Y_DELTA = 1.2;
 /** 跌落到此 y 以下（掉出关卡虚空）时，把玩家传送回出生点。 */
 export const FALL_RESPAWN_Y = -20;
 /** 攀爬上升 / 下降速度（单位/秒）。 */
@@ -83,6 +85,8 @@ export const CHEST_MIN_SEPARATION = 6;           // Min distance between two uno
 // Altar (formerly Teleporter) settings
 /** 召唤 Boss 的读条秒数（防误触）。 */
 export const ALTAR_SUMMON_DURATION = 1.0;
+/** 第二关及以后 Boss 击败后，祭坛再次可召唤前的冷却秒数。 */
+export const ALTAR_BOSS_RESPAWN_COOLDOWN = 60;
 /** 玩家与祭坛 / 传送门交互的触发半径。 */
 export const ALTAR_INTERACT_RADIUS = 2.0;
 /** 祭坛距出生点的最小距离（要求玩家探索才能找到）。 */
@@ -418,7 +422,7 @@ export const TIER_CONFIGS: Record<DifficultyTier, TierConfig> = {
 // === Overtime 难度系数 ===
 /** Overtime 系数每多少秒升一档。 */
 export const OVERTIME_STEP_SECONDS = 30;
-/** Overtime 每档给敌人 HP 与伤害的增量（线性）。 */
-export const OVERTIME_HP_DAMAGE_PER_STEP = 0.10;
-/** Overtime 每档给敌人速度的增量（更温和，避免风筝失灵）。 */
-export const OVERTIME_SPEED_PER_STEP = 0.04;
+/** Overtime 每档给敌人 HP 与伤害的增量（连续线性）。 */
+export const OVERTIME_HP_DAMAGE_PER_STEP = 0.35;
+/** Overtime 每档给敌人速度的增量（连续线性）。 */
+export const OVERTIME_SPEED_PER_STEP = 0.12;

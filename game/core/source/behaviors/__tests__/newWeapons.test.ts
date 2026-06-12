@@ -38,13 +38,24 @@ describe('rayBeam (ray_gun)', () => {
     expect(offside.hp).toBe(100);
   });
 
+  it('水平同线但垂直分层时不受伤', () => {
+    const player = makePlayer({ x: 0, y: 4, z: 0, rotation: 0 });
+    const below = makeEnemy(1, 0, 5);
+    below.y = 0;
+    const ctx = makeCtx(player, [below], null,
+      makeStats({ damage: 20, range: 20, aoeRadius: 0.5 }), 'ray_gun', 'rayBeam', ['ray_gun']);
+    rayBeam(createWorld(), ctx);
+    expect(below.hp).toBe(100);
+  });
+
   it('推一个 ray_beam 区域特效供渲染', () => {
-    const player = makePlayer({ x: 0, z: 0 });
+    const player = makePlayer({ x: 0, y: 4.5, z: 0 });
     const ctx = makeCtx(player, [makeEnemy(1, 0, 5)], null,
       makeStats({ damage: 20, range: 20, aoeRadius: 0.6 }), 'ray_gun', 'rayBeam', ['ray_gun']);
     rayBeam(createWorld(), ctx);
     expect(ctx.effects.areaEffects).toHaveLength(1);
     expect(ctx.effects.areaEffects[0].kind).toBe('ray_beam');
+    expect(ctx.effects.areaEffects[0].y).toBe(4.5);
     expect(ctx.effects.areaEffects[0].width).toBe(0.6);
   });
 });
@@ -103,6 +114,7 @@ describe('voidRipple (void_ripple)', () => {
     const ae = ctx.effects.areaEffects[0];
     expect(ae.kind).toBe('void_ripple');
     expect(ae.x).toBe(2);
+    expect(ae.y).toBe(0);
     expect(ae.z).toBe(3);
     expect(ae.radius).toBe(0);
     expect(ae.maxRadius).toBe(6);
@@ -117,13 +129,14 @@ describe('scorchTrail (scorch_boots)', () => {
   afterEach(() => { spy.mockRestore(); });
 
   it('在玩家脚下生成灼地痕迹', () => {
-    const player = makePlayer({ x: 1, z: 1 });
+    const player = makePlayer({ x: 1, y: 4, z: 1 });
     const ctx = makeCtx(player, [], null,
       makeStats({ damage: 5, aoeRadius: 0.9 }), 'scorch_boots', 'scorchTrail', ['scorch_boots']);
     scorchTrail(createWorld(), ctx);
     expect(ctx.effects.areaEffects).toHaveLength(1);
     const ae = ctx.effects.areaEffects[0];
     expect(ae.kind).toBe('scorch_trail');
+    expect(ae.y).toBe(4);
     expect(ae.radius).toBe(0.9);
     expect(ae.damage).toBe(5);
   });

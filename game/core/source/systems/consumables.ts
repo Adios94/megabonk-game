@@ -21,14 +21,16 @@ import type { Engine } from './types.ts';
 const XP_PICKUP_TYPES = new Set(['xp_green', 'xp_blue', 'xp_purple', 'xp_orange']);
 const CONSUMABLE_ATTRACT_RADIUS = 0.65;
 const CONSUMABLE_COLLECT_RADIUS = 0.32;
+const CONSUMABLE_SURFACE_OFFSET_Y = 0.35;
 
 export function spawnConsumablesFromEnemy(engine: Engine, enemy: EnemyState): void {
   const player = engine.state.player;
   const dropMult = player.consumableDropMult ?? 1;
+  const dropY = enemy.y + CONSUMABLE_SURFACE_OFFSET_Y;
 
   const primary = rollConsumableForEnemy(enemy.isElite, enemy.isMiniBoss, dropMult);
   if (primary) {
-    pushConsumablePickup(engine, primary, enemy.x, enemy.z);
+    pushConsumablePickup(engine, primary, enemy.x, dropY, enemy.z);
   }
 
   if (enemy.isMiniBoss) {
@@ -38,6 +40,7 @@ export function spawnConsumablesFromEnemy(engine: Engine, enemy: EnemyState): vo
         engine,
         bonus,
         enemy.x + (Math.random() - 0.5) * 0.8,
+        dropY,
         enemy.z + (Math.random() - 0.5) * 0.8,
       );
     }
@@ -48,13 +51,14 @@ function pushConsumablePickup(
   engine: Engine,
   consumableId: ConsumableId,
   x: number,
+  y: number,
   z: number,
 ): void {
   engine.state.consumablePickups.push({
     id: engine.nextPickupId++,
     consumableId,
     x,
-    y: 0.35,
+    y,
     z,
     lifetime: PICKUP_LIFETIME,
     attracted: false,
@@ -91,6 +95,7 @@ export function tickConsumablePickups(engine: Engine, dt: number): void {
       const dir = normalizeDirection(player.x - pickup.x, player.z - pickup.z);
       pickup.x += dir.x * attractSpeed * dt;
       pickup.z += dir.z * attractSpeed * dt;
+      pickup.y += ((player.y ?? 0) + CONSUMABLE_SURFACE_OFFSET_Y - pickup.y) * Math.min(1, dt * 8);
 
       const newDist = distanceBetween(player.x, player.z, pickup.x, pickup.z);
       if (newDist < CONSUMABLE_COLLECT_RADIUS) {

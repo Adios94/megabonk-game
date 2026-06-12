@@ -12,12 +12,13 @@ describe('spreadShot', () => {
   afterEach(() => { mathRandomSpy.mockRestore(); });
 
   it('count=1 → 1 projectile 沿 player.rotation', () => {
-    const player = makePlayer({ rotation: 0 });
+    const player = makePlayer({ rotation: 0, y: 3 });
     const ctx = makeCtx(player, [], null, makeStats({ damage: 8, projectileCount: 1, range: 12, pierce: 0, speed: 16 }), 'shotgun', 'spreadShot', ['shotgun']);
     spreadShot(createWorld(), ctx);
     expect(ctx.effects.projectiles).toHaveLength(1);
     const p = ctx.effects.projectiles[0];
     expect(p.weaponType).toBe('shotgun');
+    expect(p.y).toBe(4);
     expect(p.lifetime).toBe(1.5);
     expect(p.radius).toBe(0.2);
     expect(p.vx).toBeCloseTo(0, 4);

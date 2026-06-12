@@ -1,12 +1,12 @@
 /**
- * Tier 推进系统：玩家进入传送门 → 重置场景，提高难度，保留进度。
+ * 关卡推进系统：玩家进入传送门 → 重置场景，进入第二关，保留进度。
  *
  * 设计文档：docs/boss-loop-redesign.md (§8)
  *
  * 触发：altars.ts 把祭坛 phase 推到 'portal_used' 时，本 system 检测并执行。
  *
  * 执行步骤：
- *   1. tier++（最高 3，已是 3 时只重置时间，让玩家继续 overtime 滚动）
+ *   1. stage++（最高 2；难度 tier 保持玩家开局选择）
  *   2. 清场：enemies / projectiles / pickups / boss / damageEvents / waveIndex / finalSwarm / overtimeSeconds
  *   3. gameTime = 0（视为新一关的"常规生存期"开始）
  *   4. altars 重新生成（旧的 portal_used 已被 consumePortalUsed 清空）
@@ -19,7 +19,6 @@
 import type { Engine } from './types.ts';
 import { consumePortalUsed, generateAltars } from './altars.ts';
 import { generateChests, nextChestId, nextChestRespawnDelay } from './chests.ts';
-import type { DifficultyTier } from '../types.ts';
 
 export function tickTierTransition(engine: Engine): void {
   if (!consumePortalUsed(engine)) return;
@@ -27,9 +26,9 @@ export function tickTierTransition(engine: Engine): void {
   const state = engine.state;
   const config = engine.config;
 
-  // tier++（capped at 3）
-  const nextTier = Math.min(3, config.tier + 1) as DifficultyTier;
-  config.tier = nextTier;
+  // stage++（capped at 2）；难度 tier 不随关卡推进变化。
+  state.stage = Math.min(2, (state.stage ?? 1) + 1) as 1 | 2;
+  state.tier = config.tier;
 
   // 清场
   state.enemies = [];

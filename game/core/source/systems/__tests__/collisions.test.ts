@@ -56,6 +56,16 @@ describe('player projectile vs enemy', () => {
     processCollisions(engine);
     expect(enemy.hp).toBe(100);
   });
+
+  it('水平重叠但垂直分层时不命中 enemy', () => {
+    const engine = makeEngine();
+    const enemy = makeEnemy(1, 'skeleton_soldier', 0, 0, { hp: 100, y: 4 });
+    engine.state.enemies = [enemy];
+    engine.state.projectiles.push(makeProj({ x: 0, y: 1, z: 0 }));
+    processCollisions(engine);
+    expect(enemy.hp).toBe(100);
+    expect(engine.state.projectiles).toHaveLength(1);
+  });
 });
 
 describe('player projectile vs boss', () => {
@@ -66,6 +76,16 @@ describe('player projectile vs boss', () => {
     processCollisions(engine);
     expect(engine.state.boss.hp).toBe(950);
     expect(engine.state.boss.hitFlashTimer).toBeCloseTo(0.15, 5);
+  });
+
+  it('水平重叠但垂直分层时不命中 boss', () => {
+    const engine = makeEngine();
+    engine.state.boss = makeBoss(0, 0, 1000);
+    engine.state.boss.y = 4;
+    engine.state.projectiles.push(makeProj({ damage: 50, y: 1 }));
+    processCollisions(engine);
+    expect(engine.state.boss.hp).toBe(1000);
+    expect(engine.state.projectiles).toHaveLength(1);
   });
 });
 

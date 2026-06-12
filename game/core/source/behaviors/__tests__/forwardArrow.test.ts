@@ -12,13 +12,15 @@ describe('forwardArrow', () => {
   afterEach(() => { mathRandomSpy.mockRestore(); });
 
   it('1 enemy in range → 1 projectile aimed at enemy', () => {
-    const player = makePlayer();
+    const player = makePlayer({ y: 4 });
     const enemy = makeEnemy(1, 3, 4);   // dist 5
+    enemy.y = 4;
     const ctx = makeCtx(player, [enemy], null, makeStats({ damage: 18, range: 30, speed: 25, projectileCount: 1, pierce: 0 }), 'bow', 'forwardArrow', ['bow']);
     forwardArrow(createWorld(), ctx);
     expect(ctx.effects.projectiles).toHaveLength(1);
     const p = ctx.effects.projectiles[0];
     expect(p.weaponType).toBe('bow');
+    expect(p.y).toBe(5);
     expect(p.damage).toBe(18);
     expect(p.lifetime).toBe(3.0);
     expect(p.radius).toBe(0.25);

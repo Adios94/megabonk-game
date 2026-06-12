@@ -83,6 +83,8 @@
     "silver": "银币: {{count}}",
     "finalSwarm": "最终狂潮！",
     "combo": "连击 x{{count}}",
+    "quest": "找到祭坛，召唤并击败BOSS",
+    "weaponSlotLocked": "完成「装备 7 把不同武器」任务后解锁",
     "compass": {
       "altar": "祭坛",
       "portal": "传送门"
@@ -330,6 +332,10 @@
     "reach_level_20": "达到20级",
     "reach_level_30": "达到30级",
     "reach_level_40": "达到40级",
+    "first_bond": "激活1次羁绊",
+    "bond_3": "激活3次羁绊",
+    "bond_5": "激活5次羁绊",
+    "bond_8": "激活8次羁绊",
     "first_evolution": "进化一把武器",
     "evolve_3": "进化3把武器",
     "evolve_5": "进化5把武器",
@@ -370,6 +376,10 @@
     "choose": "选择",
     "chosen": "已选择",
     "transition": "第 {{value}} 关",
+    "notice": {
+      "title": "第 {{value}} 关",
+      "body": "难度提升！敌人血量 x{{hp}} / 伤害 x{{damage}} / 移速 x{{speed}}"
+    },
     "stat": {
       "enemyHp": "敌人血量: {{value}}x",
       "enemyDamage": "敌人伤害: {{value}}x",
@@ -383,13 +393,18 @@
   },
   "altar": {
     "summoning": "正在召唤 Boss...",
+    "cooldown": "祭坛冷却中 {{seconds}}s",
     "prompt": {
       "summon": "[E] 召唤 Boss",
       "enterPortal": "[E] 进入传送门"
     }
   },
   "overtime": {
-    "banner": "超时模式"
+    "banner": "超时模式",
+    "notice": {
+      "title": "超时模式",
+      "body": "怪物正在快速变强：血量、数量和移动速度将持续提升"
+    }
   },
   "shrine": {
     "title": "充能神殿奖励",
@@ -446,6 +461,33 @@
     "quests": "完成任务: {{count}}",
     "retry": "再来一次",
     "menu": "返回菜单"
+  },
+  "pause": {
+    "title": "暂停",
+    "resume": "继续",
+    "exit": "退出",
+    "restart": "重新开始",
+    "confirmExitMessage": "是否退出本局游戏？退出后你将无法获得本局的奖励！",
+    "cancel": "取消",
+    "inventory": "背包",
+    "weapons": "武器",
+    "tomes": "典籍",
+    "relics": "遗物",
+    "bonds": "羁绊",
+    "attributes": "属性",
+    "empty": "暂无",
+    "attr": {
+      "maxHp": "最大生命",
+      "shield": "护盾",
+      "damage": "伤害",
+      "attackSpeed": "攻击速度",
+      "critChance": "暴击率",
+      "critDamage": "暴击伤害",
+      "armor": "护甲",
+      "moveSpeed": "移动速度",
+      "pickupRadius": "拾取范围",
+      "projectileBonus": "额外弹药"
+    }
   },
   "tutorial": {
     "move": "← 摇杆移动",

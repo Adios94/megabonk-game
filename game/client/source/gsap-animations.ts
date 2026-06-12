@@ -138,15 +138,12 @@ export class GSAPAnimationManager {
     const animationId = 'level-label-pulse';
     this.cancelAnimation(animationId);
 
-    // xPercent:-50 保留元素 CSS 的 translateX(-50%) 水平居中。GSAP 接管 transform 后，
-    // 若不显式带上居中偏移，scale 脉冲会丢掉 -50% 偏移导致标签向右跳半个身位。
-    gsap.set(element, { xPercent: -50 });
-
+    // 等级标签现在用 flex(inset:0) 居中，不再需要 translateX(-50%) 偏移，
+    // 因此脉冲只做 scale + 颜色，避免标签水平跳位。
     const timeline = gsap.timeline({ repeat: -1 });
 
     timeline
       .to(element, {
-        xPercent: -50,
         scale: 1.2,
         color: '#ffff88',
         textShadow: '0 0 16px rgba(255,220,80,0.9),0 0 32px rgba(255,180,40,0.5)',
@@ -154,10 +151,9 @@ export class GSAPAnimationManager {
         ease: "sine.inOut"
       })
       .to(element, {
-        xPercent: -50,
         scale: 1.0,
-        color: '#ffcc00',
-        textShadow: '0 0 8px rgba(255,200,0,0.4),0 1px 3px rgba(0,0,0,0.8)',
+        color: '#ffffff',
+        textShadow: '0 1px 3px rgba(0,0,0,0.9)',
         duration: 0.3,
         ease: "sine.inOut"
       });

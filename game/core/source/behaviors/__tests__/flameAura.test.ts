@@ -53,6 +53,16 @@ describe('flameAura', () => {
     expect(boss.hp).toBe(2000 - 4);
   });
 
+  it('水平近但垂直分层时不命中', () => {
+    const player = makePlayer({ y: 4 });
+    const below = makeEnemy(1, 0, 2);
+    below.y = 0;
+    const ctx = makeCtx(player, [below], null, makeStats({ damage: 4, aoeRadius: 3.5 }), 'flame_ring', 'flameAura', ['flame_ring']);
+    flameAura(createWorld(), ctx);
+    expect(ctx.effects.damageEvents).toHaveLength(0);
+    expect(below.hp).toBe(100);
+  });
+
   it('死敌 (hp<=0) 跳过', () => {
     const player = makePlayer();
     const dead = makeEnemy(1, 0, 1);

@@ -5,10 +5,12 @@
  *   - PC 桌面：仅在“按住鼠标左键拖动”时旋转视角（无自动 pointer lock）
  *   - 手机：右半屏拖拽（左半屏给虚拟摇杆，避免冲突）
  *
- * UI 隔离：
- *   - 只有鼠标不在任何可交互 UI / 面板上时，才允许视角控制。
- *   - 使用 elementFromPoint 检测顶层命中元素；HUD 按钮、面板、菜单等
- *     pointer-events:auto 区域会阻断镜头输入并释放 pointer lock。
+ * UI 隔离（只信任显式标记）：
+ *   - 用 elementFromPoint 命中顶层元素，向上遍历祖先；命中 canvas 前若遇到
+ *     `dataset.cameraBlock === 'true'` 的元素，则判定指针在 UI 上、阻断镜头输入。
+ *   - ⚠️ 约定：任何会盖在画布上、且要接收点击/拖拽的全屏或交互 UI 容器，
+ *     创建时必须显式标 `el.dataset.cameraBlock = 'true'`（容器标一次即可，子元素无需逐个标）。
+ *     不再有"任何非透明元素都算 UI"的启发式兜底 —— 漏标的浮层会让镜头在其上被拖动。
  *
  * 输出：
  *   - getYaw() —— 给 input system 旋转 WASD 用（只用 yaw，不用 pitch）
@@ -201,21 +203,12 @@ export class CameraOrbit {
 
   /** 指针是否落在可交互 UI 上（非画布游戏区域）。 */
   private isPointerOverBlockingUi(clientX: number, clientY: number): boolean {
+    // 只信任显式标记：命中 canvas 前遇到 dataset.cameraBlock 的元素即判定在 UI 上。
+    // 不再用 getComputedStyle 启发式（会把任何盖在画布上的子元素误判为 UI）。
     let el = document.elementFromPoint(clientX, clientY);
     while (el) {
       if (el === this.canvas) return false;
-      const html = el as HTMLElement;
-      if (html.dataset.cameraBlock === 'true') return true;
-      const style = window.getComputedStyle(html);
-      if (
-        style.pointerEvents !== 'none'
-        && style.display !== 'none'
-        && style.visibility !== 'hidden'
-        && html !== document.body
-        && html !== document.documentElement
-      ) {
-        return true;
-      }
+      if ((el as HTMLElement).dataset.cameraBlock === 'true') return true;
       el = el.parentElement;
     }
     return false;

@@ -23,7 +23,7 @@
  */
 import { distanceBetween, normalizeDirection } from '../../physics.ts';
 import { ENEMIES } from '../../data/enemies.ts';
-import { MAX_ENEMIES, MAX_PROJECTILES } from '../../config.ts';
+import { AOE_MAX_Y_DELTA, MAX_ENEMIES, MAX_PROJECTILES } from '../../config.ts';
 import type { BossState, BossAttack, BossPhase } from '../../types.ts';
 import type { AiContext } from '../types.ts';
 
@@ -103,7 +103,7 @@ function groundSlam(boss: BossState, ctx: AiContext): void {
 /** AOE 爆炸 40 dmg / 7 单位（phase 3 专属）. */
 function aoeExplosion(boss: BossState, ctx: AiContext): void {
   const dist = distanceBetween(boss.x, boss.z, ctx.player.x, ctx.player.z);
-  if (dist < AOE_EXPLOSION_RANGE) {
+  if (dist < AOE_EXPLOSION_RANGE && Math.abs(boss.y - ctx.player.y) <= AOE_MAX_Y_DELTA) {
     ctx.effects.damagePlayer(40);
   }
 }
@@ -113,7 +113,7 @@ function darkBolt(boss: BossState, ctx: AiContext): void {
   const dir = normalizeDirection(ctx.player.x - boss.x, ctx.player.z - boss.z);
   ctx.effects.spawnProjectile({
     weaponType: 'flame_ring',
-    x: boss.x, y: 1.0, z: boss.z,
+    x: boss.x, y: boss.y + 1.0, z: boss.z,
     vx: dir.x * 10, vy: 0, vz: dir.z * 10,
     damage: 20,
     bouncesLeft: 0, pierceLeft: 0,

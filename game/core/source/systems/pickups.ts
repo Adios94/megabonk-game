@@ -27,6 +27,9 @@ import { getXpPickupRadius, isXpPickupType, spawnConsumablesFromEnemy } from './
 import type { EnemyState, PickupState, PickupType } from '../types.ts';
 import type { Engine } from './types.ts';
 
+const PICKUP_SURFACE_OFFSET_Y = 0.2;
+const GOLD_MOTE_OFFSET_Y = 0.7;
+
 export function processDeaths(engine: Engine): void {
   const enemies = engine.state.enemies;
   for (let i = enemies.length - 1; i >= 0; i--) {
@@ -47,6 +50,7 @@ export function processDeaths(engine: Engine): void {
 function spawnPickupFromEnemy(engine: Engine, enemy: EnemyState): void {
   const cfg = ENEMIES[enemy.type];
   if (!cfg) return;
+  const dropY = enemy.y + PICKUP_SURFACE_OFFSET_Y;
 
   let xpReward = cfg.xpReward;
   const curseTome = engine.state.player.tomes.find(t => t.type === 'curse_tome');
@@ -62,7 +66,7 @@ function spawnPickupFromEnemy(engine: Engine, enemy: EnemyState): void {
     engine.state.pickups.push({
       id: engine.nextPickupId++,
       type: pickupType,
-      x: enemy.x, y: 0.2, z: enemy.z,
+      x: enemy.x, y: dropY, z: enemy.z,
       value: XP_VALUES[pickupType] ?? 1,
       lifetime: PICKUP_LIFETIME,
       attracted: false,
@@ -75,7 +79,7 @@ function spawnPickupFromEnemy(engine: Engine, enemy: EnemyState): void {
       id: engine.nextPickupId++,
       type: 'silver',
       x: enemy.x + (Math.random() - 0.5),
-      y: 0.2,
+      y: dropY,
       z: enemy.z + (Math.random() - 0.5),
       value: 5,
       lifetime: PICKUP_LIFETIME,
@@ -91,7 +95,7 @@ function spawnPickupFromEnemy(engine: Engine, enemy: EnemyState): void {
         id: engine.nextPickupId++,
         type: 'health',
         x: enemy.x + (Math.random() - 0.5),
-        y: 0.2,
+        y: dropY,
         z: enemy.z + (Math.random() - 0.5),
         value: 50, lifetime: PICKUP_LIFETIME, attracted: false,
       });
@@ -100,7 +104,7 @@ function spawnPickupFromEnemy(engine: Engine, enemy: EnemyState): void {
         id: engine.nextPickupId++,
         type: 'health_small',
         x: enemy.x + (Math.random() - 0.5),
-        y: 0.2,
+        y: dropY,
         z: enemy.z + (Math.random() - 0.5),
         value: 25, lifetime: PICKUP_LIFETIME, attracted: false,
       });
@@ -114,7 +118,7 @@ function spawnGoldMoteFromEnemy(engine: Engine, enemy: EnemyState): void {
   engine.state.goldMotes.push({
     id: engine.nextPickupId++,
     x: enemy.x,
-    y: 0.7,
+    y: enemy.y + GOLD_MOTE_OFFSET_Y,
     z: enemy.z,
     value,
     lifetime: 1.5,
@@ -156,6 +160,7 @@ export function tickPickups(engine: Engine, dt: number): void {
       const dir = normalizeDirection(player.x - pickup.x, player.z - pickup.z);
       pickup.x += dir.x * attractSpeed * dt;
       pickup.z += dir.z * attractSpeed * dt;
+      pickup.y += ((player.y ?? 0) + PICKUP_SURFACE_OFFSET_Y - pickup.y) * Math.min(1, dt * 8);
 
       const newDist = distanceBetween(player.x, player.z, pickup.x, pickup.z);
       if (newDist < 0.5) {

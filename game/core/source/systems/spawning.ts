@@ -58,8 +58,13 @@ export function tickSpawning(engine: Engine, dt: number): void {
   const isFinalSwarm = engine.state.gameTime >= 480 && engine.state.gameTime < REGULAR_GAME_DURATION;
   engine.state.finalSwarm = isFinalSwarm;
 
-  const maxAlive = isFinalSwarm ? 150 : wave.maxAlive;
-  const maxEnemiesLimit = isFinalSwarm ? 150 : engine.config.maxEnemies;
+  const overtimePressure = getOvertimePressure(engine.state.overtimeSeconds);
+  const maxAlive = isFinalSwarm
+    ? 150
+    : Math.ceil(wave.maxAlive * overtimePressure);
+  const maxEnemiesLimit = isFinalSwarm
+    ? 150
+    : Math.ceil(engine.config.maxEnemies * overtimePressure);
 
   if (engine.state.enemies.length >= maxAlive) return;
   if (engine.state.enemies.length >= maxEnemiesLimit) return;
@@ -83,11 +88,15 @@ export function tickSpawning(engine: Engine, dt: number): void {
   const curseSpawnMult = 1 - cursePower * 0.1;
   let spawnInterval = wave.spawnInterval * Math.max(0.5, curseSpawnMult);
   if (isFinalSwarm) spawnInterval *= 0.5;
+  if (engine.state.overtimeSeconds > 0) {
+    spawnInterval /= overtimePressure;
+  }
   engine.spawnTimer = spawnInterval;
 
   let groupSize = wave.groupSize[0] + Math.floor(Math.random() * (wave.groupSize[1] - wave.groupSize[0] + 1));
   if (cursePower > 0) groupSize = Math.round(groupSize * (1 + cursePower * 0.15));
   if (isFinalSwarm) groupSize = Math.round(groupSize * 1.5);
+  if (engine.state.overtimeSeconds > 0) groupSize = Math.ceil(groupSize * overtimePressure);
 
   const availableEnemies = isFinalSwarm
     ? Object.keys(ENEMIES)
@@ -116,6 +125,11 @@ export function tickSpawning(engine: Engine, dt: number): void {
     if (!enemyType) continue;
     spawnSingleEnemy(engine, enemyType);
   }
+}
+
+function getOvertimePressure(overtimeSeconds: number): number {
+  if (overtimeSeconds <= 0) return 1;
+  return 1 + overtimeSeconds / 45;
 }
 
 function spawnMiniBoss(engine: Engine): void {

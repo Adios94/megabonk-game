@@ -57,7 +57,7 @@ export function applyRelicKillEffects(engine: Engine, enemy: EnemyState): void {
   const player = engine.state.player;
   const bloodFang = getRelicStack(player, 'blood_fang');
   if (bloodFang > 0) {
-    const heal = (enemy.isElite || enemy.isMiniBoss ? 6 : 2) * bloodFang;
+    const heal = (enemy.isElite || enemy.isMiniBoss ? 3 : 2) * bloodFang;
     player.hp = Math.min(player.maxHp, player.hp + heal);
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { grantRelic, applyRelicTargetDamage } from '../relics.ts';
+import { grantRelic, applyRelicKillEffects, applyRelicTargetDamage } from '../relics.ts';
 import { applyShrineReward } from '../shrines.ts';
 import { recomputePlayerStats } from '../../stats/recomputePlayerStats.ts';
 import { getShopBonuses } from '../../shop.ts';
@@ -50,6 +50,21 @@ describe('applyRelicTargetDamage (精英伤害)', () => {
     const elite = makeEnemy(1, 'skeleton_soldier', 0, 0, { isElite: true });
     // 100 × (1 + 2×0.10) × 1.5 = 180
     expect(applyRelicTargetDamage(engine, 100, elite)).toBe(180);
+  });
+});
+
+describe('applyRelicKillEffects', () => {
+  it('blood_fang 击杀普通怪回复 2 HP，精英回复 3 HP', () => {
+    const engine = makeEngine();
+    const player = engine.state.player;
+    player.relicStacks.blood_fang = 1;
+    player.hp = 50;
+
+    applyRelicKillEffects(engine, makeEnemy(1, 'skeleton_soldier', 0, 0));
+    expect(player.hp).toBe(52);
+
+    applyRelicKillEffects(engine, makeEnemy(2, 'skeleton_soldier', 0, 0, { isElite: true }));
+    expect(player.hp).toBe(55);
   });
 });
 

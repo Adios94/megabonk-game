@@ -17,6 +17,8 @@
  */
 import { computeWeaponDamage } from '../stats/index.ts';
 import { distanceBetween } from '../physics.ts';
+import { AOE_MAX_Y_DELTA } from '../config.ts';
+import { bossDamageEventY, enemyDamageEventY } from '../combatHeight.ts';
 import { findNearestEnemy, findNearestEnemyExcluding } from './queries.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
@@ -26,7 +28,7 @@ const CHAIN_DECAY = 0.7;
 export function lightningChain(_world: GameWorld, ctx: BehaviorContext): void {
   const { player, enemies, boss, weapon, def, stats, effects } = ctx;
 
-  const target = findNearestEnemy(player.x, player.z, enemies, stats.range);
+  const target = findNearestEnemy(player.x, player.z, enemies, stats.range, player.y, AOE_MAX_Y_DELTA);
   if (!target) return;
 
   // 主命中
@@ -35,18 +37,19 @@ export function lightningChain(_world: GameWorld, ctx: BehaviorContext): void {
   target.hp -= damage;
   target.hitFlashTimer = 0.15;
   effects.addDamageDealt(damage);
-  effects.addDamageEvent(target.x, 1.5, target.z, damage, isCrit, false, 'lightning_staff');
+  effects.addDamageEvent(target.x, enemyDamageEventY(target), target.z, damage, isCrit, false, 'lightning_staff');
   effects.bondHit?.(weapon.type, target, damage, isCrit);
 
   // 链
   const hitIds = new Set<number>([target.id]);
   let currentX = target.x;
+  let currentY = target.y;
   let currentZ = target.z;
   let chainsLeft = stats.chains - 1;
 
   while (chainsLeft > 0) {
     const nearestEnemy = findNearestEnemyExcluding(
-      currentX, currentZ, enemies, hitIds, stats.range * 0.6,
+      currentX, currentZ, enemies, hitIds, stats.range * 0.6, currentY, AOE_MAX_Y_DELTA,
     );
     if (!nearestEnemy) break;
 
@@ -55,11 +58,12 @@ export function lightningChain(_world: GameWorld, ctx: BehaviorContext): void {
     nearestEnemy.hp -= chainDmg;
     nearestEnemy.hitFlashTimer = 0.15;
     effects.addDamageDealt(chainDmg);
-    effects.addDamageEvent(nearestEnemy.x, 1.5, nearestEnemy.z, chainDmg, chainCrit, false, 'lightning_staff');
+    effects.addDamageEvent(nearestEnemy.x, enemyDamageEventY(nearestEnemy), nearestEnemy.z, chainDmg, chainCrit, false, 'lightning_staff');
     effects.bondHit?.(weapon.type, nearestEnemy, chainDmg, chainCrit);
 
     hitIds.add(nearestEnemy.id);
     currentX = nearestEnemy.x;
+    currentY = nearestEnemy.y;
     currentZ = nearestEnemy.z;
     chainsLeft--;
   }
@@ -67,13 +71,13 @@ export function lightningChain(_world: GameWorld, ctx: BehaviorContext): void {
   // boss 在 chainsLeft > 0 + range 内时也命中
   if (boss && boss.hp > 0 && chainsLeft > 0) {
     const bossDist = distanceBetween(currentX, currentZ, boss.x, boss.z);
-    if (bossDist < stats.range) {
+    if (bossDist < stats.range && Math.abs(boss.y - currentY) <= AOE_MAX_Y_DELTA) {
       const bossCrit = Math.random() < player.critChance;
       const bossDmg = computeWeaponDamage(stats.damage * CHAIN_DECAY, player, def.tags, bossCrit, boss);
       boss.hp -= bossDmg;
       boss.hitFlashTimer = 0.15;
       effects.addDamageDealt(bossDmg);
-      effects.addDamageEvent(boss.x, 2, boss.z, bossDmg, bossCrit, false, 'lightning_staff');
+      effects.addDamageEvent(boss.x, bossDamageEventY(boss), boss.z, bossDmg, bossCrit, false, 'lightning_staff');
       effects.bondHit?.(weapon.type, boss, bossDmg, bossCrit);
     }
   }

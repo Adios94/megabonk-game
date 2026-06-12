@@ -9,6 +9,7 @@
  * 数学等价于 fireShotgun，由 parity 测试锁定。
  */
 import { computeWeaponDamage } from '../stats/index.ts';
+import { playerProjectileY } from '../combatHeight.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
 
@@ -30,7 +31,7 @@ export function spreadShot(_world: GameWorld, ctx: BehaviorContext): void {
 
     const id = effects.spawnProjectile({
       weaponType: 'shotgun',
-      x: player.x, y: 1.0, z: player.z,
+      x: player.x, y: playerProjectileY(player), z: player.z,
       vx, vy: 0, vz,
       damage,
       bouncesLeft: 0,

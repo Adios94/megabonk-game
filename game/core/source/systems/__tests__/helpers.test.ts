@@ -137,9 +137,14 @@ describe('checkGameOver', () => {
     expect(engine.state.running).toBe(false);
   });
 
-  it('boss hp ≤ 0 → portal_open + silver +50（不再是 victory 终态）', () => {
+  it('第一关 boss hp ≤ 0 → portal_open + silver +50 + boss 宝箱', () => {
     const engine = makeEngine();
+    engine.config.tier = 2;
+    engine.state.tier = 2;
+    engine.state.stage = 1;
     engine.state.boss = makeBoss();
+    engine.state.boss.x = 6;
+    engine.state.boss.z = -3;
     engine.state.boss.hp = 0;
     engine.state.phase = 'boss_fight';
     engine.state.running = true;
@@ -154,6 +159,24 @@ describe('checkGameOver', () => {
     expect(engine.state.boss).toBeNull();
     expect(engine.state.stats.silverEarned).toBe(150);
     expect(engine.state.altars[0].phase).toBe('portal_ready');
+    expect(engine.state.chests).toHaveLength(1);
+    expect(engine.state.chests[0]).toMatchObject({ x: 6, z: -3, opened: false, bossDrop: true });
+  });
+
+  it('第二关 boss hp ≤ 0 → 回到 playing，祭坛进入冷却', () => {
+    const engine = makeEngine();
+    engine.state.stage = 2;
+    engine.state.boss = makeBoss();
+    engine.state.boss.hp = 0;
+    engine.state.phase = 'boss_fight';
+    engine.state.altars = [{
+      x: 0, z: 0, phase: 'boss_active', summonTimer: 0, summonDuration: 1,
+    }];
+    checkGameOver(engine);
+    expect(engine.state.phase).toBe('playing');
+    expect(engine.state.boss).toBeNull();
+    expect(engine.state.altars[0].phase).toBe('cooldown');
+    expect(engine.state.chests[0].bossDrop).toBe(true);
   });
 
   it('player 活, boss 没死 → 不变', () => {

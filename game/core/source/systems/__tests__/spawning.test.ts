@@ -147,6 +147,49 @@ describe('tickSpawning', () => {
     tickSpawning(engine, 0.05);
     expect(engine.state.enemies).toHaveLength(30);
   });
+
+  it('overtime 会提高数量上限并加快刷怪间隔', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const engine = makeEngine();
+    engine.state.gameTime = REGULAR_GAME_DURATION + 10;
+    engine.state.overtimeSeconds = 60;
+    engine.state.enemies = Array.from({ length: 30 }, (_, i) => ({
+      id: i, type: 'skeleton_soldier' as const, x: 0, y: 0, z: 0,
+      hp: 10, maxHp: 10, speed: 3, damage: 5,
+      behavior: 'chase' as const, isElite: false, isMiniBoss: false,
+      hitFlashTimer: 0, attackCooldown: 0, attackCooldownMax: 1.5,
+      targetX: 0, targetZ: 0,
+      aiPhase: 0,
+      chargeState: 'idle' as const, chargeTimer: 0, chargeTargetX: 0, chargeTargetZ: 0,
+      summonCooldown: 0, orbitAngle: 0, orbitTimer: 0,
+      diveState: 'flying' as const, diveTimer: 0,
+    }));
+    engine.spawnTimer = 0;
+    tickSpawning(engine, 0.05);
+    expect(engine.state.enemies.length).toBeGreaterThan(30);
+    expect(engine.spawnTimer).toBeCloseTo(0.3429, 4);
+  });
+
+  it('overtime 数量增长不再受 220 额外封顶限制', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const engine = makeEngine();
+    engine.state.gameTime = REGULAR_GAME_DURATION + 120;
+    engine.state.overtimeSeconds = 600;
+    engine.state.enemies = Array.from({ length: 220 }, (_, i) => ({
+      id: i, type: 'skeleton_soldier' as const, x: 0, y: 0, z: 0,
+      hp: 10, maxHp: 10, speed: 3, damage: 5,
+      behavior: 'chase' as const, isElite: false, isMiniBoss: false,
+      hitFlashTimer: 0, attackCooldown: 0, attackCooldownMax: 1.5,
+      targetX: 0, targetZ: 0,
+      aiPhase: 0,
+      chargeState: 'idle' as const, chargeTimer: 0, chargeTargetX: 0, chargeTargetZ: 0,
+      summonCooldown: 0, orbitAngle: 0, orbitTimer: 0,
+      diveState: 'flying' as const, diveTimer: 0,
+    }));
+    engine.spawnTimer = 0;
+    tickSpawning(engine, 0.05);
+    expect(engine.state.enemies.length).toBeGreaterThan(220);
+  });
 });
 
 describe('checkBossSpawn', () => {

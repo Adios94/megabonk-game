@@ -10,6 +10,8 @@
  */
 import { normalizeDirection } from '../physics.ts';
 import { computeWeaponDamage } from '../stats/index.ts';
+import { AOE_MAX_Y_DELTA } from '../config.ts';
+import { playerProjectileY } from '../combatHeight.ts';
 import { findNearestEnemy } from './queries.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
@@ -19,7 +21,7 @@ export function forwardArrow(_world: GameWorld, ctx: BehaviorContext): void {
   const count = stats.projectileCount;
 
   for (let i = 0; i < count; i++) {
-    const target = findNearestEnemy(player.x, player.z, enemies, stats.range);
+    const target = findNearestEnemy(player.x, player.z, enemies, stats.range, player.y, AOE_MAX_Y_DELTA);
     let vx: number, vz: number;
     if (target && i === 0) {
       const dir = normalizeDirection(target.x - player.x, target.z - player.z);
@@ -36,7 +38,7 @@ export function forwardArrow(_world: GameWorld, ctx: BehaviorContext): void {
 
     const id = effects.spawnProjectile({
       weaponType: 'bow',
-      x: player.x, y: 1.0, z: player.z,
+      x: player.x, y: playerProjectileY(player), z: player.z,
       vx, vy: 0, vz,
       damage,
       bouncesLeft: 0,

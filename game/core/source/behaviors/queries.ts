@@ -16,11 +16,14 @@ export function findNearestEnemy(
   x: number, z: number,
   enemies: EnemyState[],
   maxRange: number = Infinity,
+  sourceY?: number,
+  maxYDelta: number = Infinity,
 ): EnemyState | null {
   let nearest: EnemyState | null = null;
   let nearestDist = maxRange;
   for (const enemy of enemies) {
     if (enemy.hp <= 0) continue;
+    if (sourceY !== undefined && Math.abs(enemy.y - sourceY) > maxYDelta) continue;
     const dist = distanceBetween(x, z, enemy.x, enemy.z);
     if (dist < nearestDist) {
       nearestDist = dist;
@@ -41,6 +44,8 @@ export function findNearestEnemyExcluding(
   enemies: EnemyState[],
   excludeIds: ReadonlySet<number> | readonly number[],
   maxRange: number = Infinity,
+  sourceY?: number,
+  maxYDelta: number = Infinity,
 ): EnemyState | null {
   const excludes: ReadonlySet<number> = excludeIds instanceof Set
     ? excludeIds
@@ -50,6 +55,7 @@ export function findNearestEnemyExcluding(
   for (const enemy of enemies) {
     if (enemy.hp <= 0) continue;
     if (excludes.has(enemy.id)) continue;
+    if (sourceY !== undefined && Math.abs(enemy.y - sourceY) > maxYDelta) continue;
     const dist = distanceBetween(x, z, enemy.x, enemy.z);
     if (dist < nearestDist) {
       nearestDist = dist;

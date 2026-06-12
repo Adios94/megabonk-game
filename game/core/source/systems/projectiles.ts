@@ -25,7 +25,7 @@ export function tickProjectiles(engine: Engine, dt: number): void {
     const proj = projectiles[i];
 
     if (proj.orbiting) {
-      updateOrbitingProjectile(proj, player.x, player.z, dt);
+      updateOrbitingProjectile(proj, player.x, player.z, dt, player.y);
     } else {
       proj.x += proj.vx * dt;
       proj.y += proj.vy * dt;

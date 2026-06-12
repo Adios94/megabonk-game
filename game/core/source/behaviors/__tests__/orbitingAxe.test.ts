@@ -12,7 +12,7 @@ describe('orbitingAxe', () => {
   afterEach(() => { mathRandomSpy.mockRestore(); });
 
   it('count=1 → 1 projectile, startAngle=0, orbiting flags set', () => {
-    const player = makePlayer({ x: 0, z: 0 });
+    const player = makePlayer({ x: 0, y: 5, z: 0 });
     const ctx = makeCtx(player, [], null, makeStats({ damage: 10, projectileCount: 1, range: 3, aoeRadius: 1, pierce: 999, speed: 4 }), 'axe', 'orbitingAxe', ['axe']);
     orbitingAxe(createWorld(), ctx);
     expect(ctx.effects.projectiles).toHaveLength(1);
@@ -24,6 +24,7 @@ describe('orbitingAxe', () => {
     expect(p.orbitRadius).toBe(3);
     expect(p.orbitSpeed).toBe(4);
     expect(p.x).toBeCloseTo(3, 4);   // cos(0) × 3
+    expect(p.y).toBe(6);
     expect(p.z).toBeCloseTo(0, 4);   // sin(0) × 3
     expect(p.vx).toBe(0);
     expect(p.vy).toBe(0);

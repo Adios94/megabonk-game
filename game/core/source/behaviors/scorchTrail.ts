@@ -21,6 +21,7 @@ export function scorchTrail(_world: GameWorld, ctx: BehaviorContext): void {
     kind: 'scorch_trail',
     weaponType: 'scorch_boots',
     x: player.x,
+    y: player.y,
     z: player.z,
     radius: stats.aoeRadius,
     lifetime: SCORCH_TRAIL_LIFETIME,

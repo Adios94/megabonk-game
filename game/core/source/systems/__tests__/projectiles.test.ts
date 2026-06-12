@@ -33,12 +33,14 @@ describe('tickProjectiles: 移动', () => {
 
   it('orbiting=true 时不走线性移动 (走 updateOrbitingProjectile)', () => {
     const engine = makeEngine();
+    engine.state.player.y = 4;
     const proj = makeProj({ orbiting: true, orbitAngle: 0, orbitRadius: 5, orbitSpeed: 1, vx: 0, vz: 0 });
     engine.state.projectiles.push(proj);
     tickProjectiles(engine, 0.1);
     // orbitAngle 应推进, x/z 应位于半径 5 圆周
     const dist = Math.sqrt(proj.x ** 2 + proj.z ** 2);
     expect(dist).toBeCloseTo(5, 4);
+    expect(proj.y).toBe(5);
   });
 });
 

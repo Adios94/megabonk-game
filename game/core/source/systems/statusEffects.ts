@@ -9,6 +9,7 @@
  * 减速本身不在这里施加位移影响——只负责计时与到期清理；移动时再读取。
  */
 import { ELITE_SLOW_COEF } from '../config.ts';
+import { enemyDamageEventY } from '../combatHeight.ts';
 import { addDamageEvent } from './helpers.ts';
 import type { EnemyState } from '../types.ts';
 import type { Engine } from './types.ts';
@@ -62,7 +63,7 @@ export function tickStatusEffects(engine: Engine, dt: number): void {
       enemy.poisonTimer = after;
       // 跨 0.5s 边界 → 弹一个聚合伤害数字（绿色由 weaponType=poison_bomb 驱动）
       if (Math.ceil(before / POISON_NUMBER_INTERVAL) !== Math.ceil(Math.max(0, after) / POISON_NUMBER_INTERVAL)) {
-        addDamageEvent(engine, enemy.x, 1.2, enemy.z, Math.round(dps * POISON_NUMBER_INTERVAL), false, false, 'poison_bomb');
+        addDamageEvent(engine, enemy.x, enemyDamageEventY(enemy), enemy.z, Math.round(dps * POISON_NUMBER_INTERVAL), false, false, 'poison_bomb');
       }
       if (enemy.poisonTimer <= 0) {
         enemy.poisonTimer = 0;

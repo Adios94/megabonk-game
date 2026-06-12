@@ -13,7 +13,7 @@ function enemyAt(id: number, x: number, z: number, hp = 100) {
 function gasCloud(over: Partial<AreaEffectState> = {}): AreaEffectState {
   return {
     id: 1, kind: 'gas_cloud', weaponType: 'poison_bomb',
-    x: 0, z: 0, radius: 3, lifetime: 4, maxLifetime: 4,
+    x: 0, y: 0, z: 0, radius: 3, lifetime: 4, maxLifetime: 4,
     damage: 10, poisonDps: 10, poisonDuration: 1.0,
     tickTimer: 0, tickInterval: 0.5,
     ...over,
@@ -40,6 +40,17 @@ describe('gas_cloud', () => {
     tickAreaEffects(engine, 1 / 60);
     expect(engine.state.areaEffects).toHaveLength(0);
   });
+
+  it('水平范围内但垂直分层时不刷新中毒', () => {
+    const engine = makeEngine();
+    const below = enemyAt(1, 1, 0, 100);
+    below.y = 0;
+    engine.state.enemies.push(below);
+    engine.state.areaEffects.push(gasCloud({ y: 4 }));
+
+    tickAreaEffects(engine, 1 / 60);
+    expect(below.poisonTimer ?? 0).toBe(0);
+  });
 });
 
 describe('void_ripple', () => {
@@ -50,7 +61,7 @@ describe('void_ripple', () => {
     engine.state.enemies.push(near, far);
     engine.state.areaEffects.push({
       id: 1, kind: 'void_ripple', weaponType: 'void_ripple',
-      x: 0, z: 0, radius: 0, lifetime: 5, maxLifetime: 5,
+      x: 0, y: 0, z: 0, radius: 0, lifetime: 5, maxLifetime: 5,
       damage: 20, expandSpeed: 120, maxRadius: 10, hitEnemyIds: [],
     });
 
@@ -66,7 +77,7 @@ describe('void_ripple', () => {
     engine.state.enemies.push(e);
     engine.state.areaEffects.push({
       id: 1, kind: 'void_ripple', weaponType: 'void_ripple',
-      x: 0, z: 0, radius: 0, lifetime: 5, maxLifetime: 5,
+      x: 0, y: 0, z: 0, radius: 0, lifetime: 5, maxLifetime: 5,
       damage: 20, expandSpeed: 120, maxRadius: 10, hitEnemyIds: [],
     });
     tickAreaEffects(engine, 1 / 60);
@@ -83,13 +94,45 @@ describe('void_ripple', () => {
     engine.state.enemies.push(e);
     engine.state.areaEffects.push({
       id: 1, kind: 'void_ripple', weaponType: 'void_ripple',
-      x: 0, z: 0, radius: 0, lifetime: 5, maxLifetime: 5,
+      x: 0, y: 0, z: 0, radius: 0, lifetime: 5, maxLifetime: 5,
       damage: 20, expandSpeed: 120, maxRadius: 10, followPlayer: true, hitEnemyIds: [],
     });
 
     tickAreaEffects(engine, 1 / 60);
     expect(engine.state.areaEffects[0]?.x).toBe(10);
     expect(e.hp).toBeLessThan(100);
+  });
+});
+
+describe('void_ripple height', () => {
+  it('同高度平台上的敌人正常被波前结算', () => {
+    const engine = makeEngine();
+    const elevated = enemyAt(1, 1, 0, 100);
+    elevated.y = 4;
+    engine.state.enemies.push(elevated);
+    engine.state.areaEffects.push({
+      id: 1, kind: 'void_ripple', weaponType: 'void_ripple',
+      x: 0, y: 4, z: 0, radius: 0, lifetime: 5, maxLifetime: 5,
+      damage: 20, expandSpeed: 120, maxRadius: 10, hitEnemyIds: [],
+    });
+
+    tickAreaEffects(engine, 1 / 60);
+    expect(elevated.hp).toBeLessThan(100);
+  });
+
+  it('水平近但垂直分层时不结算', () => {
+    const engine = makeEngine();
+    const below = enemyAt(1, 1, 0, 100);
+    below.y = 0;
+    engine.state.enemies.push(below);
+    engine.state.areaEffects.push({
+      id: 1, kind: 'void_ripple', weaponType: 'void_ripple',
+      x: 0, y: 4, z: 0, radius: 0, lifetime: 5, maxLifetime: 5,
+      damage: 20, expandSpeed: 120, maxRadius: 10, hitEnemyIds: [],
+    });
+
+    tickAreaEffects(engine, 1 / 60);
+    expect(below.hp).toBe(100);
   });
 });
 
@@ -101,11 +144,25 @@ describe('scorch_trail', () => {
     engine.state.enemies.push(inside, outside);
     engine.state.areaEffects.push({
       id: 1, kind: 'scorch_trail', weaponType: 'scorch_boots',
-      x: 0, z: 0, radius: 1.0, lifetime: 2.5, maxLifetime: 2.5,
+      x: 0, y: 0, z: 0, radius: 1.0, lifetime: 2.5, maxLifetime: 2.5,
       damage: 8, tickTimer: 0, tickInterval: 0.4,
     });
     tickAreaEffects(engine, 1 / 60);
     expect(inside.hp).toBeLessThan(100);
     expect(outside.hp).toBe(100);
+  });
+
+  it('不同高度平台上的敌人不被灼伤', () => {
+    const engine = makeEngine();
+    const below = enemyAt(1, 0.5, 0, 100);
+    below.y = 0;
+    engine.state.enemies.push(below);
+    engine.state.areaEffects.push({
+      id: 1, kind: 'scorch_trail', weaponType: 'scorch_boots',
+      x: 0, y: 4, z: 0, radius: 1.0, lifetime: 2.5, maxLifetime: 2.5,
+      damage: 8, tickTimer: 0, tickInterval: 0.4,
+    });
+    tickAreaEffects(engine, 1 / 60);
+    expect(below.hp).toBe(100);
   });
 });

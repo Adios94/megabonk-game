@@ -9,7 +9,7 @@
  *   - 且玩家未主动进入传送门（state.altars 中没有 portal_used）
  *
  * 一旦满足，每帧给 `state.overtimeSeconds` 累加 dt。
- * 系数公式见 factories/spawnEnemy.ts —— 每 OVERTIME_STEP_SECONDS 一档。
+ * 系数公式见 factories/spawnEnemy.ts —— 按 OVERTIME_STEP_SECONDS 归一后连续提升。
  *
  * 退出条件：
  *   - 玩家进入传送门（tier 推进流程会重置 overtimeSeconds = 0）

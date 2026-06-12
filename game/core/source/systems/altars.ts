@@ -26,6 +26,7 @@
 import { distanceBetween } from '../physics.ts';
 import { pickRandomSubset } from '../spawnPick.ts';
 import {
+  ALTAR_BOSS_RESPAWN_COOLDOWN,
   ALTAR_SUMMON_DURATION,
   ALTAR_INTERACT_RADIUS,
   ALTAR_MIN_DISTANCE,
@@ -145,6 +146,15 @@ export function tickAltars(engine: Engine, dt: number): void {
         // 等 Boss 死亡：由 helpers.ts 的 checkGameOver 或 boss death hook 翻到 portal_ready
         break;
       }
+      case 'cooldown': {
+        altar.cooldownTimer = Math.max(0, (altar.cooldownTimer ?? 0) - dt);
+        if (altar.cooldownTimer <= 0) {
+          altar.phase = 'ready';
+          altar.summonTimer = 0;
+          altar.cooldownTimer = 0;
+        }
+        break;
+      }
       case 'portal_ready': {
         if (inRange && interact) {
           altar.phase = 'portal_used';
@@ -160,14 +170,22 @@ export function tickAltars(engine: Engine, dt: number): void {
 }
 
 /**
- * Boss 死亡后调用：把所有 boss_active 的祭坛翻成 portal_ready。
+ * Boss 死亡后调用：第一关把 boss_active 祭坛翻成 portal_ready；
+ * 第二关及以后进入 cooldown，冷却结束后才能再次召唤，不再提供进入下一关的传送门。
  * 通常一局只会有一个 boss_active 祭坛（设计上每 tier 1 个），但代码上不假设。
  */
 export function onBossDefeated(engine: Engine): void {
   for (const altar of engine.state.altars) {
     if (altar.phase === 'boss_active') {
-      altar.phase = 'portal_ready';
       altar.summonTimer = 0;
+      if ((engine.state.stage ?? 1) === 1) {
+        altar.phase = 'portal_ready';
+        altar.cooldownTimer = 0;
+      } else {
+        altar.phase = 'cooldown';
+        altar.cooldownTimer = ALTAR_BOSS_RESPAWN_COOLDOWN;
+        altar.cooldownDuration = ALTAR_BOSS_RESPAWN_COOLDOWN;
+      }
     }
   }
 }

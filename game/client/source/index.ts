@@ -3008,7 +3008,7 @@ export class GameScene {
     // Map enemy types to loaded models for geometry extraction
     const enemyModelMap: Record<string, keyof LoadedModels> = {
       skeleton_soldier: 'monster_skeleton', // 普通骷髅兵 → Quaternius Skeleton.glb
-      zombie: 'zombie_chubby',              // 僵尸(高HP) → 胖僵尸
+      zombie: 'zombie_basic',               // 僵尸(高HP) → Basic 僵尸（靠 enemyScales 放大表达"大而慢"）
       skeleton_archer: 'zombie_arm',        // 弓手(远程) → 断臂僵尸（待补骷髅弓手）
       skeleton_knight: 'zombie_chubby',     // 骑士(精英冲刺) → 胖僵尸(大型)
       necromancer: 'ghost',                 // 法师(召唤) → 通用 ghost.glb（飘浮形象更贴合）
@@ -4505,7 +4505,7 @@ export class GameScene {
     // 保持与 setupEnemyMeshes 的映射一致（skeleton_soldier / gargoyle / necromancer 已换专属模型）
     const enemyModelMap: Record<string, keyof LoadedModels> = {
       skeleton_soldier: 'monster_skeleton',
-      zombie: 'zombie_chubby',
+      zombie: 'zombie_basic',
       skeleton_archer: 'zombie_arm',
       skeleton_knight: 'zombie_chubby',
       necromancer: 'ghost',

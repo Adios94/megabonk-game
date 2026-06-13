@@ -52,7 +52,7 @@
 | 敌人 ID | 设定 | 当前用模型 | 应有形象 | 状态 |
 |---|---|---|---|---|
 | skeleton_soldier | 普通骷髅兵 | monsters/Skeleton.glb | 骷髅兵 | OK（带动画） |
-| zombie | 高 HP 慢速僵尸 | zombie_chubby.gltf | （风格匹配） | OK |
+| zombie | 高 HP 慢速僵尸 | zombie_basic.gltf | （风格匹配，靠 enemyScales 放大暗示高 HP） | OK |
 | skeleton_archer | 远程弓手 | zombie_arm.gltf | 骷髅弓手 | P0（语义错位） |
 | skeleton_knight | 精英冲锋骑士 | zombie_chubby.gltf | 骷髅骑士（甲胄+大剑） | P0（语义错位） |
 | necromancer | 召唤型法师 | ghost.glb | 死灵法师（袍子+杖） | OK（飘浮形象贴合，32 个动画 clip） |

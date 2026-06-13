@@ -3,6 +3,10 @@
 > 给美术 / 主程对接用的"什么资源还缺"清单。
 > 数据源：`game/client/source/index.ts` 全文扫描 + `game/core/data/*` + `public/` 目录比对。
 > 最后更新：2026-06-13
+>
+> **归档约定**：所有未被代码引用的模型已挪到 `public/models/_unused/` 与
+> `public/models/items/_unused/`。本文档里凡是带 `_unused/` 前缀的路径，
+> 都是"暂时不加载、但日后可挂回去"的备用资产；要启用时把文件 `mv` 回上一级即可。
 
 ---
 
@@ -57,15 +61,15 @@
 
 | 文件 | 可临时顶替 |
 |---|---|
-| public/models/skeleton.glb | skeleton_soldier / skeleton_archer |
-| public/models/ghost.glb | necromancer 备选 |
-| public/models/pumpkin.glb | 万圣节季节皮肤 |
-| public/models/enemy_2legs.gltf | 远程机械敌 |
-| public/models/enemy_2legs_gun.gltf | 同上 |
-| public/models/enemy_flying.gltf | gargoyle 备选 |
-| public/models/enemy_flying_gun.gltf | gargoyle 远程版 |
-| public/models/enemy_large.gltf | 精英 / 备 Boss |
-| public/models/zombie.glb | 重复 |
+| public/models/_unused/skeleton.glb | skeleton_soldier / skeleton_archer |
+| public/models/_unused/ghost.glb | necromancer 备选 |
+| public/models/_unused/pumpkin.glb | 万圣节季节皮肤 |
+| public/models/_unused/enemy_2legs.gltf | 远程机械敌 |
+| public/models/_unused/enemy_2legs_gun.gltf | 同上 |
+| public/models/_unused/enemy_flying.gltf | gargoyle 备选 |
+| public/models/_unused/enemy_flying_gun.gltf | gargoyle 远程版 |
+| public/models/_unused/enemy_large.gltf | 精英 / 备 Boss |
+| public/models/_unused/zombie.glb | 重复（建议删） |
 
 > **接入位置**：`game/client/source/index.ts:2861-2868` 的 `enemyModelMap`。
 
@@ -77,7 +81,7 @@
 |---|---|---|---|
 | Skeleton King | public/models/enemy_large_gun.gltf | 占位 | 实际是带枪机械敌人 |
 | Boss fallback | THREE.BoxGeometry(2.4, 3.0, 2.4) 紫色 | 程序化 | index.ts:4921 |
-| 闲置候选 | public/models/boss.glb | 未引用 | 风格未知，需评估 |
+| 闲置候选 | public/models/_unused/boss.glb | 未引用 | 风格未知，需评估 |
 | 真正缺失 | 骷髅王（约 5m 高，大剑+披风+王冠） | 缺 | 与 `core/ai/bosses/skeletonKing.ts` 配套 |
 
 ---
@@ -100,13 +104,13 @@
 
 | 模型 | 备注 |
 |---|---|
-| Sword_big.obj/.mtl + Golden | katana（备用） |
-| Hammer_Double.obj/.mtl | hammer（备用） |
-| Dagger.obj/.mtl + Golden | dagger（备用） |
-| Dart.obj/.mtl | dart（备用） |
-| Bow_Wooden.obj/.mtl | 未引用 |
-| Coin.obj/.mtl | 未引用 |
-| Heart_Half.obj/.mtl | 未引用 |
+| Sword_big.obj/.mtl + Golden | katana（备用，已加载） |
+| Hammer_Double.obj/.mtl | hammer（备用，已加载） |
+| Dagger.obj/.mtl + Golden | dagger（备用，已加载） |
+| Dart.obj/.mtl | dart（备用，已加载） |
+| _unused/Bow_Wooden.obj/.mtl | 未引用，已归档 |
+| _unused/Coin.obj/.mtl | 未引用，已归档（§5 silver 拾取改造时需移回） |
+| _unused/Heart_Half.obj/.mtl | 未引用，已归档（§5 health_small 改造时需移回） |
 
 ### 4.3 没有专属模型 / 全程序化（P0 重点）
 
@@ -132,11 +136,13 @@
 | xp_blue | 3 xp | Crystal1.obj 染蓝 | Crystal2.obj |
 | xp_purple | 10 xp | Crystal1.obj 染紫 | Crystal3.obj |
 | xp_orange | 20 xp | Crystal1.obj 染橙 | Crystal4.obj 或 Crystal5.obj |
-| silver | 银币 | Crystal1.obj 染金 | Coin.obj |
+| silver | 银币 | Crystal1.obj 染金 | Coin.obj（当前在 items/_unused/，挂载时先 mv 回 items/） |
 | health | 大心 | Crystal1.obj 染红 | Heart.obj |
-| health_small | 小心 | Crystal1.obj 染红缩小 | Heart_Half.obj |
+| health_small | 小心 | Crystal1.obj 染红缩小 | Heart_Half.obj（当前在 items/_unused/，挂载时先 mv 回 items/） |
 
 > **改造点**：把 `setupPickupMesh()` 的单个 InstancedMesh 改成 7 个，每种类型独立 geometry。
+> Crystal2/3/4/5.obj 已被 `loadObjItems()` 加载（index.ts:1720-1723），可直接复用；
+> Coin / Heart_Half 需要先从 `items/_unused/` 移回 `items/` 并加进 `loadObjItems()`。
 
 ### 其他拾取相关
 
@@ -185,16 +191,19 @@
 | 装饰 | tombstone.glb, tree.glb | index.ts:1269-70 |
 | 传送门 | turret_teleporter.gltf | index.ts:1266 |
 
-### 7.2 已存在但未被代码引用（可挂可不挂）
+### 7.2 已归档到 `public/models/_unused/`（可挂可不挂）
 
 ```
 ac_stacked.gltf · antenna_1.gltf · computer.gltf · light_square.gltf
 light_street_2.gltf · lootbox.gltf · pipe_2.gltf · platform_2x1.gltf
 platform_4x4.gltf · rail_corner.gltf · rail_short.gltf · sign_3.gltf
 sign_corner_1.gltf · support_short.gltf · turret_cannon.gltf · tv_1.gltf
-pickup_health.gltf · pickup_heart.gltf · fence.glb · zombie.glb
-fence_cyber.fbx · light_street.fbx · rail_long.fbx · sign_1.fbx（FBX 重复）
+pickup_health.gltf · pickup_heart.gltf · fence.glb
+fence_cyber.fbx · light_street.fbx · rail_long.fbx · sign_1.fbx（FBX 重复，建议删）
 ```
+
+> 已挪到 `public/models/_unused/` 子目录；要启用任意一个：`mv public/models/_unused/<file> public/models/`
+> 并在 `index.ts:1259` 的 `loadModels()` 列表里加一行即可。
 
 ### 7.3 场景缺失
 
@@ -346,11 +355,13 @@ public/textures/texture_sign.png
 
 | 资产文件夹 | 用途 |
 |---|---|
-| public/models/ | 角色 / 敌人 / 场景 GLTF/GLB |
-| public/models/items/ | 武器 / 拾取物 OBJ + MTL |
+| public/models/ | 角色 / 敌人 / 场景 GLTF/GLB（当前 26 个在用） |
+| public/models/_unused/ | 已归档：34 个未引用模型 / FBX 重复 / 旧版替换件 |
+| public/models/items/ | 武器 / 拾取物 OBJ + MTL（当前 22 个文件在用） |
+| public/models/items/_unused/ | 已归档：3 套未引用 OBJ + MTL（Bow_Wooden / Coin / Heart_Half） |
 | public/models/levels/ | 关卡白盒 GLB |
 | public/textures/vfx/ | 11 张 VFX 贴图 |
-| public/textures/ | 备用粒子贴图（5 张未引用） |
+| public/textures/ | 备用粒子贴图（5 张未引用，未归档） |
 | public/ui/ | UI 图片资源 |
 
 | 代码定义位置 | 内容 |

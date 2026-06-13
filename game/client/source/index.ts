@@ -946,12 +946,14 @@ function tuneToonTexture(tex: THREE.Texture | null | undefined): void {
 }
 
 /**
- * 风格化叠加 GLSL（注入到 MeshToonMaterial 片元，在 <opaque_fragment> 前）：
- *   1) Rim light（菲涅尔边缘光）—— 角色边缘一圈冷亮，从背景弹出（荒野乱斗最关键的质感）。
- *   2) Toon specular（硬边高光）—— 塑料玩具般的光泽点。
- *   3) Colored shadow（暗部染冷色）—— 阴影不发黑发闷，带通透冷调。
+ * 风格化叠加 GLSL（注入到 MeshToonMaterial 片元，在 <opaque_fragment> 前）。
+ * 移植自 UltimateToon「stylized.gdshader」的视觉特征（阶梯光照由 gradientMap 提供，这里补足其余）：
+ *   1) Halftone pattern —— 屏幕空间漫画网点，暗部浮现（Godot pattern，本套 Shader 的招牌）。
+ *   2) Rim light —— smoothstep「硬带」菲涅尔边缘光 + 受光遮罩（Godot rim_smoothness / rim_mask_shadow）。
+ *   3) Toon specular —— 塑料玩具般的硬边高光（per-material uSpec）。
+ *   4) Colored shadow —— 暗部染冷色，阴影通透不发闷（Godot shadow_tint）。
  * 全部在线性空间叠加；光向用「固定视空间方向」(随相机稳定，免每帧更新 uniform)。
- * 调参直接改下面的常量：rim 的 pow(越大越细)/×强度/色；spec 的 pow(越大越紧)/边/强；shadow 的 tint/阈值/量。
+ * 调参直接改下方常量（HALFTONE_* / rim 带宽 / spec pow / shadow tint）。
  */
 const STYLIZED_TOON_GLSL = `
 	{
@@ -960,25 +962,40 @@ const STYLIZED_TOON_GLSL = `
 		vec3 LDIR = normalize( vec3( -0.35, 0.65, 0.55 ) );        // 固定视空间光向(左上前)
 		float NdL = dot( N, LDIR );
 
-		// 1) Rim light（菲涅尔边缘光）
-		float fres = 1.0 - saturate( dot( N, V ) );
-		float rim = pow( fres, 2.5 ) * 0.55;                       // pow=细度, 0.55=强度
-		rim *= smoothstep( -0.3, 0.4, NdL );                       // 背光侧淡出
-		outgoingLight += rim * vec3( 1.0, 1.05, 1.2 );             // 冷白 rim 色
+		// gradientMap 阶梯光照后的当前亮度 —— 作为 Godot 的 light 代理
+		float lum = dot( outgoingLight, vec3( 0.299, 0.587, 0.114 ) );
 
-		// 2) Toon specular（硬边高光）—— 强度按 uSpec（怪物/场景=0 哑光，主角/武器>0）
+		// 1) Halftone pattern（屏幕空间漫画网点，对应 Godot pattern_texture）
+		//    暗部网点中心变暗、随亮度增大而消失 —— 漫画/丝网印刷质感。
+		vec2 cell = fract( gl_FragCoord.xy / HALFTONE_TILING ) - 0.5;
+		float patVal = 1.0 - saturate( length( cell ) * 2.0 );     // 网点：中心=1 边缘=0
+		float shape = smoothstep( patVal - HALFTONE_SMOOTH, patVal + HALFTONE_SMOOTH, lum + HALFTONE_AMOUNT );
+		shape = clamp( shape, 0.0, lum + HALFTONE_AMOUNT );
+		float litProxy = mix( lum, shape, HALFTONE_BLEND );        // pattern_blend
+		outgoingLight *= ( lum > 1e-4 ) ? ( litProxy / lum ) : 1.0;
+
+		// 2) Colored shadow（暗部染冷色，对应 Godot shadow_tint）
+		float shMask = 1.0 - smoothstep( 0.0, 0.35, lum );         // 0.35=暗部判定阈值
+		outgoingLight = mix( outgoingLight, outgoingLight * vec3( 0.82, 0.88, 1.12 ), shMask * 0.4 ); // 冷 tint, 0.4 量
+
+		// 3) Rim light —— Godot 风格 smoothstep「硬带」边缘光 + 受光遮罩
+		float fres = pow( 1.0 - saturate( dot( N, V ) ), 2.0 );    // rim_amount=2.0
+		float rim  = smoothstep( 0.5 - 0.1, 0.5 + 0.1, fres );     // rim_smoothness=0.2 → ±0.1 硬带
+		rim *= saturate( NdL );                                    // rim_mask_shadow=1.0 背光侧压暗
+		outgoingLight += vec3( 1.0, 1.05, 1.2 ) * rim * 0.8;       // 冷白 rim 色 × blend
+
+		// 4) Toon specular（硬边高光）—— 强度按 uSpec（怪物/场景=0 哑光，主角/武器>0）
 		vec3 H = normalize( LDIR + V );
-		float sp = pow( saturate( dot( N, H ) ), 24.0 );           // 24=高光紧致度
+		float sp = pow( saturate( dot( N, H ) ), 32.0 );           // 高光紧致度
 		sp = smoothstep( 0.5, 0.53, sp ) * uSpec;                  // 硬边 × per-material 强度
 		sp *= saturate( NdL );                                     // 背光无高光
 		outgoingLight += vec3( sp );
-
-		// 3) Colored shadow（暗部染冷色）
-		float lum = dot( outgoingLight, vec3( 0.299, 0.587, 0.114 ) );
-		float shMask = 1.0 - smoothstep( 0.0, 0.35, lum );         // 0.35=暗部判定阈值
-		outgoingLight = mix( outgoingLight, outgoingLight * vec3( 0.82, 0.88, 1.12 ), shMask * 0.4 ); // 冷 tint, 0.4 量
 	}
-`;
+`
+	.replace( /HALFTONE_TILING/g, '5.0' )    // 网点像素尺寸（越小越密）
+	.replace( /HALFTONE_AMOUNT/g, '0.5' )    // pattern_amount：整体抬亮（网点出现的亮度阈值）
+	.replace( /HALFTONE_SMOOTH/g, '0.5' )    // pattern_smoothness：网点边缘柔和度
+	.replace( /HALFTONE_BLEND/g, '0.25' );   // pattern_blend：网点强度（0=关闭）
 
 /**
  * 给 MeshToonMaterial 挂上风格化叠加（rim + toon spec + 染色阴影）。
@@ -998,7 +1015,7 @@ function applyStylizedToonShading(mat: THREE.MeshToonMaterial, specStrength = 0)
         `${STYLIZED_TOON_GLSL}\n\t#include <opaque_fragment>`,
       );
   };
-  mat.customProgramCacheKey = () => 'stylized-toon-v1';
+  mat.customProgramCacheKey = () => 'stylized-toon-v2-halftone';
 }
 
 /**
@@ -1213,6 +1230,18 @@ interface LoadedModels {
   monster_knight: THREE.Group | null;
   // 通用 ghost 模型，用作 necromancer 渲染（带 32 个小写命名 clip，加载时归一化）
   ghost: THREE.Group | null;
+  // --- 皮肤试验：KayKit Skeletons（低多边形奇幻，静态网格，无动画）---
+  kk_warrior: THREE.Group | null;
+  kk_minion: THREE.Group | null;
+  kk_rogue: THREE.Group | null;
+  kk_mage: THREE.Group | null;
+  // --- 皮肤试验：体素机器人（MagicaVoxel OBJ，静态网格，无动画）---
+  vx_trooper: THREE.Group | null;
+  vx_golem: THREE.Group | null;
+  vx_recon: THREE.Group | null;
+  vx_mecha: THREE.Group | null;
+  vx_companion: THREE.Group | null;
+  vx_arachnoid: THREE.Group | null;
   boss: THREE.Group | null;
   tombstone: THREE.Group | null;
   tree: THREE.Group | null;
@@ -1244,6 +1273,16 @@ const loadedModels: LoadedModels = {
   monster_dragon: null,
   monster_knight: null,
   ghost: null,
+  kk_warrior: null,
+  kk_minion: null,
+  kk_rogue: null,
+  kk_mage: null,
+  vx_trooper: null,
+  vx_golem: null,
+  vx_recon: null,
+  vx_mecha: null,
+  vx_companion: null,
+  vx_arachnoid: null,
   boss: null,
   tombstone: null,
   tree: null,
@@ -1269,6 +1308,125 @@ const loadedModels: LoadedModels = {
 
 // Animation clips storage per model key
 const loadedAnimClips: Map<string, THREE.AnimationClip[]> = new Map();
+
+// =============================================================================
+// 怪物皮肤试验（运行时可切换：?skin= 或游戏内按 K 循环）
+// =============================================================================
+// 三套外观：original（现版）/ kaykit（KayKit 低多边形骷髅）/ voxel（体素机器人）。
+// 仅替换敌人「视觉模型」，core 逻辑/碰撞/数值不变。kaykit 与 voxel 均为静态网格
+// （无骨骼动画），切到这两套时敌人不播放走路/攻击动画，只随位置滑动——用于快速
+// 对比美术风格。映射覆盖全部 6 种敌人类型；KayKit 仅 4 个角色，做了合理复用。
+type EnemySkin = 'original' | 'kaykit' | 'voxel';
+
+const ENEMY_SKINS: Record<EnemySkin, Record<string, keyof LoadedModels>> = {
+  original: {
+    skeleton_soldier: 'monster_skeleton',
+    zombie: 'zombie_basic',
+    skeleton_archer: 'monster_dragon',
+    skeleton_knight: 'monster_knight',
+    necromancer: 'ghost',
+    gargoyle: 'monster_bat',
+  },
+  kaykit: {
+    skeleton_soldier: 'kk_warrior',  // 普通近战 → 战士
+    zombie: 'kk_minion',             // 高 HP 坦克 → 小兵（放大）
+    skeleton_archer: 'kk_rogue',     // 远程敏捷 → 盗贼
+    skeleton_knight: 'kk_warrior',   // 精英 → 战士（放大区分）
+    necromancer: 'kk_mage',          // 法师召唤 → 法师
+    gargoyle: 'kk_minion',           // 飞行 → 小兵（缩小）
+  },
+  voxel: {
+    skeleton_soldier: 'vx_trooper',  // 普通近战 → 机甲兵
+    zombie: 'vx_golem',              // 高 HP 坦克 → 机甲巨像
+    skeleton_archer: 'vx_recon',     // 远程 → 侦察机器人
+    skeleton_knight: 'vx_mecha',     // 精英 → 重型机甲
+    necromancer: 'vx_companion',     // 飘浮施法 → 浮游伴随机
+    gargoyle: 'vx_arachnoid',        // 飞行俯冲 → 蛛形机
+  },
+};
+
+let currentSkin: EnemySkin = (() => {
+  try {
+    const p = new URLSearchParams(window.location.search).get('skin');
+    if (p === 'kaykit' || p === 'voxel') return p;
+  } catch { /* SSR / no window */ }
+  return 'original';
+})();
+
+function getEnemyModelMap(): Record<string, keyof LoadedModels> {
+  return ENEMY_SKINS[currentSkin];
+}
+
+// 把模型重定位为「脚底贴地(min.y=0) + 水平居中」。渲染路径只克隆+缩放、不再居中，
+// 依赖模型原点在脚底中心；KayKit / MagicaVoxel 导出原点不一定如此，这里统一对齐。
+function alignModelToFeet(model: THREE.Object3D): THREE.Group {
+  const box = new THREE.Box3().setFromObject(model);
+  const center = box.getCenter(new THREE.Vector3());
+  const wrapper = new THREE.Group();
+  model.position.set(-center.x, -box.min.y, -center.z);
+  wrapper.add(model);
+  return wrapper;
+}
+
+// 加载皮肤试验模型（静态网格，无动画）。失败仅告警，对应敌人回退到彩色盒子。
+async function loadSkinModels(): Promise<void> {
+  const prepare = (root: THREE.Object3D, name: string): THREE.Group => {
+    convertToToonMaterials(root);
+    root.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+      }
+    });
+    const aligned = alignModelToFeet(root);
+    aligned.name = `Model_${name}`;
+    return aligned;
+  };
+
+  // KayKit：glb（自包含贴图）
+  const kaykit: [keyof LoadedModels, string][] = [
+    ['kk_warrior', '/models/skins/kaykit/Skeleton_Warrior.glb'],
+    ['kk_minion', '/models/skins/kaykit/Skeleton_Minion.glb'],
+    ['kk_rogue', '/models/skins/kaykit/Skeleton_Rogue.glb'],
+    ['kk_mage', '/models/skins/kaykit/Skeleton_Mage.glb'],
+  ];
+  // 体素：obj + mtl（mtl 内引用同名 png 调色板贴图）
+  const voxel: [keyof LoadedModels, string][] = [
+    ['vx_trooper', 'MechaTrooper'],
+    ['vx_golem', 'MechaGolem'],
+    ['vx_recon', 'ReconBot'],
+    ['vx_mecha', 'Mecha01'],
+    ['vx_companion', 'Companion-bot'],
+    ['vx_arachnoid', 'Arachnoid'],
+  ];
+
+  await Promise.all([
+    ...kaykit.map(async ([key, path]) => {
+      try {
+        const gltf = await gltfLoader.loadAsync(path);
+        loadedModels[key] = prepare(gltf.scene, key);
+        console.log(`[Skin] Loaded ${key} (${path})`);
+      } catch (err) {
+        console.warn(`[Skin] Failed ${key} (${path}):`, err);
+      }
+    }),
+    ...voxel.map(async ([key, base]) => {
+      try {
+        const mtlLoader = new MTLLoader();
+        const mtl = await mtlLoader.loadAsync(`/models/skins/voxel/${base}.mtl`);
+        mtl.preload();
+        const objLoader = new OBJLoader();
+        objLoader.setMaterials(mtl);
+        const obj = await objLoader.loadAsync(`/models/skins/voxel/${base}.obj`) as THREE.Group;
+        loadedModels[key] = prepare(obj, key);
+        console.log(`[Skin] Loaded ${key} (${base})`);
+      } catch (err) {
+        console.warn(`[Skin] Failed ${key} (${base}):`, err);
+      }
+    }),
+  ]);
+}
 
 async function loadModels(): Promise<void> {
   const modelPaths: [keyof LoadedModels, string][] = [
@@ -1338,8 +1496,8 @@ async function loadModels(): Promise<void> {
 
   await Promise.all(promises);
 
-  // Load OBJ item models for pickups/projectiles
-  await loadObjItems();
+  // 皮肤试验模型（KayKit / 体素机器人）—— 与 OBJ 道具并行加载
+  await Promise.all([loadObjItems(), loadSkinModels()]);
 }
 
 // =============================================================================
@@ -1768,6 +1926,8 @@ let daggerGoldenModel: THREE.Group | null = null;
 let katanaGoldenModel: THREE.Group | null = null;
 let chestClosedObj: THREE.Group | null = null;
 let chestOpenObj: THREE.Group | null = null;
+// glTF 宝箱自带的动画 clip（Open / Close / Idle_*），开箱时播放 "Open"。
+let chestAnimations: THREE.AnimationClip[] = [];
 
 async function loadObjItems(): Promise<void> {
   const objLoader = new OBJLoader();
@@ -1903,33 +2063,21 @@ async function loadObjItems(): Promise<void> {
   daggerGoldenModel = dagG;
   katanaGoldenModel = katG;
 
-  // Load chest models with materials (MTL + OBJ)
+  // Load chest model — Sci-Fi Essentials Prop_Chest (glTF + textures)
   try {
-    const mtlLoader = new MTLLoader();
+    const gltf = await gltfLoader.loadAsync('/models/items/Prop_Chest.gltf');
+    const chest = gltf.scene as unknown as THREE.Group;
+    chest.name = 'ChestClosed';
+    // glTF rig defaults to closed pose — leave as-is for the world prop.
+    // 保留 sci-fi 宝箱自带的 BaseColor 贴图，只做 toon 化；不再刷金色覆盖。
+    convertToToonMaterials(chest);
+    chestClosedObj = chest;
+    chestOpenObj = chest;
+    chestAnimations = gltf.animations ?? [];
 
-    const closedMtl = await mtlLoader.loadAsync('/models/items/Chest_Closed.mtl');
-    closedMtl.preload();
-    const closedObjLoader = new OBJLoader();
-    closedObjLoader.setMaterials(closedMtl);
-    const chestClosed = await closedObjLoader.loadAsync('/models/items/Chest_Closed.obj') as THREE.Group;
-    chestClosed.name = 'ChestClosed';
-    convertToToonMaterials(chestClosed);
-    applyChestGoldMaterials(chestClosed);
-    chestClosedObj = chestClosed;
-
-    const openMtl = await mtlLoader.loadAsync('/models/items/Chest_Open.mtl');
-    openMtl.preload();
-    const openObjLoader = new OBJLoader();
-    openObjLoader.setMaterials(openMtl);
-    const chestOpen = await openObjLoader.loadAsync('/models/items/Chest_Open.obj') as THREE.Group;
-    chestOpen.name = 'ChestOpen';
-    convertToToonMaterials(chestOpen);
-    applyChestGoldMaterials(chestOpen);
-    chestOpenObj = chestOpen;
-
-    console.log('[OBJ] Loaded chest models with materials');
+    console.log('[glTF] Loaded Prop_Chest model');
   } catch (err) {
-    console.warn('[OBJ] Failed to load chests:', err);
+    console.warn('[glTF] Failed to load chest:', err);
   }
 }
 
@@ -2044,6 +2192,8 @@ export class GameScene {
 
   // Chest rendering
   private chestObjects: Map<number, THREE.Object3D> = new Map();
+  // 每个已开启宝箱的开箱动画混合器（id → mixer），动画播完后箱体保留到玩家选完奖励才移除。
+  private chestMixers: Map<number, THREE.AnimationMixer> = new Map();
   private chestRewardPanel: HTMLDivElement | null = null;
   private chestRewardPanelKey: string | null = null;
 
@@ -2273,6 +2423,10 @@ export class GameScene {
       if (e.code === 'KeyE') {
         // 边缘触发：keydown 那一帧标记为 pressed；发送过 input 后会清零（见 handleInput）
         if (!e.repeat) this.interactKeyPressed = true;
+      }
+      // 皮肤试验：K 键循环切换怪物外观（original → kaykit → voxel）
+      if (e.code === 'KeyK' && !e.repeat) {
+        this.cycleEnemySkin();
       }
     });
     window.addEventListener('keyup', (e) => {
@@ -2725,21 +2879,65 @@ export class GameScene {
     this.scene.add(this.weaponOrbMesh);
   }
 
+  // 皮肤试验：循环切换怪物外观并清空所有敌人可视对象，使下一帧按新映射重建。
+  // 仅影响视觉（克隆模型/动画/对象池），不触碰 core 逻辑与敌人数值。
+  private cycleEnemySkin(): void {
+    const order: EnemySkin[] = ['original', 'kaykit', 'voxel'];
+    currentSkin = order[(order.indexOf(currentSkin) + 1) % order.length];
+
+    // 移除并回收当前所有敌人可视对象（含对象池里隐藏的、正在死亡的）
+    for (const obj of this.enemyObjects.values()) this.scene.remove(obj);
+    for (const pool of this.enemyPool.values()) for (const obj of pool) this.scene.remove(obj);
+    for (const dying of this.dyingEnemies.values()) this.scene.remove(dying.obj);
+    this.enemyObjects.clear();
+    this.enemyPool.clear();
+    this.dyingEnemies.clear();
+    for (const mixer of this.enemyMixers.values()) mixer.stopAllAction();
+    this.enemyMixers.clear();
+    this.enemyAnimStates.clear();
+    this.enemyAnimActions.clear();
+
+    const label: Record<EnemySkin, string> = {
+      original: '原版怪物',
+      kaykit: 'KayKit 骷髅（静态）',
+      voxel: '体素机器人（静态）',
+    };
+    this.showSkinToast(`怪物皮肤：${label[currentSkin]}  ·  按 K 切换`);
+    console.log(`[Skin] Switched to "${currentSkin}"`);
+  }
+
+  // 屏幕中上方短暂提示当前皮肤
+  private showSkinToast(text: string): void {
+    let el = document.getElementById('skin-toast') as HTMLDivElement | null;
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'skin-toast';
+      el.style.cssText = [
+        'position:fixed', 'top:14%', 'left:50%', 'transform:translateX(-50%)',
+        'padding:10px 20px', 'background:rgba(15,18,28,0.86)', 'color:#fff',
+        'font:600 16px/1.4 system-ui,sans-serif', 'border:1px solid rgba(255,255,255,0.25)',
+        'border-radius:10px', 'z-index:9999', 'pointer-events:none',
+        'transition:opacity 0.3s', 'box-shadow:0 4px 20px rgba(0,0,0,0.4)',
+      ].join(';');
+      document.body.appendChild(el);
+    }
+    const node = el;
+    node.textContent = text;
+    node.style.opacity = '1';
+    if (this.skinToastTimer !== null) window.clearTimeout(this.skinToastTimer);
+    this.skinToastTimer = window.setTimeout(() => { node.style.opacity = '0'; }, 2000);
+  }
+
+  private skinToastTimer: number | null = null;
+
   private setupEnemyMeshes(): void {
     const enemyTypes: string[] = [
       'skeleton_soldier', 'zombie', 'skeleton_archer',
       'skeleton_knight', 'necromancer', 'gargoyle',
     ];
 
-    // Map enemy types to loaded models for geometry extraction
-    const enemyModelMap: Record<string, keyof LoadedModels> = {
-      skeleton_soldier: 'monster_skeleton', // 普通骷髅兵 → Quaternius Skeleton.glb
-      zombie: 'zombie_basic',               // 僵尸(高HP) → Basic 僵尸（靠 enemyScales 放大表达"大而慢"）
-      skeleton_archer: 'monster_dragon',    // 远程攻击 → Quaternius Dragon.glb（飞行 + 远程吐息更贴合）
-      skeleton_knight: 'monster_knight',    // 骑士(精英冲刺) → 专属模块化骷髅模型（与 soldier 区分），放大体型表达"精英大型"
-      necromancer: 'ghost',                 // 法师(召唤) → 通用 ghost.glb（飘浮形象更贴合）
-      gargoyle: 'monster_bat',              // 飞行俯冲 → Quaternius Bat.glb
-    };
+    // Map enemy types to loaded models for geometry extraction（随当前皮肤变化）
+    const enemyModelMap = getEnemyModelMap();
 
     // ⚠️ Legacy InstancedMesh 路径，已不参与渲染（见文件末尾 "Hide InstancedMesh"）。
     // 实际敌人缩放在 updateEnemyObjects 里按模型高度归一化，改大小请改那边的 enemyScales。
@@ -3527,7 +3725,7 @@ export class GameScene {
 
     this.blobShadows.end(); // 回收本帧未用到的贴片
     this.renderTeleporters(state.altars);
-    this.renderChests(state.chests);
+    this.renderChests(state);
     this.renderShrines(state.shrines, state.player.x, state.player.z);
     this.updateVFX(state, dt);
     this.updateBillboardVfx(dt);
@@ -4226,16 +4424,8 @@ export class GameScene {
       }
     }
 
-    // Map enemy types to model keys
-    // 保持与 setupEnemyMeshes 的映射一致（skeleton_soldier / gargoyle / necromancer 已换专属模型）
-    const enemyModelMap: Record<string, keyof LoadedModels> = {
-      skeleton_soldier: 'monster_skeleton',
-      zombie: 'zombie_basic',
-      skeleton_archer: 'monster_dragon',
-      skeleton_knight: 'monster_knight', // 专属模块化骷髅模型（与 soldier 区分），放大体型表达"精英大型"
-      necromancer: 'ghost',
-      gargoyle: 'monster_bat',
-    };
+    // Map enemy types to model keys（随当前皮肤变化，见 ENEMY_SKINS / 按 K 切换）
+    const enemyModelMap = getEnemyModelMap();
 
     // 目标世界高度（米）—— 模型按实际高度归一化后缩放到此值。整体比玩家(1.8)矮一截以凸显角色（约 ×0.8）。
     const enemyScales: Record<string, number> = {
@@ -5673,39 +5863,51 @@ export class GameScene {
     }
   }
 
-  private renderChests(chests: ChestState[]): void {
+  private renderChests(state: GameState): void {
+    const chests = state.chests;
+    // 当前正在等待玩家选择奖励的宝箱 id（chest_reward 阶段）。
+    const pendingChestId = state.pendingChestReward?.chestId ?? null;
     const visibleChestIds = new Set<number>();
+    const time = performance.now() * 0.001;
 
     for (const chest of chests) {
       let obj = this.chestObjects.get(chest.id);
 
       if (chest.opened) {
-        // Opened: remove from scene and spawn particles (once)
-        if (obj) {
-          this.scene.remove(obj);
-          this.chestObjects.delete(chest.id);
+        // 没有对应对象（例如存档载入时就已开启）→ 不显示。
+        if (!obj) continue;
+        // 触发一次开箱动画（播放 glTF "Open" clip）。
+        this.playChestOpenAnimation(chest.id);
+
+        if (pendingChestId === chest.id) {
+          // 玩家还没选完奖励：保持宝箱可见（开盖姿态）。
+          visibleChestIds.add(chest.id);
+        } else {
+          // 已选完（pendingChestReward 已清空）：移除并撒金色粒子。
+          this.removeChestObject(chest.id);
           this.spawnPickupBurst(chest.x, (chest.y ?? 0) + 0.6, chest.z, 0xffdd00);
+          continue;
         }
-        continue;
+      } else {
+        visibleChestIds.add(chest.id);
+
+        if (!obj) {
+          obj = chestClosedObj
+            ? (cloneSkeleton(chestClosedObj) as THREE.Object3D)
+            : this.createReadableChestObject();
+          obj.name = `Chest_${chest.id}`;
+          // Normalize to ~1.2 units
+          const box = new THREE.Box3().setFromObject(obj);
+          const size = box.getSize(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z, 0.01);
+          const scale = 1.2 / maxDim;
+          obj.scale.set(scale, scale, scale);
+          this.scene.add(obj);
+          this.chestObjects.set(chest.id, obj);
+        }
       }
 
-      visibleChestIds.add(chest.id);
-
-      if (!obj) {
-        obj = this.createReadableChestObject();
-        obj.name = `Chest_${chest.id}`;
-        // Normalize to ~1.2 units
-        const box = new THREE.Box3().setFromObject(obj);
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z, 0.01);
-        const scale = 1.2 / maxDim;
-        obj.scale.set(scale, scale, scale);
-        this.scene.add(obj);
-        this.chestObjects.set(chest.id, obj);
-      }
-
-      // Gentle hover animation
-      const time = performance.now() * 0.001;
+      // Gentle hover animation（对可见宝箱统一处理）
       obj.position.set(chest.x, (chest.y ?? 0) + 0.1 + Math.sin(time * 1.5 + chest.id) * 0.05, chest.z);
       if (chest.bossDrop) {
         this.updateBossChestGlow(this.ensureBossChestGlow(obj), time + chest.id);
@@ -5714,10 +5916,43 @@ export class GameScene {
       }
     }
 
-    for (const [id, obj] of this.chestObjects) {
+    for (const [id] of this.chestObjects) {
       if (visibleChestIds.has(id)) continue;
+      this.removeChestObject(id);
+    }
+
+    // 推进开箱动画混合器
+    if (this.chestMixers.size > 0) {
+      for (const mixer of this.chestMixers.values()) mixer.update(this.frameDt);
+    }
+  }
+
+  /** 对已开启宝箱播放一次 "Open" 动画（幂等：已有 mixer 则跳过）。 */
+  private playChestOpenAnimation(chestId: number): void {
+    if (this.chestMixers.has(chestId)) return;
+    const obj = this.chestObjects.get(chestId);
+    if (!obj || chestAnimations.length === 0) return;
+    const clip = THREE.AnimationClip.findByName(chestAnimations, 'Open');
+    if (!clip) return;
+    const mixer = new THREE.AnimationMixer(obj);
+    const action = mixer.clipAction(clip);
+    action.setLoop(THREE.LoopOnce, 1);
+    action.clampWhenFinished = true; // 播完停在开盖姿态
+    action.play();
+    this.chestMixers.set(chestId, mixer);
+  }
+
+  /** 从场景移除宝箱对象并清理其动画混合器。 */
+  private removeChestObject(chestId: number): void {
+    const obj = this.chestObjects.get(chestId);
+    if (obj) {
       this.scene.remove(obj);
-      this.chestObjects.delete(id);
+      this.chestObjects.delete(chestId);
+    }
+    const mixer = this.chestMixers.get(chestId);
+    if (mixer) {
+      mixer.stopAllAction();
+      this.chestMixers.delete(chestId);
     }
   }
 

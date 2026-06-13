@@ -1931,6 +1931,13 @@ export class GameScene {
   private playerMixer: THREE.AnimationMixer | null = null;
   private playerAnimations: Map<string, THREE.AnimationAction> = new Map();
   private currentPlayerAnim: string = '';
+  // 静止时在 Idle 间隙穿插的"风味"动画（Hello / Dance）
+  private idleFlavorCooldown = 6; // 距离下一次插播剩余秒数
+  private idleFlavorTimer = 0;    // 当前 flavor 动画剩余秒数（> 0 表示正在播）
+  // 受击动画锁定计时器（> 0 时不切换到其他动画）
+  private hitReactTimer = 0;
+  // 拾取动画锁定计时器（开宝箱时触发 Pickup 动画，> 0 期间锁定）
+  private pickupAnimTimer = 0;
 
   // Teleporter meshes
   private teleporterMeshes: THREE.Mesh[] = [];
@@ -2773,7 +2780,7 @@ export class GameScene {
     this.scene.add(this.playerAuraMesh);
   }
 
-  private playPlayerAnim(name: string, timeScale: number = 1.0): void {
+  private playPlayerAnim(name: string, timeScale: number = 1.0, loops: number = 1): void {
     if (this.currentPlayerAnim === name) {
       // Update speed of current animation without restarting
       const action = this.playerAnimations.get(name);
@@ -2798,12 +2805,82 @@ export class GameScene {
     if (name === 'Jump') {
       newAction.setLoop(THREE.LoopOnce, 1);
       newAction.clampWhenFinished = false;
+    } else if (name === 'Death') {
+      // 死亡动画只播一次，最后一帧定格在"躺地"姿态，避免循环复活的诡异感
+      newAction.setLoop(THREE.LoopOnce, 1);
+      newAction.clampWhenFinished = true;
+    } else if (
+      name === 'Hello' ||
+      name === 'Dance' ||
+      name === 'HitRecieve_1' ||
+      name === 'HitRecieve_2' ||
+      name === 'Pickup' ||
+      name === 'Punch'
+    ) {
+      // 一次性表演 / 受击 / 拾取 / 出拳：播完允许平滑过渡回 Idle / Walk / Run
+      // loops 控制总播放次数（Dance 通常播 2-3 遍才有"表演感"）
+      if (loops > 1) {
+        newAction.setLoop(THREE.LoopRepeat, loops);
+      } else {
+        newAction.setLoop(THREE.LoopOnce, 1);
+      }
+      newAction.clampWhenFinished = false;
     } else {
       newAction.setLoop(THREE.LoopRepeat, Infinity);
       newAction.clampWhenFinished = false;
     }
 
     this.currentPlayerAnim = name;
+  }
+
+  /**
+   * 玩家开始移动 / 跳跃 / 滑铲时重置 Idle flavor 冷却。
+   * 让玩家停下来后等若干秒才会插播下一段 Hello / Dance，
+   * 避免"一停就跳"的违和感。
+   */
+  private resetIdleFlavorCooldown(): void {
+    // 6 - 14 秒随机
+    this.idleFlavorCooldown = 6 + Math.random() * 8;
+    this.idleFlavorTimer = 0;
+  }
+
+  /**
+   * 玩家静止时调用：在 Idle 与 Hello / Dance 之间切换。
+   * - 默认播 Idle
+   * - 冷却到点后随机插一段 Hello 或 Dance（LoopOnce）
+   * - flavor 播放结束自动回到 Idle 并重设冷却
+   * - 一旦玩家在 flavor 播放途中移动，会被外层的 Walk / Run 分支直接打断
+   */
+  private updateIdleFlavor(): void {
+    const isFlavorPlaying =
+      this.currentPlayerAnim === 'Hello' || this.currentPlayerAnim === 'Dance';
+
+    if (isFlavorPlaying) {
+      this.idleFlavorTimer -= this.frameDt;
+      if (this.idleFlavorTimer <= 0) {
+        this.idleFlavorTimer = 0;
+        this.idleFlavorCooldown = 6 + Math.random() * 8;
+        this.playPlayerAnim('Idle', 1.0);
+      }
+      return;
+    }
+
+    this.playPlayerAnim('Idle', 1.0);
+
+    this.idleFlavorCooldown -= this.frameDt;
+    if (this.idleFlavorCooldown <= 0) {
+      const flavor = Math.random() < 0.5 ? 'Hello' : 'Dance';
+      const action = this.playerAnimations.get(flavor);
+      if (action) {
+        // Dance 单遍时间太短，循环 2-3 遍才有完整的"表演感"；Hello 1 遍即可
+        const loops = flavor === 'Dance' ? 2 + Math.floor(Math.random() * 2) : 1;
+        this.idleFlavorTimer = action.getClip().duration * loops;
+        this.playPlayerAnim(flavor, 1.0, loops);
+      } else {
+        // 模型缺这段动画，过 10 秒再试一次
+        this.idleFlavorCooldown = 10;
+      }
+    }
   }
 
   private playEnemyAnim(enemyId: number, name: string): void {
@@ -3660,18 +3737,39 @@ export class GameScene {
     this.updateBillboardVfx(dt);
     this.updateCamera(state);
 
-    // Process damage events for camera effects
-    for (const evt of state.damageEvents) {
-      if (evt.isPlayerDamage) {
-        // Player took damage: only meaningful shake event
-        this.triggerCameraShake(0.12, 12, 10);
-      }
-      // Crits and normal hits: no shake (too frequent with multiple projectiles)
-    }
+    // 游戏已结束（失败 / 胜利）后不再触发新的镜头晃动，避免"死后被打仍在晃"的违和感
+    const isGameEnded = state.phase === 'defeat' || state.phase === 'victory';
 
-    // Boss attack shake — only on heavy attacks
-    if (state.boss && state.boss.currentAttack === 'ground_slam' && state.boss.attackTimer > 0 && state.boss.attackTimer < 0.05) {
-      this.triggerCameraShake(0.15, 10, 8);
+    // Process damage events for camera effects
+    if (!isGameEnded) {
+      for (const evt of state.damageEvents) {
+        if (evt.isPlayerDamage) {
+          // Player took damage: only meaningful shake event
+          this.triggerCameraShake(0.12, 12, 10);
+          // 受击动画：仅在玩家站立/低速且在地面时触发，避免打断 Run/Walk 的连续移动
+          const pl = state.player;
+          if (
+            pl.alive &&
+            pl.isGrounded &&
+            !pl.isSliding &&
+            pl.currentSpeed < 0.3 &&
+            this.hitReactTimer <= 0
+          ) {
+            const hitName = Math.random() < 0.5 ? 'HitRecieve_1' : 'HitRecieve_2';
+            const hitAction = this.playerAnimations.get(hitName);
+            if (hitAction) {
+              this.hitReactTimer = hitAction.getClip().duration;
+              this.playPlayerAnim(hitName, 1.0);
+            }
+          }
+        }
+        // Crits and normal hits: no shake (too frequent with multiple projectiles)
+      }
+
+      // Boss attack shake — only on heavy attacks
+      if (state.boss && state.boss.currentAttack === 'ground_slam' && state.boss.attackTimer > 0 && state.boss.attackTimer < 0.05) {
+        this.triggerCameraShake(0.15, 10, 8);
+      }
     }
 
     // Dynamic zoom: brief zoom-in when weapon evolves (detected via level-up with evolved weapon)
@@ -3741,11 +3839,11 @@ export class GameScene {
     const modelY = isGltfModel ? 0 : 1.0;
     this.playerMesh.position.set(p.x, p.y + modelY, p.z);
 
-    // Blob 阴影贴在玩家脚下（p.y 即脚位）
-    if (p.alive) this.blobShadows?.place(p.x, p.y, p.z, 0.55);
+    // Blob 阴影贴在玩家脚下（p.y 即脚位）—— 死亡后保留，让躺地的尸体仍有影子
+    this.blobShadows?.place(p.x, p.y, p.z, 0.55);
 
     // === Rotation: smooth interpolation, only when moving ===
-    if (p.currentSpeed > 0.3) {
+    if (p.alive && p.currentSpeed > 0.3) {
       // Smoothly rotate toward target (prevent sudden spinning)
       let angleDiff = p.rotation - this.playerMesh.rotation.y;
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
@@ -3754,7 +3852,8 @@ export class GameScene {
       const rotSpeed = p.currentSpeed > 3.0 ? 0.12 : 0.2;
       this.playerMesh.rotation.y += angleDiff * rotSpeed;
     }
-    this.playerMesh.visible = p.alive;
+    // 死亡后保持 mesh 可见，让 Death 动画播完并把尸体定格在地上
+    this.playerMesh.visible = true;
 
     // === Death Animation ===
     if (!p.alive && this.wasAlive) {
@@ -3769,32 +3868,47 @@ export class GameScene {
     if (this.deathAnimTimer > 0) {
       const dt = 1 / 60;
       this.deathAnimTimer -= dt;
-      this.playerMesh.visible = true; // keep visible during death anim
-      if (this.deathAnimTimer <= 0) {
-        this.playerMesh.visible = false;
-      }
-    } else if (p.alive) {
-      // === Choose skeletal animation based on state ===
-      if (p.isSliding) {
-        this.playPlayerAnim('Run_Holding', 1.5); // Crouched run = slide visual, sped up
-      } else if (p.isJumping || !p.isGrounded) {
-        // Only trigger Jump animation once on takeoff — let it play through fully
-        if (this.wasGrounded) {
-          // Just left the ground: trigger Jump animation
-          // timeScale 1.3 = animation(0.87s) matches physics airtime(0.67s)
-          this.playPlayerAnim('Jump', 1.3);
-        }
-        // While in air: don't re-trigger, let animation play
-      } else if (p.currentSpeed > 3.0) {
-        // Run — scale animation speed with movement speed
-        const runScale = Math.min(p.currentSpeed / 4.0, 1.4);
-        this.playPlayerAnim('Run', runScale);
-      } else if (p.currentSpeed > 0.3) {
-        // Walk — scale animation speed with movement speed
-        const walkScale = Math.min(p.currentSpeed / 2.0, 1.3);
-        this.playPlayerAnim('Walk', walkScale);
+    }
+
+    if (p.alive) {
+      // 受击 / 拾取动画锁定期：保持当前一次性动画播放，不切换到其他动画
+      // 但是一旦玩家明显开始移动，立刻打断（手感优先于反馈）
+      const movingHard = p.currentSpeed > 0.3 || p.isJumping || !p.isGrounded || p.isSliding;
+      const oneShotLocked = this.hitReactTimer > 0 || this.pickupAnimTimer > 0;
+      if (oneShotLocked && !movingHard) {
+        if (this.hitReactTimer > 0) this.hitReactTimer -= this.frameDt;
+        if (this.pickupAnimTimer > 0) this.pickupAnimTimer -= this.frameDt;
       } else {
-        this.playPlayerAnim('Idle', 1.0);
+        if (this.hitReactTimer > 0) this.hitReactTimer = 0;
+        if (this.pickupAnimTimer > 0) this.pickupAnimTimer = 0;
+
+        // === Choose skeletal animation based on state ===
+        if (p.isSliding) {
+          this.resetIdleFlavorCooldown();
+          this.playPlayerAnim('Run_Holding', 1.5); // Crouched run = slide visual, sped up
+        } else if (p.isJumping || !p.isGrounded) {
+          this.resetIdleFlavorCooldown();
+          // Only trigger Jump animation once on takeoff — let it play through fully
+          if (this.wasGrounded) {
+            // Just left the ground: trigger Jump animation
+            // timeScale 1.3 = animation(0.87s) matches physics airtime(0.67s)
+            this.playPlayerAnim('Jump', 1.3);
+          }
+          // While in air: don't re-trigger, let animation play
+        } else if (p.currentSpeed > 3.0) {
+          this.resetIdleFlavorCooldown();
+          // Run — scale animation speed with movement speed
+          const runScale = Math.min(p.currentSpeed / 4.0, 1.4);
+          this.playPlayerAnim('Run', runScale);
+        } else if (p.currentSpeed > 0.3) {
+          this.resetIdleFlavorCooldown();
+          // Walk — scale animation speed with movement speed
+          const walkScale = Math.min(p.currentSpeed / 2.0, 1.3);
+          this.playPlayerAnim('Walk', walkScale);
+        } else {
+          // 静止 — 在 Idle 间隙随机穿插 Hello / Dance
+          this.updateIdleFlavor();
+        }
       }
       this.wasGrounded = p.isGrounded;
 
@@ -6646,7 +6760,10 @@ export class GameScene {
     }
 
     // === Screen shake (layered, additive) ===
-    if (this.shakeIntensity > 0.001) {
+    // 失败 / 胜利后立刻冻结镜头：清零未衰减完的余量，本帧不再施加偏移
+    if (state.phase === 'defeat' || state.phase === 'victory') {
+      this.shakeIntensity = 0;
+    } else if (this.shakeIntensity > 0.001) {
       this.shakeTime += 1 / 60;
       const shakeX = Math.sin(this.shakeTime * this.shakeFrequency) * this.shakeIntensity;
       const shakeY = Math.sin(this.shakeTime * this.shakeFrequency * 1.3 + 1.7) * this.shakeIntensity * 0.4;
@@ -7007,6 +7124,16 @@ export class GameScene {
       this.seenChestOpenEvents.add(key);
       if (this.seenChestOpenEvents.size > 80) this.seenChestOpenEvents.clear();
       this.playChestOpenFx(evt);
+
+      // 玩家开箱动画：用 Punch 表达"敲开"的动作（仅当玩家存活；移动中也会被立刻打断，符合手感）
+      if (state.player.alive && this.pickupAnimTimer <= 0) {
+        const chestAnimName = 'Punch';
+        const chestAction = this.playerAnimations.get(chestAnimName);
+        if (chestAction) {
+          this.pickupAnimTimer = chestAction.getClip().duration;
+          this.playPlayerAnim(chestAnimName, 1.0);
+        }
+      }
     }
 
     // === Combo HUD (#6) ===

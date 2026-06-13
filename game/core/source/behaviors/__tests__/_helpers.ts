@@ -67,7 +67,7 @@ export function makeStats(overrides: Partial<WeaponLevelStats> = {}): WeaponLeve
 }
 
 export function makeWeapon(type: WeaponType = 'sword'): WeaponState {
-  return { type, level: 1, cooldownTimer: 0, evolved: false };
+  return { type, level: 1, cooldownTimer: 0 };
 }
 
 export function makeDef(behavior: BehaviorId, tags: readonly string[]): WeaponDef {

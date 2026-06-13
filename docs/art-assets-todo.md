@@ -153,24 +153,33 @@
 
 `core/data/weapons.ts` 定义 12 种武器。
 
+> 注：旧的武器进化系统已被「羁绊系统」取代（见 `core/config.ts:390`、`core/systems/bonds.ts`），
+> `WeaponInstance.evolved` 恒为 `false`，进化（金色）模型不再被渲染。
+> 除 `Dart_Golden`（shotgun 弹丸的常规模型）外，金色模型已全部归档到 `items/_unused/`。
+
 ### 4.1 已就位（OBJ + MTL 或 GLB）
 
 | 武器 ID | 普通模型 | 进化（金色）模型 | 引用 |
 |---|---|---|---|
-| sword | Sword.obj + Sword.mtl | Sword_Golden.obj/.mtl | index.ts:1789, 1797 |
-| axe | Axe_small.obj/.mtl | Axe_Double_Golden.obj/.mtl | index.ts:1788, 1798 |
-| bow（实际是左轮） | Revolver.glb | Bow_Golden.obj/.mtl | index.ts:1792, 1799 |
-| bone_bouncer | Bone.obj（仅 geometry） | — | index.ts:1719 |
-| shotgun（弹丸） | Dart_Golden.obj/.mtl | — | index.ts:1796 |
+| sword | Sword.obj + Sword.mtl | _unused/Sword_Golden.obj/.mtl（已归档） | — |
+| axe | Axe_small.obj/.mtl | _unused/Axe_Double_Golden.obj/.mtl（已归档） | — |
+| bow（实际是左轮） | Revolver.glb | _unused/Bow_Golden.obj/.mtl（已归档） | — |
+| bone_bouncer | Bone.obj（仅 geometry） | — | — |
+| shotgun（弹丸） | Dart_Golden.obj/.mtl | — | 无条件用作弹丸模型 |
 
 ### 4.2 模型已加载但**未挂任何武器**（备用资源）
 
 | 模型 | 备注 |
 |---|---|
-| Sword_big.obj/.mtl + Golden | katana（备用，已加载） |
+| Sword_big.obj/.mtl | katana（备用，已加载） |
 | Hammer_Double.obj/.mtl | hammer（备用，已加载） |
-| Dagger.obj/.mtl + Golden | dagger（备用，已加载） |
+| Dagger.obj/.mtl | dagger（备用，已加载） |
 | Dart.obj/.mtl | dart（备用，已加载） |
+| _unused/Sword_Golden.obj/.mtl | 进化金色，已归档（武器进化系统已移除） |
+| _unused/Axe_Double_Golden.obj/.mtl | 进化金色，已归档（武器进化系统已移除） |
+| _unused/Bow_Golden.obj/.mtl | 进化金色，已归档（武器进化系统已移除） |
+| _unused/Dagger_Golden.obj/.mtl | 进化金色，已归档（武器进化系统已移除） |
+| _unused/Sword_big_Golden.obj/.mtl | 进化金色，已归档（武器进化系统已移除） |
 | _unused/Bow_Wooden.obj/.mtl | 未引用，已归档 |
 | _unused/Coin.obj/.mtl | 未引用，已归档（§5 silver 拾取改造时需移回） |
 | _unused/Heart_Half.obj/.mtl | 未引用，已归档（§5 health_small 改造时需移回） |

@@ -15,29 +15,29 @@ import type { WeaponState } from '../../types.ts';
 
 describe('getWeaponStats', () => {
   it('lv 1 sword → 第一档 stats', () => {
-    const stats = getWeaponStats({ type: 'sword', level: 1, cooldownTimer: 0, evolved: false });
+    const stats = getWeaponStats({ type: 'sword', level: 1, cooldownTimer: 0 });
     expect(stats).toEqual(WEAPON_STATS.sword[0]);
   });
 
   it('lv 8 sword → 第 8 档 (idx 7)', () => {
-    const stats = getWeaponStats({ type: 'sword', level: 8, cooldownTimer: 0, evolved: false });
+    const stats = getWeaponStats({ type: 'sword', level: 8, cooldownTimer: 0 });
     expect(stats).toEqual(WEAPON_STATS.sword[7]);
   });
 
   it('lv > 表长度 → clamp 到最后一档', () => {
-    const stats = getWeaponStats({ type: 'sword', level: 99, cooldownTimer: 0, evolved: false });
+    const stats = getWeaponStats({ type: 'sword', level: 99, cooldownTimer: 0 });
     expect(stats).toEqual(WEAPON_STATS.sword[7]);
   });
 
   it('未知 weapon → fallback bone_bouncer 第一档', () => {
-    const stats = getWeaponStats({ type: 'unknown_weapon' as never, level: 1, cooldownTimer: 0, evolved: false });
+    const stats = getWeaponStats({ type: 'unknown_weapon' as never, level: 1, cooldownTimer: 0 });
     expect(stats).toEqual(WEAPON_STATS.bone_bouncer[0]);
   });
 });
 
 describe('applyWeaponUpgrade (新规则: base + 稀有度缩放步进)', () => {
   function freshSword(): WeaponState {
-    return { type: 'sword', level: 1, cooldownTimer: 0, evolved: false, growth: emptyWeaponGrowth() };
+    return { type: 'sword', level: 1, cooldownTimer: 0, growth: emptyWeaponGrowth() };
   }
 
   it('common 连续升级 → 数值与原配置表逐档一致', () => {
@@ -84,7 +84,7 @@ describe('tickWeapons', () => {
 
   it('cooldownTimer > 0 时只衰减 不 fire', () => {
     const player = makePlayer({
-      weapons: [{ type: 'sword', level: 1, cooldownTimer: 0.5, evolved: false }],
+      weapons: [{ type: 'sword', level: 1, cooldownTimer: 0.5 }],
       attackSpeedMultiplier: 1.0,
     });
     const engine = makeEngine({ state: { ...makeEngine().state, player } });
@@ -95,7 +95,7 @@ describe('tickWeapons', () => {
   it('cooldownTimer ≤ 0 时重置 + 调 tryFireWeaponEcs (走真实路径)', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.99);  // 不暴击
     const player = makePlayer({
-      weapons: [{ type: 'sword', level: 1, cooldownTimer: -0.1, evolved: false }],
+      weapons: [{ type: 'sword', level: 1, cooldownTimer: -0.1 }],
       attackSpeedMultiplier: 1.0,
     });
     const engine = makeEngine({ state: { ...makeEngine().state, player } });
@@ -106,7 +106,7 @@ describe('tickWeapons', () => {
 
   it('attackSpeedMultiplier 加快冷却衰减', () => {
     const player = makePlayer({
-      weapons: [{ type: 'sword', level: 1, cooldownTimer: 1.0, evolved: false }],
+      weapons: [{ type: 'sword', level: 1, cooldownTimer: 1.0 }],
       attackSpeedMultiplier: 2.0,
     });
     const engine = makeEngine({ state: { ...makeEngine().state, player } });
@@ -118,7 +118,7 @@ describe('tickWeapons', () => {
   it('player 死时不 fire', () => {
     const player = makePlayer({
       alive: false,
-      weapons: [{ type: 'sword', level: 1, cooldownTimer: 0, evolved: false }],
+      weapons: [{ type: 'sword', level: 1, cooldownTimer: 0 }],
     });
     const engine = makeEngine({ state: { ...makeEngine().state, player } });
     tickWeapons(engine, 0.1);

@@ -24,7 +24,7 @@ function makePlayer(weapons: PlayerState['weapons']): PlayerState {
 describe('getUpgradePreviewLines', () => {
   it('武器升级 common 显示伤害增量', () => {
     const player = makePlayer([{
-      type: 'sword', level: 1, cooldownTimer: 0, evolved: false, growth: emptyWeaponGrowth(),
+      type: 'sword', level: 1, cooldownTimer: 0, growth: emptyWeaponGrowth(),
     }]);
     const option: UpgradeOption = {
       id: 'x', kind: 'weapon_upgrade', rarity: 'common',
@@ -36,7 +36,7 @@ describe('getUpgradePreviewLines', () => {
 
   it('武器升级 legendary 伤害增量为 common 的 2 倍', () => {
     const player = makePlayer([{
-      type: 'sword', level: 1, cooldownTimer: 0, evolved: false, growth: emptyWeaponGrowth(),
+      type: 'sword', level: 1, cooldownTimer: 0, growth: emptyWeaponGrowth(),
     }]);
     const common: UpgradeOption = {
       id: 'c', kind: 'weapon_upgrade', rarity: 'common',

@@ -68,7 +68,7 @@ function makeStats(overrides: Partial<WeaponLevelStats> = {}): WeaponLevelStats 
 }
 
 function makeWeapon(): WeaponState {
-  return { type: 'sword', level: 1, cooldownTimer: 0, evolved: false };
+  return { type: 'sword', level: 1, cooldownTimer: 0 };
 }
 
 function makeDef(): WeaponDef {

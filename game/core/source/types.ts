@@ -69,7 +69,6 @@ export interface WeaponState {
   type: WeaponType;
   level: number;
   cooldownTimer: number;
-  evolved: boolean;
   /** 新升级规则的成长累加值；旧 fixture / 旧存档可不带（getWeaponStats 退回等级查表）。 */
   growth?: WeaponGrowth;
 }

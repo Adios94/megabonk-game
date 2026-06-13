@@ -2205,12 +2205,6 @@ let daggerModel: THREE.Group | null = null;
 let hammerModel: THREE.Group | null = null;
 let dartModel: THREE.Group | null = null;
 let dartGoldenModel: THREE.Group | null = null; // Used for shotgun pellets
-// Evolved (golden) variants
-let swordGoldenModel: THREE.Group | null = null;
-let axeGoldenModel: THREE.Group | null = null;
-let bowGoldenModel: THREE.Group | null = null;
-let daggerGoldenModel: THREE.Group | null = null;
-let katanaGoldenModel: THREE.Group | null = null;
 let chestClosedObj: THREE.Group | null = null;
 let chestOpenObj: THREE.Group | null = null;
 // glTF 宝箱自带的动画 clip（Open / Close / Idle_*），开箱时播放 "Open"。
@@ -2320,7 +2314,7 @@ async function loadObjItems(): Promise<void> {
   };
 
   // Load all weapon models in parallel — pass brighten=true for weapons only
-  const [ax, sw, kat, bow, dag, ham, dar, darG, swG, axG, bowG, dagG, katG] = await Promise.all([
+  const [ax, sw, kat, bow, dag, ham, dar, darG] = await Promise.all([
     loadFullModel('AxeModel', '/models/items/Axe_small.mtl', '/models/items/Axe_small.obj', 0.6, true),
     loadFullModel('SwordModel', '/models/items/Sword.mtl', '/models/items/Sword.obj', 0.8, true),
     loadFullModel('KatanaModel', '/models/items/Sword_big.mtl', '/models/items/Sword_big.obj', 0.9, true),
@@ -2330,11 +2324,6 @@ async function loadObjItems(): Promise<void> {
     loadFullModel('HammerModel', '/models/items/Hammer_Double.mtl', '/models/items/Hammer_Double.obj', 0.7, true),
     loadFullModel('DartModel', '/models/items/Dart.mtl', '/models/items/Dart.obj', 0.4, true),
     loadFullModel('DartGoldenModel', '/models/items/Dart_Golden.mtl', '/models/items/Dart_Golden.obj', 0.45, true),
-    loadFullModel('SwordGolden', '/models/items/Sword_Golden.mtl', '/models/items/Sword_Golden.obj', 0.8, true),
-    loadFullModel('AxeGolden', '/models/items/Axe_Double_Golden.mtl', '/models/items/Axe_Double_Golden.obj', 0.7, true),
-    loadFullModel('BowGolden', '/models/items/Bow_Golden.mtl', '/models/items/Bow_Golden.obj', 0.7, true),
-    loadFullModel('DaggerGolden', '/models/items/Dagger_Golden.mtl', '/models/items/Dagger_Golden.obj', 0.4, true),
-    loadFullModel('KatanaGolden', '/models/items/Sword_big_Golden.mtl', '/models/items/Sword_big_Golden.obj', 0.9, true),
   ]);
   axeModel = ax;
   swordModel = sw;
@@ -2344,11 +2333,6 @@ async function loadObjItems(): Promise<void> {
   hammerModel = ham;
   dartModel = dar;
   dartGoldenModel = darG;
-  swordGoldenModel = swG;
-  axeGoldenModel = axG;
-  bowGoldenModel = bowG;
-  daggerGoldenModel = dagG;
-  katanaGoldenModel = katG;
 
   // Load chest model — Sci-Fi Essentials Prop_Chest (glTF + textures)
   try {
@@ -4050,13 +4034,6 @@ export class GameScene {
       }
     }
 
-    // Dynamic zoom: brief zoom-in when weapon evolves (detected via level-up with evolved weapon)
-    const hasEvolvedWeapon = state.player.weapons.some(w => w.evolved);
-    if (hasEvolvedWeapon && state.phase === 'level_up' && this.lastPhase !== 'level_up') {
-      this.targetFOV = 50;
-      // Reset to base after 0.3s equivalent via the lerp
-    }
-
     this.updateHUD(state);
 
     this.renderFrame();
@@ -4234,26 +4211,8 @@ export class GameScene {
       this.playerRing.scale.set(1, 1, 1);
     }
 
-    // === Evolved weapon glow ===
-    const hasEvolved = p.weapons.some(w => w.evolved);
-    if (hasEvolved) {
-      ringMat.color.setHex(0xffcc00);
-      const ringPulse = 0.7 + Math.sin(time * 5) * 0.3;
-      ringMat.opacity = ringPulse;
-      const ringScale = 1.0 + Math.sin(time * 3) * 0.15;
-      this.playerRing.scale.set(ringScale, 1, ringScale);
-
-      // Golden aura
-      this.playerAuraMesh.visible = p.alive;
-      this.playerAuraMesh.position.set(p.x, p.y + modelY, p.z);
-      const auraPulse = 0.08 + Math.sin(time * 4) * 0.04;
-      (this.playerAuraMesh.material as THREE.MeshBasicMaterial).opacity = auraPulse;
-      const auraScale = 1.0 + Math.sin(time * 2.5) * 0.1;
-      this.playerAuraMesh.scale.set(auraScale, auraScale, auraScale);
-    } else {
-      ringMat.color.setHex(0x00ff88);
-      this.playerAuraMesh.visible = false;
-    }
+    ringMat.color.setHex(0x00ff88);
+    this.playerAuraMesh.visible = false;
 
     // === Weapon orbs (legacy stub) ===
     this.renderWeaponOrbs(state);
@@ -5017,17 +4976,8 @@ export class GameScene {
     const activeAxeIds = new Set<number>();
     const activeWeaponIds = new Set<number>();
 
-    // Helper: get the model for a weapon type (handles evolved variants)
-    const getWeaponModel = (weaponType: string, evolved: boolean): THREE.Group | null => {
-      if (evolved) {
-        switch (weaponType) {
-          case 'sword': return swordGoldenModel ?? swordModel;
-          case 'axe': return axeGoldenModel ?? axeModel;
-          case 'bow': return null; // revolver-style bullets via InstancedMesh
-          case 'katana': return katanaGoldenModel ?? katanaModel;
-          default: return null;
-        }
-      }
+    // Helper: get the model for a weapon type
+    const getWeaponModel = (weaponType: string): THREE.Group | null => {
       switch (weaponType) {
         case 'axe': return axeModel;
         case 'sword': return swordModel;
@@ -5053,7 +5003,7 @@ export class GameScene {
         activeAxeIds.add(proj.id);
         let axeObj = this.axeObjects.get(proj.id);
         if (!axeObj) {
-          const model = getWeaponModel('axe', false);
+          const model = getWeaponModel('axe');
           if (model) {
             axeObj = model.clone();
           } else {
@@ -5109,7 +5059,7 @@ export class GameScene {
         activeWeaponIds.add(proj.id);
         let obj = this.weaponObjects.get(proj.id);
         if (!obj) {
-          const model = getWeaponModel(proj.weaponType, false);
+          const model = getWeaponModel(proj.weaponType);
           if (model) {
             obj = model.clone();
           } else if (proj.weaponType === 'bone_bouncer' && boneGeometry) {
@@ -7528,7 +7478,7 @@ export class GameScene {
     }
   }
 
-  private getWeaponCooldownInfo(weapon: { type: string; cooldownTimer: number; level: number; evolved: boolean }): { cooldownPercent: number } {
+  private getWeaponCooldownInfo(weapon: { type: string; cooldownTimer: number; level: number }): { cooldownPercent: number } {
     // Show cooldown as proportion — use a reasonable max cooldown for visual display
     const maxCd = 4.0;
     const pct = Math.max(0, Math.min(100, (weapon.cooldownTimer / maxCd) * 100));
@@ -7548,7 +7498,7 @@ export class GameScene {
       const weapon = p.weapons[i];
       const isLocked = i >= unlocked;
       const slot = document.createElement('div');
-      const borderColor = weapon?.evolved ? '#ffcc00' : (isLocked ? 'rgba(255,255,255,0.18)' : '#555');
+      const borderColor = isLocked ? 'rgba(255,255,255,0.18)' : '#555';
       slot.style.cssText = `width:clamp(40px,11vw,46px);height:clamp(40px,11vw,46px);background:${isLocked ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.6)'};border:2px solid ${borderColor};border-radius:6px;position:relative;display:flex;align-items:center;justify-content:center;flex-shrink:0;${isLocked ? '' : 'cursor:help;'}`;
 
       if (isLocked) {
@@ -7888,10 +7838,10 @@ export class GameScene {
 
     return this.buildItemTooltipHtml({
       title: `${WEAPON_ICONS[weapon.type] ?? '?'} ${t(`upgrade.weapon.${weapon.type}`)}`,
-      subtitle: weapon.evolved ? `Lv.${weapon.level} · 已进化` : `Lv.${weapon.level}`,
+      subtitle: `Lv.${weapon.level}`,
       description: t(`upgrade.weapon.${weapon.type}_desc`),
       rows,
-      accent: weapon.evolved ? '#ffcc00' : '#7aa7ff',
+      accent: '#7aa7ff',
     });
   }
 
@@ -8567,7 +8517,7 @@ export class GameScene {
         icon: WEAPON_ICONS[w.type] ?? '?',
         name: t(`upgrade.weapon.${w.type}`),
         inner: `Lv.${w.level}`,
-        accent: w.evolved ? '#ffcc00' : '#7aa7ff',
+        accent: '#7aa7ff',
         tooltipHtml: this.createWeaponTooltipHtml(w),
       })),
     ));
@@ -10650,7 +10600,6 @@ function gmGiveWeapon(type: string, level: number = 1): void {
     type: type as typeof ALL_WEAPON_TYPES[number],
     level,
     cooldownTimer: 0,
-    evolved: false,
   });
   console.log(`[GM] +${type} (level ${level})`);
 }
@@ -10666,7 +10615,7 @@ function gmGiveAllWeapons(): void {
   for (const type of ALL_WEAPON_TYPES) {
     const existing = player.weapons.find((w) => w.type === type);
     if (!existing) {
-      player.weapons.push({ type, level: 1, cooldownTimer: 0, evolved: false });
+      player.weapons.push({ type, level: 1, cooldownTimer: 0 });
     }
   }
   console.log(`[GM] All weapons granted (${player.weapons.length}/${player.maxWeaponSlots})`);

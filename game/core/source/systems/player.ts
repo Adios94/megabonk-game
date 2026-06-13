@@ -95,7 +95,7 @@ export function createInitialPlayer(config: GameConfig): PlayerState {
     critDamage: PLAYER_BASE_CRIT_DAMAGE,
     armor: charCfg.armor + (shopBonuses['armor'] ?? 0),
     pickupRadius: PLAYER_PICKUP_RADIUS + (shopBonuses['pickupRadius'] ?? 0),
-    weapons: [{ type: charCfg.startingWeapon, level: 1, cooldownTimer: 0, evolved: false, growth: emptyWeaponGrowth() }],
+    weapons: [{ type: charCfg.startingWeapon, level: 1, cooldownTimer: 0, growth: emptyWeaponGrowth() }],
     tomes: [],
     passives: [],
     dashCooldown: 0, dashCooldownMax: DASH_COOLDOWN, dashTimer: 0, invincibleTimer: 0,

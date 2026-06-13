@@ -85,9 +85,8 @@ function buildAvailableOptions(player: PlayerState): UpgradeOption[] {
   const options: UpgradeOption[] = [];
   const luckLevel = getTomePower(player.tomes.find(t => t.type === 'luck_tome'));
 
-  // Weapon upgrades for existing weapons (level up; evolved weapons are maxed out)
+  // Weapon upgrades for existing weapons (level up)
   for (const weapon of player.weapons) {
-    if (weapon.evolved) continue;
     if (weapon.level < WEAPON_MAX_LEVEL) {
       options.push({
         id: `upgrade_${weapon.type}_${weapon.level + 1}`,

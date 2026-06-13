@@ -317,7 +317,6 @@ export class GameInstance {
             type: option.weaponType,
             level: 1,
             cooldownTimer: 0,
-            evolved: false,
             growth: emptyWeaponGrowth(),
           });
         }
@@ -326,7 +325,7 @@ export class GameInstance {
         if (option.weaponType) {
           const weapon = player.weapons.find(w => w.type === option.weaponType);
           // 新规则：level +1，并按选项稀有度缩放「本级→下一级」步进累加到 growth。
-          if (weapon && !weapon.evolved) {
+          if (weapon) {
             applyWeaponUpgrade(weapon, option.rarity);
             const bonus = player.nextWeaponUpgradeBonus ?? 0;
             if (bonus > 0) {
@@ -334,7 +333,7 @@ export class GameInstance {
               if (player.activeConsumable?.id === 'craftsman_hammer') {
                 player.activeConsumable = null;
               }
-              for (let i = 0; i < bonus && !weapon.evolved; i++) {
+              for (let i = 0; i < bonus; i++) {
                 applyWeaponUpgrade(weapon, option.rarity);
               }
             }

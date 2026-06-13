@@ -698,7 +698,7 @@ function createShopLevelSegments(currentLevel: number, maxLevel: number): HTMLDi
 
 const TIER_MONSTER_FRAME = '/ui/panel/frame_monster.png';
 const TIER_MONSTER_FRAME_SIZE = { w: 692, h: 922 };
-/** 绿 / 黄 / 紫僵尸头像，对应 zombie_basic · zombie_chubby · zombie_arm */
+/** 绿 / 黄 / 紫僵尸头像（UI PNG，与具体敌人模型无绑定） */
 const TIER_MONSTER_AVATARS = [
   '/ui/characters/green_zombie_avatar.png',
   '/ui/characters/yellow_zombie_avatar.png',
@@ -1198,8 +1198,6 @@ const TIER_COLORS: Record<number, string> = {
 
 interface LoadedModels {
   zombie_basic: THREE.Group | null;
-  zombie_chubby: THREE.Group | null;
-  zombie_arm: THREE.Group | null;
   // Quaternius Animated Monster Pack — 带骨骼动画 GLB
   monster_skeleton: THREE.Group | null;
   monster_bat: THREE.Group | null;
@@ -1232,8 +1230,6 @@ interface LoadedModels {
 const gltfLoader = new GLTFLoader();
 const loadedModels: LoadedModels = {
   zombie_basic: null,
-  zombie_chubby: null,
-  zombie_arm: null,
   monster_skeleton: null,
   monster_bat: null,
   monster_dragon: null,
@@ -1267,8 +1263,6 @@ const loadedAnimClips: Map<string, THREE.AnimationClip[]> = new Map();
 async function loadModels(): Promise<void> {
   const modelPaths: [keyof LoadedModels, string][] = [
     ['zombie_basic', '/models/zombie_basic.gltf'],
-    ['zombie_chubby', '/models/zombie_chubby.gltf'],
-    ['zombie_arm', '/models/zombie_arm.gltf'],
     ['boss', '/models/enemy_large_gun.gltf'],
     ['teleporter', '/models/turret_teleporter.gltf'],
     ['platform', '/models/platform_4x1.gltf'],
@@ -2054,6 +2048,9 @@ export class GameScene {
   private enemyMixers: Map<number, THREE.AnimationMixer> = new Map(); // id → animation mixer
   private enemyAnimStates: Map<number, string> = new Map(); // id → current anim name
   private enemyAnimActions: Map<number, Map<string, THREE.AnimationAction>> = new Map(); // id → actions map
+  // modelKey → 把该模型几何高度归一化到 1 单位高的系数（= 1 / 实际包围盒高度）。
+  // 用于让来源尺寸各异的敌人模型统一缩放到目标高度（参考玩家），首次用到时按 loadedModels 实测缓存。
+  private enemyModelNormHeight: Map<string, number> = new Map();
   private paralysisTriangleSprites: Map<number, THREE.Sprite[]> = new Map(); // enemy id → paralysis marker sprites
   private neuroMarkerSprites: Map<number, THREE.Sprite> = new Map(); // 毒师神经毒素 墨绿倒三角
   private hunterMarkerSprites: Map<number, THREE.Sprite> = new Map(); // 猎标烙印 红色瞄准圈
@@ -2471,300 +2468,6 @@ export class GameScene {
     this.scene.add(this.gridLines);
   }
 
-  private placeModel(modelKey: keyof LoadedModels, x: number, y: number, z: number, rotY: number = 0, scale: number = 1): void {
-    const model = loadedModels[modelKey];
-    if (!model) return;
-    const clone = cloneSkeleton(model) as THREE.Object3D;
-    clone.name = `Placed_${modelKey}_${x.toFixed(0)}_${z.toFixed(0)}`;
-    clone.position.set(x, y, z);
-    clone.rotation.y = rotY;
-    clone.scale.set(scale, scale, scale);
-    this.scene.add(clone);
-    // 只把结构性大件（平台/支柱）登记为镜头遮挡物，避免管道/招牌等小道具造成噪声推镜。
-    if (modelKey.startsWith('platform_') || (modelKey as string).startsWith('support')) {
-      this.cameraOccluders.push(clone);
-    }
-  }
-
-  private buildArena(): void {
-    const HALF = GROUND_SIZE / 2; // 60
-
-    // ═══════════════════════════════════════════════════════════════════
-    // A. GROUND FLOOR — Central Arena (The Pit)
-    // 4×4 platform tiles, scale 2.0 = 8×8 per tile
-    // ═══════════════════════════════════════════════════════════════════
-
-    const floorScale = 2.0;
-    const tileSize = 8; // 4 * 2.0 scale
-
-    // Central 4×4 grid (covers ±16 area)
-    for (let gx = -2; gx <= 1; gx++) {
-      for (let gz = -2; gz <= 1; gz++) {
-        this.placeModel('platform_4x4', gx * tileSize + 4, 0, gz * tileSize + 4, 0, floorScale);
-      }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // B. CORRIDORS — Four arms extending from center
-    // Using platform_4x2 (8×4 at scale 2.0) along each arm
-    // ═══════════════════════════════════════════════════════════════════
-
-    // North corridor (z = -16 to -55)
-    for (let nz = -20; nz >= -52; nz -= 8) {
-      this.placeModel('platform_4x2', -4, 0, nz, 0, floorScale);
-      this.placeModel('platform_4x2', 4, 0, nz, 0, floorScale);
-    }
-
-    // South corridor (z = +16 to +55)
-    for (let sz = 20; sz <= 52; sz += 8) {
-      this.placeModel('platform_4x2', -4, 0, sz, 0, floorScale);
-      this.placeModel('platform_4x2', 4, 0, sz, 0, floorScale);
-    }
-
-    // East corridor (x = +16 to +55)
-    for (let ex = 20; ex <= 52; ex += 8) {
-      this.placeModel('platform_4x2', ex, 0, -4, Math.PI / 2, floorScale);
-      this.placeModel('platform_4x2', ex, 0, 4, Math.PI / 2, floorScale);
-    }
-
-    // West corridor (x = -16 to -55)
-    for (let wx = -20; wx >= -52; wx -= 8) {
-      this.placeModel('platform_4x2', wx, 0, -4, Math.PI / 2, floorScale);
-      this.placeModel('platform_4x2', wx, 0, 4, Math.PI / 2, floorScale);
-    }
-
-    // Diagonal fill patches (platform_2x2 at scale 2.0)
-    const diagonalFills: [number, number][] = [
-      [14, -14], [-14, -14], [14, 14], [-14, 14],
-      [18, -10], [-18, -10], [18, 10], [-18, 10],
-      [10, -18], [-10, -18], [10, 18], [-10, 18],
-    ];
-    for (const [dx, dz] of diagonalFills) {
-      this.placeModel('platform_2x2', dx, 0, dz, 0, floorScale);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // C. MID-LEVEL RING (y=2) — The Catwalk
-    // Elevated platforms forming a ring around center
-    // ═══════════════════════════════════════════════════════════════════
-
-    // N station
-    this.placeModel('platform_4x2', 0, 2, -25, 0, 2.5);
-    this.placeModel('support', -4, 0, -25, 0, 1.8);
-    this.placeModel('support', 4, 0, -25, 0, 1.8);
-
-    // S station
-    this.placeModel('platform_4x2', 0, 2, 25, 0, 2.5);
-    this.placeModel('support', -4, 0, 25, 0, 1.8);
-    this.placeModel('support', 4, 0, 25, 0, 1.8);
-
-    // E station
-    this.placeModel('platform_4x2', 25, 2, 0, Math.PI / 2, 2.5);
-    this.placeModel('support', 25, 0, -4, 0, 1.8);
-    this.placeModel('support', 25, 0, 4, 0, 1.8);
-
-    // W station
-    this.placeModel('platform_4x2', -25, 2, 0, Math.PI / 2, 2.5);
-    this.placeModel('support', -25, 0, -4, 0, 1.8);
-    this.placeModel('support', -25, 0, 4, 0, 1.8);
-
-    // Diagonal junctions — platform_2x2 at y=2
-    const junctions: [number, number, number][] = [
-      [20, -20, Math.PI / 4],
-      [-20, -20, -Math.PI / 4],
-      [20, 20, -Math.PI / 4],
-      [-20, 20, Math.PI / 4],
-    ];
-    for (const [jx, jz, jr] of junctions) {
-      this.placeModel('platform_2x2', jx, 2, jz, jr, 2.5);
-      this.placeModel('support', jx, 0, jz, 0, 1.8);
-      this.placeModel('rail_long', jx + Math.sign(jx) * 4, 2.1, jz, jr + Math.PI / 2, 1.8);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // D. WATCHTOWERS (y=4) — Cardinal Overlooks
-    // ═══════════════════════════════════════════════════════════════════
-
-    const towers: [number, number, number][] = [
-      [0, -40, 0],
-      [0, 40, Math.PI],
-      [40, 0, -Math.PI / 2],
-      [-40, 0, Math.PI / 2],
-    ];
-    for (const [tx, tz, tr] of towers) {
-      this.placeModel('platform_4x4', tx, 4, tz, tr, 2.5);
-      this.placeModel('support_long', tx - 4, 0, tz - 4, 0, 2.2);
-      this.placeModel('support_long', tx + 4, 0, tz - 4, 0, 2.2);
-      this.placeModel('support_long', tx - 4, 0, tz + 4, 0, 2.2);
-      this.placeModel('support_long', tx + 4, 0, tz + 4, 0, 2.2);
-      this.placeModel('rail_long', tx, 4.1, tz - 5, 0, 2.2);
-      this.placeModel('rail_long', tx, 4.1, tz + 5, Math.PI, 2.2);
-      this.placeModel('rail_long', tx - 5, 4.1, tz, Math.PI / 2, 2.2);
-      this.placeModel('rail_long', tx + 5, 4.1, tz, -Math.PI / 2, 2.2);
-      this.placeModel('door', tx, 4, tz + (tz < 0 ? 5 : -5), tr, 1.8);
-      this.placeModel('sign_1', tx + 3, 5.5, tz, tr, 1.5);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // E. NESTS (y=6) — Diagonal Pinnacles
-    // ═══════════════════════════════════════════════════════════════════
-
-    const nests: [number, number, number][] = [
-      [38, -38, Math.PI / 4],
-      [-38, -38, -Math.PI / 4],
-      [38, 38, -Math.PI / 4],
-      [-38, 38, Math.PI / 4],
-    ];
-    for (const [nx, nz, nr] of nests) {
-      this.placeModel('platform_1x1', nx, 6, nz, nr, 3.0);
-      this.placeModel('support_long', nx, 0, nz, 0, 3.0);
-      this.placeModel('pipe_1', nx, 6.5, nz, 0, 1.5);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // F. ARENA BOUNDARY — Fences around 120×120 perimeter
-    // ═══════════════════════════════════════════════════════════════════
-
-    const fenceSpacing = 5;
-    for (let fx = -HALF; fx <= HALF; fx += fenceSpacing) {
-      this.placeModel('fence_platform', fx, 0, -HALF, 0, 2.0);
-      this.placeModel('fence_platform', fx, 0, HALF, Math.PI, 2.0);
-    }
-    for (let fz = -HALF; fz <= HALF; fz += fenceSpacing) {
-      this.placeModel('fence_platform', -HALF, 0, fz, Math.PI / 2, 2.0);
-      this.placeModel('fence_platform', HALF, 0, fz, -Math.PI / 2, 2.0);
-    }
-    this.placeModel('support_long', -HALF, 0, -HALF, 0, 3.5);
-    this.placeModel('support_long', HALF, 0, -HALF, 0, 3.5);
-    this.placeModel('support_long', -HALF, 0, HALF, 0, 3.5);
-    this.placeModel('support_long', HALF, 0, HALF, 0, 3.5);
-
-    // ═══════════════════════════════════════════════════════════════════
-    // G. STREET LIGHTING — Along corridors and at key intersections
-    // ═══════════════════════════════════════════════════════════════════
-
-    const streetLights: [number, number, number, number][] = [
-      [-12, 0, -12, Math.PI / 4],
-      [12, 0, -12, -Math.PI / 4],
-      [-12, 0, 12, -Math.PI / 4],
-      [12, 0, 12, Math.PI / 4],
-      [-7, 0, -22, 0], [7, 0, -22, Math.PI],
-      [-7, 0, -36, 0], [7, 0, -36, Math.PI],
-      [-7, 0, -50, 0], [7, 0, -50, Math.PI],
-      [-7, 0, 22, Math.PI], [7, 0, 22, 0],
-      [-7, 0, 36, Math.PI], [7, 0, 36, 0],
-      [-7, 0, 50, Math.PI], [7, 0, 50, 0],
-      [22, 0, -7, -Math.PI / 2], [22, 0, 7, Math.PI / 2],
-      [36, 0, -7, -Math.PI / 2], [36, 0, 7, Math.PI / 2],
-      [50, 0, -7, -Math.PI / 2], [50, 0, 7, Math.PI / 2],
-      [-22, 0, -7, Math.PI / 2], [-22, 0, 7, -Math.PI / 2],
-      [-36, 0, -7, Math.PI / 2], [-36, 0, 7, -Math.PI / 2],
-      [-50, 0, -7, Math.PI / 2], [-50, 0, 7, -Math.PI / 2],
-    ];
-    for (const [lx, ly, lz, lr] of streetLights) {
-      this.placeModel('light_street', lx, ly, lz, lr, 1.8);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // H. SIGNS & NEON — On towers and at corridor entrances
-    // ═══════════════════════════════════════════════════════════════════
-
-    const signs: [keyof LoadedModels, number, number, number, number, number][] = [
-      ['sign_2', -8, 3, -16, 0, 2.0],
-      ['sign_2', 8, 3, -16, Math.PI, 2.0],
-      ['sign_1', -8, 3, 16, Math.PI, 2.0],
-      ['sign_1', 8, 3, 16, 0, 2.0],
-      ['sign_2', -16, 3, -8, Math.PI / 2, 2.0],
-      ['sign_1', -16, 3, 8, Math.PI / 2, 2.0],
-      ['sign_2', 16, 3, -8, -Math.PI / 2, 2.0],
-      ['sign_1', 16, 3, 8, -Math.PI / 2, 2.0],
-      ['sign_1', 2, 6, -42, 0, 1.8],
-      ['sign_2', -2, 6, 42, Math.PI, 1.8],
-      ['sign_1', 42, 6, 2, -Math.PI / 2, 1.8],
-      ['sign_2', -42, 6, -2, Math.PI / 2, 1.8],
-    ];
-    for (const [sk, sx, sy, sz, sr, ss] of signs) {
-      this.placeModel(sk, sx, sy, sz, sr, ss);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // I. AC UNITS & PIPES — Environmental detail / soft cover
-    // ═══════════════════════════════════════════════════════════════════
-
-    // Central arena cover positions
-    const coverPositions: [number, number, number, number][] = [
-      [6, 0, -6, 0], [-6, 0, -6, Math.PI / 2],
-      [6, 0, 6, Math.PI], [-6, 0, 6, -Math.PI / 2],
-      [0, 0, -10, 0], [0, 0, 10, Math.PI],
-      [10, 0, 0, -Math.PI / 2], [-10, 0, 0, Math.PI / 2],
-    ];
-    for (const [cx, cy, cz, cr] of coverPositions) {
-      this.placeModel('ac_unit', cx, cy, cz, cr, 1.8);
-    }
-
-    // Pipes along corridor walls
-    const pipePositions: [number, number, number, number][] = [
-      [-7, 0.5, -28, 0], [7, 0.5, -28, Math.PI],
-      [-7, 0.5, -42, 0], [7, 0.5, -42, Math.PI],
-      [-7, 0.5, 28, Math.PI], [7, 0.5, 28, 0],
-      [-7, 0.5, 42, Math.PI], [7, 0.5, 42, 0],
-      [28, 0.5, -7, -Math.PI / 2], [28, 0.5, 7, Math.PI / 2],
-      [42, 0.5, -7, -Math.PI / 2], [42, 0.5, 7, Math.PI / 2],
-      [-28, 0.5, -7, Math.PI / 2], [-28, 0.5, 7, -Math.PI / 2],
-      [-42, 0.5, -7, Math.PI / 2], [-42, 0.5, 7, -Math.PI / 2],
-    ];
-    for (const [px, py, pz, pr] of pipePositions) {
-      this.placeModel('pipe_1', px, py, pz, pr, 1.8);
-    }
-
-    // AC units on watchtower supports
-    for (const [tx, tz] of [[0, -40], [0, 40], [40, 0], [-40, 0]] as [number, number][]) {
-      this.placeModel('ac_unit', tx + 5, 2, tz, Math.PI / 2, 1.5);
-      this.placeModel('ac_unit', tx - 5, 2, tz, -Math.PI / 2, 1.5);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // J. RAIL GUARDS — Safety rails on elevated platforms
-    // ═══════════════════════════════════════════════════════════════════
-
-    const ringRails: [number, number, number, number][] = [
-      [0, 2.1, -29, 0],
-      [0, 2.1, 29, Math.PI],
-      [29, 2.1, 0, -Math.PI / 2],
-      [-29, 2.1, 0, Math.PI / 2],
-    ];
-    for (const [rx, ry, rz, rr] of ringRails) {
-      this.placeModel('rail_long', rx, ry, rz, rr, 2.0);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // K. NEON FLOOR PANELS — Emissive quads for cyberpunk atmosphere
-    // ═══════════════════════════════════════════════════════════════════
-
-    const glowPositions: [number, number, number][] = [
-      [0, 0, 0x00ffcc], [-8, 0, 0xff00ff], [8, 0, 0x00ffcc],
-      [0, -8, 0xff00ff], [0, 8, 0x00ffcc],
-      [0, -30, 0x00ffcc], [0, 30, 0xff00ff],
-      [30, 0, 0x00ffcc], [-30, 0, 0xff00ff],
-      [20, -20, 0x00ffcc], [-20, -20, 0xff00ff],
-      [20, 20, 0xff00ff], [-20, 20, 0x00ffcc],
-    ];
-    for (let gi = 0; gi < glowPositions.length; gi++) {
-      const [gx, gz, gColor] = glowPositions[gi];
-      const glowGeo = new THREE.PlaneGeometry(2.5, 2.5);
-      glowGeo.rotateX(-Math.PI / 2);
-      const glowMat = new THREE.MeshBasicMaterial({
-        color: gColor,
-        transparent: true,
-        opacity: 0.15,
-      });
-      const glowMesh = new THREE.Mesh(glowGeo, glowMat);
-      glowMesh.name = `FloorGlow_${gi}`;
-      glowMesh.position.set(gx, 0.02, gz);
-      this.scene.add(glowMesh);
-    }
-  }
-
   private setupPlayer(): void {
     const state = this.session.getRenderState();
     const charColor = CHARACTER_COLORS[state.character] ?? 0xa8e6cf;
@@ -3032,7 +2735,8 @@ export class GameScene {
       gargoyle: 'monster_bat',              // 飞行俯冲 → Quaternius Bat.glb
     };
 
-    // Scale per enemy type — zombie size variety (small/medium/large)
+    // ⚠️ Legacy InstancedMesh 路径，已不参与渲染（见文件末尾 "Hide InstancedMesh"）。
+    // 实际敌人缩放在 updateEnemyObjects 里按模型高度归一化，改大小请改那边的 enemyScales。
     const enemyScales: Record<string, number> = {
       skeleton_soldier: 0.675,   // Skeleton — standard (small)
       zombie: 1.1,              // Basic zombie — big tank
@@ -4529,13 +4233,14 @@ export class GameScene {
       gargoyle: 'monster_bat',
     };
 
+    // 目标世界高度（米）—— 模型按实际高度归一化后缩放到此值。参考玩家身高 1.8。
     const enemyScales: Record<string, number> = {
-      skeleton_soldier: 0.9,   // Skeleton — smaller
-      zombie: 1.4,             // Basic zombie — bigger tank
-      skeleton_archer: 1.1,    // Dragon — lean flyer
-      skeleton_knight: 2.1,    // Skeleton 放大 — elite, large（约 2.3× 普通骷髅兵）
-      necromancer: 0.9,        // Ghost — caster (smaller)
-      gargoyle: 1.1,           // Bat — lunging
+      skeleton_soldier: 1.7,   // 普通骷髅兵 — 与玩家相近
+      zombie: 1.9,             // 高 HP 僵尸 — 略高壮的坦克
+      skeleton_archer: 1.7,    // 龙 — 远程飞行
+      skeleton_knight: 2.6,    // 精英骷髅 — 明显更大
+      necromancer: 1.7,        // 法师 — 与玩家相近
+      gargoyle: 1.2,           // 蝙蝠 — 小型飞行
     };
 
     // Update or create objects for each alive enemy
@@ -4606,17 +4311,31 @@ export class GameScene {
         this.enemyObjects.set(enemy.id, obj);
       }
 
-      // Update transform
-      const baseScale = enemyScales[enemy.type] ?? 0.6;
+      // Update transform — 按模型实际包围盒高度归一化到目标高度（与玩家 setupPlayer 同款思路），
+      // 让来源尺寸各异的模型（Quaternius / zombie / ghost）大小统一、可控。
+      const tfModelKey = enemyModelMap[enemy.type];
+      let normFactor = tfModelKey ? this.enemyModelNormHeight.get(tfModelKey) : undefined;
+      if (normFactor === undefined) {
+        const srcModel = tfModelKey ? loadedModels[tfModelKey] : null;
+        if (srcModel) {
+          const h = new THREE.Box3().setFromObject(srcModel).getSize(new THREE.Vector3()).y;
+          normFactor = 1 / Math.max(h, 0.01);
+          if (tfModelKey) this.enemyModelNormHeight.set(tfModelKey, normFactor);
+        } else {
+          normFactor = 1 / 1.2; // fallback box 高 1.2
+        }
+      }
+      const targetHeight = enemyScales[enemy.type] ?? 1.6; // enemyScales 现在的语义 = 目标世界高度（米）
       const sizeMultiplier = enemy.isMiniBoss ? 1.5 : (enemy.isElite ? 1.2 : 1.0);
-      const s = baseScale * sizeMultiplier;
+      const s = normFactor * targetHeight * sizeMultiplier;
       obj.position.set(enemy.x, enemy.y, enemy.z);
       obj.scale.set(s, s, s);
       obj.visible = true;
 
       // Blob 阴影贴脚下（飞行的 gargoyle 不贴 —— 它在空中，脚位非地面）
+      // 半径按目标高度估算（s 已不再代表体型倍数）
       if (enemy.type !== 'gargoyle') {
-        this.blobShadows?.place(enemy.x, enemy.y, enemy.z, s * 0.5);
+        this.blobShadows?.place(enemy.x, enemy.y, enemy.z, targetHeight * sizeMultiplier * 0.3);
       }
 
       // Face toward player (or movement direction)

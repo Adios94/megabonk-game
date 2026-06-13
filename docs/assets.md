@@ -8,7 +8,7 @@
 
 仓库混用了两套美术风格的免费资源：
 
-- **赛博朋克场景 / 敌人**：Quaternius Cyberpunk Game Kit 风格（gltf / glb）。敌人用 `zombie_basic / zombie_chubby / zombie_arm`，Boss 用 `enemy_large_gun`。
+- **赛博朋克场景 / 敌人**：Quaternius Cyberpunk Game Kit 风格（gltf / glb）。`zombie` 用 `zombie_basic`，Boss 用 `enemy_large_gun`；其余敌人已换 Quaternius Animated Monster Pack 专属模型（`zombie_chubby` / `zombie_arm` 已归档）。
 - **玩家角色**：3 个独立 GLTF（`player_george / player_stan / player_leela`，分别对应 `megachad / roberto / skateboard_skeleton`），与赛博朋克套件不同风格。
 - **中世纪武器与拾取物**：Quaternius 经典武器套件（OBJ + MTL，金色变体用于进化态显示）。
 
@@ -25,21 +25,21 @@
 | 名称 | 文件 | 用途 |
 |---|---|---|
 | `player_george` / `player_stan` / `player_leela` | `models/player_*.gltf` | 三个玩家角色（megachad / roberto / skateboard_skeleton），按 `CHARACTER_MODELS` 映射加载 |
-| `zombie_basic` | `models/zombie_basic.gltf` | 渲染 `skeleton_soldier`（基础步兵）/ `skeleton_knight`（精英）→ 见下表 |
-| `zombie_arm` | `models/zombie_arm.gltf` | 渲染 `skeleton_archer`（弓手） |
-| `zombie_chubby` | `models/zombie_chubby.gltf` | 渲染 `zombie`（普通僵尸）/ `necromancer`（精英） |
+| `zombie_basic` | `models/zombie_basic.gltf` | 渲染 `zombie`（高 HP 慢速僵尸，靠 enemyScales 放大） |
 | `boss` | `models/enemy_large_gun.gltf` | Boss（命名为 boss，模型文件实际是大型敌人） |
 
-> ⚠️ 逻辑层 `EnemyType` 用骨骼名称（`skeleton_*`），渲染层在 `client/source/index.ts:1469` 把它们映射到 zombie 模型。这是模板「同一套美术资源覆盖多种敌人」的做法：
+> ℹ️ `zombie_chubby.gltf` / `zombie_arm.gltf` 已不再被任何敌人引用，已归档到 `public/models/_unused/`。
+>
+> 当前敌人 → 模型映射（见 `client/source/index.ts` 的 `enemyModelMap`，已全部接上语义贴合的专属模型）：
 >
 > | 逻辑 type | 实际模型 |
 > |---|---|
-> | `skeleton_soldier` | zombie_basic |
-> | `skeleton_archer` | zombie_arm |
-> | `zombie` | zombie_chubby |
-> | `skeleton_knight` | zombie_basic（更大缩放） |
-> | `necromancer` | zombie_chubby（更大缩放） |
-> | `gargoyle` | （飞行敌人，使用专门处理） |
+> | `skeleton_soldier` | monster_skeleton（Skeleton.glb） |
+> | `zombie` | zombie_basic |
+> | `skeleton_archer` | monster_dragon（Dragon.glb） |
+> | `skeleton_knight` | monster_skeleton（更大缩放） |
+> | `necromancer` | ghost（ghost.glb） |
+> | `gargoyle` | monster_bat（Bat.glb） |
 
 ### 2. 装饰 / 平台 / 环境（GLTF）
 

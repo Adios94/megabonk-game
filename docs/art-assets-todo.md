@@ -54,15 +54,37 @@
 | skeleton_soldier | 普通骷髅兵 | monsters/Skeleton.glb | 骷髅兵 | OK（带动画） |
 | zombie | 高 HP 慢速僵尸 | zombie_basic.gltf | （风格匹配，靠 enemyScales 放大暗示高 HP） | OK |
 | skeleton_archer | 远程攻击 | monsters/Dragon.glb | 远程吐息（飞行 + Attack/Attack2 双击） | OK（用龙的吐息表达远程） |
-| skeleton_knight | 精英冲锋骑士 | monsters/Skeleton.glb（放大体型） | 骷髅骑士（甲胄+大剑） | OK（复用骷髅模型，scale 2.1 ≈ 2.3× 普通骷髅兵） |
+| skeleton_knight | 精英冲锋骑士 | monsters/Skeleton.glb（放大体型） | 骷髅骑士（甲胄+大剑） | OK（复用骷髅模型，目标高度 2.6m ≈ 1.5× 普通骷髅兵） |
 | necromancer | 召唤型法师 | ghost.glb | 死灵法师（袍子+杖） | OK（飘浮形象贴合，32 个动画 clip） |
 | gargoyle | 飞行俯冲 | monsters/Bat.glb | 蝙蝠 / 石像鬼 | OK（带飞行/攻击/受击/死亡动画） |
 
 > skeleton_knight 没有专属"甲胄骑士"模型，采用"普通兵放大成精英"的常见 roguelike
-> 做法，复用 Skeleton.glb 但 scale 明显更大（setupEnemyMeshes 1.5 / updateEnemyObjects 2.1）。
-> 若日后拿到真正的骷髅骑士模型，只需改两处 enemyModelMap 即可。
+> 做法，复用 Skeleton.glb 但目标高度明显更大（见下方尺寸表）。若日后拿到真正的
+> 骷髅骑士模型，只需改两处 enemyModelMap 即可。
 >
-> ⚠️ `zombie_chubby.gltf` 现已无敌人引用（仍在 loadModels 加载列表），可按需归档。
+> ✅ `zombie_chubby.gltf` / `zombie_arm.gltf` 现已无敌人引用，已归档到 `public/models/_unused/`
+> 并从 `loadModels()` 加载列表移除（仅 `zombie_basic.gltf` 仍在用，渲染 `zombie`）。
+
+### 敌人尺寸统一（按模型高度归一化，参考玩家）
+
+不同来源模型（Quaternius / zombie / ghost）原始尺寸差异巨大，旧逻辑把 `enemyScales`
+当绝对倍数乘到原始尺寸上会大小失控。现已改为**与玩家 `setupPlayer` 同款**：先按模型
+实际包围盒高度归一化，再缩放到目标世界高度。`enemyScales` 的语义 = 目标高度（米）。
+
+| 敌人 | 目标高度(米) | 说明 |
+|---|---|---|
+| 玩家（参考） | 1.8 | setupPlayer targetHeight |
+| skeleton_soldier | 1.7 | 与玩家相近 |
+| zombie | 1.9 | 略高壮的坦克 |
+| skeleton_archer（龙） | 1.7 | 远程飞行 |
+| skeleton_knight | 2.6 | 精英，明显更大 |
+| necromancer | 1.7 | 与玩家相近 |
+| gargoyle（蝙蝠） | 1.2 | 小型飞行 |
+
+> 实现：`updateEnemyObjects` 用 `enemyModelNormHeight` 缓存每个模型 `1/实际高度` 的
+> 归一化系数，最终 `scale = normFactor × 目标高度 × sizeMultiplier`（miniBoss 1.5 / elite 1.2）。
+> 改大小只需调 `enemyScales` 的目标高度值。`setupEnemyMeshes` 内的 enemyScales 是 legacy
+> InstancedMesh 路径，已不参与渲染。
 
 ### 2.1 已接入的带动画 GLB（含 clip 归一化）
 

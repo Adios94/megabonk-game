@@ -2170,6 +2170,14 @@ let daggerModel: THREE.Group | null = null;
 let hammerModel: THREE.Group | null = null;
 let dartModel: THREE.Group | null = null;
 let dartGoldenModel: THREE.Group | null = null; // Used for shotgun pellets
+let lightningStaffModel: THREE.Group | null = null; // lightning_staff floater
+let flameRingModel: THREE.Group | null = null; // flame_ring floater
+let poisonBombModel: THREE.Group | null = null; // poison_bomb floater
+let voidRippleModel: THREE.Group | null = null; // void_ripple floater
+let rayGunModel: THREE.Group | null = null; // ray_gun floater
+let shotgunModel: THREE.Group | null = null; // shotgun floater (pellets still use dartGoldenModel)
+let paralysisGunModel: THREE.Group | null = null; // paralysis_gun floater
+let scorchBootsModel: THREE.Group | null = null; // scorch_boots floater
 let chestClosedObj: THREE.Group | null = null;
 let chestOpenObj: THREE.Group | null = null;
 // glTF 宝箱自带的动画 clip（Open / Close / Idle_*），开箱时播放 "Open"。
@@ -2280,8 +2288,101 @@ async function loadObjItems(): Promise<void> {
     }
   };
 
+  // Helper: load a GLB weapon model that ships with an embedded baseColor
+  // texture, keeping the texture at full brightness. Unlike loadGlbWeaponModel
+  // (which runs convertToToonMaterials and caps lightness — fine for flat-color
+  // models but darkens hand-painted textures), this rebuilds a white-tinted
+  // toon material that lets the embedded diffuse map carry the color verbatim.
+  const loadTexturedGlbWeaponModel = async (
+    name: string,
+    glbPath: string,
+    targetSize: number,
+  ): Promise<THREE.Group | null> => {
+    try {
+      const gltf = await gltfLoader.loadAsync(glbPath);
+      const obj = gltf.scene as THREE.Group;
+      obj.name = name;
+
+      obj.traverse((child) => {
+        if (!(child as THREE.Mesh).isMesh) return;
+        const mesh = child as THREE.Mesh;
+        const src = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as
+          THREE.MeshStandardMaterial | undefined;
+        const map = src?.map ?? null;
+        tuneToonTexture(map);
+        const toon = new THREE.MeshToonMaterial({
+          color: map ? 0xffffff : (src?.color?.clone() ?? new THREE.Color(0xffffff)),
+          map,
+          gradientMap: toonGradientMap,
+          side: THREE.FrontSide,
+        });
+        toon.name = `${name}Toon`;
+        applyStylizedToonShading(toon, 0.35); // match other weapons: rim + slight spec
+        mesh.material = toon;
+      });
+
+      const box = new THREE.Box3().setFromObject(obj);
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z, 0.01);
+      const s = targetSize / maxDim;
+      obj.scale.set(s, s, s);
+      console.log(`[GLB] Loaded textured ${name} model`);
+      return obj;
+    } catch (err) {
+      console.warn(`[GLB] Failed to load textured ${name}:`, err);
+      return null;
+    }
+  };
+
+  // Helper: load an OBJ weapon model that has UVs but no MTL, painting it with a
+  // shared UV-palette texture (low-poly gun packs map UVs onto color regions of a
+  // single palette PNG). Keeps the palette at full brightness via white toon mats.
+  const loadPaletteObjWeaponModel = async (
+    name: string,
+    objPath: string,
+    texturePath: string,
+    targetSize: number,
+  ): Promise<THREE.Group | null> => {
+    try {
+      const obj = await new OBJLoader().loadAsync(objPath) as THREE.Group;
+      obj.name = name;
+
+      const tex = await new THREE.TextureLoader().loadAsync(texturePath);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      // Palette UVs target tiny color cells — nearest filtering avoids bleeding.
+      tex.magFilter = THREE.NearestFilter;
+      tex.minFilter = THREE.NearestFilter;
+      tex.generateMipmaps = false;
+
+      obj.traverse((child) => {
+        if (!(child as THREE.Mesh).isMesh) return;
+        const mesh = child as THREE.Mesh;
+        const toon = new THREE.MeshToonMaterial({
+          color: 0xffffff,
+          map: tex,
+          gradientMap: toonGradientMap,
+          side: THREE.FrontSide,
+        });
+        toon.name = `${name}Toon`;
+        applyStylizedToonShading(toon, 0.35);
+        mesh.material = toon;
+      });
+
+      const box = new THREE.Box3().setFromObject(obj);
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z, 0.01);
+      const s = targetSize / maxDim;
+      obj.scale.set(s, s, s);
+      console.log(`[OBJ] Loaded palette ${name} model`);
+      return obj;
+    } catch (err) {
+      console.warn(`[OBJ] Failed to load palette ${name}:`, err);
+      return null;
+    }
+  };
+
   // Load all weapon models in parallel — pass brighten=true for weapons only
-  const [ax, sw, kat, bow, dag, ham, dar, darG] = await Promise.all([
+  const [ax, sw, kat, bow, dag, ham, dar, darG, lstaff, fring, pbomb, vbook, rgun, sgun, pgun, sboots] = await Promise.all([
     loadFullModel('AxeModel', '/models/items/Axe_small.mtl', '/models/items/Axe_small.obj', 0.6, true),
     loadFullModel('SwordModel', '/models/items/Sword.mtl', '/models/items/Sword.obj', 0.8, true),
     loadFullModel('KatanaModel', '/models/items/Sword_big.mtl', '/models/items/Sword_big.obj', 0.9, true),
@@ -2291,6 +2392,15 @@ async function loadObjItems(): Promise<void> {
     loadFullModel('HammerModel', '/models/items/Hammer_Double.mtl', '/models/items/Hammer_Double.obj', 0.7, true),
     loadFullModel('DartModel', '/models/items/Dart.mtl', '/models/items/Dart.obj', 0.4, true),
     loadFullModel('DartGoldenModel', '/models/items/Dart_Golden.mtl', '/models/items/Dart_Golden.obj', 0.45, true),
+    // Magic weapon floater models (previously VFX-only)
+    loadTexturedGlbWeaponModel('LightningStaffModel', '/models/items/lightning_staff.glb', 1.0),
+    loadFullModel('FlameRingModel', '/models/items/Ring3.mtl', '/models/items/Ring3.obj', 0.45, true),
+    loadFullModel('PoisonBombModel', '/models/items/Potion9_Filled.mtl', '/models/items/Potion9_Filled.obj', 0.5, true),
+    loadFullModel('VoidRippleModel', '/models/items/Book4_Closed.mtl', '/models/items/Book4_Closed.obj', 0.5, true),
+    loadGlbWeaponModel('RayGunModel', '/models/items/ray_gun.glb', 0.7, true),
+    loadPaletteObjWeaponModel('ShotgunModel', '/models/items/shotgun_2.obj', '/models/items/uv_palette.png', 0.8),
+    loadPaletteObjWeaponModel('ParalysisGunModel', '/models/items/pistol_6.obj', '/models/items/uv_palette.png', 0.6),
+    loadTexturedGlbWeaponModel('ScorchBootsModel', '/models/items/scorch_boots.glb', 0.6),
   ]);
   axeModel = ax;
   swordModel = sw;
@@ -2300,6 +2410,14 @@ async function loadObjItems(): Promise<void> {
   hammerModel = ham;
   dartModel = dar;
   dartGoldenModel = darG;
+  lightningStaffModel = lstaff;
+  flameRingModel = fring;
+  poisonBombModel = pbomb;
+  voidRippleModel = vbook;
+  rayGunModel = rgun;
+  shotgunModel = sgun;
+  paralysisGunModel = pgun;
+  scorchBootsModel = sboots;
 
   // Load chest model — Sci-Fi Essentials Prop_Chest (glTF + textures)
   try {
@@ -2377,6 +2495,7 @@ export class GameScene {
   private weaponFloaters: Map<string, THREE.Object3D> = new Map();
   private static readonly FLOATER_WEAPON_TYPES: ReadonlyArray<string> = [
     'sword', 'bone_bouncer', 'axe', 'bow', 'shotgun',
+    'lightning_staff', 'flame_ring', 'poison_bomb', 'void_ripple', 'ray_gun', 'paralysis_gun', 'scorch_boots',
   ];
 
   // Transient mesh-based VFX (slash arcs, lightning columns)
@@ -4283,12 +4402,19 @@ export class GameScene {
       case 'sword':    return swordModel ? swordModel.clone(true) : null;
       case 'axe':      return axeModel ? axeModel.clone(true) : null;
       case 'bow':      return bowModel ? bowModel.clone(true) : null; // Revolver model
-      case 'shotgun':  return dartGoldenModel ? dartGoldenModel.clone(true) : null;
+      case 'shotgun':  return shotgunModel ? shotgunModel.clone(true) : (dartGoldenModel ? dartGoldenModel.clone(true) : null);
       case 'bone_bouncer': {
         if (!boneGeometry) return null;
         const mat = new THREE.MeshToonMaterial({ color: 0xf5f5dc, gradientMap: toonGradientMap });
         return new THREE.Mesh(boneGeometry.clone(), mat);
       }
+      case 'lightning_staff': return lightningStaffModel ? lightningStaffModel.clone(true) : null;
+      case 'flame_ring':      return flameRingModel ? flameRingModel.clone(true) : null;
+      case 'poison_bomb':     return poisonBombModel ? poisonBombModel.clone(true) : null;
+      case 'void_ripple':     return voidRippleModel ? voidRippleModel.clone(true) : null;
+      case 'ray_gun':         return rayGunModel ? rayGunModel.clone(true) : null;
+      case 'paralysis_gun':   return paralysisGunModel ? paralysisGunModel.clone(true) : null;
+      case 'scorch_boots':    return scorchBootsModel ? scorchBootsModel.clone(true) : null;
       default: return null;
     }
   }
@@ -4320,7 +4446,7 @@ export class GameScene {
 
     if (equipped.length === 0) return;
 
-    const orbitRadius = 1.4;
+    const orbitRadius = 1.134; // 距玩家中心：1.4 → 1.26 → 再收近 10%
     const orbitSpeed = 0.6; // rad/sec
     const slotCount = equipped.length;
 
@@ -4331,6 +4457,7 @@ export class GameScene {
         const built = this.buildFloaterModel(type);
         if (!built) continue;
         obj = built;
+        obj.scale.multiplyScalar(0.72); // 整体缩小（在各自 targetSize 基础上，0.8 再 ×0.9）
         obj.name = `Floater_${type}`;
         this.scene.add(obj);
         this.weaponFloaters.set(type, obj);
@@ -4341,7 +4468,7 @@ export class GameScene {
       const angle = time * orbitSpeed + slotAngle;
       const orbX = player.x + Math.cos(angle) * orbitRadius;
       const orbZ = player.z + Math.sin(angle) * orbitRadius;
-      const bobY = player.y + 1.5 + Math.sin(time * 2.0 + i * 1.3) * 0.18;
+      const bobY = player.y + 1.215 + Math.sin(time * 2.0 + i * 1.3) * 0.18; // 高度：1.5 → 1.35 → 再降 10%
       obj.position.set(orbX, bobY, orbZ);
 
       // Per-weapon self-rotation: each weapon has a recognizable idle pose
@@ -4363,6 +4490,31 @@ export class GameScene {
         case 'bone_bouncer':
           // Tumbling bone
           obj.rotation.set(time * 1.6 + i, time * 2.2 + i * 0.7, time * 1.0);
+          break;
+        case 'lightning_staff':
+          // Staff upright, slow yaw spin
+          obj.rotation.set(0, time * 1.2, 0);
+          break;
+        case 'flame_ring':
+          // Ring stands upright facing outward, spins around its own axis
+          obj.rotation.set(Math.PI / 2, angle + Math.PI / 2, time * 2.0);
+          break;
+        case 'poison_bomb':
+          // Potion bobs upright with a gentle wobble
+          obj.rotation.set(Math.sin(time * 2 + i) * 0.2, time * 1.0, 0);
+          break;
+        case 'void_ripple':
+          // Closed book, slow tumbling
+          obj.rotation.set(0, time * 1.3, Math.sin(time * 1.5 + i) * 0.25);
+          break;
+        case 'ray_gun':
+        case 'paralysis_gun':
+          // Gun points along orbit tangent (muzzle forward), slight bob
+          obj.rotation.set(Math.sin(time * 2 + i) * 0.12, angle + Math.PI / 2, 0);
+          break;
+        case 'scorch_boots':
+          // Boots upright, slow yaw spin with a gentle wobble
+          obj.rotation.set(Math.sin(time * 1.5 + i) * 0.15, time * 1.1, 0);
           break;
       }
       obj.visible = true;

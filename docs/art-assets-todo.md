@@ -18,7 +18,7 @@
 | 玩家角色            | 3 / 3                                                   | —            | —             |
 | 敌人模型（语义匹配）      | 6 / 6                                                   | —            | —             |
 | Boss 模型         | 0 / 2（两关用带枪机械敌占位，动画已接）                                  | 2            | —             |
-| 武器手持 / 弹幕模型     | 7 / 12                                                  | 5            | —             |
+| 武器手持 / 弹幕模型     | 12 / 12（全部接 floater 模型）                                   | —            | —             |
 | 拾取物             | 7 / 7（全部接专属模型：xp 四档 Crystal1-4 + Coin/Heart/Heart_Half） | —            | —             |
 | 消耗品             | 0 / 10                                                  | 10（全 emoji）  | —             |
 | 武器 UI 图标        | 3 / 12                                                  | 9（emoji 占位）  | —             |
@@ -191,19 +191,21 @@
 | 2   | axe             | orbitingAxe（环绕飞斧）   | items/Axe_small.obj + .mtl（`axeModel`，弹丸克隆飞行）          | 模型旋转飞行（`axeObjects` index.ts:5010）                        | ✅ 模型就位                           |
 | 3   | bow（实为左轮枪）      | forwardArrow（直线穿透）  | items/Revolver.glb（`bowModel`，GLB 手枪）                  | 子弹走 InstancedMesh 弹道（不挂模型当弹丸）                             | ✅ 模型就位                           |
 | 4   | bone_bouncer    | bouncingShot（弹跳骨头）  | items/Bone.obj（**仅 geometry，无 MTL**）                   | 骨头几何体飞行 + fallback boneGeometry（index.ts:4269）            | ⚠️ 仅几何体，无材质                      |
-| 5   | shotgun         | spreadShot（散射弹丸）    | items/Dart_Golden.obj + .mtl（`dartGoldenModel`，金飞镖当弹丸） | 多颗弹丸散射                                                    | ✅ 模型就位（借飞镖）                      |
-| 6   | lightning_staff | lightningChain（闪电链） | ❌ 无手持模型                                                | TubeGeometry 闪电链 + 粒子（index.ts:4019-99）                   | 🔴 缺权杖模型 + 闪电序列贴图（P1）            |
-| 7   | flame_ring      | flameAura（脚下火环）     | ❌ 无法器模型                                                | RingGeometry(1.7,2.7) 脚下圆盘（index.ts:4124）+ flame.png      | 🔴 缺火焰序列贴图 / 法器模型（P1）            |
-| 8   | ray_gun         | rayBeam（红色激光）       | ❌ 无手持模型                                                | BoxGeometry(1,1,1) 拉伸成红激光柱（index.ts:6171）                 | 🔴 缺激光枪模型 + 激光柱贴图（**P0**）        |
-| 9   | poison_bomb     | poisonGas（毒气云 AoE）  | ❌ 无瓶子模型                                                | CircleGeometry(1,24) 绿底毒云 + 粒子（index.ts:6179）             | 🔴 缺毒气瓶模型 + 毒云 sprite 序列（**P0**） |
-| 10  | paralysis_gun   | paralysisShot（麻痹弹）  | 借用 Dart 模型当弹丸                                          | 黄色电弧（程序化）+ 头顶麻痹三角警示标 Canvas2D（index.ts:329-422）           | 🔴 缺麻痹枪模型 + 黄电弧贴图（**P0**）        |
-| 11  | void_ripple     | voidRipple（虚空波纹）    | ❌ 无模型                                                  | RingGeometry(0.82,1.0) 青色虚空环（index.ts:6190）               | 🔴 缺虚空波纹 sprite 序列（P1）           |
-| 12  | scorch_boots    | scorchTrail（灼地脚印）   | ❌ 无模型（脚下持续伤害带）                                         | CircleGeometry(1,20) 橙色灼地痕迹（index.ts:6201）+ scorch.png    | 🔴 缺灼地脚印贴花 sprite（P1）            |
+| 5   | shotgun         | spreadShot（散射弹丸）    | floater=items/shotgun_2.obj（`shotgunModel`，调色板贴图）；弹丸=Dart_Golden | 多颗弹丸散射                                                    | ✅ 真枪 floater + 飞镖弹丸              |
+| 6   | lightning_staff | lightningChain（闪电链） | items/lightning_staff.glb（`lightningStaffModel`，floater 漂浮，自导出 GLB 含嵌入贴图） | TubeGeometry 闪电链 + 粒子（index.ts:4019-99）                   | ✅ floater 模型 + 闪电 VFX（带手绘贴图） |
+| 7   | flame_ring      | flameAura（脚下火环）     | items/Ring3.obj+.mtl（`flameRingModel`，floater 漂浮）       | RingGeometry(1.7,2.7) 脚下圆盘（index.ts:4124）+ flame.png      | ✅ floater 模型 + 火环 VFX（贴图序列仍为 P1） |
+| 8   | ray_gun         | rayBeam（红色激光）       | items/ray_gun.glb（`rayGunModel`，floater 漂浮，Kenney blasterM） | BoxGeometry(1,1,1) 拉伸成红激光柱（index.ts:6171）                 | ✅ floater 模型 + 激光柱 VFX（激光贴图仍可补） |
+| 9   | poison_bomb     | poisonGas（毒气云 AoE）  | items/Potion9_Filled.obj+.mtl（`poisonBombModel`，floater 漂浮） | CircleGeometry(1,24) 绿底毒云 + 粒子（index.ts:6179）             | ✅ floater 模型 + 毒云 VFX（sprite 序列仍可补） |
+| 10  | paralysis_gun   | paralysisShot（麻痹弹）  | floater=items/pistol_6.obj（`paralysisGunModel`，调色板贴图）；弹丸借 Dart | 黄色电弧（程序化）+ 头顶麻痹三角警示标 Canvas2D（index.ts:329-422）           | ✅ 手枪 floater + 麻痹 VFX（黄电弧贴图仍可补） |
+| 11  | void_ripple     | voidRipple（虚空波纹）    | items/Book4_Closed.obj+.mtl（`voidRippleModel`，floater 漂浮） | RingGeometry(0.82,1.0) 青色虚空环（index.ts:6190）               | ✅ floater 模型 + 虚空 VFX（sprite 序列仍可补） |
+| 12  | scorch_boots    | scorchTrail（灼地脚印）   | items/scorch_boots.glb（`scorchBootsModel`，floater 漂浮，含嵌入贴图） | CircleGeometry(1,20) 橙色灼地痕迹（index.ts:6201）+ scorch.png    | ✅ floater 模型 + 灼地 VFX（贴花 sprite 仍可补） |
 
 
-> **一句话总结**：5 把有专属/借用 3D 模型（sword / axe / bow=左轮 / bone_bouncer / shotgun=金飞镖），
-> 其中 bone_bouncer 只有几何体没材质、bow 与 shotgun 都是「借用」模型；其余 7 把全靠 Three.js 原始几何体
-> （Ring/Box/Circle/Tube）+ 粒子 + 现有 VFX 贴图程序化绘制。P0 优先级最高的 3 把：ray_gun / poison_bomb / paralysis_gun。
+> **一句话总结（2026-06-14 更新）**：12 把武器**全部有 floater 漂浮模型**，已无纯程序化武器。
+> 物理 5 把（sword / axe / bow=左轮 / bone_bouncer / shotgun=shotgun_2.obj）
+> + 法术/能量/枪械/其它 7 把（lightning_staff=自导出 glb / flame_ring=Ring3 / poison_bomb=Potion9 / void_ripple=Book4 /
+> ray_gun=Kenney blasterM / paralysis_gun=pistol_6.obj / scorch_boots=自导出 glb；其中 shotgun/paralysis_gun 弹丸仍用飞镖/Dart）。
+> 剩余美术项仅各武器的「特效贴图序列」（P1）。
 
 ### 4.1 已就位（OBJ + MTL 或 GLB）
 
@@ -236,18 +238,23 @@
 | _unused/Heart_Half.obj/.mtl        | 未引用，已归档（§5 health_small 改造时需移回） |
 
 
-### 4.3 没有专属模型 / 全程序化（P0 重点）
+### 4.3 floater 模型已接，仅缺特效贴图序列（P1）
 
+> 这 7 把已挂 floater 漂浮模型（见 §4.0），不再缺手持/法器模型；以下只列「特效贴图」需求。
 
-| 武器 ID           | 当前表现                   | 缺什么                  | 优先级 |
-| --------------- | ---------------------- | -------------------- | --- |
-| lightning_staff | TubeGeometry 闪电链 + 粒子  | 手持权杖模型 + 闪电序列贴图      | P1  |
-| flame_ring      | RingGeometry 玩家脚下圆环    | 火焰序列贴图 / 法器模型        | P1  |
-| ray_gun         | BoxGeometry 拉伸成红激光     | 激光枪手持模型 + 激光柱贴图      | P0  |
-| poison_bomb     | CircleGeometry 绿底 + 粒子 | 毒气瓶模型 + 毒云 sprite 序列 | P0  |
-| paralysis_gun   | 借用 Dart 模型当弹丸          | 麻痹枪模型 + 黄色电弧贴图       | P0  |
-| void_ripple     | RingGeometry 青色环       | 虚空波纹 sprite 序列       | P1  |
-| scorch_boots    | CircleGeometry 橙色      | 灼地脚印贴花 sprite        | P1  |
+| 武器 ID           | floater 模型              | 当前特效              | 仍缺特效        | 优先级 |
+| --------------- | ----------------------- | ----------------- | ----------- | --- |
+| lightning_staff | lightning_staff.glb（自导出，含嵌入贴图） | TubeGeometry 闪电链 + 粒子 | 闪电序列贴图 5-8 帧 | P1  |
+| flame_ring      | Ring3                   | RingGeometry 脚下圆盘 + flame.png | 火焰序列贴图     | P1  |
+| poison_bomb     | Potion9_Filled          | CircleGeometry 绿底 + 粒子 | 毒云 sprite 序列 | P1  |
+| void_ripple     | Book4_Closed            | RingGeometry 青色环  | 虚空波纹 sprite 序列 | P1  |
+| ray_gun         | ray_gun.glb（Kenney blasterM） | BoxGeometry 红激光柱 | 激光柱贴图（细长发光带） | P1  |
+| paralysis_gun   | pistol_6.obj（调色板贴图） | 黄色电弧 + 头顶三角警示 | 黄色电弧贴图 | P1  |
+| scorch_boots    | scorch_boots.glb（含嵌入贴图） | CircleGeometry 橙色灼地痕迹 + scorch.png | 灼地脚印贴花 sprite | P1  |
+
+### 4.4 仍纯程序化 / 缺模型
+
+> 已无纯程序化武器——12 把全部接上了 floater 漂浮模型。剩余美术需求仅各武器的「特效贴图序列」（P1，见 §4.3）。
 
 
 ---

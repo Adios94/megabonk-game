@@ -2395,7 +2395,7 @@ async function loadObjItems(): Promise<void> {
     // Magic weapon floater models (previously VFX-only)
     loadTexturedGlbWeaponModel('LightningStaffModel', '/models/items/lightning_staff.glb', 1.0),
     loadFullModel('FlameRingModel', '/models/items/Ring3.mtl', '/models/items/Ring3.obj', 0.45, true),
-    loadFullModel('PoisonBombModel', '/models/items/Potion9_Filled.mtl', '/models/items/Potion9_Filled.obj', 0.5, true),
+    loadTexturedGlbWeaponModel('PoisonBombModel', '/models/items/poison_bomb.glb', 0.5),
     loadFullModel('VoidRippleModel', '/models/items/Book4_Closed.mtl', '/models/items/Book4_Closed.obj', 0.5, true),
     loadGlbWeaponModel('RayGunModel', '/models/items/ray_gun.glb', 0.7, true),
     loadPaletteObjWeaponModel('ShotgunModel', '/models/items/shotgun_2.obj', '/models/items/uv_palette.png', 0.8),

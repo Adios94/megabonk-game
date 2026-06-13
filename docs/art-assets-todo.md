@@ -195,7 +195,7 @@
 | 6   | lightning_staff | lightningChain（闪电链） | items/lightning_staff.glb（`lightningStaffModel`，floater 漂浮，自导出 GLB 含嵌入贴图） | TubeGeometry 闪电链 + 粒子（index.ts:4019-99）                   | ✅ floater 模型 + 闪电 VFX（带手绘贴图） |
 | 7   | flame_ring      | flameAura（脚下火环）     | items/Ring3.obj+.mtl（`flameRingModel`，floater 漂浮）       | RingGeometry(1.7,2.7) 脚下圆盘（index.ts:4124）+ flame.png      | ✅ floater 模型 + 火环 VFX（贴图序列仍为 P1） |
 | 8   | ray_gun         | rayBeam（红色激光）       | items/ray_gun.glb（`rayGunModel`，floater 漂浮，Kenney blasterM） | BoxGeometry(1,1,1) 拉伸成红激光柱（index.ts:6171）                 | ✅ floater 模型 + 激光柱 VFX（激光贴图仍可补） |
-| 9   | poison_bomb     | poisonGas（毒气云 AoE）  | items/Potion9_Filled.obj+.mtl（`poisonBombModel`，floater 漂浮） | CircleGeometry(1,24) 绿底毒云 + 粒子（index.ts:6179）             | ✅ floater 模型 + 毒云 VFX（sprite 序列仍可补） |
+| 9   | poison_bomb     | poisonGas（毒气云 AoE）  | items/poison_bomb.glb（`poisonBombModel`，floater 漂浮，自导出含贴图） | CircleGeometry(1,24) 绿底毒云 + 粒子（index.ts:6179）             | ✅ floater 模型 + 毒云 VFX（sprite 序列仍可补） |
 | 10  | paralysis_gun   | paralysisShot（麻痹弹）  | floater=items/pistol_6.obj（`paralysisGunModel`，调色板贴图）；弹丸借 Dart | 黄色电弧（程序化）+ 头顶麻痹三角警示标 Canvas2D（index.ts:329-422）           | ✅ 手枪 floater + 麻痹 VFX（黄电弧贴图仍可补） |
 | 11  | void_ripple     | voidRipple（虚空波纹）    | items/Book4_Closed.obj+.mtl（`voidRippleModel`，floater 漂浮） | RingGeometry(0.82,1.0) 青色虚空环（index.ts:6190）               | ✅ floater 模型 + 虚空 VFX（sprite 序列仍可补） |
 | 12  | scorch_boots    | scorchTrail（灼地脚印）   | items/scorch_boots.glb（`scorchBootsModel`，floater 漂浮，含嵌入贴图） | CircleGeometry(1,20) 橙色灼地痕迹（index.ts:6201）+ scorch.png    | ✅ floater 模型 + 灼地 VFX（贴花 sprite 仍可补） |
@@ -204,7 +204,7 @@
 > **一句话总结（2026-06-14 更新）**：12 把武器**全部有 floater 漂浮模型**，已无纯程序化武器。
 > 物理 5 把（sword / axe / bow=左轮 / bone_bouncer / shotgun=shotgun_2.obj）
 > + 法术/能量/枪械/其它 7 把（lightning_staff=自导出 glb / flame_ring=Ring3 / poison_bomb=Potion9 / void_ripple=Book4 /
-> ray_gun=Kenney blasterM / paralysis_gun=pistol_6.obj / scorch_boots=自导出 glb；其中 shotgun/paralysis_gun 弹丸仍用飞镖/Dart）。
+> ray_gun=Kenney blasterM / paralysis_gun=pistol_6.obj / scorch_boots=自导出 glb / poison_bomb=自导出 glb；其中 shotgun/paralysis_gun 弹丸仍用飞镖/Dart）。
 > 剩余美术项仅各武器的「特效贴图序列」（P1）。
 
 ### 4.1 已就位（OBJ + MTL 或 GLB）
@@ -246,7 +246,7 @@
 | --------------- | ----------------------- | ----------------- | ----------- | --- |
 | lightning_staff | lightning_staff.glb（自导出，含嵌入贴图） | TubeGeometry 闪电链 + 粒子 | 闪电序列贴图 5-8 帧 | P1  |
 | flame_ring      | Ring3                   | RingGeometry 脚下圆盘 + flame.png | 火焰序列贴图     | P1  |
-| poison_bomb     | Potion9_Filled          | CircleGeometry 绿底 + 粒子 | 毒云 sprite 序列 | P1  |
+| poison_bomb     | poison_bomb.glb（自导出，含嵌入贴图） | CircleGeometry 绿底 + 粒子 | 毒云 sprite 序列 | P1  |
 | void_ripple     | Book4_Closed            | RingGeometry 青色环  | 虚空波纹 sprite 序列 | P1  |
 | ray_gun         | ray_gun.glb（Kenney blasterM） | BoxGeometry 红激光柱 | 激光柱贴图（细长发光带） | P1  |
 | paralysis_gun   | pistol_6.obj（调色板贴图） | 黄色电弧 + 头顶三角警示 | 黄色电弧贴图 | P1  |

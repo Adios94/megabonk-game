@@ -74,6 +74,8 @@ export const CHEST_MAX_ACTIVE = 10;           // Maximum unopened chests in the 
 export const CHEST_RESPAWN_MIN_SECONDS = 30;
 export const CHEST_RESPAWN_MAX_SECONDS = 60;
 export const CHEST_INTERACT_RADIUS = 2.5;
+/** 宝箱交互的垂直高度容差：玩家与宝箱的 y 差超过此值不可开启（防止在高处平台开下方宝箱）。 */
+export const CHEST_INTERACT_MAX_Y_DELTA = 2.5;
 export const CHEST_SILVER_MIN = 50;
 export const CHEST_SILVER_MAX = 200;
 export const CHEST_PLAYER_MIN_DISTANCE = 12;     // Min distance from player when spawning fallback chests

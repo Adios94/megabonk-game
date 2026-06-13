@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { tickChests, generateChests, spawnBossChest } from '../chests.ts';
 import { makeEngine, makeBoss } from './_fixtures.ts';
-import { CHEST_COUNT, CHEST_INTERACT_RADIUS, CHEST_MAX_ACTIVE } from '../../config.ts';
+import { CHEST_COUNT, CHEST_INTERACT_RADIUS, CHEST_INTERACT_MAX_Y_DELTA, CHEST_MAX_ACTIVE } from '../../config.ts';
 import { getChestGoldCost } from '../relics.ts';
 import type { ChestState } from '../../types.ts';
 
@@ -231,6 +231,33 @@ describe('tickChests', () => {
     engine.input.interact = true;
     tickChests(engine);
     expect(chest.opened).toBe(false);
+  });
+
+  it('玩家在高处平台（y 差超过容差）时不能开启下方宝箱', () => {
+    const engine = makeEngine();
+    const chest: ChestState = { id: 1, x: 0, y: 0, z: 0, opened: false };
+    engine.state.chests = [chest];
+    engine.state.player.x = 0;
+    engine.state.player.z = 0;
+    engine.state.player.y = CHEST_INTERACT_MAX_Y_DELTA + 1;
+    engine.state.player.gold = getChestGoldCost(engine.state.player.level);
+    engine.input.interact = true;
+    tickChests(engine);
+    expect(chest.opened).toBe(false);
+    expect(engine.state.chestOpenEvents).toHaveLength(0);
+  });
+
+  it('玩家与宝箱在容差内的高度差仍可开启', () => {
+    const engine = makeEngine();
+    const chest: ChestState = { id: 1, x: 0, y: 0, z: 0, opened: false };
+    engine.state.chests = [chest];
+    engine.state.player.x = 0;
+    engine.state.player.z = 0;
+    engine.state.player.y = CHEST_INTERACT_MAX_Y_DELTA - 0.1;
+    engine.state.player.gold = getChestGoldCost(engine.state.player.level);
+    engine.input.interact = true;
+    tickChests(engine);
+    expect(chest.opened).toBe(true);
   });
 
   it('关卡模式保持 10 个未开启宝箱，并按每 3 个开启点轮换回池', () => {

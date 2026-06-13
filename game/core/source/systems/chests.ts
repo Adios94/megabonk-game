@@ -8,6 +8,7 @@ import {
   CHEST_COUNT,
   CHEST_MAX_ACTIVE,
   CHEST_INTERACT_RADIUS,
+  CHEST_INTERACT_MAX_Y_DELTA,
   CHEST_RESPAWN_MIN_SECONDS,
   CHEST_RESPAWN_MAX_SECONDS,
   CHEST_PLAYER_MIN_DISTANCE,
@@ -95,6 +96,7 @@ export function tickChests(engine: Engine, dt = 0): void {
     if (chest.opened) continue;
     const dist = distanceBetween(player.x, player.z, chest.x, chest.z);
     if (dist >= CHEST_INTERACT_RADIUS) continue;
+    if (Math.abs((player.y ?? 0) - (chest.y ?? 0)) > CHEST_INTERACT_MAX_Y_DELTA) continue;
 
     const cost = chest.bossDrop ? 0 : getChestGoldCost(player.level, openedChestCount);
     if (player.gold < cost) return;

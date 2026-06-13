@@ -1491,7 +1491,6 @@ interface LoadedModels {
   // --- 皮肤试验：KayKit Skeletons（低多边形奇幻，静态网格，无动画）---
   kk_warrior: THREE.Group | null;
   kk_minion: THREE.Group | null;
-  kk_rogue: THREE.Group | null;
   kk_mage: THREE.Group | null;
   boss: THREE.Group | null;
   tombstone: THREE.Group | null;
@@ -1526,7 +1525,6 @@ const loadedModels: LoadedModels = {
   ghost: null,
   kk_warrior: null,
   kk_minion: null,
-  kk_rogue: null,
   kk_mage: null,
   boss: null,
   tombstone: null,
@@ -1589,44 +1587,21 @@ const KAYKIT_ANIM_NAME_MAP: Record<string, string> = {
 };
 
 // =============================================================================
-// 怪物皮肤试验（运行时可切换：?skin= 或游戏内按 K 循环）
+// 敌人 → 视觉模型映射
 // =============================================================================
-// 两套外观：original（现版）/ kaykit（KayKit 低多边形骷髅）。
-// 仅替换敌人「视觉模型」，core 逻辑/碰撞/数值不变。kaykit 为静态网格
-// （无骨骼动画），切到该套时敌人不播放走路/攻击动画，只随位置滑动——用于快速
-// 对比美术风格。映射覆盖全部 6 种敌人类型；KayKit 仅 4 个角色，做了合理复用。
-type EnemySkin = 'original' | 'kaykit';
-
-const ENEMY_SKINS: Record<EnemySkin, Record<string, keyof LoadedModels>> = {
-  original: {
-    // 三个骷髅类敌人改用 KayKit 骷髅（带 Rig_Medium 动画 + 手持武器，见 loadSkinModels）
-    skeleton_soldier: 'kk_minion',   // 普通骷髅兵 → 小兵（手持斧）
-    zombie: 'zombie_basic',
-    skeleton_archer: 'kk_mage',      // 远程施法 → 法师（手持法杖）
-    skeleton_knight: 'kk_warrior',   // 精英冲锋 → 战士（剑 + 大盾）
-    necromancer: 'ghost',
-    gargoyle: 'monster_bat',
-  },
-  kaykit: {
-    skeleton_soldier: 'kk_minion',   // 普通骷髅兵 → 小兵（斧）
-    zombie: 'kk_minion',             // 高 HP 坦克 → 小兵（放大）
-    skeleton_archer: 'kk_mage',      // 远程施法 → 法师（法杖）
-    skeleton_knight: 'kk_warrior',   // 精英 → 战士（剑 + 大盾）
-    necromancer: 'kk_mage',          // 法师召唤 → 法师
-    gargoyle: 'kk_rogue',            // 飞行 → 盗贼
-  },
+// 仅决定敌人「视觉模型」，core 逻辑/碰撞/数值不变。三个骷髅类敌人使用 KayKit 骷髅
+// （带 Rig_Medium 动画 + 手持武器，见 loadSkinModels），其余沿用内置模型。
+const ENEMY_MODEL_MAP: Record<string, keyof LoadedModels> = {
+  skeleton_soldier: 'kk_minion',   // 普通骷髅兵 → 小兵（手持斧）
+  zombie: 'zombie_basic',
+  skeleton_archer: 'kk_mage',      // 远程施法 → 法师（手持法杖）
+  skeleton_knight: 'kk_warrior',   // 精英冲锋 → 战士（剑 + 大盾）
+  necromancer: 'ghost',
+  gargoyle: 'monster_bat',
 };
 
-let currentSkin: EnemySkin = (() => {
-  try {
-    const p = new URLSearchParams(window.location.search).get('skin');
-    if (p === 'kaykit') return p;
-  } catch { /* SSR / no window */ }
-  return 'original';
-})();
-
 function getEnemyModelMap(): Record<string, keyof LoadedModels> {
-  return ENEMY_SKINS[currentSkin];
+  return ENEMY_MODEL_MAP;
 }
 
 // 把模型重定位为「脚底贴地(min.y=0) + 水平居中」。渲染路径只克隆+缩放、不再居中，
@@ -1661,7 +1636,6 @@ async function loadSkinModels(): Promise<void> {
   const kaykit: [keyof LoadedModels, string][] = [
     ['kk_warrior', '/models/skins/kaykit/Skeleton_Warrior.glb'],
     ['kk_minion', '/models/skins/kaykit/Skeleton_Minion.glb'],
-    ['kk_rogue', '/models/skins/kaykit/Skeleton_Rogue.glb'],
     ['kk_mage', '/models/skins/kaykit/Skeleton_Mage.glb'],
   ];
 
@@ -1729,7 +1703,7 @@ async function loadSkinModels(): Promise<void> {
 
   // 同一套动画注册给所有 KayKit 角色（每个敌人对象在 updateEnemyObjects 各建独立 mixer 绑定）
   if (kkClips.length > 0) {
-    for (const key of ['kk_warrior', 'kk_minion', 'kk_mage', 'kk_rogue'] as (keyof LoadedModels)[]) {
+    for (const key of ['kk_warrior', 'kk_minion', 'kk_mage'] as (keyof LoadedModels)[]) {
       if (loadedModels[key]) loadedAnimClips.set(key, kkClips);
     }
     console.log(`[Skin] KayKit animations ready: ${kkClips.map((c) => c.name).join(', ')}`);
@@ -2738,10 +2712,6 @@ export class GameScene {
         // 边缘触发：keydown 那一帧标记为 pressed；发送过 input 后会清零（见 handleInput）
         if (!e.repeat) this.interactKeyPressed = true;
       }
-      // 皮肤试验：K 键循环切换怪物外观（original → kaykit）
-      if (e.code === 'KeyK' && !e.repeat) {
-        this.cycleEnemySkin();
-      }
     });
     window.addEventListener('keyup', (e) => {
       if (e.code === 'Space') { this.jumpKeyDown = false; }
@@ -3237,64 +3207,13 @@ export class GameScene {
     this.scene.add(this.weaponOrbMesh);
   }
 
-  // 皮肤试验：循环切换怪物外观并清空所有敌人可视对象，使下一帧按新映射重建。
-  // 仅影响视觉（克隆模型/动画/对象池），不触碰 core 逻辑与敌人数值。
-  private cycleEnemySkin(): void {
-    const order: EnemySkin[] = ['original', 'kaykit'];
-    currentSkin = order[(order.indexOf(currentSkin) + 1) % order.length];
-
-    // 移除并回收当前所有敌人可视对象（含对象池里隐藏的、正在死亡的）
-    for (const obj of this.enemyObjects.values()) this.scene.remove(obj);
-    for (const pool of this.enemyPool.values()) for (const obj of pool) this.scene.remove(obj);
-    for (const dying of this.dyingEnemies.values()) this.scene.remove(dying.obj);
-    this.enemyObjects.clear();
-    this.enemyPool.clear();
-    this.dyingEnemies.clear();
-    for (const mixer of this.enemyMixers.values()) mixer.stopAllAction();
-    this.enemyMixers.clear();
-    this.enemyAnimStates.clear();
-    this.enemyAnimActions.clear();
-    this.enemyPrevPos.clear();
-
-    const label: Record<EnemySkin, string> = {
-      original: '原版怪物',
-      kaykit: 'KayKit 骷髅（静态）',
-    };
-    this.showSkinToast(`怪物皮肤：${label[currentSkin]}  ·  按 K 切换`);
-    console.log(`[Skin] Switched to "${currentSkin}"`);
-  }
-
-  // 屏幕中上方短暂提示当前皮肤
-  private showSkinToast(text: string): void {
-    let el = document.getElementById('skin-toast') as HTMLDivElement | null;
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'skin-toast';
-      el.style.cssText = [
-        'position:fixed', 'top:14%', 'left:50%', 'transform:translateX(-50%)',
-        'padding:10px 20px', 'background:rgba(15,18,28,0.86)', 'color:#fff',
-        'font:600 16px/1.4 system-ui,sans-serif', 'border:1px solid rgba(255,255,255,0.25)',
-        'border-radius:10px', 'z-index:9999', 'pointer-events:none',
-        'transition:opacity 0.3s', 'box-shadow:0 4px 20px rgba(0,0,0,0.4)',
-      ].join(';');
-      document.body.appendChild(el);
-    }
-    const node = el;
-    node.textContent = text;
-    node.style.opacity = '1';
-    if (this.skinToastTimer !== null) window.clearTimeout(this.skinToastTimer);
-    this.skinToastTimer = window.setTimeout(() => { node.style.opacity = '0'; }, 2000);
-  }
-
-  private skinToastTimer: number | null = null;
-
   private setupEnemyMeshes(): void {
     const enemyTypes: string[] = [
       'skeleton_soldier', 'zombie', 'skeleton_archer',
       'skeleton_knight', 'necromancer', 'gargoyle',
     ];
 
-    // Map enemy types to loaded models for geometry extraction（随当前皮肤变化）
+    // Map enemy types to loaded models for geometry extraction
     const enemyModelMap = getEnemyModelMap();
 
     // ⚠️ Legacy InstancedMesh 路径，已不参与渲染（见文件末尾 "Hide InstancedMesh"）。
@@ -4783,7 +4702,7 @@ export class GameScene {
       }
     }
 
-    // Map enemy types to model keys（随当前皮肤变化，见 ENEMY_SKINS / 按 K 切换）
+    // Map enemy types to model keys（见 ENEMY_MODEL_MAP）
     const enemyModelMap = getEnemyModelMap();
 
     // 目标世界高度（米）—— 模型按实际高度归一化后缩放到此值。整体比玩家(1.8)矮一截以凸显角色（约 ×0.8）。

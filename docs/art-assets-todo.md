@@ -51,16 +51,23 @@
 
 | 敌人 ID | 设定 | 当前用模型 | 应有形象 | 状态 |
 |---|---|---|---|---|
-| skeleton_soldier | 普通骷髅兵 | monsters/Skeleton.glb | 骷髅兵 | OK（带动画） |
+| skeleton_soldier | 普通骷髅兵 | skins/kaykit/Skeleton_Minion.glb（kk_minion） | 骷髅兵（手持斧） | OK（KayKit，Rig_Medium 动画 + 手持斧 Skeleton_Axe） |
 | zombie | 高 HP 慢速僵尸 | zombie_basic.gltf | （风格匹配，靠 enemyScales 放大暗示高 HP） | OK |
-| skeleton_archer | 远程攻击 | monsters/Dragon.glb | 远程吐息（飞行 + Attack/Attack2 双击） | OK（用龙的吐息表达远程） |
-| skeleton_knight | 精英冲锋骑士 | knight.glb（专属模块化骷髅） | 骷髅骑士（甲胄+大剑） | OK（专属模型，与 soldier 区分；目标高度 2.6m，明显更大） |
+| skeleton_archer | 远程攻击 | skins/kaykit/Skeleton_Mage.glb（kk_mage） | 远程施法骷髅（法杖） | OK（KayKit 法师，落地人形 + 手持法杖 Skeleton_Staff） |
+| skeleton_knight | 精英冲锋骑士 | skins/kaykit/Skeleton_Warrior.glb（kk_warrior） | 骷髅骑士（甲胄+大剑+盾） | OK（KayKit 战士，剑 Skeleton_Blade + 大盾 Skeleton_Shield_Large_A；目标高度 1.95m 区分精英） |
 | necromancer | 召唤型法师 | ghost.glb | 死灵法师（袍子+杖） | OK（飘浮形象贴合，32 个动画 clip） |
 | gargoyle | 飞行俯冲 | monsters/Bat.glb | 蝙蝠 / 石像鬼 | OK（带飞行/攻击/受击/死亡动画） |
 
-> skeleton_knight 现用专属 `knight.glb`（模块化骷髅人形，从 `_unused/skeleton.glb` 启用），
-> 与 soldier 的 Quaternius `Skeleton.glb` 外形区分，并靠更大目标高度（2.6m）表达"精英"。
-> 仍非真正"甲胄骑士"，若日后拿到更贴合的模型，只需改两处 enemyModelMap 即可。
+> **三个骷髅类敌人（2026-06-13 改用 KayKit Skeletons 1.1）**：共用 `Rig_Medium` 骨架，
+> 动画来自 `skins/kaykit/anim/Rig_Medium_{General,MovementBasic}.glb`（独立 GLB，clip 按骨名
+> 直接绑定），归一化映射：Idle_A→Idle / Walking_A→Walk / Running_A→Run / Hit_A→HitReact /
+> Death_A→Death / Throw→Punch（FREE 包无近战挥砍，用 Throw 当攻击替身）。手持武器克隆挂到
+> `handslot.r` / `handslot.l` 骨（GLTFLoader 会去掉骨名里的 `.`，按归一化名匹配）。
+> 加载与挂载逻辑见 `loadSkinModels()` 与 `attachEnemyWeapons()`。
+
+> skeleton_knight / archer / soldier 现统一改用 KayKit Skeletons（Warrior / Mage / Minion），
+> 共用 Rig_Medium 骨架 + Rig_Medium 通用动画 + handslot 手持武器（详见上方说明与 §2.1）。
+> 旧的 `knight.glb` / `monsters/Dragon.glb` / `monsters/Skeleton.glb` 不再被这三个敌人引用。
 >
 > ✅ `zombie_chubby.gltf` / `zombie_arm.gltf` 现已无敌人引用，已归档到 `public/models/_unused/`
 > 并从 `loadModels()` 加载列表移除（仅 `zombie_basic.gltf` 仍在用，渲染 `zombie`）。
@@ -76,17 +83,17 @@
 | 敌人 | 目标高度(米) | 说明 |
 |---|---|---|
 | 玩家（参考） | 1.8 | setupPlayer targetHeight |
-| skeleton_soldier | 1.36 | 略矮于玩家 |
-| zombie | 1.52 | 略高壮的坦克 |
-| skeleton_archer（龙） | 1.0 | 远程飞行（小巧，离地 1.8m） |
-| skeleton_knight | 2.08 | 精英，明显更大 |
-| necromancer | 1.0 | 飘浮幽灵（小巧，离地 1.8m） |
-| gargoyle（蝙蝠） | 0.96 | 小型飞行（离地 y=3，core dive 行为控制） |
+| skeleton_soldier（KayKit Minion） | 1.2 | 略矮于玩家 |
+| zombie | 1.1 | 高 HP 坦克 |
+| skeleton_archer（KayKit Mage） | 1.2 | 落地法师 |
+| skeleton_knight（KayKit Warrior） | 2.6 | 精英，明显更大 |
+| necromancer | 0.7 | 飘浮幽灵（小巧，离地 1m） |
+| gargoyle（蝙蝠） | 0.7 | 小型飞行（离地 y=1.8，core dive 行为控制） |
 
-> **视觉离地高度**：`ENEMY_HOVER_OFFSET`（client 渲染层）给用飞行/飘浮模型的地面单位
-> （skeleton_archer→dragon、necromancer→ghost）加 1.8m 渲染偏移，让它们浮空。
+> **视觉离地高度**：`ENEMY_HOVER_OFFSET`（client 渲染层）给飘浮模型（necromancer→ghost）
+> 加 1.8m 渲染偏移，让它浮空。skeleton_archer 改用落地的 KayKit 法师后已移除其 hover。
 > 纯渲染偏移，不动 core 逻辑（碰撞 / preferredRange 走水平 x/z）；blob 阴影仍贴地面。
-> gargoyle 的飞行高度由 core `dive` 行为（y=3）控制，不在此叠加。
+> gargoyle 的飞行高度由 core `dive` 行为（y=1.8）控制，不在此叠加。
 
 > 实现：`updateEnemyObjects` 用 `enemyModelNormHeight` 缓存每个模型 `1/实际高度` 的
 > 归一化系数，最终 `scale = normFactor × 目标高度 × sizeMultiplier`（miniBoss 1.5 / elite 1.2）。
@@ -97,11 +104,10 @@
 
 | 文件 | 用途 | 命名风格 | 归一化后可用 clip |
 |---|---|---|---|
-| public/models/monsters/Skeleton.glb | skeleton_soldier + skeleton_knight（放大） | `Skeleton_*` 前缀 | Attack, Death, Idle, Running(→Run 别名), Spawn |
+| public/models/skins/kaykit/Skeleton_{Warrior,Mage,Minion}.glb + anim/Rig_Medium_*.glb | skeleton_knight / archer / soldier | 角色 GLB 无内嵌动画，clip 来自独立 Rig_Medium GLB | Idle, Walk, Run, HitReact, Death, Punch（由 General+MovementBasic 抽取重命名） |
 | public/models/monsters/Bat.glb | gargoyle | `Bat_*` 前缀 | Attack, Attack2, Death, Flying(→Idle/Walk/Run 别名), Hit |
-| public/models/monsters/Dragon.glb | skeleton_archer | `Dragon_*` 前缀 | Attack, Attack2, Death, Flying(→Idle/Walk/Run 别名), Hit |
 | public/models/ghost.glb | necromancer | 全小写 | Idle, Walk, Sprint(→Run 别名), Die(→Death 别名), Jump, Fall, Attack-melee-right 等 32 条 |
-| public/models/knight.glb | skeleton_knight | 全小写（同 ghost 格式） | Idle, Walk, Sprint(→Run 别名), Die(→Death 别名), attack-melee-* 等 32 条 |
+| ~~monsters/Skeleton.glb / monsters/Dragon.glb / knight.glb~~ | 不再被敌人引用（可后续归档） | — | — |
 
 > **加载与归一化**：所有 GLB 都走 `loadModels()` 的 GLTF 主队列；加载完成后
 > `normalizeEnemyClips()` 对 `monster_*` 和 `ghost` 模型做四步处理：

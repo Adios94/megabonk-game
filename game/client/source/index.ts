@@ -1287,6 +1287,11 @@ async function loadModels(): Promise<void> {
     ['ac_unit', '/models/ac_unit.gltf'],
     ['pipe_1', '/models/pipe_1.gltf'],
     ['door', '/models/door.gltf'],
+    // Quaternius Animated Monster Pack（带骨骼动画 GLB）
+    // 用于替换 skeleton_soldier / gargoyle 的 zombie 贴皮，clip 名带前缀
+    // （Skeleton_Idle / Bat_Flying 等），加载完后会做归一化（见 normalizeEnemyClips）
+    ['monster_skeleton', '/models/monsters/Skeleton.glb'],
+    ['monster_bat', '/models/monsters/Bat.glb'],
   ];
 
   const promises = modelPaths.map(async ([key, path]) => {
@@ -1306,8 +1311,9 @@ async function loadModels(): Promise<void> {
       loadedModels[key] = model;
       // Store animation clips for skeletal animation
       if (gltf.animations && gltf.animations.length > 0) {
-        loadedAnimClips.set(key, gltf.animations);
-        console.log(`[Assets] Loaded: ${key} (${path}) — ${gltf.animations.length} animations`);
+        const clips = normalizeEnemyClips(key, gltf.animations);
+        loadedAnimClips.set(key, clips);
+        console.log(`[Assets] Loaded: ${key} (${path}) — ${clips.length} animations: ${clips.map(c => c.name).join(', ')}`);
       } else {
         console.log(`[Assets] Loaded: ${key} (${path})`);
       }
@@ -1321,48 +1327,51 @@ async function loadModels(): Promise<void> {
 
   // Load OBJ item models for pickups/projectiles
   await loadObjItems();
-
-  // Load OBJ monster models（Quaternius Animated Monster Pack 静态版）
-  await loadObjMonsters();
 }
 
 // =============================================================================
-// OBJ 敌人模型加载（用于覆盖 zombie 套件语义不符的种类）
+// 敌人动画 clip 名归一化
 // =============================================================================
-// 与 loadModels() 的 GLTF 路径并行的辅助加载：把 OBJ + MTL 怪物模型也塞进
-// loadedModels，让 enemyModelMap 可以直接引用。OBJ 没有 AnimationClip，
-// updateEnemyObjects() 里 loadedAnimClips.get(key) 会得到 undefined，
-// 自动跳过 mixer 创建，敌人显示为静止站姿即可。
-async function loadObjMonsters(): Promise<void> {
-  const monsterPaths: [keyof LoadedModels, string, string][] = [
-    ['monster_skeleton', '/models/monsters/Skeleton.mtl', '/models/monsters/Skeleton.obj'],
-    ['monster_bat', '/models/monsters/Bat.mtl', '/models/monsters/Bat.obj'],
-  ];
+// Quaternius Animated Monster Pack 的 clip 都带模型前缀（Skeleton_Idle / Bat_Flying...），
+// 与 enemyAnim 系统里 'Idle' / 'Run' / 'Walk' 等严格 name 匹配不兼容。
+// 这里在加载完成时给 monster_* 模型 strip 前缀，并补常见别名：
+//   - Running → Run（让 enemyAnim 的 Run_Arms→Run→Walk 链能命中）
+//   - 若模型没有 Idle 但有 Flying（Bat），把 Flying 也注册成 Idle 别名，
+//     避免飞行怪在 windup 等"静止"状态下卡 T-pose
+// 对非 monster_* 模型透传原 clips（zombie 套件本身就用 Idle / Run_Arms / Punch... 等命名）
+function normalizeEnemyClips(modelKey: string, clips: THREE.AnimationClip[]): THREE.AnimationClip[] {
+  if (!modelKey.startsWith('monster_')) return clips;
 
-  await Promise.all(monsterPaths.map(async ([key, mtlPath, objPath]) => {
-    try {
-      const mtlLoader = new MTLLoader();
-      const mtl = await mtlLoader.loadAsync(mtlPath);
-      mtl.preload();
-      const objLoader = new OBJLoader();
-      objLoader.setMaterials(mtl);
-      const obj = await objLoader.loadAsync(objPath) as THREE.Group;
-      obj.name = `Model_${key}`;
-      convertToToonMaterials(obj);
-      obj.traverse((child) => {
-        if ((child as THREE.Mesh).isMesh) {
-          const mesh = child as THREE.Mesh;
-          mesh.castShadow = true;
-          mesh.receiveShadow = true;
-        }
-      });
-      loadedModels[key] = obj;
-      console.log(`[OBJ Monster] Loaded: ${key} (${objPath})`);
-    } catch (err) {
-      console.warn(`[OBJ Monster] Failed to load ${key} (${objPath}):`, err);
-      loadedModels[key] = null;
+  const out: THREE.AnimationClip[] = [];
+  const namesAdded = new Set<string>();
+
+  for (const clip of clips) {
+    const stripped = clip.name.replace(/^[A-Za-z]+_/, ''); // Skeleton_Idle → Idle
+    const renamed = clip.clone();
+    renamed.name = stripped;
+    out.push(renamed);
+    namesAdded.add(stripped);
+  }
+
+  // Running → Run 别名（让 zombie 那套 fallback 链能找到 Run）
+  if (!namesAdded.has('Run') && namesAdded.has('Running')) {
+    const r = out.find((c) => c.name === 'Running')!.clone();
+    r.name = 'Run';
+    out.push(r);
+    namesAdded.add('Run');
+  }
+
+  // 没有 Idle 时用 Flying / Walk / Run / Running 之一兜底
+  if (!namesAdded.has('Idle')) {
+    const fallback = out.find((c) => ['Flying', 'Walk', 'Run', 'Running'].includes(c.name));
+    if (fallback) {
+      const alias = fallback.clone();
+      alias.name = 'Idle';
+      out.push(alias);
     }
-  }));
+  }
+
+  return out;
 }
 
 // =============================================================================
@@ -4516,8 +4525,11 @@ export class GameScene {
               actionsMap.set(clip.name, mixer.clipAction(clip));
             }
             this.enemyAnimActions.set(enemy.id, actionsMap);
-            // Play idle by default
-            const idleClip = clips.find(c => c.name === 'Idle') ?? clips.find(c => c.name === 'Walk');
+            // Play idle by default — 退化链：Idle → Walk → Flying → 任意第一个 clip
+            const idleClip = clips.find(c => c.name === 'Idle')
+              ?? clips.find(c => c.name === 'Walk')
+              ?? clips.find(c => c.name === 'Flying')
+              ?? clips[0];
             if (idleClip) {
               mixer.clipAction(idleClip).play();
               this.enemyAnimStates.set(enemy.id, idleClip.name);
@@ -4539,8 +4551,10 @@ export class GameScene {
                 actionsMap.set(clip.name, mixer.clipAction(clip));
               }
               this.enemyAnimActions.set(enemy.id, actionsMap);
-              // Play idle by default
-              const idleClip = clips.find(c => c.name === 'Idle') ?? clips.find(c => c.name === 'Walk');
+              const idleClip = clips.find(c => c.name === 'Idle')
+                ?? clips.find(c => c.name === 'Walk')
+                ?? clips.find(c => c.name === 'Flying')
+                ?? clips[0];
               if (idleClip) {
                 mixer.clipAction(idleClip).play();
                 this.enemyAnimStates.set(enemy.id, idleClip.name);

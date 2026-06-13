@@ -47,30 +47,33 @@
 ## 2. 敌人模型（P0 - 剩余 3 种待补）
 
 `core/data/enemies.ts` 定义 6 种敌人。skeleton_soldier 与 gargoyle 已用 Quaternius
-Animated Monster Pack（OBJ 静态版）替换；剩余 3 种仍是 zombie 模型贴皮。
+Animated Monster Pack（带动画 GLB）替换；剩余 3 种仍是 zombie 模型贴皮。
 
 | 敌人 ID | 设定 | 当前用模型 | 应有形象 | 状态 |
 |---|---|---|---|---|
-| skeleton_soldier | 普通骷髅兵 | monsters/Skeleton.obj | 骷髅兵（OBJ 静态版） | OK（无动画） |
+| skeleton_soldier | 普通骷髅兵 | monsters/Skeleton.glb | 骷髅兵 | OK（带动画） |
 | zombie | 高 HP 慢速僵尸 | zombie_chubby.gltf | （风格匹配） | OK |
 | skeleton_archer | 远程弓手 | zombie_arm.gltf | 骷髅弓手 | P0（语义错位） |
 | skeleton_knight | 精英冲锋骑士 | zombie_chubby.gltf | 骷髅骑士（甲胄+大剑） | P0（语义错位） |
 | necromancer | 召唤型法师 | zombie_basic.gltf | 死灵法师（袍子+杖） | P0（语义错位） |
-| gargoyle | 飞行俯冲 | monsters/Bat.obj | 蝙蝠 / 石像鬼 | OK（无动画） |
+| gargoyle | 飞行俯冲 | monsters/Bat.glb | 蝙蝠 / 石像鬼 | OK（带飞行/攻击/受击/死亡动画） |
 
-> ⚠️ Quaternius OBJ 没有 AnimationClip，`updateEnemyObjects()` 检测不到 clip 时
-> 不创建 mixer，对应敌人会显示为静止站姿。要补动画请用 Pack 里的 FBX 版本另开管线。
+### 2.1 已接入的怪物（Quaternius Animated Monster Pack — 带动画 GLB）
 
-### 2.1 已接入的 OBJ 怪物（Quaternius Animated Monster Pack 静态版）
-
-| 文件 | 用途 | 备注 |
+| 文件 | 用途 | 包含动画（已 strip 前缀） |
 |---|---|---|
-| public/models/monsters/Skeleton.obj + .mtl | skeleton_soldier | 单材质（Skeleton），纯色 |
-| public/models/monsters/Bat.obj + .mtl | gargoyle | 5 个子材质（Belly/Black/Eyes/Main/Nose），InstancedMesh 路径只取第一个 |
-| 未挂：Dragon.obj / Slime.obj（同 Pack） | 备用 | 还有 2 个怪物可以同样接入 |
+| public/models/monsters/Skeleton.glb | skeleton_soldier | Attack, Death, Idle, Running(→Run 别名), Spawn |
+| public/models/monsters/Bat.glb | gargoyle | Attack, Attack2, Death, Flying(→Idle 别名), Hit |
+| 未挂：Dragon.glb / Slime.glb（同 Pack） | 备用 | 同样命名规范，按需挂接即可 |
 
-> 加载入口：`loadObjMonsters()`（GLTF 队列结束后并发跑）。映射在
-> `setupEnemyMeshes` 与 `updateEnemyObjects` 两处 `enemyModelMap`，需同步修改。
+> **加载与归一化**：GLB 走 `loadModels()` 的 GLTF 主队列；加载完成后
+> `normalizeEnemyClips()` 对 `monster_*` 模型做：(1) strip 模型名前缀
+> （Skeleton_Idle → Idle）；(2) 若没 Run 但有 Running，复制一份命名 Run；
+> (3) 若没 Idle，把 Flying/Walk/Run/Running 之一复制为 Idle 别名。
+> 让飞行怪在 windup 等静止状态下不会卡 T-pose。
+>
+> **映射在两处**：`setupEnemyMeshes` 与 `updateEnemyObjects` 的 `enemyModelMap`，
+> 需要同步修改。
 
 ### 2.2 已归档的备选模型（位于 public/models/_unused/）
 
@@ -372,7 +375,7 @@ public/textures/texture_sign.png
 |---|---|
 | public/models/ | 角色 / 敌人 / 场景 GLTF/GLB（当前 25 个在用，已删除 player_cyberpunk） |
 | public/models/_unused/ | 已归档：34 个未引用模型 / FBX 重复 / 旧版替换件 |
-| public/models/monsters/ | OBJ 怪物（Quaternius Monster Pack 静态版，skeleton_soldier / gargoyle 用） |
+| public/models/monsters/ | GLB 怪物（Quaternius Monster Pack 带动画版，skeleton_soldier / gargoyle 用） |
 | public/models/items/ | 武器 / 拾取物 OBJ + MTL（当前 22 个文件在用） |
 | public/models/items/_unused/ | 已归档：3 套未引用 OBJ + MTL（Bow_Wooden / Coin / Heart_Half） |
 | public/models/levels/ | 关卡白盒 GLB |

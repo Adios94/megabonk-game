@@ -189,7 +189,7 @@
 | --- | --------------- | ------------------- | ------------------------------------------------------ | --------------------------------------------------------- | -------------------------------- |
 | 1   | sword           | sweepArc（扇形横扫）      | items/Sword.obj + .mtl（`swordModel`，手持）                | 剑气扇形 RingGeometry(1.0,1.9) 120°（index.ts:3999）+ slash.png | ✅ 模型就位                           |
 | 2   | axe             | orbitingAxe（环绕飞斧）   | items/Axe_small.obj + .mtl（`axeModel`，弹丸克隆飞行）          | 模型旋转飞行（`axeObjects` index.ts:5010）                        | ✅ 模型就位                           |
-| 3   | bow（实为左轮枪）      | forwardArrow（直线穿透）  | items/Revolver.glb（`bowModel`，GLB 手枪）                  | 子弹走 InstancedMesh 弹道（不挂模型当弹丸）                             | ✅ 模型就位                           |
+| 3   | bow（实为左轮枪）      | forwardArrow（直线穿透）  | items/bow.glb（`bowModel`，自导出左轮，含嵌入贴图）                  | 子弹走 InstancedMesh 弹道（不挂模型当弹丸）                             | ✅ 模型就位                           |
 | 4   | bone_bouncer    | bouncingShot（弹跳骨头）  | items/Bone.obj（**仅 geometry，无 MTL**）                   | 骨头几何体飞行 + fallback boneGeometry（index.ts:4269）            | ⚠️ 仅几何体，无材质                      |
 | 5   | shotgun         | spreadShot（散射弹丸）    | floater=items/shotgun_2.obj（`shotgunModel`，调色板贴图）；弹丸=Dart_Golden | 多颗弹丸散射                                                    | ✅ 真枪 floater + 飞镖弹丸              |
 | 6   | lightning_staff | lightningChain（闪电链） | items/lightning_staff.glb（`lightningStaffModel`，floater 漂浮，自导出 GLB 含嵌入贴图） | TubeGeometry 闪电链 + 粒子（index.ts:4019-99）                   | ✅ floater 模型 + 闪电 VFX（带手绘贴图） |

@@ -27,6 +27,7 @@ import {
   QUESTS,
   TIER_CONFIGS,
   CHEST_INTERACT_RADIUS,
+  CHEST_INTERACT_MAX_Y_DELTA,
   RELICS,
   BONDS,
   evalBondCounts,
@@ -273,10 +274,10 @@ const ENEMY_COLORS: Record<string, number> = {
 
 // 视觉离地高度（米）—— 纯渲染偏移，不影响 core 逻辑（碰撞 / preferredRange 走水平 x/z）。
 // 用飞行/飘浮模型的地面单位（dragon / ghost）抬离地面更自然。gargoyle 的飞行高度由
-// core 的 dive 行为（y=3）控制，不在此叠加。
+// core 的 dive 行为（y=1.8）控制，不在此叠加。
 const ENEMY_HOVER_OFFSET: Record<string, number> = {
-  skeleton_archer: 1.8, // 龙 — 飞行
-  necromancer: 1.8,     // 幽灵 — 飘浮
+  // skeleton_archer 现用 KayKit 法师（落地人形），不再悬浮；仅 necromancer(ghost) 飘浮
+  necromancer: 1.0,     // 幽灵 — 飘浮（离地 1m）
 };
 
 const WEAPON_PROJECTILE_COLORS: Record<string, number> = {
@@ -906,19 +907,58 @@ const DAMAGE_NUM_POOL_SIZE = 30;
 // Toon/Cel-Shading Utilities
 // =============================================================================
 
-/** 3-step gradient map for MeshToonMaterial (shadow / mid / highlight) */
-function createToonGradientMap(): THREE.DataTexture {
-  // 3 段明暗阶梯（阴影 / 中间调 / 高光）—— 荒野乱斗式光影断层。
-  // MeshToonMaterial 按 NdotL 采样此 ramp 的 .r 通道；NearestFilter 保证硬断层不被插值糊掉。
-  // 暗端用高地板（130 而非 0）：背光面仍明亮、阴影不发黑发闷 —— 荒野乱斗的高亮通透感。
-  const colors = new Uint8Array([
-    85, 85, 85, 255,     // 阴影（拉开对比找回立体感，但不死黑）
-    180, 180, 180, 255,  // 中间调
-    255, 255, 255, 255,  // 高光
-  ]);
-  const gradMap = new THREE.DataTexture(colors, colors.length / 4, 1, THREE.RGBAFormat);
-  gradMap.minFilter = THREE.NearestFilter;
-  gradMap.magFilter = THREE.NearestFilter;
+/**
+ * Multi-step toon gradient map (UltimateToon「stylized.gdshader」的 stepped-light 移植)。
+ *
+ * Godot 的 light() 用如下公式把连续 NdotL 量化成 `steps` 段、段间以 `step_smoothness` 做软过渡：
+ *     light_mult   = light * steps
+ *     step_base    = floor(light_mult)
+ *     light_factor = smoothstep(0.5 - s, 0.5 + s, light_mult - step_base)
+ *     light        = (step_base + light_factor) / steps
+ * 这里把同一公式烘焙进一张高分辨率 ramp（LinearFilter），MeshToonMaterial 会按
+ * NdotL∈[-1,1]→[0,1] 采样它的 .r 通道，于是得到「至少四层」的明暗台阶 + Godot 同款软边。
+ *
+ * steps=4 ⇒ 5 个亮度平台（阴影 / 暗部 / 中间调 / 亮部 / 高光），满足「至少四层」。
+ * shadowFloor 抬高最暗台阶，避免背光面发死黑；highlightCap 给高光留头，白模不顶纯白。
+ */
+const TOON_STEPS = 5;            // 分层台阶数（5 层，过渡更细）—— 对应 Godot uniform `steps`
+const TOON_STEP_SMOOTHNESS = 0.12; // 层间软过渡半宽 —— 对应 Godot `step_smoothness`
+const TOON_SHADOW_FLOOR = 0.18; // 最暗台阶的亮度地板（背光面不死黑）
+const TOON_HIGHLIGHT_CAP = 0.94; // 高光台阶封顶（受光面留头，浅色模不顶纯白）
+
+function smoothstep01(edge0: number, edge1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+function createToonGradientMap(
+  steps = TOON_STEPS,
+  smoothness = TOON_STEP_SMOOTHNESS,
+  shadowFloor = TOON_SHADOW_FLOOR,
+  highlightCap = TOON_HIGHLIGHT_CAP,
+): THREE.DataTexture {
+  const width = 256; // 高分辨率：软过渡才平滑，台阶内部仍是纯平色块（cel 观感）
+  const data = new Uint8Array(width * 4);
+  const s = Math.max(0.0001, smoothness);
+  for (let i = 0; i < width; i++) {
+    const x = i / (width - 1); // 采样坐标 == 量化前的 NdotL（已 remap 到 0..1）
+    const lightMult = x * steps;
+    const stepBase = Math.floor(lightMult);
+    const factor = smoothstep01(0.5 - s, 0.5 + s, lightMult - stepBase);
+    let v = (stepBase + factor) / steps; // 0..1 阶梯化亮度
+    // 把 [0,1] 重映射到 [shadowFloor, highlightCap]：暗部不死黑、亮部留头。
+    v = shadowFloor + v * (highlightCap - shadowFloor);
+    const c = Math.round(Math.min(1, Math.max(0, v)) * 255);
+    const o = i * 4;
+    data[o] = c;
+    data[o + 1] = c;
+    data[o + 2] = c;
+    data[o + 3] = 255;
+  }
+  const gradMap = new THREE.DataTexture(data, width, 1, THREE.RGBAFormat);
+  // LinearFilter：让烘焙好的 smoothstep 软过渡平滑呈现（台阶边缘软、台阶内部平）。
+  gradMap.minFilter = THREE.LinearFilter;
+  gradMap.magFilter = THREE.LinearFilter;
   gradMap.needsUpdate = true;
   return gradMap;
 }
@@ -936,6 +976,17 @@ function boostMaterialSaturation(color: THREE.Color, factor: number): void {
   color.setHSL(hsl.h, Math.min(1, hsl.s * factor), hsl.l);
 }
 
+/**
+ * 明度封顶（HSL 的 L ≤ maxL）。浅灰白材质（如关卡白模）反照率接近 1，被照亮后线性亮度冲到 ~1.9，
+ * 在色调映射里顶死成纯白、还会触发 bloom 晕开 → 整片"翻白"无细节。把明度压到中间调后，
+ * 高光不再溢出，gradientMap 的阶梯断层 + 网点 + 黑描边才显得出来（参考图那种中间调质感）。
+ */
+function capMaterialLightness(color: THREE.Color, maxL: number): void {
+  const hsl = { h: 0, s: 0, l: 0 };
+  color.getHSL(hsl);
+  if (hsl.l > maxL) color.setHSL(hsl.h, hsl.s, maxL);
+}
+
 /** 贴图过滤：各向异性 + mipmap，提升近景 / 斜视下的贴图清晰度（PR #56）。 */
 function tuneToonTexture(tex: THREE.Texture | null | undefined): void {
   if (!tex) return;
@@ -946,76 +997,274 @@ function tuneToonTexture(tex: THREE.Texture | null | undefined): void {
 }
 
 /**
- * 风格化叠加 GLSL（注入到 MeshToonMaterial 片元，在 <opaque_fragment> 前）。
- * 移植自 UltimateToon「stylized.gdshader」的视觉特征（阶梯光照由 gradientMap 提供，这里补足其余）：
- *   1) Halftone pattern —— 屏幕空间漫画网点，暗部浮现（Godot pattern，本套 Shader 的招牌）。
- *   2) Rim light —— smoothstep「硬带」菲涅尔边缘光 + 受光遮罩（Godot rim_smoothness / rim_mask_shadow）。
- *   3) Toon specular —— 塑料玩具般的硬边高光（per-material uSpec）。
- *   4) Colored shadow —— 暗部染冷色，阴影通透不发闷（Godot shadow_tint）。
- * 全部在线性空间叠加；光向用「固定视空间方向」(随相机稳定，免每帧更新 uniform)。
- * 调参直接改下方常量（HALFTONE_* / rim 带宽 / spec pow / shadow tint）。
+ * 全局共享的风格化光照参数（uniform 引用）。所有 stylized 材质在 onBeforeCompile 里都指向
+ * 同一份对象，因此运行时改任一 `.value`，整场景的卡通表现实时跟着变 —— 这就是游戏内调参面板
+ * 的数据源（见 createStylizedDebugPanel）。改这里的初值 = 改默认外观。
+ *
+ * 注意：uShadowTint / uLightTint / uRimColor 是「线性空间乘子」，分量可 >1（受光台阶要提亮就 >1）。
+ * 所以面板用三个独立滑块而非取色器（取色器表达不了 >1）。
+ */
+const stylizedUniforms = {
+  uSteps: { value: 5.0 },                                   // 分层台阶数（Godot steps）
+  uStepSmooth: { value: 0.12 },                             // 台阶软过渡半宽（Godot step_smoothness）
+  uHalftoneTiling: { value: 11.0 },                         // 网点像素间距（大=点大且疏）
+  uHalftoneSmooth: { value: 0.10 },                         // 网点边缘脆度（小=硬）
+  uHalftoneDark: { value: 0.6 },                            // 网点压暗强度
+  uHalftoneBlend: { value: 0.85 },                          // 网点整体强度（0=关）
+  uShadowTint: { value: new THREE.Vector3(0.30, 0.37, 0.66) }, // 冷暗阴影色乘子
+  uLightTint: { value: new THREE.Vector3(1.10, 1.02, 0.88) },  // 暖亮受光色乘子
+};
+
+/** stylized 片元需要的 uniform 声明（注入到 main 前）。 */
+const STYLIZED_UNIFORM_DECL = `
+uniform float uSpec;
+uniform float uHalftone;
+uniform float uSteps;
+uniform float uStepSmooth;
+uniform float uHalftoneTiling;
+uniform float uHalftoneSmooth;
+uniform float uHalftoneDark;
+uniform float uHalftoneBlend;
+uniform vec3 uShadowTint;
+uniform vec3 uLightTint;
+`;
+
+/**
+ * 风格化光照 GLSL —— UltimateToon「stylized.gdshader」的 light() 完整移植，注入 MeshToon 片元的
+ * <opaque_fragment> 前并「完全接管 outgoingLight」。
+ *
+ * 关键：旧版只在引擎算好的 outgoingLight 上"修补"，场景的环境光/半球光/自发光一抬，分层台阶就被
+ * 压到顶端、糊成一片 → 看不出卡通感。新版无视场景灯光，自己用固定视空间光向重新算一遍光照，
+ * 因此分层/网点/染色/rim 始终强烈可见，逐字对应 Godot 的 light()：
+ *
+ *   第 0 层 stepped light：light = (floor(L*steps) + smoothstep(.5±s, frac)) / steps —— ≥4 段台阶
+ *   第 1 层 halftone      ：暗台阶网点大、亮台阶网点消失，pattern_blend 混入 light（Godot pattern）
+ *   第 2 层 colored shadow：col = mix(albedo×冷暗, albedo×暖亮, light)（Godot shadow_tint）
+ *   第 3 层 toon specular ：硬边塑料高光（per-material uSpec，主角/武器>0）
+ *   末尾叠回 totalEmissiveRadiance —— 霓虹/发光贴图不丢。
+ *   （rim 边缘光已移除：轮廓由 OutlineEffect 黑描边负责，省掉每像素的菲涅尔运算。）
+ *
+ * 所有调参项都是 uniform（见 stylizedUniforms）：可在游戏内面板实时拖，也可改 stylizedUniforms 初值定基线。
  */
 const STYLIZED_TOON_GLSL = `
 	{
 		vec3 N = normalize( normal );
 		vec3 V = normalize( vViewPosition );                       // 片元 -> 相机(视空间)
-		vec3 LDIR = normalize( vec3( -0.35, 0.65, 0.55 ) );        // 固定视空间光向(左上前)
-		float NdL = dot( N, LDIR );
+		vec3 LDIR = normalize( vec3( -0.35, 0.7, 0.55 ) );         // 固定视空间主光向(左上前)
+		float ndotl = saturate( dot( N, LDIR ) );
 
-		// gradientMap 阶梯光照后的当前亮度 —— 作为 Godot 的 light 代理
-		float lum = dot( outgoingLight, vec3( 0.299, 0.587, 0.114 ) );
+		// —— 第 0 层 stepped light（Godot 量化公式，uSteps 段台阶 + 软过渡） ——
+		float steppedLight;
+		{
+			float lm = ndotl * uSteps;
+			float sb = floor( lm );
+			float lf = smoothstep( 0.5 - uStepSmooth, 0.5 + uStepSmooth, lm - sb );
+			steppedLight = ( sb + lf ) / uSteps;
+		}
+		float light = steppedLight;
 
-		// 1) Halftone pattern（屏幕空间漫画网点，对应 Godot pattern_texture）
-		//    暗部网点中心变暗、随亮度增大而消失 —— 漫画/丝网印刷质感。
-		vec2 cell = fract( gl_FragCoord.xy / HALFTONE_TILING ) - 0.5;
-		float patVal = 1.0 - saturate( length( cell ) * 2.0 );     // 网点：中心=1 边缘=0
-		float shape = smoothstep( patVal - HALFTONE_SMOOTH, patVal + HALFTONE_SMOOTH, lum + HALFTONE_AMOUNT );
-		shape = clamp( shape, 0.0, lum + HALFTONE_AMOUNT );
-		float litProxy = mix( lum, shape, HALFTONE_BLEND );        // pattern_blend
-		outgoingLight *= ( lum > 1e-4 ) ? ( litProxy / lum ) : 1.0;
+		// —— 第 1 层 halftone 网点（对应 Godot pattern）：暗台阶点大、亮台阶点消失 ——
+		vec2 cell = fract( gl_FragCoord.xy / uHalftoneTiling ) - 0.5;
+		float dotDist = length( cell ) * 2.0;                      // 0=点心 ~1=邻边
+		float dotRadius = ( 1.0 - light ) * 0.95;                  // 越暗点越大
+		float dotInside = 1.0 - smoothstep( dotRadius - uHalftoneSmooth, dotRadius + uHalftoneSmooth, dotDist );
+		float patLight = light * ( 1.0 - dotInside * uHalftoneDark ); // 点内把局部亮度压暗
+		light = mix( light, patLight, uHalftoneBlend * uHalftone );
 
-		// 2) Colored shadow（暗部染冷色，对应 Godot shadow_tint）
-		float shMask = 1.0 - smoothstep( 0.0, 0.35, lum );         // 0.35=暗部判定阈值
-		outgoingLight = mix( outgoingLight, outgoingLight * vec3( 0.82, 0.88, 1.12 ), shMask * 0.4 ); // 冷 tint, 0.4 量
+		// —— 第 2 层 colored shadow（Godot shadow_tint）：暗部染冷、亮部染暖，全程乘 albedo ——
+		vec3 albedo = diffuseColor.rgb;
+		vec3 col = mix( albedo * uShadowTint, albedo * uLightTint, light );
 
-		// 3) Rim light —— Godot 风格 smoothstep「硬带」边缘光 + 受光遮罩
-		float fres = pow( 1.0 - saturate( dot( N, V ) ), 2.0 );    // rim_amount=2.0
-		float rim  = smoothstep( 0.5 - 0.1, 0.5 + 0.1, fres );     // rim_smoothness=0.2 → ±0.1 硬带
-		rim *= saturate( NdL );                                    // rim_mask_shadow=1.0 背光侧压暗
-		outgoingLight += vec3( 1.0, 1.05, 1.2 ) * rim * 0.8;       // 冷白 rim 色 × blend
-
-		// 4) Toon specular（硬边高光）—— 强度按 uSpec（怪物/场景=0 哑光，主角/武器>0）
+		// —— 第 3 层 toon specular（硬边塑料高光，仅 uSpec>0 的主角/武器） ——
 		vec3 H = normalize( LDIR + V );
-		float sp = pow( saturate( dot( N, H ) ), 32.0 );           // 高光紧致度
-		sp = smoothstep( 0.5, 0.53, sp ) * uSpec;                  // 硬边 × per-material 强度
-		sp *= saturate( NdL );                                     // 背光无高光
-		outgoingLight += vec3( sp );
+		float sp = smoothstep( 0.5, 0.53, pow( saturate( dot( N, H ) ), 48.0 ) ) * uSpec * saturate( ndotl );
+		col += vec3( sp );
+
+		outgoingLight = col + totalEmissiveRadiance;               // 完全接管光照 + 叠回自发光
 	}
-`
-	.replace( /HALFTONE_TILING/g, '5.0' )    // 网点像素尺寸（越小越密）
-	.replace( /HALFTONE_AMOUNT/g, '0.5' )    // pattern_amount：整体抬亮（网点出现的亮度阈值）
-	.replace( /HALFTONE_SMOOTH/g, '0.5' )    // pattern_smoothness：网点边缘柔和度
-	.replace( /HALFTONE_BLEND/g, '0.25' );   // pattern_blend：网点强度（0=关闭）
+`;
 
 /**
- * 给 MeshToonMaterial 挂上风格化叠加（rim + toon spec + 染色阴影）。
- * specStrength：toon 高光强度（per-material uniform）。怪物/场景传 0（哑光，避免"油光水滑"），
- * 主角/武器传 >0 保留塑料玩具光泽。rim 与染色阴影对所有材质恒定。
- * 幂等（userData 标记，避免重复注入触发重编译）；共享同一编译程序（uSpec 只是 uniform 值差异）。
+ * 给 MeshToonMaterial 挂上风格化光照（接管 outgoingLight：stepped + halftone + 染色 + rim + spec）。
+ * specStrength：toon 高光强度（per-material uniform）。怪物/场景传 0（哑光），主角/武器传 >0 留塑料光泽。
+ * halftone：是否启用屏幕空间网点（per-material uniform）。
+ * 其余风格化参数全部指向共享的 stylizedUniforms（同一引用 → 面板实时改一个值全场景生效）。
+ * 幂等（userData 标记）；共享同一编译程序（uniform 值差异不影响 program 缓存）。
  */
-function applyStylizedToonShading(mat: THREE.MeshToonMaterial, specStrength = 0): void {
+function applyStylizedToonShading(mat: THREE.MeshToonMaterial, specStrength = 0, halftone = true): void {
   if (mat.userData['__stylized']) return;
   mat.userData['__stylized'] = true;
   mat.onBeforeCompile = (shader) => {
-    shader.uniforms['uSpec'] = { value: specStrength };
+    shader.uniforms['uSpec'] = { value: specStrength };          // per-material
+    shader.uniforms['uHalftone'] = { value: halftone ? 1.0 : 0.0 }; // per-material
+    // 共享引用：改 stylizedUniforms.*.value → 所有材质同步更新
+    shader.uniforms['uSteps'] = stylizedUniforms.uSteps;
+    shader.uniforms['uStepSmooth'] = stylizedUniforms.uStepSmooth;
+    shader.uniforms['uHalftoneTiling'] = stylizedUniforms.uHalftoneTiling;
+    shader.uniforms['uHalftoneSmooth'] = stylizedUniforms.uHalftoneSmooth;
+    shader.uniforms['uHalftoneDark'] = stylizedUniforms.uHalftoneDark;
+    shader.uniforms['uHalftoneBlend'] = stylizedUniforms.uHalftoneBlend;
+    shader.uniforms['uShadowTint'] = stylizedUniforms.uShadowTint;
+    shader.uniforms['uLightTint'] = stylizedUniforms.uLightTint;
     shader.fragmentShader = shader.fragmentShader
-      .replace('void main() {', 'uniform float uSpec;\nvoid main() {')
+      .replace('void main() {', `${STYLIZED_UNIFORM_DECL}\nvoid main() {`)
       .replace(
         '#include <opaque_fragment>',
         `${STYLIZED_TOON_GLSL}\n\t#include <opaque_fragment>`,
       );
   };
-  mat.customProgramCacheKey = () => 'stylized-toon-v2-halftone';
+  mat.customProgramCacheKey = () => 'stylized-toon-v7-norim';
+}
+
+/**
+ * 游戏内风格化调参面板（仅 dev）。把 stylizedUniforms + 雾 + bloom 全部接上滑块，实时拖动即时生效，
+ * 不用改代码重编译。按 ` 键（反引号）或点右上角按钮开关。"复制参数"把当前值导成可粘回代码的片段。
+ */
+function createStylizedDebugPanel(opts: { scene: THREE.Scene; bloom: UnrealBloomPass | null }): void {
+  if (document.getElementById('stylized-debug-panel')) return; // 幂等
+  const u = stylizedUniforms;
+  const fog = opts.scene.fog instanceof THREE.Fog ? opts.scene.fog : null;
+  const bloom = opts.bloom;
+
+  type Ctl = { label: string; min: number; max: number; step: number; get: () => number; set: (v: number) => void };
+  const vec3ctls = (v: THREE.Vector3, min: number, max: number, prefix = ''): Ctl[] => {
+    const p = prefix ? `${prefix} ` : '';
+    return [
+      { label: `${p}R`, min, max, step: 0.01, get: () => v.x, set: (x) => { v.x = x; } },
+      { label: `${p}G`, min, max, step: 0.01, get: () => v.y, set: (x) => { v.y = x; } },
+      { label: `${p}B`, min, max, step: 0.01, get: () => v.z, set: (x) => { v.z = x; } },
+    ];
+  };
+
+  const sections: { title: string; ctls: Ctl[] }[] = [
+    {
+      title: '分层 Stepped', ctls: [
+        { label: 'Steps 台阶数', min: 1, max: 8, step: 1, get: () => u.uSteps.value, set: (v) => { u.uSteps.value = v; } },
+        { label: 'Smooth 过渡', min: 0, max: 0.5, step: 0.01, get: () => u.uStepSmooth.value, set: (v) => { u.uStepSmooth.value = v; } },
+      ],
+    },
+    {
+      title: '网点 Halftone', ctls: [
+        { label: 'Tiling 大小', min: 4, max: 40, step: 0.5, get: () => u.uHalftoneTiling.value, set: (v) => { u.uHalftoneTiling.value = v; } },
+        { label: 'Smooth 脆度', min: 0.01, max: 0.4, step: 0.01, get: () => u.uHalftoneSmooth.value, set: (v) => { u.uHalftoneSmooth.value = v; } },
+        { label: 'Dark 压暗', min: 0, max: 1, step: 0.01, get: () => u.uHalftoneDark.value, set: (v) => { u.uHalftoneDark.value = v; } },
+        { label: 'Blend 强度', min: 0, max: 1, step: 0.01, get: () => u.uHalftoneBlend.value, set: (v) => { u.uHalftoneBlend.value = v; } },
+      ],
+    },
+    { title: '阴影色 ShadowTint (×albedo)', ctls: vec3ctls(u.uShadowTint.value, 0, 1.5) },
+    { title: '受光色 LightTint (×albedo)', ctls: vec3ctls(u.uLightTint.value, 0, 1.5) },
+  ];
+  if (fog) {
+    sections.push({
+      title: '雾 Fog', ctls: [
+        { label: 'Near 起点', min: 0, max: 300, step: 1, get: () => fog.near, set: (v) => { fog.near = v; } },
+        { label: 'Far 终点', min: 10, max: 600, step: 1, get: () => fog.far, set: (v) => { fog.far = v; } },
+      ],
+    });
+  }
+  if (bloom) {
+    sections.push({
+      title: '泛光 Bloom', ctls: [
+        { label: 'Strength 强度', min: 0, max: 2, step: 0.01, get: () => bloom.strength, set: (v) => { bloom.strength = v; } },
+        { label: 'Radius 半径', min: 0, max: 1.5, step: 0.01, get: () => bloom.radius, set: (v) => { bloom.radius = v; } },
+        { label: 'Threshold 阈值', min: 0, max: 1.5, step: 0.01, get: () => bloom.threshold, set: (v) => { bloom.threshold = v; } },
+      ],
+    });
+  }
+
+  const panel = document.createElement('div');
+  panel.id = 'stylized-debug-panel';
+  panel.style.cssText = [
+    'position:fixed', 'top:8px', 'right:8px', 'z-index:99999', 'display:none',
+    'width:268px', 'max-height:88vh', 'overflow-y:auto', 'box-sizing:border-box',
+    'padding:10px 12px', 'background:rgba(12,14,22,0.92)', 'border:1px solid rgba(120,160,255,0.4)',
+    'border-radius:10px', 'color:#dfe6ff', 'font:12px/1.4 ui-monospace,Menlo,Consolas,monospace',
+    'box-shadow:0 6px 24px rgba(0,0,0,0.5)', 'user-select:none',
+  ].join(';');
+
+  const title = document.createElement('div');
+  title.textContent = '🎨 风格化调参 (按 ` 开关)';
+  title.style.cssText = 'font-weight:700;margin-bottom:8px;color:#9fc0ff;';
+  panel.appendChild(title);
+
+  for (const sec of sections) {
+    const h = document.createElement('div');
+    h.textContent = sec.title;
+    h.style.cssText = 'margin:8px 0 4px;color:#ffd479;font-weight:700;border-bottom:1px solid rgba(255,255,255,0.12);padding-bottom:2px;';
+    panel.appendChild(h);
+    for (const c of sec.ctls) {
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;margin:3px 0;';
+      const name = document.createElement('span');
+      name.textContent = c.label;
+      name.style.cssText = 'flex:0 0 96px;color:#cfd8ff;';
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = String(c.min);
+      slider.max = String(c.max);
+      slider.step = String(c.step);
+      slider.value = String(c.get());
+      slider.style.cssText = 'flex:1 1 auto;min-width:0;';
+      const val = document.createElement('span');
+      val.textContent = c.get().toFixed(2);
+      val.style.cssText = 'flex:0 0 40px;text-align:right;color:#9fffcf;';
+      slider.addEventListener('input', () => {
+        const v = parseFloat(slider.value);
+        c.set(v);
+        val.textContent = v.toFixed(2);
+      });
+      row.appendChild(name);
+      row.appendChild(slider);
+      row.appendChild(val);
+      panel.appendChild(row);
+    }
+  }
+
+  const copyBtn = document.createElement('button');
+  copyBtn.textContent = '复制参数到剪贴板';
+  copyBtn.style.cssText = 'margin-top:10px;width:100%;padding:6px;background:#3a6;border:none;border-radius:6px;color:#fff;font-weight:700;cursor:pointer;';
+  copyBtn.addEventListener('click', () => {
+    const v3 = (v: THREE.Vector3) => `new THREE.Vector3(${v.x.toFixed(3)}, ${v.y.toFixed(3)}, ${v.z.toFixed(3)})`;
+    const snippet = [
+      '// —— stylizedUniforms 初值 ——',
+      `uSteps: { value: ${u.uSteps.value} },`,
+      `uStepSmooth: { value: ${u.uStepSmooth.value} },`,
+      `uHalftoneTiling: { value: ${u.uHalftoneTiling.value} },`,
+      `uHalftoneSmooth: { value: ${u.uHalftoneSmooth.value} },`,
+      `uHalftoneDark: { value: ${u.uHalftoneDark.value} },`,
+      `uHalftoneBlend: { value: ${u.uHalftoneBlend.value} },`,
+      `uShadowTint: { value: ${v3(u.uShadowTint.value)} },`,
+      `uLightTint: { value: ${v3(u.uLightTint.value)} },`,
+      fog ? `// fog: new THREE.Fog('#87CEEB', ${fog.near}, ${fog.far})` : '',
+      bloom ? `// bloom: strength=${bloom.strength}, radius=${bloom.radius}, threshold=${bloom.threshold}` : '',
+    ].filter(Boolean).join('\n');
+    navigator.clipboard?.writeText(snippet).catch(() => { /* ignore */ });
+    console.log('[stylized] 当前参数：\n' + snippet);
+    copyBtn.textContent = '已复制 ✓（也打印在 Console）';
+    setTimeout(() => { copyBtn.textContent = '复制参数到剪贴板'; }, 1500);
+  });
+  panel.appendChild(copyBtn);
+
+  document.body.appendChild(panel);
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.textContent = '🎨';
+  toggleBtn.title = '风格化调参（`）';
+  toggleBtn.style.cssText = [
+    'position:fixed', 'top:8px', 'right:8px', 'z-index:99998', 'width:34px', 'height:34px',
+    'border:none', 'border-radius:8px', 'background:rgba(60,90,160,0.85)', 'color:#fff',
+    'font-size:16px', 'cursor:pointer', 'box-shadow:0 2px 8px rgba(0,0,0,0.4)',
+  ].join(';');
+  const toggle = () => {
+    const show = panel.style.display === 'none';
+    panel.style.display = show ? 'block' : 'none';
+    toggleBtn.style.display = show ? 'none' : 'block';
+  };
+  toggleBtn.addEventListener('click', toggle);
+  document.body.appendChild(toggleBtn);
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Backquote') { e.preventDefault(); toggle(); }
+  });
 }
 
 /**
@@ -1041,7 +1290,7 @@ class OutlineComposerPass extends Pass {
   }
 }
 
-function convertToToonMaterials(root: THREE.Object3D): void {
+function convertToToonMaterials(root: THREE.Object3D, halftone = true): void {
   root.traverse((child) => {
     if (!(child as THREE.Mesh).isMesh) return;
     const mesh = child as THREE.Mesh;
@@ -1050,12 +1299,14 @@ function convertToToonMaterials(root: THREE.Object3D): void {
       if (mat instanceof THREE.MeshToonMaterial) {
         tuneToonTexture(mat.map);
         tuneToonTexture(mat.emissiveMap);
-        applyStylizedToonShading(mat); // 已是 toon：补挂风格化叠加
+        if (mat.color) capMaterialLightness(mat.color, 0.55); // 已是 toon 也封顶：贴图×color，压暗白模
+        applyStylizedToonShading(mat, 0, halftone); // 已是 toon：补挂风格化叠加
         return mat;
       }
       const oldMat = mat as THREE.MeshStandardMaterial | THREE.MeshPhongMaterial | THREE.MeshLambertMaterial;
       const color = (oldMat.color ?? new THREE.Color(0xffffff)).clone();
       boostMaterialSaturation(color, 1.5); // 敌人/场景/道具统一高饱和（与玩家 ×1.6 对齐）
+      capMaterialLightness(color, 0.55);   // 明度封顶：白模白色多来自贴图，用 color 乘子压暗（贴图×color），不再顶白糊成一片
       // 保留 emissive / emissiveMap：霓虹屏幕、发光贴图在 toon 转换后不丢（PR #56）。
       const map = oldMat.map ?? null;
       const emissiveMap = oldMat.emissiveMap ?? null;
@@ -1072,7 +1323,7 @@ function convertToToonMaterials(root: THREE.Object3D): void {
         opacity: oldMat.opacity ?? 1,
       });
       toon.name = oldMat.name || 'ToonMat';
-      applyStylizedToonShading(toon); // rim + toon spec + 染色阴影
+      applyStylizedToonShading(toon, 0, halftone); // rim + toon spec + 染色阴影
       return toon;
     });
     mesh.material = toonMats.length === 1 ? toonMats[0] : toonMats;
@@ -1310,6 +1561,40 @@ const loadedModels: LoadedModels = {
 const loadedAnimClips: Map<string, THREE.AnimationClip[]> = new Map();
 
 // =============================================================================
+// KayKit 手持武器（挂到角色 handslot 骨）
+// =============================================================================
+// KayKit 骷髅角色共用 Rig_Medium 骨架，手部有专用挂点骨 handslot.r / handslot.l，
+// 武器模型原点即握把，直接 add 到挂点骨（identity 变换）即落位。武器单独导出（gltf+bin
+// +共享 skeleton_texture.png），加载后做 toon 转换并缓存，按敌人类型克隆挂载。
+const loadedKayKitWeapons: Record<string, THREE.Group> = {};
+
+const KAYKIT_WEAPON_FILES: Record<string, string> = {
+  blade: '/models/skins/kaykit/weapons/Skeleton_Blade.gltf',
+  axe: '/models/skins/kaykit/weapons/Skeleton_Axe.gltf',
+  staff: '/models/skins/kaykit/weapons/Skeleton_Staff.gltf',
+  shield: '/models/skins/kaykit/weapons/Skeleton_Shield_Large_A.gltf',
+};
+
+// 敌人类型 → 手持武器配置（right=handslot.r，left=handslot.l）。
+// 仅当克隆出的模型确实带 handslot 骨（即 KayKit 角色）时才会真正挂上，其它皮肤天然跳过。
+const KAYKIT_WEAPON_LOADOUT: Record<string, { right?: string; left?: string }> = {
+  skeleton_knight: { right: 'blade', left: 'shield' }, // 战士：剑 + 大盾
+  skeleton_archer: { right: 'staff' },                 // 法师：法杖
+  skeleton_soldier: { right: 'axe' },                  // 小兵：斧
+};
+
+// 把 Rig_Medium 通用动画 clip 名映射到游戏敌人动画状态机要的名字。
+// KayKit FREE 包没有近战挥砍，用 Throw（手臂前送）当攻击替身（playEnemyAnim 找 'Punch'）。
+const KAYKIT_ANIM_NAME_MAP: Record<string, string> = {
+  Idle_A: 'Idle',
+  Walking_A: 'Walk',
+  Running_A: 'Run',
+  Hit_A: 'HitReact',
+  Death_A: 'Death',
+  Throw: 'Punch',
+};
+
+// =============================================================================
 // 怪物皮肤试验（运行时可切换：?skin= 或游戏内按 K 循环）
 // =============================================================================
 // 三套外观：original（现版）/ kaykit（KayKit 低多边形骷髅）/ voxel（体素机器人）。
@@ -1320,20 +1605,21 @@ type EnemySkin = 'original' | 'kaykit' | 'voxel';
 
 const ENEMY_SKINS: Record<EnemySkin, Record<string, keyof LoadedModels>> = {
   original: {
-    skeleton_soldier: 'monster_skeleton',
+    // 三个骷髅类敌人改用 KayKit 骷髅（带 Rig_Medium 动画 + 手持武器，见 loadSkinModels）
+    skeleton_soldier: 'kk_minion',   // 普通骷髅兵 → 小兵（手持斧）
     zombie: 'zombie_basic',
-    skeleton_archer: 'monster_dragon',
-    skeleton_knight: 'monster_knight',
+    skeleton_archer: 'kk_mage',      // 远程施法 → 法师（手持法杖）
+    skeleton_knight: 'kk_warrior',   // 精英冲锋 → 战士（剑 + 大盾）
     necromancer: 'ghost',
     gargoyle: 'monster_bat',
   },
   kaykit: {
-    skeleton_soldier: 'kk_warrior',  // 普通近战 → 战士
+    skeleton_soldier: 'kk_minion',   // 普通骷髅兵 → 小兵（斧）
     zombie: 'kk_minion',             // 高 HP 坦克 → 小兵（放大）
-    skeleton_archer: 'kk_rogue',     // 远程敏捷 → 盗贼
-    skeleton_knight: 'kk_warrior',   // 精英 → 战士（放大区分）
+    skeleton_archer: 'kk_mage',      // 远程施法 → 法师（法杖）
+    skeleton_knight: 'kk_warrior',   // 精英 → 战士（剑 + 大盾）
     necromancer: 'kk_mage',          // 法师召唤 → 法师
-    gargoyle: 'kk_minion',           // 飞行 → 小兵（缩小）
+    gargoyle: 'kk_rogue',            // 飞行 → 盗贼
   },
   voxel: {
     skeleton_soldier: 'vx_trooper',  // 普通近战 → 机甲兵
@@ -1368,10 +1654,11 @@ function alignModelToFeet(model: THREE.Object3D): THREE.Group {
   return wrapper;
 }
 
-// 加载皮肤试验模型（静态网格，无动画）。失败仅告警，对应敌人回退到彩色盒子。
+// 加载皮肤模型。KayKit 骷髅会额外加载 Rig_Medium 动画 + 手持武器（见函数末尾）；
+// 体素机器人仍是静态网格。失败仅告警，对应敌人回退到彩色盒子。
 async function loadSkinModels(): Promise<void> {
   const prepare = (root: THREE.Object3D, name: string): THREE.Group => {
-    convertToToonMaterials(root);
+    convertToToonMaterials(root, true); // 角色：开启网点
     root.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         const mesh = child as THREE.Mesh;
@@ -1401,6 +1688,14 @@ async function loadSkinModels(): Promise<void> {
     ['vx_arachnoid', 'Arachnoid'],
   ];
 
+  // Rig_Medium 通用动画：两个 GLB 共用与角色完全一致的骨架（root/hips/spine/...），
+  // clip 的轨道按骨名绑定，可直接在 KayKit 角色上播放。
+  const animFiles = [
+    '/models/skins/kaykit/anim/Rig_Medium_General.glb',
+    '/models/skins/kaykit/anim/Rig_Medium_MovementBasic.glb',
+  ];
+  const kkClips: THREE.AnimationClip[] = [];
+
   await Promise.all([
     ...kaykit.map(async ([key, path]) => {
       try {
@@ -1425,7 +1720,57 @@ async function loadSkinModels(): Promise<void> {
         console.warn(`[Skin] Failed ${key} (${base}):`, err);
       }
     }),
+    // KayKit 手持武器（gltf + bin + 共享 skeleton_texture.png）
+    ...Object.entries(KAYKIT_WEAPON_FILES).map(async ([key, path]) => {
+      try {
+        const gltf = await gltfLoader.loadAsync(path);
+        const g = gltf.scene;
+        convertToToonMaterials(g, true);
+        g.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+          }
+        });
+        loadedKayKitWeapons[key] = g;
+        console.log(`[Skin] Loaded weapon ${key} (${path})`);
+      } catch (err) {
+        console.warn(`[Skin] Failed weapon ${key} (${path}):`, err);
+      }
+    }),
+    // Rig_Medium 动画：抽取需要的 clip，重命名为游戏状态机用的名字
+    (async () => {
+      const raw: THREE.AnimationClip[] = [];
+      for (const path of animFiles) {
+        try {
+          const gltf = await gltfLoader.loadAsync(path);
+          raw.push(...gltf.animations);
+        } catch (err) {
+          console.warn(`[Skin] Failed anim ${path}:`, err);
+        }
+      }
+      const added = new Set<string>();
+      for (const clip of raw) {
+        const mapped = KAYKIT_ANIM_NAME_MAP[clip.name];
+        if (!mapped || added.has(mapped)) continue;
+        const c = clip.clone();
+        c.name = mapped;
+        // 去掉 root 平移轨：走/跑动画不再整体位移（敌人位置由 obj.position 控制）
+        c.tracks = c.tracks.filter((t) => t.name !== 'root.position');
+        kkClips.push(c);
+        added.add(mapped);
+      }
+    })(),
   ]);
+
+  // 同一套动画注册给所有 KayKit 角色（每个敌人对象在 updateEnemyObjects 各建独立 mixer 绑定）
+  if (kkClips.length > 0) {
+    for (const key of ['kk_warrior', 'kk_minion', 'kk_mage', 'kk_rogue'] as (keyof LoadedModels)[]) {
+      if (loadedModels[key]) loadedAnimClips.set(key, kkClips);
+    }
+    console.log(`[Skin] KayKit animations ready: ${kkClips.map((c) => c.name).join(', ')}`);
+  }
 }
 
 async function loadModels(): Promise<void> {
@@ -1471,7 +1816,7 @@ async function loadModels(): Promise<void> {
       const model = gltf.scene;
       model.name = `Model_${key}`;
       // Convert all materials to cel-shading toon style
-      convertToToonMaterials(model);
+      convertToToonMaterials(model, true); // 怪物角色：开启网点
       model.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
           const mesh = child as THREE.Mesh;
@@ -2090,6 +2435,7 @@ export class GameScene {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly outlineEffect: any; // OutlineEffect
   private composer: EffectComposer | null = null;
+  private bloomPass: UnrealBloomPass | null = null;
   private blobShadows: BlobShadowPool | null = null;
   private readonly scene: THREE.Scene;
   private readonly camera: THREE.PerspectiveCamera;
@@ -2205,6 +2551,9 @@ export class GameScene {
   private enemyMixers: Map<number, THREE.AnimationMixer> = new Map(); // id → animation mixer
   private enemyAnimStates: Map<number, string> = new Map(); // id → current anim name
   private enemyAnimActions: Map<number, Map<string, THREE.AnimationAction>> = new Map(); // id → actions map
+  // id → 上一帧 x/z + 静止累计时长。core(setInterval 60Hz) 与渲染(rAF, 可能 120/144Hz) 不同步，
+  // 很多渲染帧位置没变，故用"距上次位移过了多久"做滞后判定，而非单帧瞬时速度。
+  private enemyPrevPos: Map<number, { x: number; z: number; stillTime: number }> = new Map();
   // modelKey → 把该模型几何高度归一化到 1 单位高的系数（= 1 / 实际包围盒高度）。
   // 用于让来源尺寸各异的敌人模型统一缩放到目标高度（参考玩家），首次用到时按 loadedModels 实测缓存。
   private enemyModelNormHeight: Map<string, number> = new Map();
@@ -2376,7 +2725,7 @@ export class GameScene {
     // 关实时方向光阴影（每帧多渲一遍全场景，手机最贵的一项）——改用脚下 blob 圆阴影。
     this.renderer.shadowMap.enabled = false;
     this.renderer.toneMapping = THREE.NeutralToneMapping; // 更亮、更保饱和（Q 版鲜艳调性，替代偏暗去饱和的 ACES）
-    this.renderer.toneMappingExposure = 1.5; // 整体再提亮
+    this.renderer.toneMappingExposure = 1.0; // 曝光：关卡是深灰 greybox(反照率≤0.26)，曝光压到 1.0 让灰更扎实、不被抬成浅白
     this.renderer.outputColorSpace = THREE.SRGBColorSpace; // 显式 sRGB，保证饱和度正确还原
     this.renderer.domElement.style.display = 'block';
     this.container.appendChild(this.renderer.domElement);
@@ -2392,7 +2741,9 @@ export class GameScene {
     this.scene = new THREE.Scene();
     this.scene.name = 'MainScene';
     this.scene.background = new THREE.Color('#87CEEB');
-    this.scene.fog = new THREE.Fog('#87CEEB', 40, 120);
+    // 线性雾：战斗范围(~30)内全清晰，远处地面/关卡边缘在 80~200 内柔和融入天色 → 有空气透视纵深，
+    // 又不会遮挡可玩区域。雾色与天空背景一致(#87CEEB)，远端无缝过渡。不想要雾可设为 null。
+    this.scene.fog = new THREE.Fog('#87CEEB', 80, 200);
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 300);
@@ -2455,6 +2806,11 @@ export class GameScene {
     this.setupDamageNumbers();
 
     this.setupComposer();
+
+    // Dev-only 风格化调参面板（按 ` 开关），生产构建不创建。
+    if (import.meta.env.DEV) {
+      createStylizedDebugPanel({ scene: this.scene, bloom: this.bloomPass });
+    }
 
     this.removeDisplayListener = installThreeHighDpi({
       renderer: this.renderer,
@@ -2523,28 +2879,29 @@ export class GameScene {
   // ===========================================================================
 
   private setupLighting(): void {
-    // 通透阳光基底：抬高环境光让暗部仍有色彩（不死黑）。
-    // 仍低于平行光，使 toon 阶梯保留：平行光被 gradientMap 量化成断层、主导明面；
-    // 环境光只是给阴影侧兜底色彩。
-    const ambient = new THREE.AmbientLight('#eef4ff', 0.9);
+    // 压低环境光：均匀光不被 gradientMap 量化，会把暗面也抬亮 → 白模整片翻白没断层。
+    // 只留很薄一层兜底色彩（不死黑），让暗面真正暗下去，阶梯才显现。
+    const ambient = new THREE.AmbientLight('#eef4ff', 0.18);
     ambient.name = 'AmbientLight';
     this.scene.add(ambient);
 
-    // 暖色方向主光（被阶梯化的那束）——降低强度/对比，明暗反差柔和但断层仍在。
-    const dir = new THREE.DirectionalLight('#FFF5E0', 1.5);
+    // 暖色方向主光（被 gradientMap 阶梯化的那束）——降到不溢出区间：受光面到亮但不顶白，三档断层才看得见。
+    const dir = new THREE.DirectionalLight('#FFF5E0', 1.3);
     dir.name = 'DirectionalLight';
     dir.position.set(5, 10, 5);
     // 不再投实时阴影（改用 blob 圆阴影）——省掉每帧的阴影贴图渲染。
     dir.castShadow = false;
     this.scene.add(dir);
 
-    // 半球补光：天蓝/地暖给暗部一点通透的环境色（删去第二个冗余半球）。
-    const hemi = new THREE.HemisphereLight('#bfe4ff', '#b8a888', 0.7);
+    // 半球补光：天蓝/地暖给暗部一点通透的环境色——同样压薄，避免再抬亮面冲淡阶梯。
+    const hemi = new THREE.HemisphereLight('#bfe4ff', '#b8a888', 0.14);
     hemi.name = 'HemisphereLight';
     this.scene.add(hemi);
 
     // Player spotlight (softer, warm tint)
-    this.playerSpotLight = new THREE.SpotLight('#FFF5E0', 0.3, 25, Math.PI / 5, 0.6, 1);
+    // 暂时关闭（intensity=0）：它跟随玩家形成一个"圈内亮/圈外暗"的径向光锥边界，
+    // 是用户看到的"跟着玩家走的白圈"成因。先隔离掉，纯看全局光照下的地板是否均匀。
+    this.playerSpotLight = new THREE.SpotLight('#FFF5E0', 0.0, 25, Math.PI / 5, 0.6, 1);
     this.playerSpotLight.name = 'PlayerSpotLight';
     this.playerSpotLight.position.set(0, 12, 0);
     this.scene.add(this.playerSpotLight);
@@ -2573,11 +2930,12 @@ export class GameScene {
 
     const bloom = new UnrealBloomPass(
       new THREE.Vector2(Math.max(1, w * dpr * 0.5), Math.max(1, h * dpr * 0.5)), // 半分辨率省手机
-      0.35, // strength：微微
+      0.3,  // strength：微微
       0.5,  // radius
-      0.9,  // threshold：高 → 只让发光体辉光
+      1.0,  // threshold：抬高 → 只让真正的发光特效辉光，普通亮面不再被晕白
     );
     composer.addPass(bloom);
+    this.bloomPass = bloom;
 
     composer.addPass(new OutputPass()); // 末端唯一 tone map：ACES + sRGB
 
@@ -2596,6 +2954,7 @@ export class GameScene {
     const baseGeo = new THREE.PlaneGeometry(400, 400);
     baseGeo.rotateX(-Math.PI / 2);
     const baseMat = new THREE.MeshToonMaterial({ color: '#4A7FB5', gradientMap: toonGradientMap });
+    applyStylizedToonShading(baseMat, 0, true); // 地面底板也加风格化 + 网点
     this.groundMesh = new THREE.Mesh(baseGeo, baseMat);
     this.groundMesh.name = 'Ground_Base';
     this.groundMesh.receiveShadow = true;
@@ -2643,7 +3002,7 @@ export class GameScene {
     // Always start with fallback — will be replaced once model loads
     const bodyGeo = new THREE.CapsuleGeometry(0.5, 1.0, 8, 16);
     const bodyMat = new THREE.MeshToonMaterial({ color: charColor, gradientMap: toonGradientMap });
-    applyStylizedToonShading(bodyMat, 0.3);
+    applyStylizedToonShading(bodyMat, 0.3, true); // 玩家：开启网点
     this.playerMesh = new THREE.Mesh(bodyGeo, bodyMat);
     this.playerMesh.name = 'Player';
     this.playerMesh.position.y = 1.0;
@@ -2675,7 +3034,7 @@ export class GameScene {
             side: oldMat.side ?? THREE.FrontSide,
           });
           toon.name = 'PlayerToon';
-          applyStylizedToonShading(toon, 0.3); // 主角留一点塑料玩具光泽
+          applyStylizedToonShading(toon, 0.3, true); // 主角留一点塑料玩具光泽 + 网点
           return toon;
         });
         mesh.material = toonMats.length === 1 ? toonMats[0] : toonMats;
@@ -2834,9 +3193,35 @@ export class GameScene {
     }
   }
 
+  // KayKit 骷髅：把配置的手持武器克隆并挂到角色的 handslot.r / handslot.l 骨。
+  // 武器原点即握把，挂点骨已摆好朝向，identity 变换即落位；武器随角色统一缩放。
+  // 模型若没有 handslot 骨（非 KayKit 皮肤）则什么都不做。
+  private attachEnemyWeapons(obj: THREE.Object3D, enemyType: string): void {
+    const loadout = KAYKIT_WEAPON_LOADOUT[enemyType];
+    if (!loadout) return;
+    // GLTFLoader 会去掉骨名里的保留字符（handslot.r → handslotr），按归一化后名字匹配，
+    // 兼容两种命名。
+    const norm = (s: string) => s.replace(/[\s[\].:/]/g, '');
+    const findBone = (target: string): THREE.Object3D | undefined => {
+      const want = norm(target);
+      let found: THREE.Object3D | undefined;
+      obj.traverse((c) => { if (!found && norm(c.name) === want) found = c; });
+      return found;
+    };
+    const mount = (slotBone: string, weaponKey?: string): void => {
+      if (!weaponKey) return;
+      const bone = findBone(slotBone);
+      const weapon = loadedKayKitWeapons[weaponKey];
+      if (!bone || !weapon) return;
+      const inst = weapon.clone(true);
+      inst.name = `Weapon_${weaponKey}`;
+      bone.add(inst);
+    };
+    mount('handslot.r', loadout.right);
+    mount('handslot.l', loadout.left);
+  }
+
   private playEnemyAnim(enemyId: number, name: string): void {
-    const currentAnim = this.enemyAnimStates.get(enemyId);
-    if (currentAnim === name) return;
     const actionsMap = this.enemyAnimActions.get(enemyId);
     if (!actionsMap) return;
 
@@ -2849,6 +3234,10 @@ export class GameScene {
         'Punch': ['Idle_Attack', 'Run_Attack', 'Idle'],
         'HitReact': ['Idle'],
         'Idle_Attack': ['Punch', 'Idle'],
+        // 施法 / 召唤（necromancer→ghost 模型无专用 spellcast clip，
+        // 用 attack-melee / interact 这类伸手动作替代；其它皮肤回落到 Punch/Idle）
+        'Cast': ['Attack-melee-right', 'Attack-melee-left', 'Interact-right', 'Spellcast', 'Punch', 'Idle'],
+        'Summon': ['Interact-right', 'Interact-left', 'Attack-melee-right', 'Spellcast', 'Punch', 'Idle'],
       };
       const chain = fallbacks[name];
       if (chain) {
@@ -2858,6 +3247,12 @@ export class GameScene {
       }
       if (!actionsMap.has(targetName)) targetName = 'Idle';
     }
+
+    // 去重要比对**解析后**的目标名：否则像 'Summon'→'Interact-right' 这种走 fallback 的
+    // 调用，每帧 requested name 都 != 已存的 resolved name，会被当成"换动画"反复 reset()，
+    // 导致 clip 永远停在第 0 帧（看起来没播）。
+    const currentAnim = this.enemyAnimStates.get(enemyId);
+    if (currentAnim === targetName) return;
 
     const prevAction = actionsMap.get(currentAnim ?? '');
     const newAction = actionsMap.get(targetName);
@@ -2896,6 +3291,7 @@ export class GameScene {
     this.enemyMixers.clear();
     this.enemyAnimStates.clear();
     this.enemyAnimActions.clear();
+    this.enemyPrevPos.clear();
 
     const label: Record<EnemySkin, string> = {
       original: '原版怪物',
@@ -4416,6 +4812,7 @@ export class GameScene {
         }
         this.enemyAnimStates.delete(id);
         this.enemyAnimActions.delete(id);
+        this.enemyPrevPos.delete(id);
         // Return to pool
         const pool = this.enemyPool.get(dying.type) ?? [];
         pool.push(dying.obj);
@@ -4429,12 +4826,12 @@ export class GameScene {
 
     // 目标世界高度（米）—— 模型按实际高度归一化后缩放到此值。整体比玩家(1.8)矮一截以凸显角色（约 ×0.8）。
     const enemyScales: Record<string, number> = {
-      skeleton_soldier: 1.36,  // 普通骷髅兵 — 略矮于玩家
-      zombie: 1.52,            // 高 HP 僵尸 — 略高壮的坦克
-      skeleton_archer: 1.0,    // 龙 — 远程飞行（小巧）
-      skeleton_knight: 2.08,   // 精英骷髅 — 明显更大
-      necromancer: 1.0,        // 法师 — 飘浮幽灵（小巧）
-      gargoyle: 0.96,          // 蝙蝠 — 小型飞行
+      skeleton_soldier: 1.2,   // KayKit 小兵 — 略矮于玩家
+      zombie: 1.1,             // 高 HP 僵尸
+      skeleton_archer: 1.2,    // KayKit 法师 — 落地人形
+      skeleton_knight: 2.6,    // KayKit 战士 — 精英，明显更大
+      necromancer: 0.7,        // 法师 — 飘浮幽灵（小巧）
+      gargoyle: 0.7,           // 蝙蝠 — 小型飞行
     };
 
     // Update or create objects for each alive enemy
@@ -4473,6 +4870,8 @@ export class GameScene {
           const model = modelKey ? loadedModels[modelKey] : null;
           if (model) {
             obj = cloneSkeleton(model) as THREE.Object3D;
+            // KayKit 角色：把手持武器挂到 handslot 骨（其它皮肤无此骨，自动跳过）
+            this.attachEnemyWeapons(obj, enemy.type);
             // Setup animation mixer for cloned model
             const clips = modelKey ? loadedAnimClips.get(modelKey) : undefined;
             if (clips && clips.length > 0) {
@@ -4543,6 +4942,22 @@ export class GameScene {
         obj.rotation.y = Math.atan2(dx, dz);
       }
 
+      // 判断"是否在动"：不能用 enemy.speed（速度**属性**恒>0，会让站定放风筝的远程怪
+      // necromancer / skeleton_archer 永远播移动动画），也不能用单帧瞬时位移（core 60Hz 与
+      // 渲染刷新率不同步，很多帧位置没变会误判停下而闪 Idle）。改用滞后判定：只要最近 200ms
+      // 内有过位移就算移动，真正停超过 200ms 才切 Idle。
+      let prevPos = this.enemyPrevPos.get(enemy.id);
+      if (!prevPos) {
+        prevPos = { x: enemy.x, z: enemy.z, stillTime: 999 };
+        this.enemyPrevPos.set(enemy.id, prevPos);
+      } else {
+        const movedDist = Math.hypot(enemy.x - prevPos.x, enemy.z - prevPos.z);
+        prevPos.stillTime = movedDist > 1e-4 ? 0 : prevPos.stillTime + this.frameDt;
+        prevPos.x = enemy.x;
+        prevPos.z = enemy.z;
+      }
+      const isMoving = prevPos.stillTime < 0.2;
+
       // Choose enemy animation based on state
       if (enemy.hitFlashTimer > 0) {
         this.playEnemyAnim(enemy.id, 'HitReact');
@@ -4552,10 +4967,13 @@ export class GameScene {
         obj.visible = true;
       } else if (enemy.chargeState === 'windup') {
         this.playEnemyAnim(enemy.id, 'Idle');
+      } else if (enemy.type === 'necromancer' && enemy.summonCooldown > 7.0) {
+        // 刚召唤完小兵（summonCooldown 每 8s 重置为 8）→ 召唤施法姿态（窗口 1s 便于看清）
+        this.playEnemyAnim(enemy.id, 'Summon');
       } else if (enemy.attackCooldown > enemy.attackCooldownMax * 0.8) {
-        // Just attacked (cooldown just reset)
-        this.playEnemyAnim(enemy.id, 'Punch');
-      } else if (enemy.speed > 0.3) {
+        // Just attacked (cooldown just reset) — necromancer 走施法动作，近战怪用 Punch
+        this.playEnemyAnim(enemy.id, enemy.type === 'necromancer' ? 'Cast' : 'Punch');
+      } else if (isMoving) {
         // Moving enemy — prefer Run_Arms (zombie arms out), fallback to Run/Walk
         const actionsMap = this.enemyAnimActions.get(enemy.id);
         if (actionsMap?.has('Run_Arms')) {
@@ -7018,7 +7436,9 @@ export class GameScene {
       .sort((a, b) => a.dist - b.dist)[0] ?? null;
     const openedChestCount = state.chests.filter(c => c.opened && !c.bossDrop).length;
     const chestCost = nearestChest?.chest.bossDrop ? 0 : getChestGoldCost(p.level, openedChestCount);
-    const chestInRange = nearestChest != null && nearestChest.dist <= CHEST_INTERACT_RADIUS;
+    const chestInRange = nearestChest != null
+      && nearestChest.dist <= CHEST_INTERACT_RADIUS
+      && Math.abs((p.y ?? 0) - (nearestChest.chest.y ?? 0)) <= CHEST_INTERACT_MAX_Y_DELTA;
     const visibleAltar = state.altars.find(a => a.phase !== 'boss_active' && a.phase !== 'portal_used');
     if (chestInRange && nearestChest) {
       // 使用 GSAP 动画显示传送门指示器

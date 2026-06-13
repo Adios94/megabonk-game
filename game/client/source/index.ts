@@ -1200,11 +1200,11 @@ interface LoadedModels {
   zombie_basic: THREE.Group | null;
   zombie_chubby: THREE.Group | null;
   zombie_arm: THREE.Group | null;
-  // Quaternius Animated Monster Pack — OBJ 静态模型（无骨骼动画，敌人渲染管线
-  // 会跳过 mixer 创建，显示为静止站姿；适合用作 skeleton_soldier / gargoyle 这种
-  // 在 zombie 模型语义上明显错位的种类）
+  // Quaternius Animated Monster Pack — 带骨骼动画 GLB
   monster_skeleton: THREE.Group | null;
   monster_bat: THREE.Group | null;
+  // 通用 ghost 模型，用作 necromancer 渲染（带 32 个小写命名 clip，加载时归一化）
+  ghost: THREE.Group | null;
   boss: THREE.Group | null;
   tombstone: THREE.Group | null;
   tree: THREE.Group | null;
@@ -1235,6 +1235,7 @@ const loadedModels: LoadedModels = {
   zombie_arm: null,
   monster_skeleton: null,
   monster_bat: null,
+  ghost: null,
   boss: null,
   tombstone: null,
   tree: null,
@@ -1292,6 +1293,9 @@ async function loadModels(): Promise<void> {
     // （Skeleton_Idle / Bat_Flying 等），加载完后会做归一化（见 normalizeEnemyClips）
     ['monster_skeleton', '/models/monsters/Skeleton.glb'],
     ['monster_bat', '/models/monsters/Bat.glb'],
+    // ghost.glb：通用幽灵模型，clip 全小写（idle/walk/sprint/die...），加载时归一化为
+    // Idle/Walk/Run/Death；用作 necromancer 渲染
+    ['ghost', '/models/ghost.glb'],
   ];
 
   const promises = modelPaths.map(async ([key, path]) => {
@@ -1332,38 +1336,50 @@ async function loadModels(): Promise<void> {
 // =============================================================================
 // 敌人动画 clip 名归一化
 // =============================================================================
-// Quaternius Animated Monster Pack 的 clip 都带模型前缀（Skeleton_Idle / Bat_Flying...），
-// 与 enemyAnim 系统里 'Idle' / 'Run' / 'Walk' 等严格 name 匹配不兼容。
-// 这里在加载完成时给 monster_* 模型 strip 前缀，并补常见别名：
-//   - Running → Run（让 enemyAnim 的 Run_Arms→Run→Walk 链能命中）
-//   - 若模型没有 Idle 但有 Flying（Bat），把 Flying 也注册成 Idle 别名，
-//     避免飞行怪在 windup 等"静止"状态下卡 T-pose
-// 对非 monster_* 模型透传原 clips（zombie 套件本身就用 Idle / Run_Arms / Punch... 等命名）
+// 第三方 GLB 的 clip 命名风格五花八门，与 enemyAnim 系统里 'Idle' / 'Run' / 'Walk'
+// 等严格 name 匹配不兼容。这里在加载完成时给特定模型归一化：
+//   - Quaternius Animated Monster Pack（monster_*）: clip 带模型前缀
+//     （Skeleton_Idle / Bat_Flying...）→ strip 前缀
+//   - ghost.glb: clip 全小写（idle/walk/sprint/die...）→ 首字母大写化
+//   - 通用别名表：Running/Sprint → Run，Die → Death，让 enemyAnim 的 fallback 链命中
+//   - 若模型没有 Idle 但有 Flying（飞行怪），把 Flying 注册成 Idle 别名，
+//     避免在 windup 等"静止"状态下卡 T-pose
+// 对其他模型（zombie_*）透传原 clips（zombie 套件本身就用 Idle / Run_Arms / Punch... 等命名）
 function normalizeEnemyClips(modelKey: string, clips: THREE.AnimationClip[]): THREE.AnimationClip[] {
-  if (!modelKey.startsWith('monster_')) return clips;
+  const needsNormalize = modelKey.startsWith('monster_') || modelKey === 'ghost';
+  if (!needsNormalize) return clips;
 
   const out: THREE.AnimationClip[] = [];
   const namesAdded = new Set<string>();
 
   for (const clip of clips) {
-    const stripped = clip.name.replace(/^[A-Za-z]+_/, ''); // Skeleton_Idle → Idle
+    let n = clip.name;
+    n = n.replace(/^[A-Za-z]+_/, '');                    // Skeleton_Idle → Idle
+    n = n.charAt(0).toUpperCase() + n.slice(1);          // idle → Idle, walk → Walk, sprint → Sprint
     const renamed = clip.clone();
-    renamed.name = stripped;
+    renamed.name = n;
     out.push(renamed);
-    namesAdded.add(stripped);
+    namesAdded.add(n);
   }
 
-  // Running → Run 别名（让 zombie 那套 fallback 链能找到 Run）
-  if (!namesAdded.has('Run') && namesAdded.has('Running')) {
-    const r = out.find((c) => c.name === 'Running')!.clone();
-    r.name = 'Run';
-    out.push(r);
-    namesAdded.add('Run');
+  // 通用同义词别名：源名 → 目标名（仅当目标不存在时复制一份）
+  const aliasPairs: Array<[string, string]> = [
+    ['Running', 'Run'],   // Quaternius
+    ['Sprint', 'Run'],    // ghost-style
+    ['Die', 'Death'],     // ghost-style
+  ];
+  for (const [from, to] of aliasPairs) {
+    if (!namesAdded.has(to) && namesAdded.has(from)) {
+      const a = out.find((c) => c.name === from)!.clone();
+      a.name = to;
+      out.push(a);
+      namesAdded.add(to);
+    }
   }
 
-  // 没有 Idle 时用 Flying / Walk / Run / Running 之一兜底
+  // 没有 Idle 时用 Flying / Static / Walk / Run 之一兜底
   if (!namesAdded.has('Idle')) {
-    const fallback = out.find((c) => ['Flying', 'Walk', 'Run', 'Running'].includes(c.name));
+    const fallback = out.find((c) => ['Flying', 'Static', 'Walk', 'Run'].includes(c.name));
     if (fallback) {
       const alias = fallback.clone();
       alias.name = 'Idle';
@@ -2991,12 +3007,12 @@ export class GameScene {
 
     // Map enemy types to loaded models for geometry extraction
     const enemyModelMap: Record<string, keyof LoadedModels> = {
-      skeleton_soldier: 'monster_skeleton', // 普通骷髅兵 → Quaternius Skeleton.obj
+      skeleton_soldier: 'monster_skeleton', // 普通骷髅兵 → Quaternius Skeleton.glb
       zombie: 'zombie_chubby',              // 僵尸(高HP) → 胖僵尸
       skeleton_archer: 'zombie_arm',        // 弓手(远程) → 断臂僵尸（待补骷髅弓手）
       skeleton_knight: 'zombie_chubby',     // 骑士(精英冲刺) → 胖僵尸(大型)
-      necromancer: 'zombie_basic',          // 法师(召唤) → Basic僵尸（待补死灵法师）
-      gargoyle: 'monster_bat',              // 飞行俯冲 → Quaternius Bat.obj
+      necromancer: 'ghost',                 // 法师(召唤) → 通用 ghost.glb（飘浮形象更贴合）
+      gargoyle: 'monster_bat',              // 飞行俯冲 → Quaternius Bat.glb
     };
 
     // Scale per enemy type — zombie size variety (small/medium/large)
@@ -4486,13 +4502,13 @@ export class GameScene {
     }
 
     // Map enemy types to model keys
-    // 保持与 setupEnemyMeshes 的映射一致（skeleton_soldier / gargoyle 已切到 OBJ 怪物模型）
+    // 保持与 setupEnemyMeshes 的映射一致（skeleton_soldier / gargoyle / necromancer 已换专属模型）
     const enemyModelMap: Record<string, keyof LoadedModels> = {
       skeleton_soldier: 'monster_skeleton',
       zombie: 'zombie_chubby',
       skeleton_archer: 'zombie_arm',
       skeleton_knight: 'zombie_chubby',
-      necromancer: 'zombie_basic',
+      necromancer: 'ghost',
       gargoyle: 'monster_bat',
     };
 

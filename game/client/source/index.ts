@@ -1492,6 +1492,9 @@ interface LoadedModels {
   kk_warrior: THREE.Group | null;
   kk_minion: THREE.Group | null;
   kk_mage: THREE.Group | null;
+  // 第一关 boss 模型（双足持枪）
+  boss_2legs: THREE.Group | null;
+  // 第二关 boss 模型（大型持枪）
   boss: THREE.Group | null;
   tombstone: THREE.Group | null;
   tree: THREE.Group | null;
@@ -1526,6 +1529,7 @@ const loadedModels: LoadedModels = {
   kk_warrior: null,
   kk_minion: null,
   kk_mage: null,
+  boss_2legs: null,
   boss: null,
   tombstone: null,
   tree: null,
@@ -1713,6 +1717,7 @@ async function loadSkinModels(): Promise<void> {
 async function loadModels(): Promise<void> {
   const modelPaths: [keyof LoadedModels, string][] = [
     ['zombie_basic', '/models/zombie_basic.gltf'],
+    ['boss_2legs', '/models/enemy_2legs_gun.gltf'],
     ['boss', '/models/enemy_large_gun.gltf'],
     ['teleporter', '/models/turret_teleporter.gltf'],
     ['platform', '/models/platform_4x1.gltf'],
@@ -2393,6 +2398,8 @@ export class GameScene {
   private groundMesh!: THREE.Mesh;
   private gridLines!: THREE.LineSegments;
   private bossMesh: THREE.Mesh | null = null;
+  /** bossMesh 当前是用哪一关的模型构建的（关卡切换时需重建）。 */
+  private bossMeshStage: 1 | 2 | null = null;
   /** Boss 的 base scale（auto-scaled to TARGET_BOSS_HEIGHT），attack/enrage 脉冲基于此值。 */
   private bossBaseScale = 1.0;
   private playerSpotLight!: THREE.SpotLight;
@@ -5320,17 +5327,24 @@ export class GameScene {
       return;
     }
 
+    // 第一关用 enemy_2legs_gun，第二关用 enemy_large_gun；关卡切换时重建网格。
+    const stage = (this.session.getRenderState().stage ?? 1) as 1 | 2;
+    if (this.bossMesh && this.bossMeshStage !== stage) {
+      this.scene.remove(this.bossMesh);
+      this.bossMesh = null;
+      this.bossMeshStage = null;
+    }
+
     if (!this.bossMesh) {
       // Use loaded boss model if available
-      if (loadedModels.boss) {
-        this.bossMesh = cloneSkeleton(loadedModels.boss) as unknown as THREE.Mesh;
+      const bossModel = stage === 2 ? loadedModels.boss : loadedModels.boss_2legs;
+      if (bossModel) {
+        this.bossMesh = cloneSkeleton(bossModel) as unknown as THREE.Mesh;
         this.bossMesh.name = 'Boss';
-        // Auto-scale to a target height (~3× player height = imposing but not absurd).
-        // 旧代码硬编码 scale=10 假设原模型 0.5 单位高，但 enemy_large_gun.gltf 实际更大，
-        // 导致 Boss 超出屏幕。改为按 bounding box 算 scale。
+        // 按 bounding box 自动缩放到目标高度（两关 boss 模型尺寸不同，统一到 3.5m）。
         const box = new THREE.Box3().setFromObject(this.bossMesh);
         const size = box.getSize(new THREE.Vector3());
-        const TARGET_BOSS_HEIGHT = 5.0;
+        const TARGET_BOSS_HEIGHT = 3.5;
         const autoScale = TARGET_BOSS_HEIGHT / Math.max(size.y, 0.01);
         this.bossMesh.scale.set(autoScale, autoScale, autoScale);
         // 把脚踩到地面（同 player 的处理）
@@ -5338,6 +5352,7 @@ export class GameScene {
         this.bossMesh.position.y = -newBox.min.y;
         // 缓存 base scale，给 attack 脉冲 / enrage 脉冲用
         this.bossBaseScale = autoScale;
+        this.bossMeshStage = stage;
         this.scene.add(this.bossMesh);
       } else {
         // Fallback
@@ -5346,6 +5361,7 @@ export class GameScene {
         this.bossMesh = new THREE.Mesh(geo, mat);
         this.bossMesh.name = 'Boss';
         this.bossBaseScale = 1.0;
+        this.bossMeshStage = stage;
         this.scene.add(this.bossMesh);
       }
     }

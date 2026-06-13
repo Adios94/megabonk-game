@@ -1197,7 +1197,6 @@ const TIER_COLORS: Record<number, string> = {
 // =============================================================================
 
 interface LoadedModels {
-  player: THREE.Group | null;
   zombie_basic: THREE.Group | null;
   zombie_chubby: THREE.Group | null;
   zombie_arm: THREE.Group | null;
@@ -1226,7 +1225,6 @@ interface LoadedModels {
 
 const gltfLoader = new GLTFLoader();
 const loadedModels: LoadedModels = {
-  player: null,
   zombie_basic: null,
   zombie_chubby: null,
   zombie_arm: null,
@@ -1258,7 +1256,6 @@ const loadedAnimClips: Map<string, THREE.AnimationClip[]> = new Map();
 
 async function loadModels(): Promise<void> {
   const modelPaths: [keyof LoadedModels, string][] = [
-    ['player', '/models/player_cyberpunk.gltf'],
     ['zombie_basic', '/models/zombie_basic.gltf'],
     ['zombie_chubby', '/models/zombie_chubby.gltf'],
     ['zombie_arm', '/models/zombie_arm.gltf'],

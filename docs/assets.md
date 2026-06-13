@@ -8,7 +8,8 @@
 
 仓库混用了两套美术风格的免费资源：
 
-- **赛博朋克场景 / 角色 / 敌人**：Quaternius Cyberpunk Game Kit 风格（gltf / glb）。玩家用 `player_cyberpunk.gltf`，敌人用 `zombie_basic / zombie_chubby / zombie_arm`，Boss 用 `enemy_large_gun`。
+- **赛博朋克场景 / 敌人**：Quaternius Cyberpunk Game Kit 风格（gltf / glb）。敌人用 `zombie_basic / zombie_chubby / zombie_arm`，Boss 用 `enemy_large_gun`。
+- **玩家角色**：3 个独立 GLTF（`player_george / player_stan / player_leela`，分别对应 `megachad / roberto / skateboard_skeleton`），与赛博朋克套件不同风格。
 - **中世纪武器与拾取物**：Quaternius 经典武器套件（OBJ + MTL，金色变体用于进化态显示）。
 
 > 仓库 `public/models/` 里还存放了一批未启用的备选资源（`skeleton.glb`、`ghost.glb`、`pumpkin.glb`、cyberpunk 风格的其他敌人 `enemy_2legs / enemy_flying / enemy_large` 等）。**这些不在 `loadModels()` 加载列表里**，可以删除或保留作为美术备选。
@@ -23,7 +24,7 @@
 
 | 名称 | 文件 | 用途 |
 |---|---|---|
-| `player` | `models/player_cyberpunk.gltf` | 玩家模型（仅用 1 个） |
+| `player_george` / `player_stan` / `player_leela` | `models/player_*.gltf` | 三个玩家角色（megachad / roberto / skateboard_skeleton），按 `CHARACTER_MODELS` 映射加载 |
 | `zombie_basic` | `models/zombie_basic.gltf` | 渲染 `skeleton_soldier`（基础步兵）/ `skeleton_knight`（精英）→ 见下表 |
 | `zombie_arm` | `models/zombie_arm.gltf` | 渲染 `skeleton_archer`（弓手） |
 | `zombie_chubby` | `models/zombie_chubby.gltf` | 渲染 `zombie`（普通僵尸）/ `necromancer`（精英） |
@@ -168,7 +169,7 @@ import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 // GLTF（带骨骼）
-const gltf = await new GLTFLoader().loadAsync('/models/player_cyberpunk.gltf');
+const gltf = await new GLTFLoader().loadAsync('/models/player_george.gltf');
 const model = gltf.scene;
 model.name = 'player';
 

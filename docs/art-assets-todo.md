@@ -35,10 +35,12 @@
 | megachad | public/models/player_george.gltf | index.ts:2679 | OK |
 | roberto | public/models/player_stan.gltf | index.ts:2680 | OK |
 | skateboard_skeleton | public/models/player_leela.gltf | index.ts:2681 | OK |
-| 默认 fallback | public/models/player_cyberpunk.gltf | index.ts:1261 | OK |
+| 角色 fallback | `CHARACTER_MODELS['megachad']`（player_george.gltf） | index.ts:2686 | 任意 character 字段缺失/异常都回落到 megachad |
 | 加载中占位 | THREE.CapsuleGeometry(0.5, 1.0) | index.ts:2686 | 程序化（仅模型加载完成前显示） |
 
 > 玩家动画 Idle/Run/Attack 通过 GLTF 内嵌 AnimationClip 已接好。
+> 已扩展：Hello / Dance（idle flavor 间歇穿插）、HitRecieve_1/2（站立受击）、
+> Punch（开宝箱）、Death（LoopOnce + 尸体保留）。
 
 ---
 

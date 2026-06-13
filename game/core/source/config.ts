@@ -183,8 +183,8 @@ export const WAVE_CONFIGS: WaveConfig[] = [
   { timeStart: 0, timeEnd: 60, spawnInterval: 2.0, maxAlive: 30, enemies: ['skeleton_soldier'], groupSize: [1, 3], eliteChance: 0 },
   { timeStart: 60, timeEnd: 180, spawnInterval: 1.5, maxAlive: 50, enemies: ['skeleton_soldier', 'zombie'], groupSize: [2, 4], eliteChance: 0.05 },
   { timeStart: 180, timeEnd: 300, spawnInterval: 1.2, maxAlive: 70, enemies: ['skeleton_soldier', 'zombie', 'skeleton_archer'], groupSize: [3, 5], eliteChance: 0.1 },
-  { timeStart: 300, timeEnd: 420, spawnInterval: 1.0, maxAlive: 85, enemies: ['zombie', 'skeleton_archer', 'skeleton_soldier'], groupSize: [3, 6], eliteChance: 0.15 },
-  { timeStart: 420, timeEnd: 540, spawnInterval: 0.8, maxAlive: 100, enemies: ['zombie', 'skeleton_archer', 'skeleton_soldier'], groupSize: [4, 8], eliteChance: 0.2 },
+  { timeStart: 300, timeEnd: 420, spawnInterval: 1.0, maxAlive: 85, enemies: ['zombie', 'skeleton_archer', 'skeleton_soldier', 'gargoyle'], groupSize: [3, 6], eliteChance: 0.15 },
+  { timeStart: 420, timeEnd: 540, spawnInterval: 0.8, maxAlive: 100, enemies: ['zombie', 'skeleton_archer', 'skeleton_soldier', 'gargoyle'], groupSize: [4, 8], eliteChance: 0.2 },
 ];
 
 // Weapon level stats

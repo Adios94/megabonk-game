@@ -1,22 +1,23 @@
 /**
- * dive 行为：gargoyle 的"飞行 → 俯冲 → 落地 AOE → 起飞"状态机。
+ * dive 行为：gargoyle 的"飞行 → 俯冲咬击 → 起飞"状态机。
  *
- * 等价于原 `updateGargoyleEnemy` + `gargoyleLandingAOE`：
- * - flying: y=3 高空, 朝玩家移动；attackCooldown 到 → diving（timer 0.4）
- * - diving: 高速 (speed×3) 直扑锁定地点 + 下降 (y -= 8×dt)；
- *           y<=0 / timer 到 → landing + 落地 AOE 伤害（半径 3）
- * - landing: 短暂停留（timer 0.3）→ rising
- * - rising: 上升 (y += 6×dt)；timer 到 / y>=3 → flying（attackCooldown 重置）
+ * - flying: y=1.8 离地, 朝玩家移动；attackCooldown 到 → diving（timer 0.4），
+ *           并锁定起跳那刻的玩家坐标作为俯冲落点。
+ * - diving: 高速 (speed×3) 朝锁定点俯冲 + 下降到咬击高度 BITE_HEIGHT（不落地）；
+ *           抵达锁定点 / timer 到 → 咬一口（玩家在 BITE_RADIUS 内则受伤）→ rising。
+ * - rising: 上升 (y += 6×dt) 回到巡航高度；timer 到 / y>=1.8 → flying（attackCooldown 重置）。
  *
- * 落地 AOE 通过 `ctx.effects.damagePlayer` 处理玩家伤害（armor / shield_tome 减免在那里），
- * 通过 `ctx.effects.applyKnockback` 推飞旁边的小怪（原代码副作用保留）。
+ * 咬击为单体近身判定（贴着玩家空中咬），不再砸地、不做范围伤害/击退。
+ * 玩家伤害走 `ctx.effects.damagePlayer`（armor / shield_tome / invincible 减免在那里）。
  */
 import { distanceBetween } from '../../physics.ts';
 import type { EnemyBehaviorFn, AiContext } from '../types.ts';
 import type { EnemyState } from '../../types.ts';
 import { applyMovement } from './_move.ts';
 
-const LANDING_AOE_RADIUS = 3;
+const FLY_HEIGHT = 1.8;   // 飞行/巡航离地高度（米）
+const BITE_HEIGHT = 1.0;  // 俯冲最低点（≈玩家躯干高度，不触地）
+const BITE_RADIUS = 2.0;  // 咬击命中半径（贴身判定，略大于纯近战以补偿俯冲落差）
 
 export const dive: EnemyBehaviorFn = (enemy, ctx, i) => {
   const dt = ctx.dt;
@@ -24,7 +25,7 @@ export const dive: EnemyBehaviorFn = (enemy, ctx, i) => {
 
   switch (enemy.diveState) {
     case 'flying': {
-      enemy.y = 3;
+      enemy.y = FLY_HEIGHT;
       // 错峰重算 target（只在对应 aiPhase 帧计算，节省 CPU）
       if (enemy.aiPhase === ctx.aiGroup) {
         enemy.targetX = player.x;
@@ -56,18 +57,11 @@ export const dive: EnemyBehaviorFn = (enemy, ctx, i) => {
         enemy.x = Math.max(-halfMap, Math.min(halfMap, enemy.x + nx * diveSpeed));
         enemy.z = Math.max(-halfMap, Math.min(halfMap, enemy.z + nz * diveSpeed));
       }
-      enemy.y = Math.max(0, enemy.y - 8 * dt);
-      if (enemy.y <= 0 || enemy.diveTimer <= 0) {
-        enemy.y = 0;
-        enemy.diveState = 'landing';
-        enemy.diveTimer = 0.3;
-        landingAOE(enemy, ctx);
-      }
-      break;
-    }
-    case 'landing': {
-      enemy.diveTimer -= dt;
-      if (enemy.diveTimer <= 0) {
+      // 下降到咬击高度即止，不再砸到地面
+      enemy.y = Math.max(BITE_HEIGHT, enemy.y - 8 * dt);
+      // 抵达锁定落点或俯冲计时结束 → 咬一口 + 起飞
+      if (dist <= 0.5 || enemy.diveTimer <= 0) {
+        biteAttack(enemy, ctx);
         enemy.diveState = 'rising';
         enemy.diveTimer = 0.5;
       }
@@ -75,9 +69,9 @@ export const dive: EnemyBehaviorFn = (enemy, ctx, i) => {
     }
     case 'rising': {
       enemy.diveTimer -= dt;
-      enemy.y = Math.min(3, enemy.y + 6 * dt);
-      if (enemy.diveTimer <= 0 || enemy.y >= 3) {
-        enemy.y = 3;
+      enemy.y = Math.min(FLY_HEIGHT, enemy.y + 6 * dt);
+      if (enemy.diveTimer <= 0 || enemy.y >= FLY_HEIGHT) {
+        enemy.y = FLY_HEIGHT;
         enemy.diveState = 'flying';
         enemy.attackCooldown = enemy.attackCooldownMax;
       }
@@ -86,19 +80,11 @@ export const dive: EnemyBehaviorFn = (enemy, ctx, i) => {
   }
 };
 
-function landingAOE(enemy: EnemyState, ctx: AiContext): void {
-  // 玩家受伤（damagePlayer 内部处理 alive / invincible / armor / shield_tome / damageEvent）
+function biteAttack(enemy: EnemyState, ctx: AiContext): void {
+  // 单体近身咬击：玩家在咬击半径内才受伤（俯冲已被横移/计时引导到落点）。
+  // damagePlayer 内部处理 alive / invincible / armor / shield_tome / damageEvent。
   const dist = distanceBetween(enemy.x, enemy.z, ctx.player.x, ctx.player.z);
-  if (dist <= LANDING_AOE_RADIUS) {
+  if (dist <= BITE_RADIUS) {
     ctx.effects.damagePlayer(enemy.damage);
-  }
-
-  // 推飞旁边小怪（环境冲击, 不造成伤害）
-  for (const other of ctx.enemies) {
-    if (other.id === enemy.id || other.hp <= 0) continue;
-    const odist = distanceBetween(enemy.x, enemy.z, other.x, other.z);
-    if (odist <= LANDING_AOE_RADIUS) {
-      ctx.effects.applyKnockback(other, enemy.x, enemy.z);
-    }
   }
 }

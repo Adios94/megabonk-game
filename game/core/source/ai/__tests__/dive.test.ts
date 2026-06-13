@@ -1,18 +1,18 @@
 /**
- * dive 行为单元测试 —— gargoyle 的飞行 → 俯冲 → 落地 → 起飞状态机。
+ * dive 行为单元测试 —— gargoyle 的飞行 → 俯冲咬击 → 起飞状态机。
  */
 import { describe, it, expect } from 'vitest';
 import { dive } from '../behaviors/dive.ts';
 import { makeEnemy, makeAiContext, makePlayer, makeAiEffects } from './_fixtures.ts';
 
 describe('dive brain (gargoyle)', () => {
-  it('flying 时 y=3 + 朝玩家移动', () => {
+  it('flying 时 y=1.8 + 朝玩家移动', () => {
     const player = makePlayer({ x: 10, z: 0 });
     // attackCooldown>0 → 不会立刻 transition 到 diving
     const enemy = makeEnemy(1, 'gargoyle', 0, 0, { speed: 0, attackCooldown: 2 });
     const ctx = makeAiContext({ player, dt: 0 });
     dive(enemy, ctx, 0);
-    expect(enemy.y).toBe(3);
+    expect(enemy.y).toBe(1.8);
     expect(enemy.targetX).toBe(10);
     expect(enemy.targetZ).toBe(0);
     expect(enemy.diveState).toBe('flying');
@@ -45,49 +45,48 @@ describe('dive brain (gargoyle)', () => {
     expect(enemy.x - beforeX).toBeCloseTo(0.6, 4);
   });
 
-  it('diving y<=0 → landing + 落地 AOE 伤害（玩家在范围内）', () => {
+  it('diving 抵达落点 → 咬击伤害（玩家在咬击半径内）+ 转 rising', () => {
     const effects = makeAiEffects();
     const player = makePlayer({ x: 0, z: 0 });
+    // 敌人已在锁定落点上（dist<=0.5），玩家距离=1 在 BITE_RADIUS(2) 内
     const enemy = makeEnemy(1, 'gargoyle', 1, 0, {
-      y: 0.1,  // 这一帧落地
+      y: 1.0,  // BITE_HEIGHT
       diveState: 'diving',
       diveTimer: 0.4,
-      chargeTargetX: 0, chargeTargetZ: 0,
+      chargeTargetX: 1, chargeTargetZ: 0,
       damage: 25,
       speed: 0,  // 隔离横移
     });
     const ctx = makeAiContext({ player, effects, dt: 0.05 });
     dive(enemy, ctx, 0);
-    expect(enemy.diveState).toBe('landing');
-    expect(enemy.y).toBe(0);
-    // 玩家距离=1, AOE radius=3 → 触发伤害
+    expect(enemy.diveState).toBe('rising');
     expect(effects.damagePlayerSpy).toHaveBeenCalledWith(25);
+    // 咬完不落地：y 维持在咬击高度（>= BITE_HEIGHT 1.0）
+    expect(enemy.y).toBeGreaterThanOrEqual(1.0);
   });
 
-  it('落地 AOE 推飞旁边的小怪', () => {
+  it('diving timer 到但玩家已躲开 → 不造成伤害仍起飞', () => {
     const effects = makeAiEffects();
-    const garg = makeEnemy(1, 'gargoyle', 0, 0, {
-      y: 0.1,
-      diveState: 'diving', diveTimer: 0.4,
+    const enemy = makeEnemy(1, 'gargoyle', 0, 0, {
+      y: 1.0,  // BITE_HEIGHT
+      diveState: 'diving',
+      diveTimer: 0.02,  // 这一帧计时归零
       chargeTargetX: 0, chargeTargetZ: 0,
       damage: 25, speed: 0,
     });
-    const buddy = makeEnemy(2, 'skeleton_soldier', 1, 0);  // 1m 远
-    const farAway = makeEnemy(3, 'skeleton_soldier', 100, 100);  // 太远
     const ctx = makeAiContext({
-      player: makePlayer({ x: 999, z: 999 }),  // 玩家远离
+      player: makePlayer({ x: 999, z: 999 }),  // 玩家已远离咬击半径
       effects,
-      enemies: [garg, buddy, farAway],
       dt: 0.05,
     });
-    dive(garg, ctx, 0);
-    expect(effects.applyKnockbackSpy).toHaveBeenCalledTimes(1);
-    expect(effects.applyKnockbackSpy.mock.calls[0][0]).toBe(buddy);
+    dive(enemy, ctx, 0);
+    expect(enemy.diveState).toBe('rising');
+    expect(effects.damagePlayerSpy).not.toHaveBeenCalled();
   });
 
-  it('rising 上升到 y>=3 → flying（重置 attackCooldown）', () => {
+  it('rising 上升到 y>=1.8 → flying（重置 attackCooldown）', () => {
     const enemy = makeEnemy(1, 'gargoyle', 0, 0, {
-      y: 2.95,
+      y: 1.6,
       diveState: 'rising',
       diveTimer: 0.5,
       attackCooldownMax: 3.0,
@@ -95,8 +94,8 @@ describe('dive brain (gargoyle)', () => {
     });
     const ctx = makeAiContext({ dt: 0.05 });
     dive(enemy, ctx, 0);
-    // y += 6*0.05 = 0.3, clamp to 3
-    expect(enemy.y).toBe(3);
+    // y += 6*0.05 = 0.3 → 1.9, clamp to 1.8
+    expect(enemy.y).toBe(1.8);
     expect(enemy.diveState).toBe('flying');
     expect(enemy.attackCooldown).toBe(3.0);
   });

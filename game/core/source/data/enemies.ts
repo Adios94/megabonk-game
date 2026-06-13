@@ -37,7 +37,7 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
   skeleton_archer:  { hp: 12,  damage: 7,  speed: 2.5, behavior: 'ranged', xpReward: 3,  attackCooldown: 3.0, isElite: false, firstAppear: 120, spawnWeight: 15, preferredRange: 8,  tags: ['undead', 'ranged'] },
   skeleton_knight:  { hp: 120, damage: 20, speed: 3.5, behavior: 'charge', xpReward: 25, attackCooldown: 2.0, isElite: true,  firstAppear: 180, spawnWeight: 5,                       tags: ['undead', 'physical', 'elite'] },
   necromancer:      { hp: 80,  damage: 15, speed: 2.0, behavior: 'ranged', modifier: 'necromancer', xpReward: 30, attackCooldown: 4.0, isElite: true, firstAppear: 240, spawnWeight: 3, preferredRange: 10, tags: ['undead', 'spell', 'elite'] },
-  gargoyle:         { hp: 200, damage: 25, speed: 4.0, behavior: 'dive',   xpReward: 40, attackCooldown: 3.0, isElite: true,  firstAppear: 360, spawnWeight: 2,                       tags: ['flying', 'elite'] },
+  gargoyle:         { hp: 200, damage: 25, speed: 4.0, behavior: 'dive',   xpReward: 40, attackCooldown: 3.0, isElite: true,  firstAppear: 300, spawnWeight: 6,                       tags: ['flying', 'elite'] },
 };
 
 // ─────────────────────────────────────────────────────────────────────────

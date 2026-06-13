@@ -15,7 +15,7 @@
 | 类别 | 已就位 | 仅程序化或风格不符 | 完全缺失 |
 |---|---|---|---|
 | 玩家角色 | 3 / 3 | — | — |
-| 敌人模型（语义匹配） | 5 / 6 | 1（僵尸贴皮：knight） | — |
+| 敌人模型（语义匹配） | 6 / 6 | — | — |
 | Boss 模型 | 0 / 1（拿带枪机械敌凑数） | 1 | 1 |
 | 武器手持 / 弹幕模型 | 7 / 12 | 5 | — |
 | 拾取物 | 1 / 7（其余靠染色） | 6 | — |
@@ -44,26 +44,31 @@
 
 ---
 
-## 2. 敌人模型（P0 - 剩余 1 种待补）
+## 2. 敌人模型（6 / 6 全部就位）
 
-`core/data/enemies.ts` 定义 6 种敌人。skeleton_soldier / skeleton_archer / gargoyle
-都用 Quaternius 带动画 GLB，necromancer 用通用 ghost.glb；只剩 skeleton_knight
-还是 zombie 贴皮。
+`core/data/enemies.ts` 定义 6 种敌人，渲染层已全部接上语义贴合的模型，
+不再有 zombie 贴皮错位。
 
 | 敌人 ID | 设定 | 当前用模型 | 应有形象 | 状态 |
 |---|---|---|---|---|
 | skeleton_soldier | 普通骷髅兵 | monsters/Skeleton.glb | 骷髅兵 | OK（带动画） |
 | zombie | 高 HP 慢速僵尸 | zombie_basic.gltf | （风格匹配，靠 enemyScales 放大暗示高 HP） | OK |
 | skeleton_archer | 远程攻击 | monsters/Dragon.glb | 远程吐息（飞行 + Attack/Attack2 双击） | OK（用龙的吐息表达远程） |
-| skeleton_knight | 精英冲锋骑士 | zombie_chubby.gltf | 骷髅骑士（甲胄+大剑） | P0（语义错位） |
+| skeleton_knight | 精英冲锋骑士 | monsters/Skeleton.glb（放大体型） | 骷髅骑士（甲胄+大剑） | OK（复用骷髅模型，scale 2.1 ≈ 2.3× 普通骷髅兵） |
 | necromancer | 召唤型法师 | ghost.glb | 死灵法师（袍子+杖） | OK（飘浮形象贴合，32 个动画 clip） |
 | gargoyle | 飞行俯冲 | monsters/Bat.glb | 蝙蝠 / 石像鬼 | OK（带飞行/攻击/受击/死亡动画） |
+
+> skeleton_knight 没有专属"甲胄骑士"模型，采用"普通兵放大成精英"的常见 roguelike
+> 做法，复用 Skeleton.glb 但 scale 明显更大（setupEnemyMeshes 1.5 / updateEnemyObjects 2.1）。
+> 若日后拿到真正的骷髅骑士模型，只需改两处 enemyModelMap 即可。
+>
+> ⚠️ `zombie_chubby.gltf` 现已无敌人引用（仍在 loadModels 加载列表），可按需归档。
 
 ### 2.1 已接入的带动画 GLB（含 clip 归一化）
 
 | 文件 | 用途 | 命名风格 | 归一化后可用 clip |
 |---|---|---|---|
-| public/models/monsters/Skeleton.glb | skeleton_soldier | `Skeleton_*` 前缀 | Attack, Death, Idle, Running(→Run 别名), Spawn |
+| public/models/monsters/Skeleton.glb | skeleton_soldier + skeleton_knight（放大） | `Skeleton_*` 前缀 | Attack, Death, Idle, Running(→Run 别名), Spawn |
 | public/models/monsters/Bat.glb | gargoyle | `Bat_*` 前缀 | Attack, Attack2, Death, Flying(→Idle/Walk/Run 别名), Hit |
 | public/models/monsters/Dragon.glb | skeleton_archer | `Dragon_*` 前缀 | Attack, Attack2, Death, Flying(→Idle/Walk/Run 别名), Hit |
 | public/models/ghost.glb | necromancer | 全小写 | Idle, Walk, Sprint(→Run 别名), Die(→Death 别名), Jump, Fall, Attack-melee-right 等 32 条 |

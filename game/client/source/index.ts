@@ -3027,19 +3027,19 @@ export class GameScene {
       skeleton_soldier: 'monster_skeleton', // 普通骷髅兵 → Quaternius Skeleton.glb
       zombie: 'zombie_basic',               // 僵尸(高HP) → Basic 僵尸（靠 enemyScales 放大表达"大而慢"）
       skeleton_archer: 'monster_dragon',    // 远程攻击 → Quaternius Dragon.glb（飞行 + 远程吐息更贴合）
-      skeleton_knight: 'zombie_chubby',     // 骑士(精英冲刺) → 胖僵尸(大型)
+      skeleton_knight: 'monster_skeleton',  // 骑士(精英冲刺) → 复用骷髅模型放大体型表达"精英大型"
       necromancer: 'ghost',                 // 法师(召唤) → 通用 ghost.glb（飘浮形象更贴合）
       gargoyle: 'monster_bat',              // 飞行俯冲 → Quaternius Bat.glb
     };
 
     // Scale per enemy type — zombie size variety (small/medium/large)
     const enemyScales: Record<string, number> = {
-      skeleton_soldier: 0.675,   // Basic zombie — standard (small)
-      zombie: 1.1,              // Chubby — big tank
-      skeleton_archer: 0.8,     // Arm zombie — lean
-      skeleton_knight: 1.3,     // Chubby — elite, extra large
-      necromancer: 0.675,       // Basic — caster (small)
-      gargoyle: 0.85,           // Arm zombie — lunging
+      skeleton_soldier: 0.675,   // Skeleton — standard (small)
+      zombie: 1.1,              // Basic zombie — big tank
+      skeleton_archer: 0.8,     // Dragon — lean flyer
+      skeleton_knight: 1.5,     // Skeleton 放大 — elite, extra large（约 2.2× 普通骷髅兵）
+      necromancer: 0.675,       // Ghost — caster (small)
+      gargoyle: 0.85,           // Bat — lunging
     };
 
     // Fallback box geometry if model not loaded
@@ -4524,18 +4524,18 @@ export class GameScene {
       skeleton_soldier: 'monster_skeleton',
       zombie: 'zombie_basic',
       skeleton_archer: 'monster_dragon',
-      skeleton_knight: 'zombie_chubby',
+      skeleton_knight: 'monster_skeleton', // 复用骷髅模型放大体型表达"精英大型"
       necromancer: 'ghost',
       gargoyle: 'monster_bat',
     };
 
     const enemyScales: Record<string, number> = {
-      skeleton_soldier: 0.9,   // Basic zombie — smaller
-      zombie: 1.4,             // Chubby — bigger tank
-      skeleton_archer: 1.1,    // Arm — lean
-      skeleton_knight: 1.8,    // Chubby — elite, large
-      necromancer: 0.9,        // Basic — caster (smaller)
-      gargoyle: 1.1,           // Arm — lunging
+      skeleton_soldier: 0.9,   // Skeleton — smaller
+      zombie: 1.4,             // Basic zombie — bigger tank
+      skeleton_archer: 1.1,    // Dragon — lean flyer
+      skeleton_knight: 2.1,    // Skeleton 放大 — elite, large（约 2.3× 普通骷髅兵）
+      necromancer: 0.9,        // Ghost — caster (smaller)
+      gargoyle: 1.1,           // Bat — lunging
     };
 
     // Update or create objects for each alive enemy

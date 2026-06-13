@@ -1120,11 +1120,12 @@ function applyStylizedToonShading(mat: THREE.MeshToonMaterial, specStrength = 0,
  * 游戏内风格化调参面板（仅 dev）。把 stylizedUniforms + 雾 + bloom 全部接上滑块，实时拖动即时生效，
  * 不用改代码重编译。按 ` 键（反引号）或点右上角按钮开关。"复制参数"把当前值导成可粘回代码的片段。
  */
-function createStylizedDebugPanel(opts: { scene: THREE.Scene; bloom: UnrealBloomPass | null }): void {
+function createStylizedDebugPanel(opts: { scene: THREE.Scene; bloom: UnrealBloomPass | null; renderer: THREE.WebGLRenderer }): void {
   if (document.getElementById('stylized-debug-panel')) return; // 幂等
   const u = stylizedUniforms;
   const fog = opts.scene.fog instanceof THREE.Fog ? opts.scene.fog : null;
   const bloom = opts.bloom;
+  const renderer = opts.renderer;
 
   type Ctl = { label: string; min: number; max: number; step: number; get: () => number; set: (v: number) => void };
   const vec3ctls = (v: THREE.Vector3, min: number, max: number, prefix = ''): Ctl[] => {
@@ -1137,6 +1138,11 @@ function createStylizedDebugPanel(opts: { scene: THREE.Scene; bloom: UnrealBloom
   };
 
   const sections: { title: string; ctls: Ctl[] }[] = [
+    {
+      title: '整体亮度 Exposure', ctls: [
+        { label: 'Brightness', min: 0.3, max: 2.5, step: 0.01, get: () => renderer.toneMappingExposure, set: (v) => { renderer.toneMappingExposure = v; } },
+      ],
+    },
     {
       title: '分层 Stepped', ctls: [
         { label: 'Steps 台阶数', min: 1, max: 8, step: 1, get: () => u.uSteps.value, set: (v) => { u.uSteps.value = v; } },
@@ -1226,6 +1232,7 @@ function createStylizedDebugPanel(opts: { scene: THREE.Scene; bloom: UnrealBloom
   copyBtn.addEventListener('click', () => {
     const v3 = (v: THREE.Vector3) => `new THREE.Vector3(${v.x.toFixed(3)}, ${v.y.toFixed(3)}, ${v.z.toFixed(3)})`;
     const snippet = [
+      `// renderer.toneMappingExposure = ${renderer.toneMappingExposure.toFixed(3)}`,
       '// —— stylizedUniforms 初值 ——',
       `uSteps: { value: ${u.uSteps.value} },`,
       `uStepSmooth: { value: ${u.uStepSmooth.value} },`,
@@ -1486,13 +1493,6 @@ interface LoadedModels {
   kk_minion: THREE.Group | null;
   kk_rogue: THREE.Group | null;
   kk_mage: THREE.Group | null;
-  // --- 皮肤试验：体素机器人（MagicaVoxel OBJ，静态网格，无动画）---
-  vx_trooper: THREE.Group | null;
-  vx_golem: THREE.Group | null;
-  vx_recon: THREE.Group | null;
-  vx_mecha: THREE.Group | null;
-  vx_companion: THREE.Group | null;
-  vx_arachnoid: THREE.Group | null;
   boss: THREE.Group | null;
   tombstone: THREE.Group | null;
   tree: THREE.Group | null;
@@ -1528,12 +1528,6 @@ const loadedModels: LoadedModels = {
   kk_minion: null,
   kk_rogue: null,
   kk_mage: null,
-  vx_trooper: null,
-  vx_golem: null,
-  vx_recon: null,
-  vx_mecha: null,
-  vx_companion: null,
-  vx_arachnoid: null,
   boss: null,
   tombstone: null,
   tree: null,
@@ -1597,11 +1591,11 @@ const KAYKIT_ANIM_NAME_MAP: Record<string, string> = {
 // =============================================================================
 // 怪物皮肤试验（运行时可切换：?skin= 或游戏内按 K 循环）
 // =============================================================================
-// 三套外观：original（现版）/ kaykit（KayKit 低多边形骷髅）/ voxel（体素机器人）。
-// 仅替换敌人「视觉模型」，core 逻辑/碰撞/数值不变。kaykit 与 voxel 均为静态网格
-// （无骨骼动画），切到这两套时敌人不播放走路/攻击动画，只随位置滑动——用于快速
+// 两套外观：original（现版）/ kaykit（KayKit 低多边形骷髅）。
+// 仅替换敌人「视觉模型」，core 逻辑/碰撞/数值不变。kaykit 为静态网格
+// （无骨骼动画），切到该套时敌人不播放走路/攻击动画，只随位置滑动——用于快速
 // 对比美术风格。映射覆盖全部 6 种敌人类型；KayKit 仅 4 个角色，做了合理复用。
-type EnemySkin = 'original' | 'kaykit' | 'voxel';
+type EnemySkin = 'original' | 'kaykit';
 
 const ENEMY_SKINS: Record<EnemySkin, Record<string, keyof LoadedModels>> = {
   original: {
@@ -1621,20 +1615,12 @@ const ENEMY_SKINS: Record<EnemySkin, Record<string, keyof LoadedModels>> = {
     necromancer: 'kk_mage',          // 法师召唤 → 法师
     gargoyle: 'kk_rogue',            // 飞行 → 盗贼
   },
-  voxel: {
-    skeleton_soldier: 'vx_trooper',  // 普通近战 → 机甲兵
-    zombie: 'vx_golem',              // 高 HP 坦克 → 机甲巨像
-    skeleton_archer: 'vx_recon',     // 远程 → 侦察机器人
-    skeleton_knight: 'vx_mecha',     // 精英 → 重型机甲
-    necromancer: 'vx_companion',     // 飘浮施法 → 浮游伴随机
-    gargoyle: 'vx_arachnoid',        // 飞行俯冲 → 蛛形机
-  },
 };
 
 let currentSkin: EnemySkin = (() => {
   try {
     const p = new URLSearchParams(window.location.search).get('skin');
-    if (p === 'kaykit' || p === 'voxel') return p;
+    if (p === 'kaykit') return p;
   } catch { /* SSR / no window */ }
   return 'original';
 })();
@@ -1644,7 +1630,7 @@ function getEnemyModelMap(): Record<string, keyof LoadedModels> {
 }
 
 // 把模型重定位为「脚底贴地(min.y=0) + 水平居中」。渲染路径只克隆+缩放、不再居中，
-// 依赖模型原点在脚底中心；KayKit / MagicaVoxel 导出原点不一定如此，这里统一对齐。
+// 依赖模型原点在脚底中心；KayKit 导出原点不一定如此，这里统一对齐。
 function alignModelToFeet(model: THREE.Object3D): THREE.Group {
   const box = new THREE.Box3().setFromObject(model);
   const center = box.getCenter(new THREE.Vector3());
@@ -1654,8 +1640,8 @@ function alignModelToFeet(model: THREE.Object3D): THREE.Group {
   return wrapper;
 }
 
-// 加载皮肤模型。KayKit 骷髅会额外加载 Rig_Medium 动画 + 手持武器（见函数末尾）；
-// 体素机器人仍是静态网格。失败仅告警，对应敌人回退到彩色盒子。
+// 加载皮肤模型。KayKit 骷髅会额外加载 Rig_Medium 动画 + 手持武器（见函数末尾）。
+// 失败仅告警，对应敌人回退到彩色盒子。
 async function loadSkinModels(): Promise<void> {
   const prepare = (root: THREE.Object3D, name: string): THREE.Group => {
     convertToToonMaterials(root, true); // 角色：开启网点
@@ -1678,15 +1664,6 @@ async function loadSkinModels(): Promise<void> {
     ['kk_rogue', '/models/skins/kaykit/Skeleton_Rogue.glb'],
     ['kk_mage', '/models/skins/kaykit/Skeleton_Mage.glb'],
   ];
-  // 体素：obj + mtl（mtl 内引用同名 png 调色板贴图）
-  const voxel: [keyof LoadedModels, string][] = [
-    ['vx_trooper', 'MechaTrooper'],
-    ['vx_golem', 'MechaGolem'],
-    ['vx_recon', 'ReconBot'],
-    ['vx_mecha', 'Mecha01'],
-    ['vx_companion', 'Companion-bot'],
-    ['vx_arachnoid', 'Arachnoid'],
-  ];
 
   // Rig_Medium 通用动画：两个 GLB 共用与角色完全一致的骨架（root/hips/spine/...），
   // clip 的轨道按骨名绑定，可直接在 KayKit 角色上播放。
@@ -1704,20 +1681,6 @@ async function loadSkinModels(): Promise<void> {
         console.log(`[Skin] Loaded ${key} (${path})`);
       } catch (err) {
         console.warn(`[Skin] Failed ${key} (${path}):`, err);
-      }
-    }),
-    ...voxel.map(async ([key, base]) => {
-      try {
-        const mtlLoader = new MTLLoader();
-        const mtl = await mtlLoader.loadAsync(`/models/skins/voxel/${base}.mtl`);
-        mtl.preload();
-        const objLoader = new OBJLoader();
-        objLoader.setMaterials(mtl);
-        const obj = await objLoader.loadAsync(`/models/skins/voxel/${base}.obj`) as THREE.Group;
-        loadedModels[key] = prepare(obj, key);
-        console.log(`[Skin] Loaded ${key} (${base})`);
-      } catch (err) {
-        console.warn(`[Skin] Failed ${key} (${base}):`, err);
       }
     }),
     // KayKit 手持武器（gltf + bin + 共享 skeleton_texture.png）
@@ -1841,7 +1804,7 @@ async function loadModels(): Promise<void> {
 
   await Promise.all(promises);
 
-  // 皮肤试验模型（KayKit / 体素机器人）—— 与 OBJ 道具并行加载
+  // 皮肤试验模型（KayKit）—— 与 OBJ 道具并行加载
   await Promise.all([loadObjItems(), loadSkinModels()]);
 }
 
@@ -2725,7 +2688,7 @@ export class GameScene {
     // 关实时方向光阴影（每帧多渲一遍全场景，手机最贵的一项）——改用脚下 blob 圆阴影。
     this.renderer.shadowMap.enabled = false;
     this.renderer.toneMapping = THREE.NeutralToneMapping; // 更亮、更保饱和（Q 版鲜艳调性，替代偏暗去饱和的 ACES）
-    this.renderer.toneMappingExposure = 1.0; // 曝光：关卡是深灰 greybox(反照率≤0.26)，曝光压到 1.0 让灰更扎实、不被抬成浅白
+    this.renderer.toneMappingExposure = 1.85; // 曝光：调参面板调定的整体亮度（Q 版鲜亮调性）
     this.renderer.outputColorSpace = THREE.SRGBColorSpace; // 显式 sRGB，保证饱和度正确还原
     this.renderer.domElement.style.display = 'block';
     this.container.appendChild(this.renderer.domElement);
@@ -2775,7 +2738,7 @@ export class GameScene {
         // 边缘触发：keydown 那一帧标记为 pressed；发送过 input 后会清零（见 handleInput）
         if (!e.repeat) this.interactKeyPressed = true;
       }
-      // 皮肤试验：K 键循环切换怪物外观（original → kaykit → voxel）
+      // 皮肤试验：K 键循环切换怪物外观（original → kaykit）
       if (e.code === 'KeyK' && !e.repeat) {
         this.cycleEnemySkin();
       }
@@ -2809,7 +2772,7 @@ export class GameScene {
 
     // Dev-only 风格化调参面板（按 ` 开关），生产构建不创建。
     if (import.meta.env.DEV) {
-      createStylizedDebugPanel({ scene: this.scene, bloom: this.bloomPass });
+      createStylizedDebugPanel({ scene: this.scene, bloom: this.bloomPass, renderer: this.renderer });
     }
 
     this.removeDisplayListener = installThreeHighDpi({
@@ -3277,7 +3240,7 @@ export class GameScene {
   // 皮肤试验：循环切换怪物外观并清空所有敌人可视对象，使下一帧按新映射重建。
   // 仅影响视觉（克隆模型/动画/对象池），不触碰 core 逻辑与敌人数值。
   private cycleEnemySkin(): void {
-    const order: EnemySkin[] = ['original', 'kaykit', 'voxel'];
+    const order: EnemySkin[] = ['original', 'kaykit'];
     currentSkin = order[(order.indexOf(currentSkin) + 1) % order.length];
 
     // 移除并回收当前所有敌人可视对象（含对象池里隐藏的、正在死亡的）
@@ -3296,7 +3259,6 @@ export class GameScene {
     const label: Record<EnemySkin, string> = {
       original: '原版怪物',
       kaykit: 'KayKit 骷髅（静态）',
-      voxel: '体素机器人（静态）',
     };
     this.showSkinToast(`怪物皮肤：${label[currentSkin]}  ·  按 K 切换`);
     console.log(`[Skin] Switched to "${currentSkin}"`);

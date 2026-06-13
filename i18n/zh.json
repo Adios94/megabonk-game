@@ -93,13 +93,13 @@
   "upgrade": {
     "title": "选择升级",
     "weapon": {
-      "sword": "武士刀",
+      "sword": "大剑",
       "sword_desc": "近战横扫周围敌人",
       "bone_bouncer": "弹射骨头",
       "bone_bouncer_desc": "向最近敌人发射弹跳骨头",
       "axe": "旋转飞斧",
       "axe_desc": "环绕玩家旋转的飞斧",
-      "bow": "左轮手枪",
+      "bow": "手枪",
       "bow_desc": "快速自动瞄准射击",
       "lightning_staff": "闪电法杖",
       "lightning_staff_desc": "释放连锁闪电攻击",
@@ -202,14 +202,6 @@
       "generic": "等级",
       "bondTier": "档位"
     }
-  },
-  "evolution": {
-    "title": "武器进化！",
-    "sword": "死刑执行者",
-    "axe": "狂战士之斧",
-    "bone_bouncer": "骨暴风",
-    "bow": "沙漠之鹰",
-    "lightning_staff": "雷神"
   },
   "bond": {
     "activate": "激活羁绊",

@@ -2384,10 +2384,10 @@ async function loadObjItems(): Promise<void> {
   // Load all weapon models in parallel — pass brighten=true for weapons only
   const [ax, sw, kat, bow, dag, ham, dar, darG, lstaff, fring, pbomb, vbook, rgun, sgun, pgun, sboots] = await Promise.all([
     loadFullModel('AxeModel', '/models/items/Axe_small.mtl', '/models/items/Axe_small.obj', 0.6, true),
-    loadFullModel('SwordModel', '/models/items/Sword.mtl', '/models/items/Sword.obj', 0.8, true),
+    loadFullModel('SwordModel', '/models/items/greatsword.mtl', '/models/items/greatsword.obj', 0.8, true),
     loadFullModel('KatanaModel', '/models/items/Sword_big.mtl', '/models/items/Sword_big.obj', 0.9, true),
-    // "bow" weapon is displayed in-game as a revolver — self-exported GLB w/ texture
-    loadTexturedGlbWeaponModel('BowModel', '/models/items/bow.glb', 0.7),
+    // "bow" weapon is displayed in-game as a pistol — self-exported GLB w/ texture
+    loadTexturedGlbWeaponModel('BowModel', '/models/items/pistol.glb', 0.7),
     loadFullModel('DaggerModel', '/models/items/Dagger.mtl', '/models/items/Dagger.obj', 0.4, true),
     loadFullModel('HammerModel', '/models/items/Hammer_Double.mtl', '/models/items/Hammer_Double.obj', 0.7, true),
     loadFullModel('DartModel', '/models/items/Dart.mtl', '/models/items/Dart.obj', 0.4, true),

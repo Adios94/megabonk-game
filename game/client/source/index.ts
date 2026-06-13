@@ -1203,6 +1203,7 @@ interface LoadedModels {
   // Quaternius Animated Monster Pack — 带骨骼动画 GLB
   monster_skeleton: THREE.Group | null;
   monster_bat: THREE.Group | null;
+  monster_dragon: THREE.Group | null;
   // 通用 ghost 模型，用作 necromancer 渲染（带 32 个小写命名 clip，加载时归一化）
   ghost: THREE.Group | null;
   boss: THREE.Group | null;
@@ -1235,6 +1236,7 @@ const loadedModels: LoadedModels = {
   zombie_arm: null,
   monster_skeleton: null,
   monster_bat: null,
+  monster_dragon: null,
   ghost: null,
   boss: null,
   tombstone: null,
@@ -1293,6 +1295,7 @@ async function loadModels(): Promise<void> {
     // （Skeleton_Idle / Bat_Flying 等），加载完后会做归一化（见 normalizeEnemyClips）
     ['monster_skeleton', '/models/monsters/Skeleton.glb'],
     ['monster_bat', '/models/monsters/Bat.glb'],
+    ['monster_dragon', '/models/monsters/Dragon.glb'],
     // ghost.glb：通用幽灵模型，clip 全小写（idle/walk/sprint/die...），加载时归一化为
     // Idle/Walk/Run/Death；用作 necromancer 渲染
     ['ghost', '/models/ghost.glb'],
@@ -1384,6 +1387,20 @@ function normalizeEnemyClips(modelKey: string, clips: THREE.AnimationClip[]): TH
       const alias = fallback.clone();
       alias.name = 'Idle';
       out.push(alias);
+      namesAdded.add('Idle');
+    }
+  }
+
+  // 飞行怪（Bat / Dragon 这类只有 Flying 没 Walk/Run 的）：把 Flying 同时注册成
+  // Walk / Run 别名，让 updateEnemyObjects 移动判定能直接命中而不必走 fallback。
+  if (namesAdded.has('Flying')) {
+    for (const name of ['Walk', 'Run']) {
+      if (!namesAdded.has(name)) {
+        const a = out.find((c) => c.name === 'Flying')!.clone();
+        a.name = name;
+        out.push(a);
+        namesAdded.add(name);
+      }
     }
   }
 
@@ -3009,7 +3026,7 @@ export class GameScene {
     const enemyModelMap: Record<string, keyof LoadedModels> = {
       skeleton_soldier: 'monster_skeleton', // 普通骷髅兵 → Quaternius Skeleton.glb
       zombie: 'zombie_basic',               // 僵尸(高HP) → Basic 僵尸（靠 enemyScales 放大表达"大而慢"）
-      skeleton_archer: 'zombie_arm',        // 弓手(远程) → 断臂僵尸（待补骷髅弓手）
+      skeleton_archer: 'monster_dragon',    // 远程攻击 → Quaternius Dragon.glb（飞行 + 远程吐息更贴合）
       skeleton_knight: 'zombie_chubby',     // 骑士(精英冲刺) → 胖僵尸(大型)
       necromancer: 'ghost',                 // 法师(召唤) → 通用 ghost.glb（飘浮形象更贴合）
       gargoyle: 'monster_bat',              // 飞行俯冲 → Quaternius Bat.glb
@@ -4506,7 +4523,7 @@ export class GameScene {
     const enemyModelMap: Record<string, keyof LoadedModels> = {
       skeleton_soldier: 'monster_skeleton',
       zombie: 'zombie_basic',
-      skeleton_archer: 'zombie_arm',
+      skeleton_archer: 'monster_dragon',
       skeleton_knight: 'zombie_chubby',
       necromancer: 'ghost',
       gargoyle: 'monster_bat',

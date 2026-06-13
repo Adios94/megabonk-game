@@ -15,7 +15,7 @@
 | 类别 | 已就位 | 仅程序化或风格不符 | 完全缺失 |
 |---|---|---|---|
 | 玩家角色 | 3 / 3 | — | — |
-| 敌人模型（语义匹配） | 4 / 6 | 2（僵尸贴皮：archer / knight） | — |
+| 敌人模型（语义匹配） | 5 / 6 | 1（僵尸贴皮：knight） | — |
 | Boss 模型 | 0 / 1（拿带枪机械敌凑数） | 1 | 1 |
 | 武器手持 / 弹幕模型 | 7 / 12 | 5 | — |
 | 拾取物 | 1 / 7（其余靠染色） | 6 | — |
@@ -44,16 +44,17 @@
 
 ---
 
-## 2. 敌人模型（P0 - 剩余 2 种待补）
+## 2. 敌人模型（P0 - 剩余 1 种待补）
 
-`core/data/enemies.ts` 定义 6 种敌人。skeleton_soldier / gargoyle 已用 Quaternius
-带动画 GLB，necromancer 已用通用 ghost.glb；剩余 2 种仍是 zombie 模型贴皮。
+`core/data/enemies.ts` 定义 6 种敌人。skeleton_soldier / skeleton_archer / gargoyle
+都用 Quaternius 带动画 GLB，necromancer 用通用 ghost.glb；只剩 skeleton_knight
+还是 zombie 贴皮。
 
 | 敌人 ID | 设定 | 当前用模型 | 应有形象 | 状态 |
 |---|---|---|---|---|
 | skeleton_soldier | 普通骷髅兵 | monsters/Skeleton.glb | 骷髅兵 | OK（带动画） |
 | zombie | 高 HP 慢速僵尸 | zombie_basic.gltf | （风格匹配，靠 enemyScales 放大暗示高 HP） | OK |
-| skeleton_archer | 远程弓手 | zombie_arm.gltf | 骷髅弓手 | P0（语义错位） |
+| skeleton_archer | 远程攻击 | monsters/Dragon.glb | 远程吐息（飞行 + Attack/Attack2 双击） | OK（用龙的吐息表达远程） |
 | skeleton_knight | 精英冲锋骑士 | zombie_chubby.gltf | 骷髅骑士（甲胄+大剑） | P0（语义错位） |
 | necromancer | 召唤型法师 | ghost.glb | 死灵法师（袍子+杖） | OK（飘浮形象贴合，32 个动画 clip） |
 | gargoyle | 飞行俯冲 | monsters/Bat.glb | 蝙蝠 / 石像鬼 | OK（带飞行/攻击/受击/死亡动画） |
@@ -63,16 +64,18 @@
 | 文件 | 用途 | 命名风格 | 归一化后可用 clip |
 |---|---|---|---|
 | public/models/monsters/Skeleton.glb | skeleton_soldier | `Skeleton_*` 前缀 | Attack, Death, Idle, Running(→Run 别名), Spawn |
-| public/models/monsters/Bat.glb | gargoyle | `Bat_*` 前缀 | Attack, Attack2, Death, Flying(→Idle 别名), Hit |
+| public/models/monsters/Bat.glb | gargoyle | `Bat_*` 前缀 | Attack, Attack2, Death, Flying(→Idle/Walk/Run 别名), Hit |
+| public/models/monsters/Dragon.glb | skeleton_archer | `Dragon_*` 前缀 | Attack, Attack2, Death, Flying(→Idle/Walk/Run 别名), Hit |
 | public/models/ghost.glb | necromancer | 全小写 | Idle, Walk, Sprint(→Run 别名), Die(→Death 别名), Jump, Fall, Attack-melee-right 等 32 条 |
-| 未挂：Dragon.glb / Slime.glb（Quaternius Pack） | 备用 | `Dragon_*` / `Slime_*` 前缀 | 同样规范，按需挂接 |
+| 未挂：Slime.glb（Quaternius Pack） | 备用 | `Slime_*` 前缀 | 同样规范，按需挂接 |
 
 > **加载与归一化**：所有 GLB 都走 `loadModels()` 的 GLTF 主队列；加载完成后
-> `normalizeEnemyClips()` 对 `monster_*` 和 `ghost` 模型做三步处理：
+> `normalizeEnemyClips()` 对 `monster_*` 和 `ghost` 模型做四步处理：
 > (1) strip 形如 `^[A-Za-z]+_` 的前缀（Skeleton_Idle → Idle）；
 > (2) 首字母大写化（idle → Idle、walk → Walk）；
-> (3) 别名补全：Running/Sprint → Run、Die → Death、Flying/Static/Walk/Run 之一 → Idle。
-> 让飞行怪和小写命名的模型在 windup / Idle 状态下不会卡 T-pose。
+> (3) 别名补全：Running/Sprint → Run、Die → Death、Flying/Static/Walk/Run 之一 → Idle；
+> (4) 飞行怪兜底：若模型有 Flying 但没 Walk/Run，把 Flying 同时注册成 Walk / Run，
+>    让 enemy 移动判定直接命中，不需走 fallback。
 >
 > **映射在两处**：`setupEnemyMeshes` 与 `updateEnemyObjects` 的 `enemyModelMap`，
 > 需要同步修改。

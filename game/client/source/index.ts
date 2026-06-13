@@ -1200,6 +1200,11 @@ interface LoadedModels {
   zombie_basic: THREE.Group | null;
   zombie_chubby: THREE.Group | null;
   zombie_arm: THREE.Group | null;
+  // Quaternius Animated Monster Pack — OBJ 静态模型（无骨骼动画，敌人渲染管线
+  // 会跳过 mixer 创建，显示为静止站姿；适合用作 skeleton_soldier / gargoyle 这种
+  // 在 zombie 模型语义上明显错位的种类）
+  monster_skeleton: THREE.Group | null;
+  monster_bat: THREE.Group | null;
   boss: THREE.Group | null;
   tombstone: THREE.Group | null;
   tree: THREE.Group | null;
@@ -1228,6 +1233,8 @@ const loadedModels: LoadedModels = {
   zombie_basic: null,
   zombie_chubby: null,
   zombie_arm: null,
+  monster_skeleton: null,
+  monster_bat: null,
   boss: null,
   tombstone: null,
   tree: null,
@@ -1314,6 +1321,48 @@ async function loadModels(): Promise<void> {
 
   // Load OBJ item models for pickups/projectiles
   await loadObjItems();
+
+  // Load OBJ monster models（Quaternius Animated Monster Pack 静态版）
+  await loadObjMonsters();
+}
+
+// =============================================================================
+// OBJ 敌人模型加载（用于覆盖 zombie 套件语义不符的种类）
+// =============================================================================
+// 与 loadModels() 的 GLTF 路径并行的辅助加载：把 OBJ + MTL 怪物模型也塞进
+// loadedModels，让 enemyModelMap 可以直接引用。OBJ 没有 AnimationClip，
+// updateEnemyObjects() 里 loadedAnimClips.get(key) 会得到 undefined，
+// 自动跳过 mixer 创建，敌人显示为静止站姿即可。
+async function loadObjMonsters(): Promise<void> {
+  const monsterPaths: [keyof LoadedModels, string, string][] = [
+    ['monster_skeleton', '/models/monsters/Skeleton.mtl', '/models/monsters/Skeleton.obj'],
+    ['monster_bat', '/models/monsters/Bat.mtl', '/models/monsters/Bat.obj'],
+  ];
+
+  await Promise.all(monsterPaths.map(async ([key, mtlPath, objPath]) => {
+    try {
+      const mtlLoader = new MTLLoader();
+      const mtl = await mtlLoader.loadAsync(mtlPath);
+      mtl.preload();
+      const objLoader = new OBJLoader();
+      objLoader.setMaterials(mtl);
+      const obj = await objLoader.loadAsync(objPath) as THREE.Group;
+      obj.name = `Model_${key}`;
+      convertToToonMaterials(obj);
+      obj.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const mesh = child as THREE.Mesh;
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+        }
+      });
+      loadedModels[key] = obj;
+      console.log(`[OBJ Monster] Loaded: ${key} (${objPath})`);
+    } catch (err) {
+      console.warn(`[OBJ Monster] Failed to load ${key} (${objPath}):`, err);
+      loadedModels[key] = null;
+    }
+  }));
 }
 
 // =============================================================================
@@ -2933,12 +2982,12 @@ export class GameScene {
 
     // Map enemy types to loaded models for geometry extraction
     const enemyModelMap: Record<string, keyof LoadedModels> = {
-      skeleton_soldier: 'zombie_basic',     // 普通步兵 → Basic僵尸
+      skeleton_soldier: 'monster_skeleton', // 普通骷髅兵 → Quaternius Skeleton.obj
       zombie: 'zombie_chubby',              // 僵尸(高HP) → 胖僵尸
-      skeleton_archer: 'zombie_arm',        // 弓手(远程) → 断臂僵尸
+      skeleton_archer: 'zombie_arm',        // 弓手(远程) → 断臂僵尸（待补骷髅弓手）
       skeleton_knight: 'zombie_chubby',     // 骑士(精英冲刺) → 胖僵尸(大型)
-      necromancer: 'zombie_basic',          // 法师(召唤) → Basic僵尸
-      gargoyle: 'zombie_arm',              // 石像鬼(飞行俯冲) → 断臂僵尸
+      necromancer: 'zombie_basic',          // 法师(召唤) → Basic僵尸（待补死灵法师）
+      gargoyle: 'monster_bat',              // 飞行俯冲 → Quaternius Bat.obj
     };
 
     // Scale per enemy type — zombie size variety (small/medium/large)
@@ -4428,13 +4477,14 @@ export class GameScene {
     }
 
     // Map enemy types to model keys
+    // 保持与 setupEnemyMeshes 的映射一致（skeleton_soldier / gargoyle 已切到 OBJ 怪物模型）
     const enemyModelMap: Record<string, keyof LoadedModels> = {
-      skeleton_soldier: 'zombie_basic',
+      skeleton_soldier: 'monster_skeleton',
       zombie: 'zombie_chubby',
       skeleton_archer: 'zombie_arm',
       skeleton_knight: 'zombie_chubby',
       necromancer: 'zombie_basic',
-      gargoyle: 'zombie_arm',
+      gargoyle: 'monster_bat',
     };
 
     const enemyScales: Record<string, number> = {

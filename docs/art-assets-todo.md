@@ -15,7 +15,7 @@
 | 类别 | 已就位 | 仅程序化或风格不符 | 完全缺失 |
 |---|---|---|---|
 | 玩家角色 | 3 / 3 | — | — |
-| 敌人模型（语义匹配） | 1 / 6 | 5（全用僵尸模型贴皮） | — |
+| 敌人模型（语义匹配） | 3 / 6 | 3（僵尸贴皮：archer / knight / necromancer） | — |
 | Boss 模型 | 0 / 1（拿带枪机械敌凑数） | 1 | 1 |
 | 武器手持 / 弹幕模型 | 7 / 12 | 5 | — |
 | 拾取物 | 1 / 7（其余靠染色） | 6 | — |
@@ -44,36 +44,49 @@
 
 ---
 
-## 2. 敌人模型（P0 - 整体重做）
+## 2. 敌人模型（P0 - 剩余 3 种待补）
 
-`core/data/enemies.ts` 定义 6 种敌人，但渲染层（`index.ts:2861`）把它们全映射到 3 个僵尸模型。**名字与形象严重不符**。
+`core/data/enemies.ts` 定义 6 种敌人。skeleton_soldier 与 gargoyle 已用 Quaternius
+Animated Monster Pack（OBJ 静态版）替换；剩余 3 种仍是 zombie 模型贴皮。
 
-| 敌人 ID | 设定 | 当前用模型 | 应有形象 | 优先级 |
+| 敌人 ID | 设定 | 当前用模型 | 应有形象 | 状态 |
 |---|---|---|---|---|
-| skeleton_soldier | 普通骷髅兵 | zombie_basic.gltf | 骷髅持盾兵 | P0 |
-| zombie | 高 HP 慢速僵尸 | zombie_chubby.gltf | （风格匹配） | — |
-| skeleton_archer | 远程弓手 | zombie_arm.gltf | 骷髅弓手 | P0 |
-| skeleton_knight | 精英冲锋骑士 | zombie_chubby.gltf | 骷髅骑士（甲胄+大剑） | P0 |
-| necromancer | 召唤型法师 | zombie_basic.gltf | 死灵法师（袍子+杖） | P0 |
-| gargoyle | 飞行俯冲 | zombie_arm.gltf | 石像鬼（翅膀+石质） | P0 |
+| skeleton_soldier | 普通骷髅兵 | monsters/Skeleton.obj | 骷髅兵（OBJ 静态版） | OK（无动画） |
+| zombie | 高 HP 慢速僵尸 | zombie_chubby.gltf | （风格匹配） | OK |
+| skeleton_archer | 远程弓手 | zombie_arm.gltf | 骷髅弓手 | P0（语义错位） |
+| skeleton_knight | 精英冲锋骑士 | zombie_chubby.gltf | 骷髅骑士（甲胄+大剑） | P0（语义错位） |
+| necromancer | 召唤型法师 | zombie_basic.gltf | 死灵法师（袍子+杖） | P0（语义错位） |
+| gargoyle | 飞行俯冲 | monsters/Bat.obj | 蝙蝠 / 石像鬼 | OK（无动画） |
 
-### 2.1 已在 public/ 但代码未引用的候选模型
+> ⚠️ Quaternius OBJ 没有 AnimationClip，`updateEnemyObjects()` 检测不到 clip 时
+> 不创建 mixer，对应敌人会显示为静止站姿。要补动画请用 Pack 里的 FBX 版本另开管线。
 
-可作为临时顶替方案直接挂上去：
+### 2.1 已接入的 OBJ 怪物（Quaternius Animated Monster Pack 静态版）
+
+| 文件 | 用途 | 备注 |
+|---|---|---|
+| public/models/monsters/Skeleton.obj + .mtl | skeleton_soldier | 单材质（Skeleton），纯色 |
+| public/models/monsters/Bat.obj + .mtl | gargoyle | 5 个子材质（Belly/Black/Eyes/Main/Nose），InstancedMesh 路径只取第一个 |
+| 未挂：Dragon.obj / Slime.obj（同 Pack） | 备用 | 还有 2 个怪物可以同样接入 |
+
+> 加载入口：`loadObjMonsters()`（GLTF 队列结束后并发跑）。映射在
+> `setupEnemyMeshes` 与 `updateEnemyObjects` 两处 `enemyModelMap`，需同步修改。
+
+### 2.2 已归档的备选模型（位于 public/models/_unused/）
+
+未接入但可作为后续替换候选：
 
 | 文件 | 可临时顶替 |
 |---|---|
-| public/models/_unused/skeleton.glb | skeleton_soldier / skeleton_archer |
+| public/models/_unused/skeleton.glb | skeleton_archer 备选（带骨骼，有动画） |
 | public/models/_unused/ghost.glb | necromancer 备选 |
 | public/models/_unused/pumpkin.glb | 万圣节季节皮肤 |
 | public/models/_unused/enemy_2legs.gltf | 远程机械敌 |
 | public/models/_unused/enemy_2legs_gun.gltf | 同上 |
-| public/models/_unused/enemy_flying.gltf | gargoyle 备选 |
-| public/models/_unused/enemy_flying_gun.gltf | gargoyle 远程版 |
+| public/models/_unused/enemy_flying.gltf | gargoyle 已改用 Bat.obj，此项可删 |
+| public/models/_unused/enemy_flying_gun.gltf | 同上 |
 | public/models/_unused/enemy_large.gltf | 精英 / 备 Boss |
 | public/models/_unused/zombie.glb | 重复（建议删） |
-
-> **接入位置**：`game/client/source/index.ts:2861-2868` 的 `enemyModelMap`。
 
 ---
 
@@ -357,8 +370,9 @@ public/textures/texture_sign.png
 
 | 资产文件夹 | 用途 |
 |---|---|
-| public/models/ | 角色 / 敌人 / 场景 GLTF/GLB（当前 26 个在用） |
+| public/models/ | 角色 / 敌人 / 场景 GLTF/GLB（当前 25 个在用，已删除 player_cyberpunk） |
 | public/models/_unused/ | 已归档：34 个未引用模型 / FBX 重复 / 旧版替换件 |
+| public/models/monsters/ | OBJ 怪物（Quaternius Monster Pack 静态版，skeleton_soldier / gargoyle 用） |
 | public/models/items/ | 武器 / 拾取物 OBJ + MTL（当前 22 个文件在用） |
 | public/models/items/_unused/ | 已归档：3 套未引用 OBJ + MTL（Bow_Wooden / Coin / Heart_Half） |
 | public/models/levels/ | 关卡白盒 GLB |

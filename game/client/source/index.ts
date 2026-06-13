@@ -2159,6 +2159,8 @@ let crystal3Geometry: THREE.BufferGeometry | null = null;
 let crystal4Geometry: THREE.BufferGeometry | null = null;
 let crystal5Geometry: THREE.BufferGeometry | null = null;
 let heartGeometry: THREE.BufferGeometry | null = null;
+let heartHalfGeometry: THREE.BufferGeometry | null = null;
+let coinGeometry: THREE.BufferGeometry | null = null;
 let boneGeometry: THREE.BufferGeometry | null = null;
 let axeModel: THREE.Group | null = null; // Full model with materials
 let swordModel: THREE.Group | null = null;
@@ -2206,9 +2208,11 @@ async function loadObjItems(): Promise<void> {
     }
   };
 
-  [crystalGeometry, heartGeometry, boneGeometry, crystal2Geometry, crystal3Geometry, crystal4Geometry, crystal5Geometry] = await Promise.all([
+  [crystalGeometry, heartGeometry, heartHalfGeometry, coinGeometry, boneGeometry, crystal2Geometry, crystal3Geometry, crystal4Geometry, crystal5Geometry] = await Promise.all([
     loadAndNormalize('/models/items/Crystal1.obj', 0.4),
     loadAndNormalize('/models/items/Heart.obj', 0.5),
+    loadAndNormalize('/models/items/Heart_Half.obj', 0.42),
+    loadAndNormalize('/models/items/Coin.obj', 0.45),
     loadAndNormalize('/models/items/Bone.obj', 0.5),
     loadAndNormalize('/models/items/Crystal2.obj', 0.4),
     loadAndNormalize('/models/items/Crystal3.obj', 0.4),
@@ -2469,7 +2473,7 @@ export class GameScene {
   private axeObjects: Map<number, THREE.Object3D> = new Map(); // axe projectile id → cloned model
   private weaponObjects: Map<number, THREE.Object3D> = new Map(); // other weapon projectiles → cloned model
   private areaEffectObjects: Map<number, THREE.Object3D> = new Map(); // area effect id → mesh (gas/ripple/scorch/beam)
-  private pickupMesh!: THREE.InstancedMesh;
+  private pickupMeshes: Map<PickupType, THREE.InstancedMesh> = new Map();
   private consumableSprites: Map<number, THREE.Sprite> = new Map();
   private goldMoteTexture!: THREE.Texture;
   private goldMoteSprites: Map<number, THREE.Sprite> = new Map();
@@ -3282,14 +3286,28 @@ export class GameScene {
   }
 
   private setupPickupMesh(): void {
-    // Use Crystal OBJ geometry if loaded, otherwise fallback to octahedron
-    const geo = crystalGeometry ?? new THREE.OctahedronGeometry(0.35, 0);
-    const mat = new THREE.MeshToonMaterial({ color: 0x00ff66, gradientMap: toonGradientMap });
-    this.pickupMesh = new THREE.InstancedMesh(geo, mat, MAX_PICKUPS);
-    this.pickupMesh.name = 'Pickups';
-    this.pickupMesh.count = 0;
-    this.pickupMesh.frustumCulled = false;
-    this.scene.add(this.pickupMesh);
+    // 每种拾取物用各自的 geometry（一个 InstancedMesh / 类型），颜色仍走 instanceColor 染色。
+    // xp 四档共用 Crystal1（靠颜色区分阶级）；silver/health/health_small 用专属 OBJ 模型。
+    const fallback = new THREE.OctahedronGeometry(0.35, 0);
+    const xpGeo = crystalGeometry ?? fallback;
+    const geomFor: Record<PickupType, THREE.BufferGeometry> = {
+      xp_green: crystalGeometry ?? fallback,
+      xp_blue: crystal2Geometry ?? xpGeo,
+      xp_purple: crystal3Geometry ?? xpGeo,
+      xp_orange: crystal4Geometry ?? xpGeo,
+      silver: coinGeometry ?? xpGeo,
+      health: heartGeometry ?? xpGeo,
+      health_small: heartHalfGeometry ?? heartGeometry ?? xpGeo,
+    };
+    for (const type of Object.keys(geomFor) as PickupType[]) {
+      const mat = new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: toonGradientMap });
+      const mesh = new THREE.InstancedMesh(geomFor[type], mat, MAX_PICKUPS);
+      mesh.name = `Pickups_${type}`;
+      mesh.count = 0;
+      mesh.frustumCulled = false;
+      this.scene.add(mesh);
+      this.pickupMeshes.set(type, mesh);
+    }
   }
 
   private setupGoldMoteMesh(): void {
@@ -5212,10 +5230,18 @@ export class GameScene {
   }
 
   private renderPickups(pickups: PickupState[]): void {
-    let count = 0;
     const time = performance.now() * 0.004; // Faster spin
+
+    // 每个类型 mesh 独立计数（同 geometry 的 xp 四档也各自一个 mesh）
+    const counts: Map<THREE.InstancedMesh, number> = new Map();
+    for (const mesh of this.pickupMeshes.values()) counts.set(mesh, 0);
+
     for (const pickup of pickups) {
-      if (count >= MAX_PICKUPS) break;
+      const mesh = this.pickupMeshes.get(pickup.type);
+      if (!mesh) continue;
+      let count = counts.get(mesh)!;
+      if (count >= MAX_PICKUPS) continue;
+
       // Larger bobbing amplitude (0.3) for more visual pop
       const bob = Math.sin(time * 1.5 + pickup.id) * 0.3;
       this._dummy.position.set(pickup.x, pickup.y + 0.2 + bob, pickup.z);
@@ -5229,15 +5255,18 @@ export class GameScene {
       // Faster spin for more visual energy
       this._dummy.rotation.set(0, time * 2 + pickup.id, 0);
       this._dummy.updateMatrix();
-      this.pickupMesh.setMatrixAt(count, this._dummy.matrix);
+      mesh.setMatrixAt(count, this._dummy.matrix);
 
       this._tempColor.setHex(PICKUP_COLORS[pickup.type] ?? 0x44ff44);
-      this.pickupMesh.setColorAt(count, this._tempColor);
-      count++;
+      mesh.setColorAt(count, this._tempColor);
+      counts.set(mesh, count + 1);
     }
-    this.pickupMesh.count = count;
-    this.pickupMesh.instanceMatrix.needsUpdate = true;
-    if (this.pickupMesh.instanceColor) this.pickupMesh.instanceColor.needsUpdate = true;
+
+    for (const [mesh, count] of counts) {
+      mesh.count = count;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
   }
 
   private renderGoldMotes(goldMotes: GoldMoteState[]): void {

@@ -892,7 +892,6 @@ function createLanguageSwitcherButton(): HTMLButtonElement | null {
   return btn;
 }
 
-const GROUND_SIZE = 120;
 const DAMAGE_NUM_POOL_SIZE = 30;
 
 // =============================================================================
@@ -1414,19 +1413,18 @@ function normalizeEnemyClips(modelKey: string, clips: THREE.AnimationClip[]): TH
 //     spawn_player / spawn_altar / spawn_chest / spawn_enemy_*
 //     其它    → 视觉模型（直接随场景渲染）
 //
-// === 双文件模式（推荐生产用）===
-//   /models/levels/level_${name}.glb         视觉高模（玩家看到的关卡）
-//   /models/levels/level_${name}_col.glb     碰撞低模（只含 col_/wall_/climb_/ramp_/spawn_*）
+// === 双文件模式（生产唯一模式）===
+//   /models/levels/level_${name}.glb         视觉高模（玩家看到的关卡，可缺）
+//   /models/levels/level_${name}_col.glb     碰撞低模（必须，只含 col_/wall_/climb_/ramp_/spawn_*）
 //
 //   - 双文件都存在 → 视觉用 visual 文件，碰撞 100% 来自 col 文件（视觉文件里的 col_*
 //     prefix 会被忽略，避免双源冲突）
-//   - 只有 visual  → 不启用关卡逻辑，避免误读视觉 GLB 里的旧 spawn_* Empty
 //   - 只有 col     → 灰盒/纯碰撞测试，col 同时充当视觉
-//   - 都不在       → 回退到内置 Neon Crucible
+//   - 缺 col       → boot 直接抛错（没有兜底，没有内置 arena）
 
 const DEFAULT_LEVEL_NAME = 'whitebox';
 
-/** 已加载的关卡（数据 + 用于渲染的场景）。null = 用内置硬编码 arena。 */
+/** 已加载的关卡（数据 + 用于渲染的场景）。bootGameClient 成功后保证非 null。 */
 let loadedLevel: { data: LevelData; scene: THREE.Object3D } | null = null;
 
 const _box = new THREE.Box3();
@@ -1664,14 +1662,11 @@ function parseLevelGltf(root: THREE.Object3D): LevelData {
 }
 
 /**
- * 尝试加载关卡 glb。支持「双文件模式」：
- *   - level_${name}.glb       视觉高模（必须，缺则尝试只用 col）
- *   - level_${name}_col.glb   碰撞低模（关卡逻辑 / spawn_* 只从这里解析）
+ * 加载唯一关卡 glb。强制双文件模式：
+ *   - level_${name}.glb       视觉高模（缺则用 col 当视觉，纯灰盒）
+ *   - level_${name}_col.glb   碰撞低模（必须，关卡逻辑 / spawn_* 只从这里解析）
  *
- * 碰撞文件缺失时回退到内置 arena，避免视觉 GLB 里的旧 Empty 影响逻辑。
- *
- * 生产双文件：导出视觉 level_whitebox.glb + 碰撞 level_whitebox_col.glb；
- * 视觉文件里的 col_/wall_/climb_/ramp_/spawn_* 一律不参与逻辑。
+ * 碰撞文件缺失 = 致命错误，直接抛异常让 boot 挂掉。激进方案下不再有内置 arena 兜底。
  */
 async function tryLoadLevel(name: string = DEFAULT_LEVEL_NAME): Promise<void> {
   const visualPath = `/models/levels/level_${name}.glb`;
@@ -1688,11 +1683,10 @@ async function tryLoadLevel(name: string = DEFAULT_LEVEL_NAME): Promise<void> {
 
   if (!colScene) {
     loadedLevel = null;
-    console.warn(
-      `[Level] Missing collision level ${colPath}; using built-in arena. ` +
-      `Spawn/collision markers are never read from ${visualPath}.`,
+    throw new Error(
+      `[Level] Failed to load collision level ${colPath}. ` +
+      `游戏没有内置 arena 兜底，请确认文件存在于 public/models/levels/。`,
     );
-    return;
   }
 
   // 决定视觉源 / 碰撞源：
@@ -2442,16 +2436,15 @@ export class GameScene {
     this.scene.add(this.groundMesh);
 
     // =========================================================================
-    // 2. Build arena — loaded level (whitebox) if present, else built-in arena
+    // 2. Mount loaded level (whitebox). 缺关卡走不到这里 —— main() 会先抛错。
     // =========================================================================
-    if (loadedLevel) {
-      const levelScene = cloneSkeleton(loadedLevel.scene) as THREE.Object3D;
-      levelScene.name = 'LevelRoot';
-      this.scene.add(levelScene);
-      this.cameraOccluders.push(levelScene); // 加载关卡整根作为镜头遮挡目标
-    } else {
-      this.buildArena();
+    if (!loadedLevel) {
+      throw new Error('[Scene] loadedLevel is null — level GLB failed to load before scene setup.');
     }
+    const levelScene = cloneSkeleton(loadedLevel.scene) as THREE.Object3D;
+    levelScene.name = 'LevelRoot';
+    this.scene.add(levelScene);
+    this.cameraOccluders.push(levelScene);
 
     // 把收集到的静态遮挡物交给镜头做碰撞推镜
     this.cameraOrbit.setOccluders(this.cameraOccluders);
@@ -3355,8 +3348,7 @@ export class GameScene {
    *   - 品红 spawn_player/boss/altar/chest 标记球
    *
    * 数据源：客户端 `loadedLevel.data`（LevelLoader 解析的 LevelData）。
-   * 没加载关卡时（默认 Neon Crucible）打印提示后跳过 —— Neon Crucible 的
-   * col_ 矩形定义在 core/collision.ts 内置，客户端可以加载默认场景肉眼校对。
+   * 走到这里时 loadedLevel 必非 null（boot 失败会先抛错）。
    */
   debugToggleCollisionViz(): boolean {
     if (this.collisionDebugGroup) {
@@ -3364,9 +3356,8 @@ export class GameScene {
       this.collisionDebugGroup.visible = this.collisionDebugVisible;
       return this.collisionDebugVisible;
     }
-    // 首次启用：lazy 构建
     if (!loadedLevel) {
-      console.warn('[GM] 当前是内置 Neon Crucible（无 LevelData）。要可视化关卡碰撞，请用 ?level 加载白盒。');
+      console.warn('[GM] loadedLevel 为空（理论上不该发生）。');
       return false;
     }
     this.collisionDebugGroup = this.buildCollisionDebugGroup(loadedLevel.data);
@@ -4233,14 +4224,14 @@ export class GameScene {
       gargoyle: 'monster_bat',
     };
 
-    // 目标世界高度（米）—— 模型按实际高度归一化后缩放到此值。参考玩家身高 1.8。
+    // 目标世界高度（米）—— 模型按实际高度归一化后缩放到此值。整体比玩家(1.8)矮一截以凸显角色（约 ×0.8）。
     const enemyScales: Record<string, number> = {
-      skeleton_soldier: 1.7,   // 普通骷髅兵 — 与玩家相近
-      zombie: 1.9,             // 高 HP 僵尸 — 略高壮的坦克
-      skeleton_archer: 1.7,    // 龙 — 远程飞行
-      skeleton_knight: 2.6,    // 精英骷髅 — 明显更大
-      necromancer: 1.7,        // 法师 — 与玩家相近
-      gargoyle: 1.2,           // 蝙蝠 — 小型飞行
+      skeleton_soldier: 1.36,  // 普通骷髅兵 — 略矮于玩家
+      zombie: 1.52,            // 高 HP 僵尸 — 略高壮的坦克
+      skeleton_archer: 1.36,   // 龙 — 远程飞行
+      skeleton_knight: 2.08,   // 精英骷髅 — 明显更大
+      necromancer: 1.36,       // 法师 — 略矮于玩家
+      gargoyle: 0.96,          // 蝙蝠 — 小型飞行
     };
 
     // Update or create objects for each alive enemy
@@ -9938,15 +9929,8 @@ async function main(): Promise<void> {
   });
 
   await loadModels();
-  // 白盒 GLB 现在是正式关卡 —— 默认加载（不再需要 ?level）。
-  //   - `?level=foo` 加载 level_foo.glb（会同时探测 level_foo_col.glb 碰撞低模，见 tryLoadLevel）。
-  //   - `?arena`   调试逃生口：跳过 GLB，强制回退到程序化竞技场 buildArena。
-  // 注：tryLoadLevel 失败（文件缺失/解析错）时 loadedLevel=null → setupGround 自动回退竞技场。
-  const params = new URLSearchParams(location.search);
-  if (!params.has('arena')) {
-    const name = params.get('level') || DEFAULT_LEVEL_NAME;
-    await tryLoadLevel(name);
-  }
+  // 唯一关卡：whitebox。激进方案下 URL 参数全部废弃，加载失败直接抛错。
+  await tryLoadLevel();
 
   showMainMenu();
 }
@@ -10005,8 +9989,6 @@ GM Commands (window.__gm):
   .testLightning()    — 在玩家头顶劈一道电（VFX 测试）
   .showCollision()    — 切换碰撞盒可视化（绿 col_ / 红 wall_ /
                         蓝 climb_ / 黄 ramp_ / 品红 spawn_*）
-                        ⚠️ 默认 Neon Crucible 没有 LevelData，需要 ?level
-                        加载关卡才能看到
       `);
     },
   };

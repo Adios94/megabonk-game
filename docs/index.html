@@ -2931,13 +2931,9 @@ projectiles: getTerrainHeightAt(engine.geo, ...) // 软虚空保底</code></pre>
     <tr><td>Gargoyle</td><td>固定 y=3 飞行</td><td>无（飞越所有阻挡）</td><td>不适用</td></tr>
   </table>
 
-  <h3>关卡白盒 opt-in</h3>
-  <p>默认进游戏走内置 <strong>Neon Crucible</strong>（PR #7 之前的硬编码 4 层平台）。要测试 Blender 导出的关卡：</p>
-  <pre><code># 加载 public/models/levels/level_whitebox.glb
-http://localhost:1513/?level
-
-# 加载 public/models/levels/level_foo.glb
-http://localhost:1513/?level=foo</code></pre>
+  <h3>关卡加载</h3>
+  <p>游戏启动时无条件加载 <code>public/models/levels/level_whitebox.glb</code> + <code>level_whitebox_col.glb</code>，
+  不再有 URL 参数后门，也不再有内置 Neon Crucible 兜底。文件缺失 boot 会直接抛错。</p>
   <p>关卡命名约定见 <a href="https://github.com/Adios94/megabonk-game/blob/master/level-editor/WHITEBOX_SPEC.md">level-editor/WHITEBOX_SPEC.md</a>（前缀：<code>col_</code> / <code>wall_</code> / <code>climb_</code> / <code>ramp_</code> / <code>spawn_*</code>）。</p>
 
   <h3>双文件模式：视觉高模 + 碰撞低模</h3>
@@ -2950,9 +2946,8 @@ http://localhost:1513/?level=foo</code></pre>
   <table>
     <tr><th>文件状态</th><th>mode</th><th>视觉来源</th><th>碰撞来源</th></tr>
     <tr><td>两个都在</td><td><code>two-file</code></td><td><code>level_${name}.glb</code></td><td><code>level_${name}_col.glb</code></td></tr>
-    <tr><td>只有 visual</td><td><code>visual-only</code></td><td><code>level_${name}.glb</code></td><td>同源解析（向后兼容）</td></tr>
     <tr><td>只有 col</td><td><code>col-only</code></td><td><code>level_${name}_col.glb</code></td><td>同上（纯灰盒）</td></tr>
-    <tr><td>都不在</td><td>—</td><td colspan="2">回退内置 Neon Crucible</td></tr>
+    <tr><td>缺 col</td><td>—</td><td colspan="2">boot 抛错（没有兜底）</td></tr>
   </table>
   <p>双文件模式下，视觉文件里的 <code>col_/wall_/climb_/ramp_/spawn_*</code> 会被<strong>忽略</strong>（避免双源冲突），
   碰撞 100% 来自 <code>_col.glb</code>。控制台会打印 <code>[Level] Loaded (mode) ...</code> 提示当前模式。</p>
@@ -2980,7 +2975,7 @@ http://localhost:1513/?level=foo</code></pre>
 
   <h3>GM 调试：碰撞盒可视化</h3>
   <p>关卡设计师调白盒时可以打开 wireframe 叠加层，肉眼校对几何与 col_/wall_ 数据是否对齐：</p>
-  <pre><code>// 浏览器控制台（先加 ?level 进游戏）
+  <pre><code>// 浏览器控制台
 window.__gm.showCollision()</code></pre>
   <table>
     <tr><th>颜色</th><th>含义</th></tr>
@@ -2990,7 +2985,6 @@ window.__gm.showCollision()</code></pre>
     <tr><td><span style="color:#fc0">黄</span></td><td><code>ramp_</code> 可行走斜坡</td></tr>
     <tr><td><span style="color:#f3f">品红球</span></td><td><code>spawn_player / boss / altar / chest</code> 标记</td></tr>
   </table>
-  <p style="color: var(--dim); font-size: 13px;">注：默认 Neon Crucible 没有 LevelData，可视化命令在那里会 warn 跳过；切到 <code>?level</code> 加载白盒后才会生效。</p>
 
   <h3>测试覆盖</h3>
   <ul>
@@ -3128,7 +3122,7 @@ window.__gm.testLightning()    // 在玩家头顶劈一道电（VFX 测试）</c
   <table>
     <tr><th>名称</th><th>文件</th><th>渲染对象</th></tr>
     <tr><td><code>player_george / player_stan / player_leela</code></td><td><code>player_*.gltf</code></td><td>三个玩家角色，按 <code>CHARACTER_MODELS</code> 切换</td></tr>
-    <tr><td><code>zombie_basic</code></td><td><code>zombie_basic.gltf</code></td><td>zombie（其余敌人已换专属模型：monster_skeleton / monster_dragon / monster_bat / ghost）</td></tr>
+    <tr><td><code>zombie_basic</code></td><td><code>zombie_basic.gltf</code></td><td>zombie（其余敌人已换专属模型：monster_skeleton / monster_knight / monster_dragon / monster_bat / ghost）</td></tr>
     <tr><td><code>boss</code></td><td><code>enemy_large_gun.gltf</code></td><td>Boss</td></tr>
   </table>
 

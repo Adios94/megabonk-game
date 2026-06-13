@@ -209,19 +209,16 @@ tryMoveHorizontally(geo, oldX, oldZ, desiredX, desiredZ, feetY, opts)
 | Projectile | vy 重力 + clamp ≥ terrainY+0.1 | 无（穿墙） | 同上 |
 | Gargoyle | 固定 y=3 | 飞越所有阻挡 | 不适用 |
 
-**关卡白盒 opt-in：**
+**关卡加载：**
 
-```bash
-http://localhost:1513/                 # 默认 Neon Crucible
-http://localhost:1513/?level           # public/models/levels/level_whitebox.glb
-http://localhost:1513/?level=foo       # public/models/levels/level_foo.glb
-```
+游戏启动时无条件加载 `public/models/levels/level_whitebox.glb` + `level_whitebox_col.glb`。
+文件缺失 boot 直接抛错（没有内置 arena 兜底）。
 
 关卡命名约定见 `level-editor/WHITEBOX_SPEC.md`（前缀：`col_` / `wall_` / `climb_` / `ramp_` / `spawn_*`）。
 
 **测试覆盖：**
 
-- `systems/__tests__/collision.test.ts` —— 4 API × 内置/加载关卡/边界/实例隔离
+- `systems/__tests__/collision.test.ts` —— 4 API × 内置基线 / 加载关卡 / 边界 / 实例隔离
 - `systems/__tests__/horizontalMove.test.ts` —— helper 4 path fallback
 - `ai/__tests__/_move.test.ts` —— 敌人接入 wall_ 集成
 

@@ -1,7 +1,7 @@
 # MegaBonk 关卡设计 Metric 速查手册
 
 > 本手册基于项目代码静态扫描自动生成，所有数值标注来源文件与变量名。  
-> 扫描范围：`game/core/source/config.ts`、`game/core/source/GameInstance.ts`、`game/core/source/types.ts`、`game/core/source/physics.ts`、`game/client/source/index.ts`、`level-editor/LEVEL_DESIGN.md`、`level-editor/WORKFLOW.md`。  
+> 扫描范围：`game/core/source/config.ts`、`game/core/source/GameInstance.ts`、`game/core/source/types.ts`、`game/core/source/physics.ts`、`game/client/source/index.ts`、`level-editor/WORKFLOW.md`、`level-editor/WHITEBOX_SPEC.md`。  
 > 单位约定：长度/距离 = 世界单位（unit），时间 = 秒（s），速度 = 单位/秒，重力 = 单位/秒²。
 
 ---
@@ -34,7 +34,6 @@
 | 跳跃达到峰值用时 | ≈ 0.333 | 秒 | 推导 `v/g=6/18` | — |
 | 跳跃落地总时间 | ≈ 0.667 | 秒 | 推导 `2v/g` | — |
 
-> ⚠️ 注意：`LEVEL_DESIGN.md` 第 128 行写的是「力=8, 重力=20, 高度≈1.6」，与当前 `config.ts` 实际值 **不一致**，应以 `config.ts` 为准。
 
 ### 1.3 兔子跳（Bunny Hop）
 
@@ -44,7 +43,6 @@
 | 兔子跳跳跃力倍率 | 1.2× | — | `config.ts` L27 | `BUNNY_HOP_BONUS`（应用为 `JUMP_FORCE * 1.2 = 7.2`） |
 | **理论兔子跳峰值高度** | **≈ 1.44** | 单位 | 推导 `(7.2)²/(2*18)` | 仍 **无法** 直接跳上 y=2 平台，必须借助坡道 |
 
-> ⚠️ 注意：`LEVEL_DESIGN.md` 写的 ×1.3 / 高度≈2.1 与代码 ×1.2 / 1.44 不符；以 `config.ts` 为准。
 
 ### 1.4 滑铲（Slide）
 
@@ -89,7 +87,7 @@
 
 | 参数 | 值 | 单位 | 来源文件 | 变量名 / 说明 |
 |------|----|----|---------|-------------|
-| 地图主尺寸 `MAP_SIZE` | 120 | 单位 | `config.ts` L3 | `MAP_SIZE = 120`；客户端镜像值 `GROUND_SIZE = 120`（`index.ts` L195） |
+| 地图主尺寸 `MAP_SIZE` | 120 | 单位 | `config.ts` L3 | `MAP_SIZE = 120`（关卡 GLB 内的 `col_` 应控制在 ±55 内） |
 | 地图半边长 | 60 | 单位 | 推导 `MAP_SIZE/2` | — |
 | 玩家移动边界（X / Z） | ±60 | 单位 | `physics.ts` L28-30 | `applyMovement3D` 中 `halfMap = mapSize * 0.5` |
 | 敌人移动边界（X / Z） | ±65 | 单位 | `GameInstance.ts` L1014 | `halfMap = (mapSize + 10) * 0.5 = 65`（敌人可比玩家多走 5 单位） |
@@ -99,8 +97,6 @@
 | Boss 生成位置 | (0, 0, −36) | 单位 | `GameInstance.ts` L2359 | `z: -this.config.mapSize * 0.3 = -36`（北走廊中段） |
 | 传送器生成距离（与玩家） | 25 ~ 40 | 单位 | `GameInstance.ts` L1873 | `distance = 25 + Math.random()*15` |
 | 传送器最远位置（夹紧） | ±48 | 单位 | `GameInstance.ts` L1876 | `halfMap = mapSize * 0.4 = 48` |
-| 客户端围栏覆盖范围 | ±60 | 单位 | `index.ts` L759, 898-905 | `HALF = GROUND_SIZE / 2 = 60` |
-| 围栏摆放间距 | 5 | 单位 | `index.ts` L897 | `fenceSpacing = 5` |
 
 ---
 
@@ -110,19 +106,19 @@
 
 | 模型 key | 文件 | 大约尺寸（未缩放） | 来源 |
 |---------|------|-----------------|------|
-| `platform_4x4` | `platform_4x4_full.gltf` | 4×4 | `LEVEL_DESIGN.md` L20, `WORKFLOW.md` L213 |
-| `platform_4x4` 别名 | `platform_4x4.gltf` | 4×4 | `LEVEL_DESIGN.md` L21 |
-| `platform_4x2` | `platform_4x2.gltf` | 4×2 | `LEVEL_DESIGN.md` L22 |
-| `platform_2x2` | `platform_2x2.gltf` | 2×2 | `LEVEL_DESIGN.md` L23 |
-| `platform_2x1` | `platform_2x1.gltf` | 2×1 | `LEVEL_DESIGN.md` L24 |
-| `platform_1x1` | `platform_1x1.gltf` | 1×1 | `LEVEL_DESIGN.md` L25 |
-| `platform_4x1` | `platform_4x1.gltf` | 4×1 | `LEVEL_DESIGN.md` L26 |
+| `platform_4x4` | `platform_4x4_full.gltf` | 4×4 | `WORKFLOW.md` L213, `index.ts` `loadModels()` |
+| `platform_4x4` 别名 | `platform_4x4.gltf` | 4×4 | `index.ts` `loadModels()` |
+| `platform_4x2` | `platform_4x2.gltf` | 4×2 | 同上 |
+| `platform_2x2` | `platform_2x2.gltf` | 2×2 | 同上 |
+| `platform_2x1` | `platform_2x1.gltf` | 2×1 | 同上 |
+| `platform_1x1` | `platform_1x1.gltf` | 1×1 | 同上 |
+| `platform_4x1` | `platform_4x1.gltf` | 4×1 | 同上 |
 
 ### 3.2 `getTerrainHeight()` 碰撞矩形格式
 
 | 字段 | 含义 | 单位 | 来源 |
 |-----|------|------|------|
-| `centerX` | 矩形中心 X | 单位 | `GameInstance.ts` L518 / `LEVEL_DESIGN.md` L84 |
+| `centerX` | 矩形中心 X | 单位 | `core/systems/collision.ts` (CollisionRect) |
 | `centerZ` | 矩形中心 Z | 单位 | 同上 |
 | `halfWidth` | X 方向半宽（**实际宽度 = 2 × halfWidth**） | 单位 | 同上 |
 | `halfDepth` | Z 方向半深（**实际深度 = 2 × halfDepth**） | 单位 | 同上 |
@@ -376,12 +372,12 @@
 | `platform_4x2` | 80 | 走廊 / 过道 |
 | `platform_2x2` / `platform_1x1` | 40 | 小平台 |
 | `support` / `support_long` | 100 | 结构支撑 |
-| `fence_platform` | 150 | 围栏（来源 `LEVEL_DESIGN.md` L292 与 WORKFLOW 一致） |
+| `fence_platform` | 150 | 围栏（来源 `WORKFLOW.md`） |
 | `light_street` | 40 | 中等复杂度 |
 | `sign_1` / `sign_2` | 20 | 有纹理 |
 | `ac_unit` / `pipe` | 60 | 小装饰 |
 | **单关卡总实例上限** | **< 800** | 超过应合并几何或分区 |
-| 预期 Draw call | 约 15-20 | InstancedMesh 合并后（`LEVEL_DESIGN.md` L293） |
+| 预期 Draw call | 约 15-20 | InstancedMesh 合并后（`WORKFLOW.md` 性能预算） |
 
 ### 7.3 优化策略一览
 
@@ -394,86 +390,10 @@
 
 ---
 
-## 8. 现有关卡 "Neon Crucible" 数值
+## 8. 现有关卡基线（core 端 `NEON_CRUCIBLE_GEOMETRY` fallback）
 
-### 8.1 矩形总数与层级分布（25 个，来源 `GameInstance.ts` L518-580 / `LEVEL_DESIGN.md` L211-249）
-
-| 层级 | 高度 | 矩形数 | 用途 |
-|-----|------|------|------|
-| 地面层 | y=0 | 13 | 竞技场 + 4 走廊 + 4 对角填充 + 4 走廊端点 |
-| 环形层 | y=2 | 8 | 4 站点 + 4 对角连接点 |
-| 瞭望塔 | y=4 | 4 | 四方向高地 |
-| 巢穴 | y=6 | 4 | 对角小平台 |
-| **总计** | — | **29** | 注：手册第 211 行说 25 个，实际代码为 13+8+4+4=29 个 |
-
-### 8.2 详细碰撞矩形清单（按 `[centerX, centerZ, halfW, halfD, h]`）
-
-#### 地面层（y=0）
-
-| 区域 | 矩形 | 实际尺寸 (W×D) | 来源 |
-|-----|------|-------------|------|
-| 中央竞技场 | `[0, 0, 15, 15, 0]` | 30 × 30 | `GameInstance.ts` L524 |
-| 北走廊 | `[0, -30, 6, 15, 0]` | 12 × 30 | L527 |
-| 南走廊 | `[0, 30, 6, 15, 0]` | 12 × 30 | L529 |
-| 东走廊 | `[30, 0, 15, 6, 0]` | 30 × 12 | L531 |
-| 西走廊 | `[-30, 0, 15, 6, 0]` | 30 × 12 | L533 |
-| 对角填充 NE | `[15, -15, 5, 5, 0]` | 10 × 10 | L536 |
-| 对角填充 NW | `[-15, -15, 5, 5, 0]` | 10 × 10 | L537 |
-| 对角填充 SE | `[15, 15, 5, 5, 0]` | 10 × 10 | L538 |
-| 对角填充 SW | `[-15, 15, 5, 5, 0]` | 10 × 10 | L539 |
-| 北走廊端点 | `[0, -50, 8, 5, 0]` | 16 × 10 | L542 |
-| 南走廊端点 | `[0, 50, 8, 5, 0]` | 16 × 10 | L543 |
-| 东走廊端点 | `[50, 0, 5, 8, 0]` | 10 × 16 | L544 |
-| 西走廊端点 | `[-50, 0, 5, 8, 0]` | 10 × 16 | L545 |
-
-#### 环形层（y=2）
-
-| 区域 | 矩形 | 实际尺寸 | 来源 |
-|-----|------|---------|------|
-| N 站点 | `[0, -25, 5, 4, 2]` | 10 × 8 | L552 |
-| S 站点 | `[0, 25, 5, 4, 2]` | 10 × 8 | L553 |
-| E 站点 | `[25, 0, 4, 5, 2]` | 8 × 10 | L554 |
-| W 站点 | `[-25, 0, 4, 5, 2]` | 8 × 10 | L555 |
-| NE 连接点 | `[20, -20, 5, 5, 2]` | 10 × 10 | L558 |
-| NW 连接点 | `[-20, -20, 5, 5, 2]` | 10 × 10 | L559 |
-| SE 连接点 | `[20, 20, 5, 5, 2]` | 10 × 10 | L560 |
-| SW 连接点 | `[-20, 20, 5, 5, 2]` | 10 × 10 | L561 |
-
-#### 瞭望塔（y=4）
-
-| 区域 | 矩形 | 实际尺寸 | 来源 |
-|-----|------|---------|------|
-| N 塔 | `[0, -40, 5, 5, 4]` | 10 × 10 | L567 |
-| S 塔 | `[0, 40, 5, 5, 4]` | 10 × 10 | L568 |
-| E 塔 | `[40, 0, 5, 5, 4]` | 10 × 10 | L569 |
-| W 塔 | `[-40, 0, 5, 5, 4]` | 10 × 10 | L570 |
-
-#### 巢穴（y=6）
-
-| 区域 | 矩形 | 实际尺寸 | 来源 |
-|-----|------|---------|------|
-| NE 巢 | `[38, -38, 3, 3, 6]` | 6 × 6 | L576 |
-| NW 巢 | `[-38, -38, 3, 3, 6]` | 6 × 6 | L577 |
-| SE 巢 | `[38, 38, 3, 3, 6]` | 6 × 6 | L578 |
-| SW 巢 | `[-38, 38, 3, 3, 6]` | 6 × 6 | L579 |
-
-### 8.3 视觉布局参数（来自 `index.ts` `buildArena()` L758-）
-
-| 参数 | 值 | 来源 |
-|-----|----|------|
-| 地面 4×4 平台缩放 | 2.0 | `index.ts` L766 `floorScale` |
-| 4×4 平台实际尺寸 | 8 × 8 | `tileSize = 4 * 2.0 = 8` |
-| 中央地面 grid 范围 | gx, gz ∈ [−2, 1]（4×4 块） | L770-771 |
-| 走廊间距 | 8 单位 | L782-803 |
-| 北走廊 z 范围 | -20 ~ -52 | L782 |
-| 南走廊 z 范围 | +20 ~ +52 | L788 |
-| 东走廊 x 范围 | +20 ~ +52 | L794 |
-| 西走廊 x 范围 | -20 ~ -52 | L800 |
-| 环形层平台缩放 | 2.5 | L821, L826, L831, L836 |
-| 瞭望塔平台缩放 | 2.5 | L864 |
-| 巢穴平台缩放 | 3.0 | L888 |
-| 围栏间距 | 5 | L897 |
-| 围栏边长（HALF） | 60 | L759 |
+> 历史：原 client 端 `buildArena()` + 硬编码 25 矩形已在激进重构中删除。客户端唯一关卡来自 `public/models/levels/level_whitebox.glb`（双文件模式）。
+> core 端仍保留 `NEON_CRUCIBLE_GEOMETRY` 作为 `GameConfig.level` 缺省时的 fallback 几何（仅供单测基线 / 边界使用），对客户端已没有影响。详见 `game/core/source/systems/collision.ts`。
 
 ---
 

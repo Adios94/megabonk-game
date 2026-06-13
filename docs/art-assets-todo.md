@@ -54,13 +54,13 @@
 | skeleton_soldier | 普通骷髅兵 | monsters/Skeleton.glb | 骷髅兵 | OK（带动画） |
 | zombie | 高 HP 慢速僵尸 | zombie_basic.gltf | （风格匹配，靠 enemyScales 放大暗示高 HP） | OK |
 | skeleton_archer | 远程攻击 | monsters/Dragon.glb | 远程吐息（飞行 + Attack/Attack2 双击） | OK（用龙的吐息表达远程） |
-| skeleton_knight | 精英冲锋骑士 | monsters/Skeleton.glb（放大体型） | 骷髅骑士（甲胄+大剑） | OK（复用骷髅模型，目标高度 2.08m ≈ 1.5× 普通骷髅兵） |
+| skeleton_knight | 精英冲锋骑士 | knight.glb（专属模块化骷髅） | 骷髅骑士（甲胄+大剑） | OK（专属模型，与 soldier 区分；目标高度 2.6m，明显更大） |
 | necromancer | 召唤型法师 | ghost.glb | 死灵法师（袍子+杖） | OK（飘浮形象贴合，32 个动画 clip） |
 | gargoyle | 飞行俯冲 | monsters/Bat.glb | 蝙蝠 / 石像鬼 | OK（带飞行/攻击/受击/死亡动画） |
 
-> skeleton_knight 没有专属"甲胄骑士"模型，采用"普通兵放大成精英"的常见 roguelike
-> 做法，复用 Skeleton.glb 但目标高度明显更大（见下方尺寸表）。若日后拿到真正的
-> 骷髅骑士模型，只需改两处 enemyModelMap 即可。
+> skeleton_knight 现用专属 `knight.glb`（模块化骷髅人形，从 `_unused/skeleton.glb` 启用），
+> 与 soldier 的 Quaternius `Skeleton.glb` 外形区分，并靠更大目标高度（2.6m）表达"精英"。
+> 仍非真正"甲胄骑士"，若日后拿到更贴合的模型，只需改两处 enemyModelMap 即可。
 >
 > ✅ `zombie_chubby.gltf` / `zombie_arm.gltf` 现已无敌人引用，已归档到 `public/models/_unused/`
 > 并从 `loadModels()` 加载列表移除（仅 `zombie_basic.gltf` 仍在用，渲染 `zombie`）。
@@ -78,10 +78,15 @@
 | 玩家（参考） | 1.8 | setupPlayer targetHeight |
 | skeleton_soldier | 1.36 | 略矮于玩家 |
 | zombie | 1.52 | 略高壮的坦克 |
-| skeleton_archer（龙） | 1.36 | 远程飞行 |
+| skeleton_archer（龙） | 1.0 | 远程飞行（小巧，离地 1.8m） |
 | skeleton_knight | 2.08 | 精英，明显更大 |
-| necromancer | 1.36 | 略矮于玩家 |
-| gargoyle（蝙蝠） | 0.96 | 小型飞行 |
+| necromancer | 1.0 | 飘浮幽灵（小巧，离地 1.8m） |
+| gargoyle（蝙蝠） | 0.96 | 小型飞行（离地 y=3，core dive 行为控制） |
+
+> **视觉离地高度**：`ENEMY_HOVER_OFFSET`（client 渲染层）给用飞行/飘浮模型的地面单位
+> （skeleton_archer→dragon、necromancer→ghost）加 1.8m 渲染偏移，让它们浮空。
+> 纯渲染偏移，不动 core 逻辑（碰撞 / preferredRange 走水平 x/z）；blob 阴影仍贴地面。
+> gargoyle 的飞行高度由 core `dive` 行为（y=3）控制，不在此叠加。
 
 > 实现：`updateEnemyObjects` 用 `enemyModelNormHeight` 缓存每个模型 `1/实际高度` 的
 > 归一化系数，最终 `scale = normFactor × 目标高度 × sizeMultiplier`（miniBoss 1.5 / elite 1.2）。
@@ -96,7 +101,7 @@
 | public/models/monsters/Bat.glb | gargoyle | `Bat_*` 前缀 | Attack, Attack2, Death, Flying(→Idle/Walk/Run 别名), Hit |
 | public/models/monsters/Dragon.glb | skeleton_archer | `Dragon_*` 前缀 | Attack, Attack2, Death, Flying(→Idle/Walk/Run 别名), Hit |
 | public/models/ghost.glb | necromancer | 全小写 | Idle, Walk, Sprint(→Run 别名), Die(→Death 别名), Jump, Fall, Attack-melee-right 等 32 条 |
-| 未挂：Slime.glb（Quaternius Pack） | 备用 | `Slime_*` 前缀 | 同样规范，按需挂接 |
+| public/models/knight.glb | skeleton_knight | 全小写（同 ghost 格式） | Idle, Walk, Sprint(→Run 别名), Die(→Death 别名), attack-melee-* 等 32 条 |
 
 > **加载与归一化**：所有 GLB 都走 `loadModels()` 的 GLTF 主队列；加载完成后
 > `normalizeEnemyClips()` 对 `monster_*` 和 `ghost` 模型做四步处理：
@@ -115,8 +120,9 @@
 
 | 文件 | 可临时顶替 |
 |---|---|
-| public/models/_unused/skeleton.glb | skeleton_archer 备选（带骨骼，有动画） |
 | public/models/_unused/pumpkin.glb | 万圣节季节皮肤 |
+| public/models/_unused/zombie_chubby.gltf | zombie 备选（胖僵尸） |
+| public/models/_unused/zombie_arm.gltf | 远程/异变僵尸备选 |
 | public/models/_unused/enemy_2legs.gltf | 远程机械敌 |
 | public/models/_unused/enemy_2legs_gun.gltf | 同上 |
 | public/models/_unused/enemy_flying.gltf | gargoyle 已改用 Bat.obj，此项可删 |

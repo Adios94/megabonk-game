@@ -419,8 +419,7 @@ megabonk-game/
 │   ├── README.md
 │   └── megabonk_asset_library.blend
 ├── game/
-│   ├── client/source/index.ts    ← 渲染代码 (buildArena / LevelLoader)
+│   ├── client/source/index.ts    ← 渲染代码 (LevelLoader / tryLoadLevel)
 │   └── core/source/
 │       └── GameInstance.ts        ← 碰撞逻辑 (getTerrainHeight)
-└── LEVEL_DESIGN.md               ← 关卡数据参考文档
 ```

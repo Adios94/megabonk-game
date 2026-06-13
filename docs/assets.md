@@ -37,7 +37,7 @@
 > | `skeleton_soldier` | monster_skeleton（Skeleton.glb） |
 > | `zombie` | zombie_basic |
 > | `skeleton_archer` | monster_dragon（Dragon.glb） |
-> | `skeleton_knight` | monster_skeleton（更大缩放） |
+> | `skeleton_knight` | monster_knight（knight.glb，专属骷髅，放大） |
 > | `necromancer` | ghost（ghost.glb） |
 > | `gargoyle` | monster_bat（Bat.glb） |
 

@@ -1,7 +1,6 @@
 # 白盒规范（Whitebox Spec）— Blender 关卡灰盒速查
 
-> 配合 `docs/level-system-redesign.md` 使用。本表是你在 Blender 里**搭白盒（灰盒）时的硬约定**。
-> ⚠️ LevelLoader 正在并行开发；**严格按本规范命名 / 摆放**，导出的 glb 落地后就能被正确读出。
+> 本表是你在 Blender 里**搭白盒（灰盒）时的硬约定**。LevelLoader 已落地，导出符合规范的 glb 即可被正确读出。
 
 ---
 
@@ -164,9 +163,9 @@ spawn_chest    Empty   Pos(-15,15,0)
 3. 右侧：**Format = GLB**、**Include = Selected Objects**、**Transform → +Y Up ✅**、**Apply Modifiers ✅**、**Animation ❌**。
 4. 输出到 `public/models/levels/level_whitebox.glb`。
 
-> ⚡ **测试**：在 URL 加 `?level` 加载默认 whitebox（或 `?level=foo` 加载 `level_foo.glb`）。
-> 控制台会打印 `[Level] Loaded (mode) ...` 其中 mode = `two-file` / `visual-only` / `col-only`。
-> 文件不存在时自动回退到内置 Neon Crucible。
+> ⚡ **测试**：游戏启动后自动加载 `level_whitebox.glb`（不需要 URL 参数）。
+> 控制台会打印 `[Level] Loaded (mode) ...` 其中 mode = `two-file` / `col-only`。
+> 文件缺失会让 boot 直接抛错（没有内置 arena 兜底）。
 > 当前已接入：`col_`（实体地面/盒子，盒外为虚空会掉落，**倾斜的 col_ 自动当斜坡**）+ 迈步/掉落/支撑面跟随 + `wall_`（横向遮挡）+ `climb_`（实体+攀爬）+ `ramp_`（可行走斜坡）+ `spawn_player`（出生）+ `spawn_boss`（Boss 出场点）+ `spawn_altar`（祭坛）+ `spawn_chest`（宝箱）+ 全场景白盒渲染。
 > 暂未接入：`spawn_enemy_*`（已解析+打印，敌人目前仍从地图边缘刷新）；怪物绕墙寻路尚未做（敌人直线追，但会沿斜坡/地形高度走）。
 
@@ -180,14 +179,13 @@ public/models/levels/
 └── level_${name}_col.glb    碰撞低模（只含 col_/wall_/climb_/ramp_/spawn_*）
 ```
 
-**加载策略**（`?level=${name}`）：
+**加载策略**（默认 name = `whitebox`）：
 
 | 文件状态 | mode | 视觉来源 | 碰撞来源 |
 |---|---|---|---|
 | 两个都在 | `two-file` | `level_${name}.glb` | `level_${name}_col.glb` |
-| 只有 visual | `visual-only` | `level_${name}.glb` | `level_${name}.glb`（同源解析） |
 | 只有 col | `col-only` | `level_${name}_col.glb` | `level_${name}_col.glb`（灰盒） |
-| 都不在 | — | 回退内置 Neon Crucible | 同左 |
+| 缺 col | — | boot 抛错（没有兜底） | — |
 
 **双文件模式的好处：**
 - 视觉文件可以是任意精度的高模（不影响碰撞精度）。

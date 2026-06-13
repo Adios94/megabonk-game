@@ -271,6 +271,14 @@ const ENEMY_COLORS: Record<string, number> = {
   gargoyle: 0x667788,
 };
 
+// 视觉离地高度（米）—— 纯渲染偏移，不影响 core 逻辑（碰撞 / preferredRange 走水平 x/z）。
+// 用飞行/飘浮模型的地面单位（dragon / ghost）抬离地面更自然。gargoyle 的飞行高度由
+// core 的 dive 行为（y=3）控制，不在此叠加。
+const ENEMY_HOVER_OFFSET: Record<string, number> = {
+  skeleton_archer: 1.8, // 龙 — 飞行
+  necromancer: 1.8,     // 幽灵 — 飘浮
+};
+
 const WEAPON_PROJECTILE_COLORS: Record<string, number> = {
   sword: 0xcccccc,
   bone_bouncer: 0xf5f5dc,
@@ -1201,6 +1209,8 @@ interface LoadedModels {
   monster_skeleton: THREE.Group | null;
   monster_bat: THREE.Group | null;
   monster_dragon: THREE.Group | null;
+  // 模块化骷髅人形（idle/walk/sprint/die/attack-melee... 小写 clip，加载时归一化），用作 skeleton_knight 渲染
+  monster_knight: THREE.Group | null;
   // 通用 ghost 模型，用作 necromancer 渲染（带 32 个小写命名 clip，加载时归一化）
   ghost: THREE.Group | null;
   boss: THREE.Group | null;
@@ -1232,6 +1242,7 @@ const loadedModels: LoadedModels = {
   monster_skeleton: null,
   monster_bat: null,
   monster_dragon: null,
+  monster_knight: null,
   ghost: null,
   boss: null,
   tombstone: null,
@@ -1289,6 +1300,8 @@ async function loadModels(): Promise<void> {
     ['monster_skeleton', '/models/monsters/Skeleton.glb'],
     ['monster_bat', '/models/monsters/Bat.glb'],
     ['monster_dragon', '/models/monsters/Dragon.glb'],
+    // 模块化骷髅人形，用作 skeleton_knight（精英），与 soldier 的 Skeleton.glb 外形区分
+    ['monster_knight', '/models/knight.glb'],
     // ghost.glb：通用幽灵模型，clip 全小写（idle/walk/sprint/die...），加载时归一化为
     // Idle/Walk/Run/Death；用作 necromancer 渲染
     ['ghost', '/models/ghost.glb'],
@@ -2723,7 +2736,7 @@ export class GameScene {
       skeleton_soldier: 'monster_skeleton', // 普通骷髅兵 → Quaternius Skeleton.glb
       zombie: 'zombie_basic',               // 僵尸(高HP) → Basic 僵尸（靠 enemyScales 放大表达"大而慢"）
       skeleton_archer: 'monster_dragon',    // 远程攻击 → Quaternius Dragon.glb（飞行 + 远程吐息更贴合）
-      skeleton_knight: 'monster_skeleton',  // 骑士(精英冲刺) → 复用骷髅模型放大体型表达"精英大型"
+      skeleton_knight: 'monster_knight',    // 骑士(精英冲刺) → 专属模块化骷髅模型（与 soldier 区分），放大体型表达"精英大型"
       necromancer: 'ghost',                 // 法师(召唤) → 通用 ghost.glb（飘浮形象更贴合）
       gargoyle: 'monster_bat',              // 飞行俯冲 → Quaternius Bat.glb
     };
@@ -4219,7 +4232,7 @@ export class GameScene {
       skeleton_soldier: 'monster_skeleton',
       zombie: 'zombie_basic',
       skeleton_archer: 'monster_dragon',
-      skeleton_knight: 'monster_skeleton', // 复用骷髅模型放大体型表达"精英大型"
+      skeleton_knight: 'monster_knight', // 专属模块化骷髅模型（与 soldier 区分），放大体型表达"精英大型"
       necromancer: 'ghost',
       gargoyle: 'monster_bat',
     };
@@ -4228,9 +4241,9 @@ export class GameScene {
     const enemyScales: Record<string, number> = {
       skeleton_soldier: 1.36,  // 普通骷髅兵 — 略矮于玩家
       zombie: 1.52,            // 高 HP 僵尸 — 略高壮的坦克
-      skeleton_archer: 1.36,   // 龙 — 远程飞行
+      skeleton_archer: 1.0,    // 龙 — 远程飞行（小巧）
       skeleton_knight: 2.08,   // 精英骷髅 — 明显更大
-      necromancer: 1.36,       // 法师 — 略矮于玩家
+      necromancer: 1.0,        // 法师 — 飘浮幽灵（小巧）
       gargoyle: 0.96,          // 蝙蝠 — 小型飞行
     };
 
@@ -4319,7 +4332,10 @@ export class GameScene {
       const targetHeight = enemyScales[enemy.type] ?? 1.6; // enemyScales 现在的语义 = 目标世界高度（米）
       const sizeMultiplier = enemy.isMiniBoss ? 1.5 : (enemy.isElite ? 1.2 : 1.0);
       const s = normFactor * targetHeight * sizeMultiplier;
-      obj.position.set(enemy.x, enemy.y, enemy.z);
+      // 视觉离地高度（米）：仅渲染偏移，不动 core 逻辑（碰撞 / preferredRange 都按水平 x/z）。
+      // necromancer(ghost) / skeleton_archer(dragon) 用飞行/飘浮模型，抬离地面更自然。
+      const hoverOffset = ENEMY_HOVER_OFFSET[enemy.type] ?? 0;
+      obj.position.set(enemy.x, enemy.y + hoverOffset, enemy.z);
       obj.scale.set(s, s, s);
       obj.visible = true;
 

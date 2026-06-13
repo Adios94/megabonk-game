@@ -1496,26 +1496,7 @@ interface LoadedModels {
   boss_2legs: THREE.Group | null;
   // 第二关 boss 模型（大型持枪）
   boss: THREE.Group | null;
-  tombstone: THREE.Group | null;
-  tree: THREE.Group | null;
   teleporter: THREE.Group | null;
-  platform: THREE.Group | null;
-  pickup: THREE.Group | null;
-  // Cyberpunk platform models
-  platform_4x4: THREE.Group | null;
-  platform_4x2: THREE.Group | null;
-  platform_2x2: THREE.Group | null;
-  platform_1x1: THREE.Group | null;
-  support: THREE.Group | null;
-  support_long: THREE.Group | null;
-  rail_long: THREE.Group | null;
-  fence_platform: THREE.Group | null;
-  light_street: THREE.Group | null;
-  sign_1: THREE.Group | null;
-  sign_2: THREE.Group | null;
-  ac_unit: THREE.Group | null;
-  pipe_1: THREE.Group | null;
-  door: THREE.Group | null;
 }
 
 const gltfLoader = new GLTFLoader();
@@ -1531,26 +1512,7 @@ const loadedModels: LoadedModels = {
   kk_mage: null,
   boss_2legs: null,
   boss: null,
-  tombstone: null,
-  tree: null,
   teleporter: null,
-  platform: null,
-  pickup: null,
-  // Cyberpunk platform models
-  platform_4x4: null,
-  platform_4x2: null,
-  platform_2x2: null,
-  platform_1x1: null,
-  support: null,
-  support_long: null,
-  rail_long: null,
-  fence_platform: null,
-  light_street: null,
-  sign_1: null,
-  sign_2: null,
-  ac_unit: null,
-  pipe_1: null,
-  door: null,
 };
 
 // Animation clips storage per model key
@@ -1588,6 +1550,26 @@ const KAYKIT_ANIM_NAME_MAP: Record<string, string> = {
   Hit_A: 'HitReact',
   Death_A: 'Death',
   Throw: 'Punch',
+};
+
+// =============================================================================
+// Boss 攻击 tag → 动画 clip 名
+// =============================================================================
+// 反向设计自两套机甲模型的 clip（Idle/Walk/Run/Jump/Shoot/Attack/Attack.001/Death）。
+// renderBoss 在 attackAnimTimer>0 时按此表播放对应攻击动画；找不到 clip 时回落 Idle。
+const BOSS_ATTACK_CLIP: Record<string, string> = {
+  // gunner_mech（第 1 关）
+  aimed_burst: 'Shoot',
+  suppress_fire: 'Shoot',
+  melee_swipe: 'Attack',
+  leap_strike: 'Jump',
+  // siege_mech（第 2 关）
+  barrage: 'Shoot',
+  heavy_slam: 'Attack',
+  cleave: 'Attack.001',
+  leap_slam: 'Jump',
+  charge: 'Run',
+  deploy_drones: 'Shoot',
 };
 
 // =============================================================================
@@ -1720,25 +1702,6 @@ async function loadModels(): Promise<void> {
     ['boss_2legs', '/models/enemy_2legs_gun.gltf'],
     ['boss', '/models/enemy_large_gun.gltf'],
     ['teleporter', '/models/turret_teleporter.gltf'],
-    ['platform', '/models/platform_4x1.gltf'],
-    ['pickup', '/models/collectible_gear.gltf'],
-    ['tombstone', '/models/tombstone.glb'],
-    ['tree', '/models/tree.glb'],
-    // Cyberpunk platform kit
-    ['platform_4x4', '/models/platform_4x4_full.gltf'],
-    ['platform_4x2', '/models/platform_4x2.gltf'],
-    ['platform_2x2', '/models/platform_2x2.gltf'],
-    ['platform_1x1', '/models/platform_1x1.gltf'],
-    ['support', '/models/support.gltf'],
-    ['support_long', '/models/support_long.gltf'],
-    ['rail_long', '/models/rail_long.gltf'],
-    ['fence_platform', '/models/fence_platform.gltf'],
-    ['light_street', '/models/light_street_1.gltf'],
-    ['sign_1', '/models/sign_1.gltf'],
-    ['sign_2', '/models/sign_2.gltf'],
-    ['ac_unit', '/models/ac_unit.gltf'],
-    ['pipe_1', '/models/pipe_1.gltf'],
-    ['door', '/models/door.gltf'],
     // Quaternius Animated Monster Pack（带骨骼动画 GLB）
     // 用于替换 skeleton_soldier / gargoyle 的 zombie 贴皮，clip 名带前缀
     // （Skeleton_Idle / Bat_Flying 等），加载完后会做归一化（见 normalizeEnemyClips）
@@ -2386,6 +2349,16 @@ export class GameScene {
   private bossMeshStage: 1 | 2 | null = null;
   /** Boss 的 base scale（auto-scaled to TARGET_BOSS_HEIGHT），attack/enrage 脉冲基于此值。 */
   private bossBaseScale = 1.0;
+  /** Boss 骨骼动画 mixer（随 bossMesh 重建）。 */
+  private bossMixer: THREE.AnimationMixer | null = null;
+  /** Boss clip name → action（含 Idle/Walk/Run/Jump/Shoot/Attack/Attack.001/Death）。 */
+  private bossAnimActions: Map<string, THREE.AnimationAction> = new Map();
+  /** 当前播放的 boss 动画名（去重，避免每帧 reset 卡第 0 帧）。 */
+  private bossAnimState: string | null = null;
+  /** Boss 上一帧 XZ + 静止时长（移动判定，逻辑同敌人）。 */
+  private bossPrevPos: { x: number; z: number; stillTime: number } | null = null;
+  /** Boss Death 动画是否已触发（只播一次）。 */
+  private bossDeathPlayed = false;
   private playerSpotLight!: THREE.SpotLight;
   // 常驻共享闪电闪光灯：永远在场景里、待命强度 0。闪电复用它而非每道新建/移除 PointLight
   // —— 场景光源数恒定，避免每次触发引发全场材质 shader 重编译（掉帧主因）。
@@ -3185,6 +3158,41 @@ export class GameScene {
       newAction.reset().fadeIn(0.2).play();
     }
     this.enemyAnimStates.set(enemyId, targetName);
+  }
+
+  /**
+   * 播放 boss 动画（crossfade + 去重，逻辑同 playEnemyAnim）。
+   * 找不到 clip 时按 fallback 链回落，最后兜底 Idle。
+   */
+  private playBossAnim(name: string): void {
+    if (this.bossAnimActions.size === 0) return;
+
+    let target = name;
+    if (!this.bossAnimActions.has(target)) {
+      const fallbacks: Record<string, string[]> = {
+        'Run': ['Walk'],
+        'Walk': ['Run'],
+        'Attack.001': ['Attack'],
+        'Shoot': ['Attack'],
+        'Jump': ['Run', 'Attack'],
+        'Death': ['Idle'],
+      };
+      const chain = fallbacks[name];
+      if (chain) {
+        for (const fb of chain) {
+          if (this.bossAnimActions.has(fb)) { target = fb; break; }
+        }
+      }
+      if (!this.bossAnimActions.has(target)) target = 'Idle';
+      if (!this.bossAnimActions.has(target)) return;
+    }
+
+    if (this.bossAnimState === target) return;
+    const prevAction = this.bossAnimActions.get(this.bossAnimState ?? '');
+    const newAction = this.bossAnimActions.get(target);
+    if (prevAction) prevAction.fadeOut(0.15);
+    if (newAction) newAction.reset().fadeIn(0.15).play();
+    this.bossAnimState = target;
   }
 
   private setupWeaponOrbs(): void {
@@ -4028,8 +4036,8 @@ export class GameScene {
         // Crits and normal hits: no shake (too frequent with multiple projectiles)
       }
 
-      // Boss attack shake — only on heavy attacks
-      if (state.boss && state.boss.currentAttack === 'ground_slam' && state.boss.attackTimer > 0 && state.boss.attackTimer < 0.05) {
+      // Boss attack shake — only on heavy impacts（攻城机甲重砸 / 跳砸）
+      if (state.boss && (state.boss.currentAttack === 'heavy_slam' || state.boss.currentAttack === 'leap_slam') && state.boss.attackTimer > 0 && state.boss.attackTimer < 0.05) {
         this.triggerCameraShake(0.15, 10, 8);
       }
     }
@@ -5274,15 +5282,26 @@ export class GameScene {
       if (this.bossWarningRing) {
         this.bossWarningRing.visible = false;
       }
+      if (!boss) {
+        // Boss 离场：重置动画状态，下一个 boss 干净起播
+        this.bossAnimState = null;
+        this.bossPrevPos = null;
+        this.bossDeathPlayed = false;
+      }
       return;
     }
 
-    // 第一关用 enemy_2legs_gun，第二关用 enemy_large_gun；关卡切换时重建网格。
+    // 第一关用 enemy_2legs_gun（游侠机甲），第二关用 enemy_large_gun（攻城机甲）；关卡切换时重建网格。
     const stage = (this.session.getRenderState().stage ?? 1) as 1 | 2;
     if (this.bossMesh && this.bossMeshStage !== stage) {
       this.scene.remove(this.bossMesh);
       this.bossMesh = null;
       this.bossMeshStage = null;
+      this.bossMixer = null;
+      this.bossAnimActions.clear();
+      this.bossAnimState = null;
+      this.bossPrevPos = null;
+      this.bossDeathPlayed = false;
     }
 
     if (!this.bossMesh) {
@@ -5291,10 +5310,10 @@ export class GameScene {
       if (bossModel) {
         this.bossMesh = cloneSkeleton(bossModel) as unknown as THREE.Mesh;
         this.bossMesh.name = 'Boss';
-        // 按 bounding box 自动缩放到目标高度（两关 boss 模型尺寸不同，统一到 3.5m）。
+        // 按 bounding box 自动缩放到目标高度（两关 boss 模型尺寸不同，统一到 7m）。
         const box = new THREE.Box3().setFromObject(this.bossMesh);
         const size = box.getSize(new THREE.Vector3());
-        const TARGET_BOSS_HEIGHT = 3.5;
+        const TARGET_BOSS_HEIGHT = 7.0;
         const autoScale = TARGET_BOSS_HEIGHT / Math.max(size.y, 0.01);
         this.bossMesh.scale.set(autoScale, autoScale, autoScale);
         // 把脚踩到地面（同 player 的处理）
@@ -5304,6 +5323,25 @@ export class GameScene {
         this.bossBaseScale = autoScale;
         this.bossMeshStage = stage;
         this.scene.add(this.bossMesh);
+
+        // 骨骼动画 mixer：Idle/Walk/Run/Jump/Shoot/Attack/[Attack.001]/Death
+        const clips = loadedAnimClips.get(stage === 2 ? 'boss' : 'boss_2legs');
+        if (clips && clips.length > 0) {
+          this.bossMixer = new THREE.AnimationMixer(this.bossMesh);
+          this.bossAnimActions.clear();
+          for (const clip of clips) {
+            this.bossAnimActions.set(clip.name, this.bossMixer.clipAction(clip));
+          }
+          this.bossAnimState = null;
+          const idle = this.bossAnimActions.get('Idle') ?? this.bossAnimActions.get('Walk');
+          if (idle) {
+            idle.play();
+            this.bossAnimState = idle.getClip().name;
+          }
+        } else {
+          this.bossMixer = null;
+          this.bossAnimActions.clear();
+        }
       } else {
         // Fallback
         const geo = new THREE.BoxGeometry(2.4, 3.0, 2.4);
@@ -5312,6 +5350,8 @@ export class GameScene {
         this.bossMesh.name = 'Boss';
         this.bossBaseScale = 1.0;
         this.bossMeshStage = stage;
+        this.bossMixer = null;
+        this.bossAnimActions.clear();
         this.scene.add(this.bossMesh);
       }
     }
@@ -5321,6 +5361,38 @@ export class GameScene {
 
     // Boss 大号 blob 阴影
     this.blobShadows?.place(boss.x, boss.y || 0, boss.z, 1.8);
+
+    // === Boss 骨骼动画 ===
+    if (this.bossMixer) {
+      // 面向玩家（同敌人：atan2(dx, dz)）
+      const rs = this.session.getRenderState();
+      const fdx = rs.player.x - boss.x;
+      const fdz = rs.player.z - boss.z;
+      if (fdx !== 0 || fdz !== 0) this.bossMesh.rotation.y = Math.atan2(fdx, fdz);
+
+      // 移动判定（滞后 200ms，避免 60Hz/渲染不同步误判，逻辑同敌人）
+      let prev = this.bossPrevPos;
+      if (!prev) {
+        prev = { x: boss.x, z: boss.z, stillTime: 999 };
+        this.bossPrevPos = prev;
+      } else {
+        const movedDist = Math.hypot(boss.x - prev.x, boss.z - prev.z);
+        prev.stillTime = movedDist > 1e-4 ? 0 : prev.stillTime + this.frameDt;
+        prev.x = boss.x;
+        prev.z = boss.z;
+      }
+      const bossMoving = prev.stillTime < 0.2;
+
+      // 选择动画：攻击 clip（attackAnimTimer 窗口内）> Run/Walk（移动）> Idle
+      if (boss.attackAnimTimer > 0 && boss.currentAttack !== 'idle') {
+        this.playBossAnim(BOSS_ATTACK_CLIP[boss.currentAttack] ?? 'Attack');
+      } else if (bossMoving) {
+        this.playBossAnim(boss.enraged ? 'Run' : 'Walk');
+      } else {
+        this.playBossAnim('Idle');
+      }
+      this.bossMixer.update(this.frameDt);
+    }
 
     // Hit flash / enrage color (only works on fallback geometry)
     if (!loadedModels.boss) {
@@ -5370,8 +5442,8 @@ export class GameScene {
       this.bossMesh.scale.set(baseScale, baseScale, baseScale);
     }
 
-    // 3. Full-screen red flash on AOE explosion
-    if (boss.currentAttack === 'aoe_explosion' && boss.attackTimer > 0 && boss.attackTimer < 0.1) {
+    // 3. Full-screen red flash on big AOE cleave (siege mech 横扫)
+    if (boss.currentAttack === 'cleave' && boss.attackTimer > 0 && boss.attackTimer < 0.1) {
       if (this.bossAoeFlashTimer <= 0) {
         this.triggerScreenFlash('#ff0000', 0.4);
         this.bossAoeFlashTimer = 1.0;
@@ -7258,7 +7330,8 @@ export class GameScene {
         this.lastBossHpPercent = bossHpPercent;
       }
 
-      this.bossNameLabel.textContent = `${t('boss.anubis')} - Phase ${state.boss.phase}`;
+      const bossNameKey = state.boss.bossType === 'siege_mech' ? 'boss.siege_mech' : 'boss.gunner_mech';
+      this.bossNameLabel.textContent = `${t(bossNameKey)} - Phase ${state.boss.phase}`;
 
       // Pulsing glow when enraged
       if (state.boss.enraged) {

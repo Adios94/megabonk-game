@@ -642,7 +642,32 @@ export interface UpgradeOption {
 
 // --- Boss ---
 export type BossPhase = 1 | 2 | 3;
-export type BossAttack = 'melee_sweep' | 'ground_slam' | 'summon_wave' | 'dark_bolt' | 'aoe_explosion' | 'charge' | 'dark_rain' | 'idle';
+
+/**
+ * Boss 种类 —— 每种对应一套独立 phase script（攻击池 / 数值 / 动画映射）。
+ *   gunner_mech：第 1 关「游侠机甲」，敏捷射手（enemy_2legs_gun 模型）
+ *   siege_mech ：第 2 关「攻城机甲」，重装炮手（enemy_large_gun 模型）
+ */
+export type BossType = 'gunner_mech' | 'siege_mech';
+
+/**
+ * Boss 攻击 tag —— 反向设计自两套机甲模型实际拥有的动画 clip
+ * （Idle / Walk / Run / Jump / Shoot / Attack / Attack.001 / Death）。
+ *   游侠机甲：aimed_burst(Shoot) / melee_swipe(Attack) / leap_strike(Jump) / suppress_fire(Shoot)
+ *   攻城机甲：barrage(Shoot) / heavy_slam(Attack) / cleave(Attack.001) / leap_slam(Jump) / charge(Run) / deploy_drones(Shoot)
+ */
+export type BossAttack =
+  | 'idle'
+  | 'aimed_burst'
+  | 'melee_swipe'
+  | 'leap_strike'
+  | 'suppress_fire'
+  | 'barrage'
+  | 'heavy_slam'
+  | 'cleave'
+  | 'leap_slam'
+  | 'charge'
+  | 'deploy_drones';
 
 export interface BossState {
   x: number;
@@ -650,9 +675,13 @@ export interface BossState {
   z: number;
   hp: number;
   maxHp: number;
+  /** 种类，决定走哪套 phase script（registry 选择）。 */
+  bossType: BossType;
   phase: BossPhase;
   currentAttack: BossAttack;
   attackTimer: number;
+  /** 攻击动画播放窗口（秒）。>0 时客户端播放 currentAttack 对应的攻击 clip。 */
+  attackAnimTimer: number;
   attackCooldown: number;
   hitFlashTimer: number;
   speed: number;

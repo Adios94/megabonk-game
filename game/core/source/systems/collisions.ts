@@ -8,11 +8,11 @@
  *
  * 击退、damageEvent、damageDealt 累计 — 都通过 systems/helpers.ts 的纯函数。
  *
- * Phase 4b 起 boss 近战伤害走 ai/bosses/skeletonKing.getBossMeleeDamage。
+ * boss 近战伤害走 ai/bosses/common.getBossMeleeDamage（两套机甲共用）。
  */
 import { distanceBetween, normalizeDirection } from '../physics.ts';
 import { TICK_INTERVAL_MS } from '../config.ts';
-import { getBossMeleeDamage } from '../ai/bosses/skeletonKing.ts';
+import { getBossMeleeDamage } from '../ai/bosses/common.ts';
 import {
   addDamageEvent,
   applyKnockback,

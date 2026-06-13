@@ -365,7 +365,8 @@
     "back": "Back"
   },
   "boss": {
-    "anubis": "Anubis",
+    "gunner_mech": "Ranger Mech",
+    "siege_mech": "Siege Mech",
     "warning": "Boss incoming!"
   },
   "tier": {

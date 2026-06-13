@@ -365,7 +365,8 @@
     "back": "返回"
   },
   "boss": {
-    "anubis": "阿努比斯",
+    "gunner_mech": "游侠机甲",
+    "siege_mech": "攻城机甲",
     "warning": "Boss即将出现！"
   },
   "tier": {

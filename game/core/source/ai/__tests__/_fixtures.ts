@@ -118,8 +118,8 @@ export function makeAiContext(overrides: Partial<AiContext> = {}): AiContext {
 export function makeBoss(x = 0, z = 0, hp = 2000): BossState {
   return {
     x, y: 0, z,
-    hp, maxHp: hp, phase: 1,
-    currentAttack: 'idle', attackTimer: 0, attackCooldown: 0,
+    hp, maxHp: hp, bossType: 'gunner_mech', phase: 1,
+    currentAttack: 'idle', attackTimer: 0, attackAnimTimer: 0, attackCooldown: 0,
     hitFlashTimer: 0, speed: 3, enraged: false,
   };
 }

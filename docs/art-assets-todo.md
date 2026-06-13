@@ -2,7 +2,7 @@
 
 > 给美术 / 主程对接用的"什么资源还缺"清单。
 > 数据源：`game/client/source/index.ts` 全文扫描 + `game/core/data/*` + `public/` 目录比对。
-> 最后更新：2026-06-13
+> 最后更新：2026-06-14
 >
 > **归档约定**：所有未被代码引用的模型已挪到 `public/models/_unused/` 与
 > `public/models/items/_unused/`。本文档里凡是带 `_unused/` 前缀的路径，
@@ -16,7 +16,7 @@
 |---|---|---|---|
 | 玩家角色 | 3 / 3 | — | — |
 | 敌人模型（语义匹配） | 6 / 6 | — | — |
-| Boss 模型 | 0 / 1（拿带枪机械敌凑数） | 1 | 1 |
+| Boss 模型 | 0 / 2（两关用带枪机械敌占位，动画已接） | 2 | — |
 | 武器手持 / 弹幕模型 | 7 / 12 | 5 | — |
 | 拾取物 | 1 / 7（其余靠染色） | 6 | — |
 | 消耗品 | 0 / 10 | 10（全 emoji） | — |
@@ -140,12 +140,23 @@
 
 ## 3. Boss 模型（P0）
 
-| 用途 | 当前 | 状态 | 备注 |
-|---|---|---|---|
-| Skeleton King | public/models/enemy_large_gun.gltf | 占位 | 实际是带枪机械敌人 |
-| Boss fallback | THREE.BoxGeometry(2.4, 3.0, 2.4) 紫色 | 程序化 | index.ts:4921 |
-| 闲置候选 | public/models/_unused/boss.glb | 未引用 | 风格未知，需评估 |
-| 真正缺失 | 骷髅王（约 5m 高，大剑+披风+王冠） | 缺 | 与 `core/ai/bosses/skeletonKing.ts` 配套 |
+第 1/2 关现为两套独立机甲 Boss（2026-06-14 反向设计：攻击逻辑 + 动画按模型现有 clip 重做）。
+
+| 关卡 | Boss | 逻辑脚本 | 当前模型 | 动画 clip | 状态 |
+|---|---|---|---|---|---|
+| 第 1 关 | 游侠机甲（gunner_mech） | core/ai/bosses/gunnerMech.ts | public/models/enemy_2legs_gun.gltf | Idle/Walk/Run/Jump/Shoot/Attack/Death（已接 AnimationMixer） | 占位（带枪机械敌，风格够用） |
+| 第 2 关 | 攻城机甲（siege_mech） | core/ai/bosses/siegeMech.ts | public/models/enemy_large_gun.gltf | 上述 + Attack.001（已接） | 占位 |
+| — | Boss fallback | THREE.BoxGeometry(2.4, 3.0, 2.4) 紫色 | — | — | 程序化（模型缺失时） |
+| — | 闲置候选 | public/models/_unused/boss.glb | — | — | 未引用，风格未知 |
+
+> 渲染统一缩放到 **7m 高**（`TARGET_BOSS_HEIGHT`，`renderBoss`）。攻击 tag → clip 映射见 client `BOSS_ATTACK_CLIP`。
+> 美术目标：两套差异化机甲（敏捷射手 / 重装炮手），或替换成原设定形象。
+
+### 3.1 已知问题：Boss 寻路不灵活（待优化）
+
+- **贪心直线追踪，无真正寻路**：`systems/bossAi.ts` 每帧朝玩家方向直走，撞到 `col_/wall_` 即被 `tryMoveHorizontally` 挡住、不会绕路 → 玩家可躲到障碍物后"放风筝"。
+- **物理脚印与视觉脱钩**：移动碰撞半径写死 `radius: 1.0`，与 7m 视觉体型不匹配 → 大模型可能半身穿墙；近战判定（`collisions` 2.0 / 各攻击 3.5~7.0）也未随体型放大，玩家会觉得"贴脸了却没被打到"。
+- **可选优化**：① 放大物理半径贴合体型；② 放大近战/攻击判定范围改善手感；③ 加"被挡时沿墙切向滑动"的简单避障。
 
 ---
 
@@ -248,22 +259,31 @@
 
 ## 7. 场景 / 关卡
 
-### 7.1 已就位的 Cyberpunk Kit
+### 7.1 当前真正在用的场景资源
 
-| 用途 | 模型 | 引用 |
-|---|---|---|
-| 平台（4×4 / 4×2 / 2×2 / 1×1） | platform_4x4_full / platform_4x2 / platform_2x2 / platform_1x1.gltf | index.ts:1272-75 |
-| 立柱 | support.gltf, support_long.gltf | index.ts:1276-77 |
-| 围栏 | rail_long.gltf, fence_platform.gltf | index.ts:1278-79 |
-| 路灯 | light_street_1.gltf | index.ts:1280 |
-| 招牌 | sign_1.gltf, sign_2.gltf | index.ts:1281-82 |
-| 空调 / 管道 / 门 | ac_unit.gltf, pipe_1.gltf, door.gltf | index.ts:1283-85 |
-| 通用拾取齿轮 | collectible_gear.gltf | index.ts:1268 |
-| 关卡白盒 | level_whitebox.glb + _col.glb | index.ts:1595-96 |
-| 装饰 | tombstone.glb, tree.glb | index.ts:1269-70 |
-| 传送门 | turret_teleporter.gltf | index.ts:1266 |
+| 用途 | 模型 | 引用 | 状态 |
+|---|---|---|---|
+| 关卡白盒 | level_whitebox.glb + _col.glb | `tryLoadLevel()` index.ts:2072（默认关卡名 `whitebox` index.ts:1826） | 关卡几何体唯一来源 |
+| 传送门 / 祭坛 | turret_teleporter.gltf | 加载 index.ts:1684；摆放 `renderTeleporters()` index.ts:5334 | OK（缺模型时 fallback 蓝环+光柱） |
+
+> **2026-06-14 清理**：原"已就位的 Cyberpunk Kit"表里列的平台 / 立柱 / 围栏 / 路灯 / 招牌 / 空调 / 管道 / 门 /
+> 拾取齿轮 / 墓碑 / 树（共 18 个文件）此前只在 `loadModels()` 里被加载，**从未摆进场景**
+> （既付启动开销又无画面产出）。已从 `index.ts` 的 `LoadedModels` 接口 / `loadedModels` 对象 / `modelPaths`
+> 三处删除，并把模型文件移到 `public/models/_unused/`（见 7.2）。日后做场景装饰时再挂回来。
 
 ### 7.2 已归档到 `public/models/_unused/`（可挂可不挂）
+
+**2026-06-14 新移入**（原"已就位 Kit"，实际未使用）：
+
+```
+platform_4x4_full.gltf · platform_4x2.gltf · platform_2x2.gltf · platform_1x1.gltf
+platform_4x1.gltf · support.gltf · support_long.gltf · rail_long.gltf
+fence_platform.gltf · light_street_1.gltf · sign_1.gltf · sign_2.gltf
+ac_unit.gltf · pipe_1.gltf · door.gltf · collectible_gear.gltf
+tombstone.glb · tree.glb
+```
+
+**更早归档**：
 
 ```
 ac_stacked.gltf · antenna_1.gltf · computer.gltf · light_square.gltf
@@ -274,8 +294,9 @@ pickup_health.gltf · pickup_heart.gltf · fence.glb
 fence_cyber.fbx · light_street.fbx · rail_long.fbx · sign_1.fbx（FBX 重复，建议删）
 ```
 
-> 已挪到 `public/models/_unused/` 子目录；要启用任意一个：`mv public/models/_unused/<file> public/models/`
-> 并在 `index.ts:1259` 的 `loadModels()` 列表里加一行即可。
+> 要启用任意一个：`mv public/models/_unused/<file> public/models/`，
+> 并在 `loadModels()`（index.ts:1683 起的 `modelPaths`）里加一行，同时在 `LoadedModels` 接口和
+> `loadedModels` 对象补对应字段（三处强类型绑定，必须同步）。
 
 ### 7.3 场景缺失
 
@@ -398,7 +419,7 @@ public/textures/texture_sign.png
 ### P0 — 影响游戏识别度（本周必补）
 
 1. **6 个敌人语义模型**（skeleton_soldier / skeleton_archer / skeleton_knight / necromancer / gargoyle）—— zombie 已 OK
-2. **真正的 Boss 模型**（骷髅王，约 5m 高，大剑+披风+王冠）
+2. **两套机甲 Boss 模型**（游侠机甲 / 攻城机甲；当前用带枪机械敌占位）+ **Boss 寻路优化**（见 §3.1）
 3. **5 个新武器手持/弹幕模型**：ray_gun、poison_bomb、paralysis_gun、void_ripple、scorch_boots
 4. **武器 UI 图标 12 张**（替代 emoji）
 5. **消耗品 UI 图标 10 张**（替代 emoji）

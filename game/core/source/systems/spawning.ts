@@ -342,15 +342,20 @@ export function checkBossSpawn(engine: Engine): void {
   const bossZ = triggerAltar ? triggerAltar.z : -engine.config.mapSize * 0.3;
   const bossY = getTerrainHeightAt(engine.geo, bossX, bossZ);
 
+  // 关卡决定机甲种类：第 1 关游侠机甲，第 2 关攻城机甲（各走独立 phase script）。
+  const bossType = engine.state.stage >= 2 ? 'siege_mech' : 'gunner_mech';
+
   engine.state.boss = {
     x: bossX,
     y: Number.isFinite(bossY) ? bossY : 0,
     z: bossZ,
     hp: Math.round(BOSS_HP * tierCfg.bossHpMultiplier),
     maxHp: Math.round(BOSS_HP * tierCfg.bossHpMultiplier),
+    bossType,
     phase: 1,
     currentAttack: 'idle',
     attackTimer: BOSS_INTRO_DURATION,
+    attackAnimTimer: 0,
     attackCooldown: 3.0,
     hitFlashTimer: 0,
     speed: 3.0,
@@ -358,5 +363,6 @@ export function checkBossSpawn(engine: Engine): void {
   };
 
   engine.state.phase = 'boss_intro';
-  engine.state.enemies = [];
+  // 召唤 boss 时不清场：保留场上已有敌人，与 boss 同时存在。
+  // （boss_intro / boss_fight 阶段 tickSpawning 仍跳过常规刷怪，故不会再新增波次。）
 }

@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { tickSpawning, checkBossSpawn } from '../spawning.ts';
-import { makeEngine, makePlayer } from './_fixtures.ts';
+import { makeEngine, makePlayer, makeEnemy } from './_fixtures.ts';
 import { ALTAR_SUMMON_DURATION, REGULAR_GAME_DURATION } from '../../config.ts';
 
 describe('tickSpawning', () => {
@@ -192,7 +192,7 @@ describe('tickSpawning', () => {
 describe('checkBossSpawn', () => {
   it('boss 已存在时不重复 spawn', () => {
     const engine = makeEngine();
-    engine.state.boss = { x: 0, y: 0, z: 0, hp: 100, maxHp: 100, phase: 1, currentAttack: 'idle', attackTimer: 0, attackCooldown: 0, hitFlashTimer: 0, speed: 3, enraged: false };
+    engine.state.boss = { x: 0, y: 0, z: 0, hp: 100, maxHp: 100, bossType: 'gunner_mech', phase: 1, currentAttack: 'idle', attackTimer: 0, attackAnimTimer: 0, attackCooldown: 0, hitFlashTimer: 0, speed: 3, enraged: false };
     engine.state.altars = [{
       x: 0, z: 0, phase: 'boss_active', summonTimer: 0, summonDuration: ALTAR_SUMMON_DURATION,
     }];
@@ -221,16 +221,18 @@ describe('checkBossSpawn', () => {
     expect(engine.state.boss).toBeNull();
   });
 
-  it('有 boss_active 祭坛 → boss spawn + phase=boss_intro + 清场', () => {
+  it('有 boss_active 祭坛 → boss spawn + phase=boss_intro + 不清场', () => {
     const engine = makeEngine();
     engine.config = { ...engine.config, tier: 1 };
     engine.state.altars = [{
       x: 5, z: 7, phase: 'boss_active', summonTimer: ALTAR_SUMMON_DURATION, summonDuration: ALTAR_SUMMON_DURATION,
     }];
+    // 起场前场上已有敌人，召唤 boss 不应清除它们
+    engine.state.enemies = [makeEnemy(1, 'zombie', 10, 10)];
     checkBossSpawn(engine);
     expect(engine.state.boss).not.toBeNull();
     expect(engine.state.phase).toBe('boss_intro');
-    expect(engine.state.enemies).toHaveLength(0);
+    expect(engine.state.enemies).toHaveLength(1);
     // Boss 出场点应该贴近触发祭坛
     expect(engine.state.boss!.x).toBeCloseTo(5);
     expect(engine.state.boss!.z).toBeCloseTo(7);

@@ -111,7 +111,9 @@ export type GameRuntimeEvents = {
  */
 type VfxTextureKey =
   | 'spark' | 'star' | 'smoke' | 'light' | 'slash'
-  | 'muzzle' | 'magic_circle' | 'portal_swirl' | 'scorch' | 'dirt' | 'flame';
+  | 'muzzle' | 'magic_circle' | 'portal_swirl' | 'scorch' | 'dirt' | 'flame'
+  | 'twirl' | 'slash_fill' | 'flame_aura' | 'lightning' | 'flare' | 'void_ripple'
+  | 'scorch_boots' | 'enemy_bullet';
 
 const VFX_TEXTURE_FILES: Record<VfxTextureKey, string> = {
   spark: '/textures/vfx/spark.png',
@@ -125,6 +127,14 @@ const VFX_TEXTURE_FILES: Record<VfxTextureKey, string> = {
   scorch: '/textures/vfx/scorch.png',
   dirt: '/textures/vfx/dirt.png',
   flame: '/textures/vfx/flame.png',
+  twirl: '/textures/particle_twirl.png',
+  slash_fill: '/textures/vfx/slash_fill.png',
+  flame_aura: '/textures/vfx/flame_aura.png',
+  lightning: '/textures/vfx/lightning.png',
+  flare: '/textures/particle_flare.png',
+  void_ripple: '/textures/vfx/void_ripple.png',
+  scorch_boots: '/textures/vfx/scorch_boots.png',
+  enemy_bullet: '/textures/vfx/enemy_bullet.png',
 };
 
 /** Billboard 池中每个槽位的运行时状态。 */
@@ -284,7 +294,7 @@ const WEAPON_PROJECTILE_COLORS: Record<string, number> = {
   sword: 0xcccccc,
   bone_bouncer: 0xf5f5dc,
   axe: 0x888888,
-  bow: 0xffcc44, // displayed as Revolver — gold/brass bullet
+  pistol: 0xffcc44, // gold/brass bullet
   lightning_staff: 0x44aaff,
   flame_ring: 0xff6600,
   shotgun: 0xffee44,
@@ -1409,7 +1419,7 @@ const WEAPON_ICONS: Record<string, string> = {
   sword: '🗡️',
   bone_bouncer: '🦴',
   axe: '🪓',
-  bow: '🔫',
+  pistol: '🔫',
   lightning_staff: '⚡',
   flame_ring: '🔥',
   shotgun: '💥',
@@ -2165,7 +2175,8 @@ let boneGeometry: THREE.BufferGeometry | null = null;
 let axeModel: THREE.Group | null = null; // Full model with materials
 let swordModel: THREE.Group | null = null;
 let katanaModel: THREE.Group | null = null;
-let bowModel: THREE.Group | null = null;
+let pistolModel: THREE.Group | null = null;
+let bulletModel: THREE.Group | null = null; // pistol 子弹模型（items/bullet.glb）
 let daggerModel: THREE.Group | null = null;
 let hammerModel: THREE.Group | null = null;
 let dartModel: THREE.Group | null = null;
@@ -2382,16 +2393,18 @@ async function loadObjItems(): Promise<void> {
   };
 
   // Load all weapon models in parallel — pass brighten=true for weapons only
-  const [ax, sw, kat, bow, dag, ham, dar, darG, lstaff, fring, pbomb, vbook, rgun, sgun, pgun, sboots] = await Promise.all([
+  const [ax, sw, kat, pistol, dag, ham, dar, darG, bul, lstaff, fring, pbomb, vbook, rgun, sgun, pgun, sboots] = await Promise.all([
     loadFullModel('AxeModel', '/models/items/Axe_small.mtl', '/models/items/Axe_small.obj', 0.6, true),
     loadFullModel('SwordModel', '/models/items/greatsword.mtl', '/models/items/greatsword.obj', 0.8, true),
     loadFullModel('KatanaModel', '/models/items/Sword_big.mtl', '/models/items/Sword_big.obj', 0.9, true),
-    // "bow" weapon is displayed in-game as a pistol — self-exported GLB w/ texture
-    loadTexturedGlbWeaponModel('BowModel', '/models/items/pistol.glb', 0.7),
+    // pistol 武器自身的悬浮模型（自导出 GLB + 贴图）
+    loadTexturedGlbWeaponModel('PistolModel', '/models/items/pistol.glb', 0.7),
     loadFullModel('DaggerModel', '/models/items/Dagger.mtl', '/models/items/Dagger.obj', 0.4, true),
     loadFullModel('HammerModel', '/models/items/Hammer_Double.mtl', '/models/items/Hammer_Double.obj', 0.7, true),
     loadFullModel('DartModel', '/models/items/Dart.mtl', '/models/items/Dart.obj', 0.4, true),
-    loadFullModel('DartGoldenModel', '/models/items/Dart_Golden.mtl', '/models/items/Dart_Golden.obj', 0.45, true),
+    loadGlbWeaponModel('DartGoldenModel', '/models/items/bullet.glb', 0.45, true),
+    // pistol 子弹模型（与霰弹弹丸同源 bullet.glb，但独立缩放/朝向）
+    loadGlbWeaponModel('BulletModel', '/models/items/bullet.glb', 0.5, true),
     // Magic weapon floater models (previously VFX-only)
     loadTexturedGlbWeaponModel('LightningStaffModel', '/models/items/lightning_staff.glb', 1.0),
     loadFullModel('FlameRingModel', '/models/items/Ring3.mtl', '/models/items/Ring3.obj', 0.45, true),
@@ -2405,11 +2418,24 @@ async function loadObjItems(): Promise<void> {
   axeModel = ax;
   swordModel = sw;
   katanaModel = kat;
-  bowModel = bow;
+  pistolModel = pistol;
   daggerModel = dag;
   hammerModel = ham;
   dartModel = dar;
   dartGoldenModel = darG;
+  bulletModel = bul;
+  // bullet.glb 的长轴是 +X，而弹丸朝向约定是 +Z（方向渲染只绕 Y 旋转）。
+  // 给内部节点烘一个 -90° 偏航，把枪口方向对齐到行进方向，避免子弹横着飞。
+  if (dartGoldenModel) {
+    for (const child of dartGoldenModel.children) {
+      child.rotation.y -= Math.PI / 2;
+    }
+  }
+  if (bulletModel) {
+    for (const child of bulletModel.children) {
+      child.rotation.y -= Math.PI / 2;
+    }
+  }
   lightningStaffModel = lstaff;
   flameRingModel = fring;
   poisonBombModel = pbomb;
@@ -2459,11 +2485,18 @@ export class GameScene {
   private readonly _dummy = new THREE.Object3D();
   private readonly _tempVec = new THREE.Vector3();
   private readonly _tempColor = new THREE.Color();
+  // 敌人弹幕火焰 billboard 朝向计算的临时量（避免每帧每弹分配）
+  private readonly _camWorldPos = new THREE.Vector3();
+  private readonly _vfxNormal = new THREE.Vector3();
+  private readonly _vfxUp = new THREE.Vector3();
+  private readonly _vfxRight = new THREE.Vector3();
+  private readonly _vfxZ = new THREE.Vector3();
+  private readonly _vfxMatrix = new THREE.Matrix4();
+  private readonly _vfxScale = new THREE.Vector3();
 
   // Scene objects
   private playerMesh!: THREE.Mesh;
   private playerRing!: THREE.Mesh;
-  private playerAuraMesh!: THREE.Mesh;
   private groundMesh!: THREE.Mesh;
   private gridLines!: THREE.LineSegments;
   private bossMesh: THREE.Mesh | null = null;
@@ -2493,17 +2526,21 @@ export class GameScene {
   // Weapon floaters — physical weapons orbit the player as visual indicator
   // Magic weapons (lightning_staff / flame_ring) use VFX only
   private weaponFloaters: Map<string, THREE.Object3D> = new Map();
+  // axe 同样保留装饰 floater（贴近玩家内圈旋转，半径 1.134）作为「已装备」指示器，与其它武器一致；
+  // 真正的攻击斧头是外圈常驻刀环（renderProjectiles 里的 axeObjects，半径 = range 3.0），两者半径不同可区分。
   private static readonly FLOATER_WEAPON_TYPES: ReadonlyArray<string> = [
-    'sword', 'bone_bouncer', 'axe', 'bow', 'shotgun',
+    'sword', 'bone_bouncer', 'axe', 'pistol', 'shotgun',
     'lightning_staff', 'flame_ring', 'poison_bomb', 'void_ripple', 'ray_gun', 'paralysis_gun', 'scorch_boots',
   ];
 
-  // Transient mesh-based VFX (slash arcs, lightning columns)
-  private slashEffects: Array<{ mesh: THREE.Mesh; life: number; maxLife: number }> = [];
-  // Procedural multi-layer lightning: jagged path + glow/core tubes + impact light + ground ring
+  // Transient mesh-based VFX (sword slash sectors, lightning columns)
+  // 剑气实心扇形：与 sweepArc 判定区一一对应（圆心=玩家 / 外缘=range / 108° / 内缘≈0），
+  // 叠在 slash.png 月牙之下作为"扫过的填充面积"底光。
+  private slashSectors: Array<{ mesh: THREE.Mesh; life: number; maxLife: number; baseOpacity: number }> = [];
+  // Textured lightning: glow/core 贴图竖直面片(lightning.png) + impact light + ground ring
   private lightningBolts: Array<{
-    core: THREE.Mesh;
-    glow: THREE.Mesh;
+    core: THREE.Mesh; // 窄白亮芯面片
+    glow: THREE.Mesh; // 宽蓝外晕面片
     ring: THREE.Mesh;
     endX: number;
     endY: number;
@@ -2513,8 +2550,10 @@ export class GameScene {
     maxLife: number;
     flickerTimer: number;
   }> = [];
-  // Persistent flame_ring disk centered on player while equipped
-  private flameRingDisk: THREE.Mesh | null = null;
+  // Persistent flame_ring decal centered on player while equipped.
+  // 两层星形符文（外圈深橙 / 内核亮黄）反向旋转 + 呼吸脉动，尺寸吻合实际 aoeRadius。
+  private flameRingDisk: THREE.Group | null = null;
+  private flameRingLayers: THREE.Mesh[] = [];
   private flameRingTime = 0;
   // Edge-detect weapon firing for one-shot VFX
   private lastWeaponCooldown: Map<string, number> = new Map();
@@ -2589,8 +2628,10 @@ export class GameScene {
   private mysteryNumberValue = -1;
   private arcaneBurstOrbs: { sprite: THREE.Sprite; from: THREE.Vector3; to: THREE.Vector3; t: number; life: number }[] = [];
   private projectileMesh!: THREE.InstancedMesh;
+  private enemyProjectileMesh!: THREE.InstancedMesh; // 敌人弹幕：朝相机的火焰 billboard
   private axeObjects: Map<number, THREE.Object3D> = new Map(); // axe projectile id → cloned model
   private weaponObjects: Map<number, THREE.Object3D> = new Map(); // other weapon projectiles → cloned model
+  private bossProjectileObjects: Map<number, THREE.Object3D> = new Map(); // boss（机器人）弹丸 → bullet.glb 克隆
   private areaEffectObjects: Map<number, THREE.Object3D> = new Map(); // area effect id → mesh (gas/ripple/scorch/beam)
   private pickupMeshes: Map<PickupType, THREE.InstancedMesh> = new Map();
   private consumableSprites: Map<number, THREE.Sprite> = new Map();
@@ -2698,7 +2739,6 @@ export class GameScene {
   private dyingEnemies: Map<number, { obj: THREE.Object3D; timer: number; type: string }> = new Map();
 
   // Boss attack warning elements
-  private bossWarningRing: THREE.Mesh | null = null;
   private bossAoeFlashTimer = 0;
 
   /** GM 调试：碰撞盒可视化层（col_/wall_/climb_/ramp_/spawn_），按需 lazy 构建。 */
@@ -3096,18 +3136,6 @@ export class GameScene {
     this.playerRing.rotation.x = -Math.PI / 2;
     this.playerRing.position.y = 0.02;
     this.scene.add(this.playerRing);
-
-    // Evolved weapon golden aura (invisible by default)
-    const auraGeo = new THREE.SphereGeometry(1.2, 12, 8);
-    const auraMat = new THREE.MeshBasicMaterial({
-      color: 0xffcc00,
-      transparent: true,
-      opacity: 0,
-    });
-    this.playerAuraMesh = new THREE.Mesh(auraGeo, auraMat);
-    this.playerAuraMesh.name = 'PlayerAura';
-    this.playerAuraMesh.visible = false;
-    this.scene.add(this.playerAuraMesh);
   }
 
   private playPlayerAnim(name: string, timeScale: number = 1.0, loops: number = 1): void {
@@ -3402,6 +3430,25 @@ export class GameScene {
     this.projectileMesh.count = 0;
     this.projectileMesh.frustumCulled = false;
     this.scene.add(this.projectileMesh);
+
+    // 敌人弹幕：朝相机的火焰 billboard（平面 + 火焰贴图，加法混合发光）。
+    // 每帧在 renderProjectiles 里按"朝相机 + 火焰尾沿速度反向拖尾"重建实例矩阵。
+    const flameTex = new THREE.TextureLoader().load('/textures/vfx/enemy_bullet.png');
+    flameTex.colorSpace = THREE.SRGBColorSpace;
+    const flameGeo = new THREE.PlaneGeometry(1, 1);
+    const flameMat = new THREE.MeshBasicMaterial({
+      map: flameTex,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
+    this.enemyProjectileMesh = new THREE.InstancedMesh(flameGeo, flameMat, MAX_PROJECTILES);
+    this.enemyProjectileMesh.name = 'EnemyProjectiles';
+    this.enemyProjectileMesh.count = 0;
+    this.enemyProjectileMesh.frustumCulled = false;
+    this.enemyProjectileMesh.renderOrder = 4; // 在 outline 之上、HUD billboard 之下
+    this.scene.add(this.enemyProjectileMesh);
   }
 
   private setupPickupMesh(): void {
@@ -3919,15 +3966,6 @@ export class GameScene {
     this.comboLabel = document.createElement('div');
     this.comboLabel.style.cssText = 'position:absolute;top:35%;left:50%;transform:translate(-50%,-50%);color:#ffd700;font-size:28px;font-weight:bold;text-shadow:0 0 12px rgba(255,215,0,0.8),0 2px 4px rgba(0,0,0,0.9);pointer-events:none;opacity:0;transition:opacity 0.3s ease-out;white-space:nowrap;';
     this.hudContainer.appendChild(this.comboLabel);
-
-    // Boss attack warning ring (3D scene)
-    const ringGeo = new THREE.RingGeometry(0.5, 3.5, 32);
-    ringGeo.rotateX(-Math.PI / 2);
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
-    this.bossWarningRing = new THREE.Mesh(ringGeo, ringMat);
-    this.bossWarningRing.name = 'BossWarningRing';
-    this.bossWarningRing.visible = false;
-    this.scene.add(this.bossWarningRing);
   }
 
   private setupDamageNumbers(): void {
@@ -4357,7 +4395,6 @@ export class GameScene {
     }
 
     ringMat.color.setHex(0x00ff88);
-    this.playerAuraMesh.visible = false;
 
     // === Weapon orbs (legacy stub) ===
     this.renderWeaponOrbs(state);
@@ -4401,7 +4438,7 @@ export class GameScene {
     switch (weaponType) {
       case 'sword':    return swordModel ? swordModel.clone(true) : null;
       case 'axe':      return axeModel ? axeModel.clone(true) : null;
-      case 'bow':      return bowModel ? bowModel.clone(true) : null; // Revolver model
+      case 'pistol':   return pistolModel ? pistolModel.clone(true) : null; // Pistol model
       case 'shotgun':  return shotgunModel ? shotgunModel.clone(true) : (dartGoldenModel ? dartGoldenModel.clone(true) : null);
       case 'bone_bouncer': {
         if (!boneGeometry) return null;
@@ -4419,7 +4456,7 @@ export class GameScene {
     }
   }
 
-  // Renders physical weapons (sword/axe/bone/bow/shotgun) as visual
+  // Renders physical weapons (sword/axe/bone/pistol/shotgun) as visual
   // floaters that orbit the player. Magic weapons render no floater —
   // they express themselves entirely through VFX (see updateVFX).
   private renderWeaponFloaters(state: GameState): void {
@@ -4482,7 +4519,7 @@ export class GameScene {
           // Tip up, slow yaw spin
           obj.rotation.set(0, time * 1.4, 0);
           break;
-        case 'bow':
+        case 'pistol':
         case 'shotgun':
           // Dart points along orbit tangent (forward direction of travel)
           obj.rotation.set(Math.sin(time * 2 + i) * 0.15, angle + Math.PI / 2, 0);
@@ -4523,62 +4560,96 @@ export class GameScene {
 
   // === Magic weapon VFX ===
 
-  // Sword slash arc: a horizontal ring-segment plane that flashes on cooldown reset
-  private spawnSlashArc(x: number, y: number, z: number, angle: number): void {
-    // 120° arc, inner 1.0 → outer 1.9
-    const geo = new THREE.RingGeometry(1.0, 1.9, 24, 1, -Math.PI / 3, (Math.PI * 2) / 3);
+  // Sword slash filled sector: 与 sweepArc 命中区精确对应的实心扇形底光。
+  //   - 圆心 = 玩家 (x,z)；外缘 = range（击杀边界）；内缘 ≈ 0（贴近玩家）
+  //   - 扇形角 = Math.PI*0.6 (108°)，对称居中在该刀方向 angle 上
+  //   - 横躺地面，叠在 slash.png 月牙之下（更暗、更柔，表达"扫过的面积"）
+  private spawnSlashSector(x: number, y: number, z: number, angle: number, range: number): void {
+    const thetaLength = Math.PI * 0.944; // 170°，与 sweepArc arcAngle 一致
+    // 高分段：thetaSegs 让弧线圆滑、phiSegs 让径向 alpha 渐变平滑。
+    const thetaSegs = 48;
+    const phiSegs = 8;
+    // 内缘留极小值避免退化三角面在玩家脚下糊成一点
+    const geo = new THREE.RingGeometry(0.2, range, thetaSegs, phiSegs, -thetaLength / 2, thetaLength);
+
+    // 逐顶点 alpha 羽化：消除扇形的硬边界。
+    //   - 角度方向：两条直边 18% 处淡出到 0（凹口两侧不再是硬切线）
+    //   - 径向方向：外缘 30% 处淡出到 0（外圈融入地面，不再是硬弧线）
+    // RingGeometry 顶点顺序：外层 j(内→外) × 内层 i(沿角度)，索引 = j*(thetaSegs+1)+i。
+    const ANG_FEATHER = 0.18; // 角度边羽化带宽（占整段比例）
+    const OUT_FEATHER = 0.30; // 外缘羽化带宽（占径向比例）
+    const colors = new Float32Array(geo.attributes.position.count * 4);
+    let vi = 0;
+    for (let j = 0; j <= phiSegs; j++) {
+      const v = j / phiSegs;                                   // 0 内缘 → 1 外缘
+      const fr = Math.min(1, (1 - v) / OUT_FEATHER);           // 外缘淡出
+      for (let i = 0; i <= thetaSegs; i++) {
+        const u = i / thetaSegs;                               // 0..1 跨角度
+        const fa = Math.min(1, Math.min(u, 1 - u) / ANG_FEATHER); // 两侧淡出
+        const a = Math.max(0, fr) * Math.max(0, fa);
+        colors[vi * 4 + 0] = 1;
+        colors[vi * 4 + 1] = 1;
+        colors[vi * 4 + 2] = 1;
+        colors[vi * 4 + 3] = a;
+        vi++;
+      }
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 4));
+    geo.rotateX(-Math.PI / 2); // 躺平到地面（法线朝 +Y）
+
+    // RingGeometry 的 UV 是径向映射（贴图中心↔几何圆心，向外铺到外缘），
+    // 所以放射状贴图能贴成"从玩家朝外发散"的扇形切片。想换风格改这一行即可：
+    //   'scorch'(放射条纹) / 'magic_circle'(法术) / 也可用 particle_* 系列。
+    const SLASH_SECTOR_TEXTURE: VfxTextureKey = 'slash_fill';
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xddffff,
+      color: 0x3aa0ff, // 偏蓝
+      map: this.vfxTextures[SLASH_SECTOR_TEXTURE] ?? null,
+      vertexColors: true, // 顶点 alpha 羽化边界（附加混合用 SrcAlpha，alpha 调制贡献）
       transparent: true,
-      opacity: 0.9,
+      opacity: 1.0, // 最亮（附加混合，opacity 直接放大亮度）
       side: THREE.DoubleSide,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
     const mesh = new THREE.Mesh(geo, mat);
-    // Lay flat on horizontal plane
-    mesh.rotation.x = -Math.PI / 2;
-    // Aim the arc opening toward the target direction
-    mesh.rotation.z = -angle + Math.PI / 2;
     mesh.position.set(x, y, z);
+    // 扇形中心射线（local +X）对齐该刀的 swing 方向：rotation.y = angle - π/2
+    mesh.rotation.y = angle - Math.PI / 2;
+    mesh.renderOrder = 2; // 低于 slash.png 月牙
     this.scene.add(mesh);
-    this.slashEffects.push({ mesh, life: 0.18, maxLife: 0.18 });
+    this.slashSectors.push({ mesh, life: 0.18, maxLife: 0.18, baseOpacity: 1.0 });
   }
 
-  // Lightning bolt: procedural jagged path with double-layer glow, impact light, ground ring
+  // Lightning bolt: textured billboard quad (lightning.png) with double-layer glow, impact light, ground ring
   private spawnLightningBolt(x: number, y: number, z: number): void {
     const height = 8;
-    const segments = 12;
-    const jitter = 0.4;
     const maxLife = 0.25;       // 适中寿命，不长不短
 
-    // ---- Jagged path ----
-    const path = this.buildLightningPath(x, y, z, height, segments, jitter);
+    // 竖直贴图面片：lightning.png 为白色闪电 + 透明底，加色混合自然发光。
+    // 两层叠加：glow=宽蓝外晕、core=窄白亮芯 → "白热芯 + 蓝边"的电弧观感。
+    // 面片仅绕 Y 轴朝相机（在 updateTransientEffects 里每帧更新），始终保持竖直。
+    const tex = this.vfxTextures.lightning ?? null;
+    const makeBolt = (width: number, color: number, opacity: number, name: string): THREE.Mesh => {
+      const geo = new THREE.PlaneGeometry(width, height);
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex,
+        color,
+        transparent: true,
+        opacity,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(x, y + height / 2, z);
+      mesh.name = name;
+      // 随机水平镜像，让每道电弧形态不同
+      if (Math.random() < 0.5) mesh.scale.x = -1;
+      return mesh;
+    };
 
-    // ---- Outer glow tube: thick, light blue, low opacity ----
-    // 段数收敛（tubular 12 / radial 4）：TubeGeometry 构建是 CPU 重活，多道齐发时省开销。
-    const glowGeo = new THREE.TubeGeometry(path, 12, 0.45, 4, false);
-    const glowMat = new THREE.MeshBasicMaterial({
-      color: 0x66bbff,
-      transparent: true,
-      opacity: 0.5,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const glow = new THREE.Mesh(glowGeo, glowMat);
-    glow.name = 'LightningGlow';
-
-    // ---- Inner core tube: thin, white, full bright ----
-    const coreGeo = new THREE.TubeGeometry(path, 12, 0.11, 4, false);
-    const coreMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 1.0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const core = new THREE.Mesh(coreGeo, coreMat);
-    core.name = 'LightningCore';
+    const glow = makeBolt(3.4, 0x66bbff, 1.0, 'LightningGlow');
+    const core = makeBolt(1.7, 0xffffff, 1.0, 'LightningCore');
 
     // 闪光由常驻共享灯负责（不再每道新建 PointLight）：定位 + 点亮，强度在 update 里衰减。
     this.lightningFlashLight.position.set(x, y + 0.5, z);
@@ -4589,7 +4660,7 @@ export class GameScene {
     const ringMat = new THREE.MeshBasicMaterial({
       color: 0xaaddff,
       transparent: true,
-      opacity: 0.7,
+      opacity: 1.0,
       side: THREE.DoubleSide,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
@@ -4628,68 +4699,61 @@ export class GameScene {
     }
   }
 
-  // Generate a jagged top-down lightning path. Endpoints are anchored; middle vertices jitter.
-  private buildLightningPath(
-    x: number, y: number, z: number,
-    height: number, segments: number, jitter: number,
-  ): THREE.CatmullRomCurve3 {
-    const points: THREE.Vector3[] = [];
-    for (let i = 0; i <= segments; i++) {
-      const t = i / segments;
-      const damp = (i === 0 || i === segments) ? 0 : 1;
-      const dx = (Math.random() - 0.5) * 2 * jitter * damp;
-      const dz = (Math.random() - 0.5) * 2 * jitter * damp;
-      points.push(new THREE.Vector3(
-        x + dx,
-        y + height * (1 - t),
-        z + dz,
-      ));
-    }
-    return new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.5);
-  }
-
   // Persistent flame ring disk — created lazily, follows player while equipped
-  private ensureFlameRingDisk(): THREE.Mesh {
+  // 柔光贴图淡出到不可见的归一化半径（相对贴图半宽）。
+  // 用它把光晕外缘对齐到实际 aoeRadius：plane 边长 = 2 * radius / 此值。
+  private static readonly FLAME_AURA_TIP_NORM = 0.85;
+
+  private ensureFlameRingDisk(): THREE.Group {
     if (this.flameRingDisk) return this.flameRingDisk;
-    const geo = new THREE.RingGeometry(1.7, 2.7, 48);
+    const group = new THREE.Group();
+    group.name = 'FlameRingDisk';
+    // 平铺在地面上：组整体绕 X 转 -90°，子 plane 绕 Z 自转。
+    group.rotation.x = -Math.PI / 2;
+
+    // 单位尺寸 plane（每帧按 aoeRadius 缩放）；贴图为灰度柔光晕，可染色。
+    // 仅作"范围边界"用——半透明叠加发光，不做不透明的实心填充。
+    const planeGeo = new THREE.PlaneGeometry(1, 1);
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xff5511,
+      map: this.vfxTextures.flame_aura ?? null,
+      color: 0xff6a22,
       transparent: true,
-      opacity: 0.45,
+      opacity: 1,
       side: THREE.DoubleSide,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.name = 'FlameRingDisk';
-    this.scene.add(mesh);
-    this.flameRingDisk = mesh;
-    return mesh;
+    const mesh = new THREE.Mesh(planeGeo, mat);
+    group.add(mesh);
+
+    this.flameRingLayers = [mesh];
+    this.scene.add(group);
+    this.flameRingDisk = group;
+    return group;
   }
 
   // Drive transient meshes (slash arcs, lightning bolts): fade and dispose
   private updateTransientEffects(dt: number): void {
-    // Slash arcs: scale up + fade
-    for (let i = this.slashEffects.length - 1; i >= 0; i--) {
-      const e = this.slashEffects[i];
+    // Slash sectors: 固定尺寸（保持与 range 对齐，不放大），仅渐隐后回收。
+    for (let i = this.slashSectors.length - 1; i >= 0; i--) {
+      const e = this.slashSectors[i];
       e.life -= dt;
       if (e.life <= 0) {
         this.scene.remove(e.mesh);
         e.mesh.geometry.dispose();
         (e.mesh.material as THREE.Material).dispose();
-        this.slashEffects.splice(i, 1);
+        this.slashSectors.splice(i, 1);
         continue;
       }
-      const t = e.life / e.maxLife;     // 1 → 0
-      const grow = 1 + (1 - t) * 0.45;
-      e.mesh.scale.set(grow, grow, 1);
-      (e.mesh.material as THREE.MeshBasicMaterial).opacity = 0.9 * t;
+      const t = e.life / e.maxLife; // 1 → 0
+      (e.mesh.material as THREE.MeshBasicMaterial).opacity = e.baseOpacity * t;
     }
 
-    // Lightning bolts: jagged path flickers, tubes/ring fade together. 闪光交给常驻共享灯。
+    // Lightning bolts: 贴图面片镜像翻转 + 抖动模拟电弧跳动，面片绕 Y 朝相机。闪光交给常驻共享灯。
     let flashIntensity = 0; // 本帧所有闪电对共享灯的最强贡献
     let flashX = 0, flashY = 0, flashZ = 0;
+    const lightningCamPos = new THREE.Vector3();
+    this.camera.getWorldPosition(lightningCamPos);
     for (let i = this.lightningBolts.length - 1; i >= 0; i--) {
       const e = this.lightningBolts[i];
       e.life -= dt;
@@ -4714,28 +4778,32 @@ export class GameScene {
       // 标准二次衰减
       const fade = t * t;
 
-      // 1. Flicker: 只在寿命中段重建一次路径（之前每 60ms 重建两根 tube，CPU 太重）。
+      // 1. 面片绕 Y 朝相机（保持竖直，仅水平转向）
+      const yaw = Math.atan2(lightningCamPos.x - e.endX, lightningCamPos.z - e.endZ);
+      e.core.rotation.y = yaw;
+      e.glow.rotation.y = yaw;
+
+      // 2. Flicker: 周期性水平镜像，让电弧形态跳变（贴图廉价，无需重建几何）
       if (e.flickerTimer <= 0) {
-        e.flickerTimer = Number.POSITIVE_INFINITY; // 只重建一次
-        const newPath = this.buildLightningPath(e.endX, e.endY, e.endZ, e.height, 12, 0.4);
-        e.core.geometry.dispose();
-        e.glow.geometry.dispose();
-        e.core.geometry = new THREE.TubeGeometry(newPath, 12, 0.11, 4, false);
-        e.glow.geometry = new THREE.TubeGeometry(newPath, 12, 0.45, 4, false);
+        e.flickerTimer = 0.04 + Math.random() * 0.03;
+        const flip = Math.random() < 0.5 ? -1 : 1;
+        e.core.scale.x = Math.abs(e.core.scale.x) * flip;
+        e.glow.scale.x = Math.abs(e.glow.scale.x) * flip;
       }
 
-      // 2. Opacity
-      (e.core.material as THREE.MeshBasicMaterial).opacity = fade;
-      (e.glow.material as THREE.MeshBasicMaterial).opacity = 0.5 * fade;
+      // 3. Opacity：在衰减之上叠一层随机闪烁，营造电流频闪
+      const flick = 0.6 + Math.random() * 0.4;
+      (e.core.material as THREE.MeshBasicMaterial).opacity = fade * flick;
+      (e.glow.material as THREE.MeshBasicMaterial).opacity = fade * flick;
 
-      // 3. 收集对共享闪光灯的贡献（取最亮的一道定位）
+      // 4. 收集对共享闪光灯的贡献（取最亮的一道定位）
       const lit = 6 * fade;
       if (lit > flashIntensity) { flashIntensity = lit; flashX = e.endX; flashY = e.endY + 0.5; flashZ = e.endZ; }
 
-      // 4. Ground ring: expand and fade
+      // 5. Ground ring: expand and fade
       const ringScale = 0.3 + inv * 5;
       e.ring.scale.set(ringScale, ringScale, 1);
-      (e.ring.material as THREE.MeshBasicMaterial).opacity = 0.7 * fade;
+      (e.ring.material as THREE.MeshBasicMaterial).opacity = fade;
     }
     // 驱动常驻共享灯：有闪电就跟最亮那道，否则归零（光源数始终不变，无重编译）。
     this.lightningFlashLight.intensity = flashIntensity;
@@ -5150,9 +5218,13 @@ export class GameScene {
 
   private renderProjectiles(projectiles: ProjectileState[]): void {
     let count = 0;
+    let enemyCount = 0;
     const time = performance.now() * 0.005;
     const activeAxeIds = new Set<number>();
     const activeWeaponIds = new Set<number>();
+    const activeBossProjIds = new Set<number>();
+    // 敌人弹幕火焰 billboard 需要相机世界坐标做朝向计算
+    this.camera.getWorldPosition(this._camWorldPos);
 
     // Helper: get the model for a weapon type
     const getWeaponModel = (weaponType: string): THREE.Group | null => {
@@ -5160,7 +5232,8 @@ export class GameScene {
         case 'axe': return axeModel;
         case 'sword': return swordModel;
         case 'katana': return katanaModel;
-        case 'bow': return null; // displayed as Revolver — fires bullets via InstancedMesh
+        case 'pistol': return bulletModel; // pistol 子弹模型（items/bullet.glb）
+        case 'paralysis_gun': return bulletModel; // 麻痹弹复用 items/bullet.glb
         case 'bone_bouncer': return null; // handled with boneGeometry fallback below
         case 'revolver': return null; // uses InstancedMesh (bullet)
         case 'shotgun': return dartGoldenModel; // golden dart pellets
@@ -5172,8 +5245,8 @@ export class GameScene {
     };
 
     // Weapon types that use individual model clones (not InstancedMesh)
-    // Note: 'bow' is NOT included — it's the in-game Revolver and uses bullet InstancedMesh
-    const modelWeaponTypes = new Set(['axe', 'sword', 'katana', 'hammer', 'dagger', 'dart', 'bone_bouncer', 'revolver', 'shotgun']);
+    // 'pistol' included — its bullets render with the bullet.glb model.
+    const modelWeaponTypes = new Set(['axe', 'sword', 'katana', 'hammer', 'dagger', 'dart', 'bone_bouncer', 'revolver', 'shotgun', 'pistol', 'paralysis_gun']);
 
     for (const proj of projectiles) {
       // Axe projectiles: orbiting, blade faces outward
@@ -5232,7 +5305,7 @@ export class GameScene {
         continue;
       }
 
-      // Sword/Katana/Dagger/Dart/Bow(arrow): directional, tip faces movement direction
+      // Sword/Katana/Dagger/Dart/Pistol(bullet): directional, tip faces movement direction
       if (modelWeaponTypes.has(proj.weaponType as string) && proj.fromPlayer && (proj.weaponType as string) !== 'axe' && (proj.weaponType as string) !== 'hammer') {
         activeWeaponIds.add(proj.id);
         let obj = this.weaponObjects.get(proj.id);
@@ -5268,6 +5341,77 @@ export class GameScene {
         continue;
       }
 
+      // Boss（机器人）弹丸：用 items/bullet.glb 模型，朝飞行方向
+      if (!proj.fromPlayer && proj.weaponType === 'flame_ring') {
+        activeBossProjIds.add(proj.id);
+        let obj = this.bossProjectileObjects.get(proj.id);
+        if (!obj) {
+          if (bulletModel) {
+            obj = bulletModel.clone();
+          } else {
+            const geo = new THREE.SphereGeometry(0.3, 8, 6);
+            const mat = new THREE.MeshToonMaterial({ color: 0xff5522, gradientMap: toonGradientMap });
+            obj = new THREE.Mesh(geo, mat);
+          }
+          obj.name = `BossProj_${proj.id}`;
+          this.scene.add(obj);
+          this.bossProjectileObjects.set(proj.id, obj);
+        }
+        obj.position.set(proj.x, proj.y, proj.z);
+        // 朝飞行方向（含俯冲炮弹的垂直分量）
+        const sp = Math.sqrt(proj.vx * proj.vx + proj.vy * proj.vy + proj.vz * proj.vz);
+        if (sp > 0.001) {
+          obj.rotation.set(0, 0, 0);
+          obj.rotation.order = 'YXZ';
+          obj.rotation.y = Math.atan2(proj.vx, proj.vz);
+          obj.rotation.x = Math.atan2(-proj.vy, Math.sqrt(proj.vx * proj.vx + proj.vz * proj.vz));
+        }
+        obj.visible = true;
+        continue;
+      }
+
+      // Enemy projectiles: 朝相机的火焰 billboard，火焰尾沿飞行方向反向拖尾
+      if (!proj.fromPlayer) {
+        const px = proj.x, py = proj.y, pz = proj.z;
+        // 法线：从弹丸指向相机（point-facing billboard）
+        this._vfxNormal.set(this._camWorldPos.x - px, this._camWorldPos.y - py, this._camWorldPos.z - pz);
+        if (this._vfxNormal.lengthSq() < 1e-6) this._vfxNormal.set(0, 0, 1);
+        this._vfxNormal.normalize();
+
+        // 速度方向投影到 billboard 平面上，作为火焰"朝向"；火焰尖端在贴图 +Y，
+        // 让尖端朝运动反方向（拖尾），故取负。
+        this._vfxUp.set(proj.vx, proj.vy, proj.vz);
+        const speedSq = this._vfxUp.lengthSq();
+        if (speedSq > 1e-6) {
+          this._vfxUp.normalize();
+          const dot = this._vfxUp.dot(this._vfxNormal);
+          this._vfxUp.addScaledVector(this._vfxNormal, -dot); // 投影到平面
+        }
+        if (this._vfxUp.lengthSq() < 1e-6) this._vfxUp.set(0, 1, 0); // 速度≈0 或正对相机时兜底竖直
+        this._vfxUp.normalize().negate();
+
+        // right = up × normal，再正交化 z 轴
+        this._vfxRight.crossVectors(this._vfxUp, this._vfxNormal);
+        if (this._vfxRight.lengthSq() < 1e-6) this._vfxRight.set(1, 0, 0);
+        this._vfxRight.normalize();
+        this._vfxZ.crossVectors(this._vfxRight, this._vfxUp).normalize();
+
+        // 火焰略竖长：宽 0.9、高 1.5（弹丸基准）
+        const fScale = 1.5;
+        this._vfxScale.set(fScale * 0.85, fScale, fScale);
+        this._vfxMatrix.makeBasis(this._vfxRight, this._vfxUp, this._vfxZ);
+        this._vfxMatrix.scale(this._vfxScale);
+        this._vfxMatrix.setPosition(px, py, pz);
+        this.enemyProjectileMesh.setMatrixAt(enemyCount, this._vfxMatrix);
+
+        // 橙红脉动染色（加法混合 → 发光火球）
+        const pulse = 0.75 + Math.sin(time * 3 + proj.id) * 0.25;
+        this._tempColor.setRGB(1.0, 0.32 + pulse * 0.22, 0.06);
+        this.enemyProjectileMesh.setColorAt(enemyCount, this._tempColor);
+        enemyCount++;
+        continue;
+      }
+
       // All other projectiles: use InstancedMesh (spheres)
       this._dummy.position.set(proj.x, proj.y, proj.z);
 
@@ -5276,7 +5420,7 @@ export class GameScene {
       if (proj.fromPlayer) {
         switch (proj.weaponType) {
           case 'sword': scale = 1.2; break;
-          case 'bow': scale = 0.6; break;
+          case 'pistol': scale = 0.6; break;
           case 'shotgun': scale = 0.4; break;
           case 'bone_bouncer': scale = 0.8; break;
           default: scale = 1.0;
@@ -5322,6 +5466,10 @@ export class GameScene {
     this.projectileMesh.instanceMatrix.needsUpdate = true;
     if (this.projectileMesh.instanceColor) this.projectileMesh.instanceColor.needsUpdate = true;
 
+    this.enemyProjectileMesh.count = enemyCount;
+    this.enemyProjectileMesh.instanceMatrix.needsUpdate = true;
+    if (this.enemyProjectileMesh.instanceColor) this.enemyProjectileMesh.instanceColor.needsUpdate = true;
+
     // Remove axe objects that are no longer active
     for (const [id, obj] of this.axeObjects) {
       if (!activeAxeIds.has(id)) {
@@ -5334,6 +5482,13 @@ export class GameScene {
       if (!activeWeaponIds.has(id)) {
         this.scene.remove(obj);
         this.weaponObjects.delete(id);
+      }
+    }
+    // Remove boss projectile objects that are no longer active
+    for (const [id, obj] of this.bossProjectileObjects) {
+      if (!activeBossProjIds.has(id)) {
+        this.scene.remove(obj);
+        this.bossProjectileObjects.delete(id);
       }
     }
   }
@@ -5459,9 +5614,6 @@ export class GameScene {
     if (!boss || boss.hp <= 0) {
       if (this.bossMesh) {
         this.bossMesh.visible = false;
-      }
-      if (this.bossWarningRing) {
-        this.bossWarningRing.visible = false;
       }
       if (!boss) {
         // Boss 离场：重置动画状态，下一个 boss 干净起播
@@ -5590,24 +5742,7 @@ export class GameScene {
     // === Boss Attack Warning (#4) ===
     const time = performance.now() * 0.001;
 
-    // 1. Ground warning ring when boss is charging an attack
-    if (this.bossWarningRing && boss.attackTimer > 0 && boss.currentAttack !== 'idle') {
-      this.bossWarningRing.visible = true;
-      // Position at the player (where damage will land)
-      const state = this.session.getRenderState();
-      this.bossWarningRing.position.set(state.player.x, state.player.y + 0.05, state.player.z);
-      // Scale from 0 to 1 as attack timer counts down
-      const maxTimer = boss.enraged ? 2.5 : 3.5;
-      const progress = 1 - Math.min(boss.attackTimer / maxTimer, 1);
-      this.bossWarningRing.scale.set(progress, 1, progress);
-      // Pulse opacity
-      const ringMat = this.bossWarningRing.material as THREE.MeshBasicMaterial;
-      ringMat.opacity = 0.3 + Math.sin(time * 10) * 0.2;
-    } else if (this.bossWarningRing) {
-      this.bossWarningRing.visible = false;
-    }
-
-    // 2. Boss scale pulse when charging (body glow effect)
+    // Boss scale pulse when charging (body glow effect)
     // 用 auto-scale 算出来的 baseScale，避免硬编码 10x 把 Boss 撑爆
     const baseScale = this.bossBaseScale;
     // 脉冲振幅：相对 baseScale 的 ±5% 而不是固定 ±0.5（在 baseScale=10 时 ±0.5 是 5%，
@@ -5799,7 +5934,7 @@ export class GameScene {
     sword: [1.0, 1.0, 1.0],
     bone_bouncer: [0.95, 0.9, 0.8],
     axe: [1.0, 0.6, 0.1],
-    bow: [0.8, 1.0, 0.3],
+    pistol: [0.8, 1.0, 0.3],
     lightning_staff: [0.3, 0.8, 1.0],
     flame_ring: [1.0, 0.5, 0.0],
     shotgun: [1.0, 0.8, 0.2],
@@ -5867,7 +6002,7 @@ export class GameScene {
       endScale: 2.4,
       lifetime: 0.18,
       opacityCurve: 'flash',
-      opacity: 0.9,
+      opacity: 1.0,
       color: colorHex,
       rotation: Math.random() * Math.PI * 2,
     });
@@ -6793,31 +6928,58 @@ export class GameScene {
 
       switch (ae.kind) {
         case 'ray_beam': {
-          // 细长发光盒：从玩家沿 dir 延伸 length，宽度 = width*2
+          // 交叉光柱 + 核心：从玩家沿 dir 延伸 length，宽度 = width*2
           const dx = ae.dirX ?? 0, dz = ae.dirZ ?? 1;
           const len = ae.length ?? 40;
           obj.position.set(ae.x + dx * len * 0.5, ae.y + 1.0, ae.z + dz * len * 0.5);
           obj.rotation.set(0, Math.atan2(dx, dz), 0);
-          const w = (ae.width ?? 0.5) * 2;
+          const w = (ae.width ?? 0.5) * 0.625;
           obj.scale.set(w, w, len);
-          const m = (obj as THREE.Mesh).material as THREE.MeshBasicMaterial;
-          m.opacity = 0.85 * ratio;
+          // 能量抖动：每帧轻微闪烁，核心更亮、辉光更柔
+          const flicker = 0.82 + Math.random() * 0.18;
+          for (const child of (obj as THREE.Group).children) {
+            const cm = (child as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
+            if (!cm) continue;
+            const base = 1.0;
+            cm.opacity = base * ratio * flicker;
+          }
           break;
         }
         case 'gas_cloud': {
-          obj.position.set(ae.x, ae.y + 0.1, ae.z);
+          obj.position.set(ae.x, ae.y + 0.08, ae.z);
           obj.scale.setScalar(ae.radius);
-          const m = (obj as THREE.Mesh).material as THREE.MeshBasicMaterial;
-          m.opacity = 0.32 * ratio;
-          obj.rotation.z += 0.01;
-          // 飘动的绿色毒气粒子
+          const group = obj as THREE.Group;
+          const fill = group.children[0] as THREE.Mesh;
+          const ring = group.children[1] as THREE.Mesh;
+          if (fill && ring) {
+            const fillMat = fill.material as THREE.MeshBasicMaterial;
+            const ringMat = ring.material as THREE.MeshBasicMaterial;
+            // 缓慢呼吸，营造翻腾的浓淡变化（不旋转）
+            const pulse = 0.85 + Math.sin(state.tick * 0.12) * 0.15;
+            fillMat.opacity = ratio * pulse;
+            ringMat.opacity = ratio;
+          }
+          // 上升的毒气团：稀疏的大号 smoke billboard 自地面缓缓升腾、外扩、渐隐
+          if (state.tick % 6 === 0) {
+            const a = Math.random() * Math.PI * 2;
+            const r = Math.sqrt(Math.random()) * ae.radius;
+            this.spawnBillboard({
+              texture: 'smoke',
+              x: ae.x + Math.cos(a) * r, y: ae.y + 0.4, z: ae.z + Math.sin(a) * r,
+              scale: ae.radius * 0.55, endScale: ae.radius * 0.95,
+              lifetime: 1.4, opacity: ratio, opacityCurve: 'fadeOut',
+              color: 0x5fbf32, rotation: Math.random() * Math.PI * 2,
+              rotationSpeed: (Math.random() - 0.5) * 0.6, blending: 'normal',
+            });
+          }
+          // 细碎上浮的毒粒，点缀云体内部
           if (state.tick % 3 === 0) {
             const a = Math.random() * Math.PI * 2;
             const r = Math.random() * ae.radius;
             this.spawnParticle(
               ae.x + Math.cos(a) * r, ae.y + 0.3 + Math.random() * 0.8, ae.z + Math.sin(a) * r,
               0, 0.3 + Math.random() * 0.4, 0,
-              0.6, 0.5, 0.25, 0.7, 0.12,
+              0.5, 0.5, 0.25, 0.7, 0.12,
             );
           }
           break;
@@ -6825,16 +6987,21 @@ export class GameScene {
         case 'void_ripple': {
           obj.position.set(ae.x, ae.y + 0.08, ae.z);
           obj.scale.setScalar(Math.max(0.01, ae.radius));
-          const m = (obj as THREE.Mesh).material as THREE.MeshBasicMaterial;
-          m.color.setHex(0x00ffff);
-          m.opacity = 0.6 * ratio;
+        const m = (obj as THREE.Mesh).material as THREE.MeshBasicMaterial;
+        m.color.setHex(0x00ffff);
+        m.opacity = ratio;
           break;
         }
         case 'scorch_trail': {
           obj.position.set(ae.x, ae.y + 0.06, ae.z);
-          obj.scale.setScalar(ae.radius);
-          const m = (obj as THREE.Mesh).material as THREE.MeshBasicMaterial;
-          m.opacity = 0.7 * ratio;
+          obj.scale.setScalar(Math.max(0.01, ae.radius));
+          // 焦土底层随时间淡出；发光放射层在中后段更快收敛，呈现"先亮后焦"的余烬感
+          const burn = obj.getObjectByName('scorch_burn') as THREE.Mesh | null;
+          const glow = obj.getObjectByName('scorch_glow') as THREE.Mesh | null;
+          if (burn) (burn.material as THREE.MeshBasicMaterial).opacity = ratio * 0.85;
+          if (glow) {
+            (glow.material as THREE.MeshBasicMaterial).opacity = ratio * ratio * 0.9;
+          }
           break;
         }
       }
@@ -6844,8 +7011,14 @@ export class GameScene {
     for (const [id, obj] of this.areaEffectObjects) {
       if (!live.has(id)) {
         this.scene.remove(obj);
-        const mesh = obj as THREE.Mesh;
-        if (mesh.material) (mesh.material as THREE.Material).dispose?.();
+        // 遍历销毁（gas_cloud 等是 Group，需逐子网格 dispose；贴图共享，不在此释放）
+        obj.traverse((node) => {
+          const mesh = node as THREE.Mesh;
+          if (mesh.geometry) mesh.geometry.dispose?.();
+          const mat = mesh.material;
+          if (Array.isArray(mat)) mat.forEach((m) => m.dispose?.());
+          else mat?.dispose?.();
+        });
         this.areaEffectObjects.delete(id);
       }
     }
@@ -6854,40 +7027,145 @@ export class GameScene {
   private createAreaEffectMesh(ae: GameState['areaEffects'][number]): THREE.Object3D {
     switch (ae.kind) {
       case 'ray_beam': {
-        // 单位长方体（z 长 1），靠 scale 拉伸；红色激光 + 加色混合
-        const geo = new THREE.BoxGeometry(1, 1, 1);
-        const mat = new THREE.MeshBasicMaterial({
-          color: 0xff3366, transparent: true, opacity: 0.85,
-          blending: THREE.AdditiveBlending, depthWrite: false,
+        // 激光线：交叉两片"光柱辉光"(light 贴图) + 一条灼热高亮核心盒。
+        // 单位尺寸沿 z 长 1，靠 update 里的 scale(w,w,len) 拉伸。
+        const group = new THREE.Group();
+
+        // 把 plane 的"长度轴" UV 钉在贴图水平中线(0.5)，这样 light 的径向亮带沿光束
+        // 全长均匀发亮，只在宽度方向衰减 → 读起来是一根均匀发光的光柱。
+        const makeGlowGeo = (lengthAxis: 'x' | 'y'): THREE.PlaneGeometry => {
+          const g = new THREE.PlaneGeometry(1, 1);
+          const uv = g.attributes.uv as THREE.BufferAttribute;
+          for (let i = 0; i < uv.count; i++) {
+            if (lengthAxis === 'y') uv.setY(i, 0.5);
+            else uv.setX(i, 0.5);
+          }
+          uv.needsUpdate = true;
+          return g;
+        };
+        const makeGlow = (lengthAxis: 'x' | 'y'): THREE.Mesh => {
+          const mat = new THREE.MeshBasicMaterial({
+            map: this.vfxTextures.light, color: 0xff264d,
+            transparent: true, opacity: 1.0,
+            side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
+          });
+          const mesh = new THREE.Mesh(makeGlowGeo(lengthAxis), mat);
+          mesh.name = 'beam_glow';
+          return mesh;
+        };
+        // glowH 躺平(法线 +Y)：长度走局部 y；glowV 立起(法线 +X)：长度走局部 x
+        const glowH = makeGlow('y'); glowH.rotation.x = Math.PI / 2;
+        const glowV = makeGlow('x'); glowV.rotation.y = Math.PI / 2;
+        group.add(glowH, glowV);
+
+        // 灼热核心：细长高亮盒，近白粉，加色 → 一条刺眼实线
+        const core = new THREE.Mesh(
+          new THREE.BoxGeometry(1, 1, 1),
+          new THREE.MeshBasicMaterial({
+            color: 0xffc2d2, transparent: true, opacity: 1.0,
+            blending: THREE.AdditiveBlending, depthWrite: false,
+          }),
+        );
+        core.scale.set(0.28, 0.28, 1); // 比辉光更细
+        core.name = 'beam_core';
+        group.add(core);
+
+        // 一次性：起点光斑（每次开火放一发）
+        const mdx = ae.dirX ?? 0, mdz = ae.dirZ ?? 1;
+        this.spawnBillboard({
+          texture: 'flare',
+          x: ae.x + mdx * 0.4, y: ae.y + 1.0, z: ae.z + mdz * 0.4,
+          scale: 1.6, endScale: 2.4, lifetime: 0.16, opacity: 1.0,
+          opacityCurve: 'fadeOut', color: 0xff3366, blending: 'additive',
         });
-        return new THREE.Mesh(geo, mat);
+
+        return group;
       }
       case 'gas_cloud': {
-        const geo = new THREE.CircleGeometry(1, 24);
-        const mat = new THREE.MeshBasicMaterial({
-          color: 0x2f7d24, transparent: true, opacity: 0.3,
+        // 分层毒气云：地面毒液斑（smoke 贴图）+ 毒绿边界环（magic_circle）。
+        // Group 整体按 ae.radius 缩放，单位尺寸 = 直径 2 → 半径 1，缩放后正好覆盖 AoE。
+        const group = new THREE.Group();
+
+        // 1) 地面毒液斑：柔和的 smoke 贴图平铺贴地，毒绿染色，标示效果范围内的污染地面
+        const fillGeo = new THREE.PlaneGeometry(2, 2);
+        const fillMat = new THREE.MeshBasicMaterial({
+          map: this.vfxTextures.smoke,
+          color: 0x4faa2e, transparent: true, opacity: 1.0,
           side: THREE.DoubleSide, depthWrite: false,
         });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.rotation.x = -Math.PI / 2;
-        return mesh;
+        const fill = new THREE.Mesh(fillGeo, fillMat);
+        fill.rotation.x = -Math.PI / 2;
+        fill.renderOrder = 3;
+        fill.name = 'gas_fill';
+        group.add(fill);
+
+        // 2) 边界毒环：scorch 放射贴图染毒绿、加色发光，清晰勾出 AoE 半径
+        const ringGeo = new THREE.PlaneGeometry(2, 2);
+        const ringMat = new THREE.MeshBasicMaterial({
+          map: this.vfxTextures.scorch,
+          color: 0x7bff3a, transparent: true, opacity: 1.0,
+          side: THREE.DoubleSide, depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.renderOrder = 4;
+        ring.name = 'gas_ring';
+        group.add(ring);
+
+        return group;
       }
       case 'void_ripple': {
-        // 单位环（内 0.82 外 1），靠 scale 放大
-        const geo = new THREE.RingGeometry(0.82, 1.0, 48);
+        // 同心波纹贴图（白环+透明底，alpha≈亮度），染青色加色发光；
+        // 单位 plane 直径 2（半径 1），靠 scale(radius) 放大覆盖 AoE。
+        const geo = new THREE.PlaneGeometry(2, 2);
         const mat = new THREE.MeshBasicMaterial({
-          color: 0x00ffff, transparent: true, opacity: 0.6,
+          map: this.vfxTextures.void_ripple,
+          color: 0x00ffff, transparent: true, opacity: 1.0,
           side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
         });
         const mesh = new THREE.Mesh(geo, mat);
         mesh.rotation.x = -Math.PI / 2;
         return mesh;
       }
-      case 'scorch_trail':
+      case 'scorch_trail': {
+        // 灼地痕迹：贴地的双层贴花。
+        // 底层 = 暗橙焦土圆盘（普通混合），上层 = scorch_boots 放射状灼烧贴图（加色发光）。
+        // 单位尺寸半径 1，由 update 按 ae.radius 缩放，正好覆盖 AoE。
+        const group = new THREE.Group();
+
+        const scorchGeo = new THREE.CircleGeometry(1, 24);
+        const scorchMat = new THREE.MeshBasicMaterial({
+          map: this.vfxTextures.scorch_boots ?? null,
+          color: 0x5a1f06, transparent: true, opacity: 1.0,
+          side: THREE.DoubleSide, depthWrite: false,
+        });
+        const scorch = new THREE.Mesh(scorchGeo, scorchMat);
+        scorch.rotation.x = -Math.PI / 2;
+        scorch.renderOrder = 3;
+        scorch.name = 'scorch_burn';
+        group.add(scorch);
+
+        const glowGeo = new THREE.PlaneGeometry(2, 2);
+        const glowMat = new THREE.MeshBasicMaterial({
+          map: this.vfxTextures.scorch_boots ?? null,
+          color: 0xff7a1a, transparent: true, opacity: 1.0,
+          side: THREE.DoubleSide, depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        });
+        const glow = new THREE.Mesh(glowGeo, glowMat);
+        glow.rotation.x = -Math.PI / 2;
+        glow.rotation.z = Math.random() * Math.PI * 2; // 随机初始朝向，避免每个痕迹放射纹理朝向一致
+        glow.renderOrder = 4;
+        glow.name = 'scorch_glow';
+        group.add(glow);
+
+        return group;
+      }
       default: {
         const geo = new THREE.CircleGeometry(1, 20);
         const mat = new THREE.MeshBasicMaterial({
-          color: 0xff6a1a, transparent: true, opacity: 0.7,
+          color: 0xff6a1a, transparent: true, opacity: 1.0,
           side: THREE.DoubleSide, depthWrite: false,
         });
         const mesh = new THREE.Mesh(geo, mat);
@@ -7134,23 +7412,36 @@ export class GameScene {
     }
 
     // Continuous weapon effects
+    // 火环半径取实际 aoeRadius（按武器等级查 WEAPON_STATS），让特效与判定范围一致。
     let hasFlameRing = false;
+    let flameRingRadius = 0;
     for (const weapon of player.weapons) {
       if (weapon.type === 'flame_ring' && player.alive) {
-        this.emitFlameRingParticles(player.x, player.y, player.z, 2.5);
+        const table = WEAPON_STATS.flame_ring;
+        const idx = Math.max(0, Math.min(weapon.level - 1, table.length - 1));
+        flameRingRadius = table[idx]?.aoeRadius ?? 3.5;
+        // 火焰粒子沿真实判定边界喷出，而非固定 2.5。
+        this.emitFlameRingParticles(player.x, player.y, player.z, flameRingRadius);
         hasFlameRing = true;
       }
     }
 
-    // Flame ring persistent disk (lazy-create + follow player)
+    // Flame ring persistent decal (lazy-create + follow player)
     if (hasFlameRing && player.alive) {
       const disk = this.ensureFlameRingDisk();
       disk.visible = true;
       disk.position.set(player.x, player.y + 0.05, player.z);
       this.flameRingTime += dt;
-      const pulse = 0.35 + Math.sin(this.flameRingTime * 4) * 0.15;
-      (disk.material as THREE.MeshBasicMaterial).opacity = pulse;
-      disk.rotation.z = this.flameRingTime * 0.8;
+      // 光晕外缘对齐到实际 aoeRadius 边界：plane 边长 = 2 * radius / tipNorm。
+      const breathe = 1 + Math.sin(this.flameRingTime * 4) * 0.04;
+      const size = (flameRingRadius * 2 / GameScene.FLAME_AURA_TIP_NORM) * breathe;
+      // 满不透明发光、缓慢自转，作为范围边界提示。
+      const star = this.flameRingLayers[0];
+      if (star) {
+        star.scale.set(size, size, 1);
+        star.rotation.z = this.flameRingTime * 0.6;
+        (star.material as THREE.MeshBasicMaterial).opacity = 1;
+      }
     } else if (this.flameRingDisk) {
       this.flameRingDisk.visible = false;
     }
@@ -7177,7 +7468,7 @@ export class GameScene {
       }
     }
 
-    // Sword slash arc + bow/shotgun muzzle flash —— 边缘触发，每次开火一次
+    // Sword slash arc + pistol/shotgun muzzle flash —— 边缘触发，每次开火一次
     for (const weapon of player.weapons) {
       const prev = this.lastWeaponCooldown.get(weapon.type) ?? Infinity;
       const curr = weapon.cooldownTimer;
@@ -7199,25 +7490,16 @@ export class GameScene {
           }
         }
 
-        // Big horizontal arc plane that flashes & fades
-        this.spawnSlashArc(player.x, player.y + 0.6, player.z, slashAngle);
-
-        // Kenney slash 贴图：横躺地面 + 沿 swing 方向贴
-        this.spawnBillboard({
-          texture: 'slash',
-          x: player.x + Math.sin(slashAngle) * 1.5,
-          y: player.y + 0.15,
-          z: player.z + Math.cos(slashAngle) * 1.5,
-          scale: 3.5,
-          endScale: 4.5,
-          lifetime: 0.18,
-          opacityCurve: 'flash',
-          opacity: 0.85,
-          color: 0xeef4ff,
-          facing: 'up',
-          // slash 贴图本身朝右，需要旋转到 swing 方向（+ 90° 修正贴图朝向）
-          rotation: -slashAngle + Math.PI / 2,
-        });
+        // 剑气：程序化实心扇形，几何钉在 sweepArc 真实判定上
+        // （圆心=玩家 / 外缘=range / 扇形 Math.PI*0.944 ≈ 170° / 朝最近敌人）。
+        // 多刀（projectileCount>1）按 sweepArc 同样的 baseAngle 偏移逐刀绘制。
+        const swordStats = this.getEffectiveWeaponStats(weapon);
+        const swordRange = swordStats.range;
+        const swipeCount = Math.max(1, Math.round(swordStats.projectileCount));
+        for (let s = 0; s < swipeCount; s++) {
+          const sweepAngle = slashAngle + (s - (swipeCount - 1) / 2) * 0.3;
+          this.spawnSlashSector(player.x, player.y + 0.05, player.z, sweepAngle, swordRange);
+        }
 
         // 12 lightweight particles streaking along the arc for extra punch
         for (let i = 0; i < 12; i++) {
@@ -7233,26 +7515,6 @@ export class GameScene {
             0.95, 0.97, 1.0,
           );
         }
-      }
-
-      // Bow / shotgun 开火 → 玩家身前一瞬间 muzzle flash
-      if (justFired && (weapon.type === 'bow' || weapon.type === 'shotgun')) {
-        const facing = player.rotation;
-        const fwd = 0.8;
-        const color = weapon.type === 'shotgun' ? 0xffaa44 : 0xffe0a0;
-        this.spawnBillboard({
-          texture: 'muzzle',
-          x: player.x + Math.sin(facing) * fwd,
-          y: player.y + 1.2,
-          z: player.z + Math.cos(facing) * fwd,
-          scale: weapon.type === 'shotgun' ? 1.4 : 0.9,
-          endScale: weapon.type === 'shotgun' ? 2.2 : 1.5,
-          lifetime: 0.1,
-          opacityCurve: 'flash',
-          opacity: 1.0,
-          color,
-          rotation: Math.random() * Math.PI * 2,
-        });
       }
 
       this.lastWeaponCooldown.set(weapon.type, curr);
@@ -10740,6 +11002,7 @@ function setupGMTool(): void {
     skipTo(minutes: number) { gmSkipTime(minutes); },
     giveWeapon(type: string, level: number = 1) { gmGiveWeapon(type, level); },
     giveAllWeapons() { gmGiveAllWeapons(); },
+    listWeapons() { console.log('[GM] 可选武器:\n' + ALL_WEAPON_TYPES.map((t) => `  ${t.padEnd(16)} ${GM_WEAPON_LABELS[t]}`).join('\n')); },
     testLightning() { gmTestLightning(); },
     showCollision() { gmToggleCollisionViz(); },
     help() {
@@ -10755,8 +11018,8 @@ GM Commands (window.__gm):
   .godMode()          — 无敌模式
   .skipTo(5)          — 跳到第5分钟
   .giveWeapon(type, level=1)
-                      — 加指定武器（type: sword/bone_bouncer/axe/bow/
-                        lightning_staff/flame_ring/shotgun）
+                      — 加指定武器（type 见 .listWeapons()，槽位不足自动扩容）
+  .listWeapons()      — 列出全部 12 把可选武器（id + 中文名）
   .giveAllWeapons()   — 一键塞满全部武器
   .testLightning()    — 在玩家头顶劈一道电（VFX 测试）
   .showCollision()    — 切换碰撞盒可视化（绿 col_ / 红 wall_ /
@@ -10826,11 +11089,31 @@ const ALL_WEAPON_TYPES = [
   'sword',
   'bone_bouncer',
   'axe',
-  'bow',
+  'pistol',
   'lightning_staff',
   'flame_ring',
   'shotgun',
+  'ray_gun',
+  'poison_bomb',
+  'paralysis_gun',
+  'void_ripple',
+  'scorch_boots',
 ] as const;
+
+const GM_WEAPON_LABELS: Record<(typeof ALL_WEAPON_TYPES)[number], string> = {
+  sword: '大剑',
+  bone_bouncer: '弹射骨头',
+  axe: '旋转飞斧',
+  pistol: '手枪',
+  lightning_staff: '闪电法杖',
+  flame_ring: '烈焰环',
+  shotgun: '霰弹枪',
+  ray_gun: '射线枪',
+  poison_bomb: '毒气弹',
+  paralysis_gun: '麻痹枪',
+  void_ripple: '虚空涟漪',
+  scorch_boots: '灼地靴',
+};
 
 function gmGiveWeapon(type: string, level: number = 1): void {
   if (!gmSession) return;
@@ -10846,9 +11129,9 @@ function gmGiveWeapon(type: string, level: number = 1): void {
     console.log(`[GM] ${type} → level ${existing.level}`);
     return;
   }
+  // GM 工具：槽位不足时自动扩容，保证选中的武器一定能加上
   if (player.weapons.length >= player.maxWeaponSlots) {
-    console.warn(`[GM] Weapon slots full (${player.weapons.length}/${player.maxWeaponSlots})`);
-    return;
+    player.maxWeaponSlots = player.weapons.length + 1;
   }
   player.weapons.push({
     type: type as typeof ALL_WEAPON_TYPES[number],
@@ -10939,6 +11222,52 @@ function toggleGMPanel(): void {
     btn.addEventListener('mouseleave', () => { btn.style.background = '#222'; btn.style.color = '#0f0'; });
     gmPanel.appendChild(btn);
   }
+
+  // ── 自选武器（任意武器 + 任意等级）──
+  const picker = document.createElement('div');
+  picker.style.cssText = 'margin-top:6px;padding-top:6px;border-top:1px dashed #0f0;display:flex;flex-direction:column;gap:4px;';
+
+  const pickerTitle = document.createElement('div');
+  pickerTitle.style.cssText = 'color:#ff0;font-size:11px;';
+  pickerTitle.textContent = '自选武器';
+  picker.appendChild(pickerTitle);
+
+  const weaponSelect = document.createElement('select');
+  weaponSelect.style.cssText = 'background:#222;color:#0f0;border:1px solid #0f0;border-radius:4px;font-family:monospace;font-size:11px;padding:3px;';
+  for (const type of ALL_WEAPON_TYPES) {
+    const opt = document.createElement('option');
+    opt.value = type;
+    opt.textContent = `${GM_WEAPON_LABELS[type]} (${type})`;
+    weaponSelect.appendChild(opt);
+  }
+  picker.appendChild(weaponSelect);
+
+  const levelRow = document.createElement('div');
+  levelRow.style.cssText = 'display:flex;align-items:center;gap:4px;';
+  const levelLabel = document.createElement('span');
+  levelLabel.style.cssText = 'font-size:11px;';
+  levelLabel.textContent = '等级';
+  const levelInput = document.createElement('input');
+  levelInput.type = 'number';
+  levelInput.min = '1';
+  levelInput.value = '5';
+  levelInput.style.cssText = 'width:48px;background:#222;color:#0f0;border:1px solid #0f0;border-radius:4px;font-family:monospace;font-size:11px;padding:3px;';
+  levelRow.appendChild(levelLabel);
+  levelRow.appendChild(levelInput);
+  picker.appendChild(levelRow);
+
+  const addBtn = document.createElement('button');
+  addBtn.style.cssText = 'background:#222;color:#0f0;border:1px solid #0f0;padding:4px 8px;border-radius:4px;cursor:pointer;font-family:monospace;font-size:11px;text-align:center;font-weight:bold;';
+  addBtn.textContent = '＋ 添加该武器';
+  addBtn.addEventListener('click', () => {
+    const level = Math.max(1, Math.floor(Number(levelInput.value) || 1));
+    gmGiveWeapon(weaponSelect.value, level);
+  });
+  addBtn.addEventListener('mouseenter', () => { addBtn.style.background = '#0f0'; addBtn.style.color = '#000'; });
+  addBtn.addEventListener('mouseleave', () => { addBtn.style.background = '#222'; addBtn.style.color = '#0f0'; });
+  picker.appendChild(addBtn);
+
+  gmPanel.appendChild(picker);
 
   document.body.appendChild(gmPanel);
 }

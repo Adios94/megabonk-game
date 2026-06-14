@@ -1,8 +1,8 @@
 /**
- * bow 的"前向箭矢"行为。
+ * pistol 的"前向子弹"行为。
  *
  * 与原 `GameInstance.fireBow` 行为等价：
- * - swipeCount 个箭矢
+ * - swipeCount 个子弹
  * - i===0 自动瞄准最近 in-range 敌人；其它按 player.rotation + 0.15 spread
  * - 命中扣血 / 穿透 / damageEvent 由 processCollisions 后续处理
  *
@@ -37,7 +37,7 @@ export function forwardArrow(_world: GameWorld, ctx: BehaviorContext): void {
     const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit);
 
     const id = effects.spawnProjectile({
-      weaponType: 'bow',
+      weaponType: 'pistol',
       x: player.x, y: playerProjectileY(player), z: player.z,
       vx, vy: 0, vz,
       damage,

@@ -43,7 +43,7 @@ export const ranged: EnemyBehaviorFn = (enemy, ctx, i) => {
     const projSpeed = enemy.type === 'necromancer' ? 6 : 8;
 
     const id = ctx.effects.spawnProjectile({
-      weaponType: 'bow',
+      weaponType: 'pistol',
       x: enemy.x, y: enemy.y + 1.0, z: enemy.z,
       vx: dir.x * projSpeed, vy: 0, vz: dir.z * projSpeed,
       damage: enemy.damage,

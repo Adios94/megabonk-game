@@ -80,13 +80,13 @@ export const BONDS: Record<BondId, BondDef> = {
   },
   volley: {
     id: 'volley', nameKey: 'bond.volley.name', icon: ic.volley,
-    weapons: ['bow', 'shotgun', 'bone_bouncer', 'poison_bomb'], mechanicId: 'volley_tempo',
+    weapons: ['pistol', 'shotgun', 'bone_bouncer', 'poison_bomb'], mechanicId: 'volley_tempo',
     t1: { damageInc: 0.05, attackSpeed: 0.05 },
     params: { perLevelAtkSpeed: 0.01 },
   },
   bone_crush: {
     id: 'bone_crush', nameKey: 'bond.bone_crush.name', icon: ic.bone,
-    weapons: ['bow', 'sword', 'bone_bouncer'], mechanicId: 'bone_crush_priority',
+    weapons: ['pistol', 'sword', 'bone_bouncer'], mechanicId: 'bone_crush_priority',
     t1: { conditional: { cond: 'hp_above_50', value: 0.08 } },
     params: { vulnDuration: 5, vulnPct: 0.16, priorityHp: 0.7 },
   },
@@ -108,7 +108,7 @@ export const BONDS: Record<BondId, BondDef> = {
   },
   hunter_mark: {
     id: 'hunter_mark', nameKey: 'bond.hunter_mark.name', icon: ic.hunter,
-    weapons: ['bow', 'ray_gun', 'paralysis_gun'], mechanicId: 'hunter_brand',
+    weapons: ['pistol', 'ray_gun', 'paralysis_gun'], mechanicId: 'hunter_brand',
     t1: { critChance: 0.05, critDamage: 0.10 },
     params: { brandDmgInc: 0.16, executeHpPct: 0.16 },
   },

@@ -37,7 +37,7 @@ export type WeaponType =
   | 'sword'
   | 'bone_bouncer'
   | 'axe'
-  | 'bow'
+  | 'pistol'
   | 'lightning_staff'
   | 'flame_ring'
   | 'shotgun'
@@ -127,11 +127,11 @@ export type BondId =
   | 'arcane'          // B2 奥术    N=4  lightning / flame / void / scorch
   | 'zero_range'      // B3 零距寸劲 N=4  sword / axe / void / shotgun
   | 'ember_trail'     // B4 余烬轨迹 N=2  flame / scorch
-  | 'volley'          // B5 弹幕    N=4  bow / shotgun / bone / poison
-  | 'bone_crush'      // B6 碎骨震   N=3  bow / sword / bone
+  | 'volley'          // B5 弹幕    N=4  pistol / shotgun / bone / poison
+  | 'bone_crush'      // B6 碎骨震   N=3  pistol / sword / bone
   | 'arc_conductor'   // B7 弧光导体 N=3  ray / lightning / void
   | 'poison_master'   // B8 毒师    N=2  poison / paralysis
-  | 'hunter_mark';    // B9 猎标烙印 N=3  bow / ray / paralysis
+  | 'hunter_mark';    // B9 猎标烙印 N=3  pistol / ray / paralysis
 
 /** 羁绊等级：0=未激活，1/2/3=已激活档位。 */
 export type BondTier = 0 | 1 | 2 | 3;
@@ -438,6 +438,14 @@ export interface ProjectileState {
   orbitAngle?: number;
   orbitRadius?: number;
   orbitSpeed?: number;
+  /**
+   * 周期性重置命中表的间隔（秒）。用于「常驻环绕」武器（axe 刀环）：
+   * 每隔 rehitInterval 清空 hitEnemyIds，使持续绕圈的刀刃能反复打到同一敌人，
+   * 表现为「火焰圈」式的持续伤害，而非一次性弹丸。未设置时退化为旧的「一次命中」行为。
+   */
+  rehitInterval?: number;
+  /** rehitInterval 的倒计时（秒），≤0 时清空 hitEnemyIds 并重置。 */
+  rehitTimer?: number;
   gravitational?: boolean;
   gravityStrength?: number;
   /** 命中敌人时施加的状态效果（麻痹枪等）。 */

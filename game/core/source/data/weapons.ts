@@ -28,7 +28,7 @@ export const WEAPONS: Partial<Record<WeaponType, WeaponDef>> = {
   sword:           { tags: ['sword', 'melee', 'physical'],                          behavior: 'sweepArc' },
   bone_bouncer:    { tags: ['bone_bouncer', 'projectile', 'bouncing'],              behavior: 'bouncingShot' },
   axe:             { tags: ['axe', 'projectile', 'orbiting', 'melee'],              behavior: 'orbitingAxe' },
-  bow:             { tags: ['bow', 'projectile', 'physical', 'piercing'],           behavior: 'forwardArrow' },
+  pistol:          { tags: ['pistol', 'projectile', 'physical', 'piercing'],        behavior: 'forwardArrow' },
   lightning_staff: { tags: ['lightning_staff', 'spell', 'lightning', 'chain'],      behavior: 'lightningChain' },
   flame_ring:      { tags: ['flame_ring', 'spell', 'fire', 'aoe'],                  behavior: 'flameAura' },
   shotgun:         { tags: ['shotgun', 'projectile', 'spread'],                     behavior: 'spreadShot' },

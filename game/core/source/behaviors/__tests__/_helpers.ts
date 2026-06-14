@@ -104,6 +104,12 @@ export function makeEffects(): SpyEffects {
       areaEffects.push(a);
       return nextId++;
     },
+    getPlayerOrbitProjectiles: (weaponType) =>
+      projectiles.filter(
+        (p) => (p as ProjectileState).fromPlayer
+          && (p as ProjectileState).orbiting
+          && (p as ProjectileState).weaponType === weaponType,
+      ) as unknown as ProjectileState[],
     damageEvents, knockbacks, projectiles, areaEffects,
     get damageDealtTotal() { return damageDealtTotal; },
   } as SpyEffects;

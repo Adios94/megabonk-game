@@ -134,7 +134,7 @@
 | 文件 | 用途 | 触发点 |
 |---|---|---|
 | `spark.png` | 通用粒子（主贴图） | 所有点云粒子（替换 `particle_circle.png`） |
-| `muzzle.png` | 击中光晕 / 枪口火光 | 击中怪物、bow/shotgun 开火 |
+| `muzzle.png` | 击中光晕 / 枪口火光 | 击中怪物（所有武器，`emitHitSparks`）、奥术爆发羁绊发射 + 命中爆闪 |
 | `slash.png` | 剑气贴图 | 剑攻击 swing（地面贴花，朝向 swing 方向） |
 | `smoke.png` | 死亡烟雾 | 怪物死亡 |
 | `scorch.png` | 死亡烧痕（地面贴花） | 怪物死亡，持续 1.5s |

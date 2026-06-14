@@ -1,5 +1,5 @@
 /**
- * forwardArrow (bow) 单元测试。
+ * forwardArrow (pistol) 单元测试。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { forwardArrow } from '../forwardArrow.ts';
@@ -15,11 +15,11 @@ describe('forwardArrow', () => {
     const player = makePlayer({ y: 4 });
     const enemy = makeEnemy(1, 3, 4);   // dist 5
     enemy.y = 4;
-    const ctx = makeCtx(player, [enemy], null, makeStats({ damage: 18, range: 30, speed: 25, projectileCount: 1, pierce: 0 }), 'bow', 'forwardArrow', ['bow']);
+    const ctx = makeCtx(player, [enemy], null, makeStats({ damage: 18, range: 30, speed: 25, projectileCount: 1, pierce: 0 }), 'pistol', 'forwardArrow', ['pistol']);
     forwardArrow(createWorld(), ctx);
     expect(ctx.effects.projectiles).toHaveLength(1);
     const p = ctx.effects.projectiles[0];
-    expect(p.weaponType).toBe('bow');
+    expect(p.weaponType).toBe('pistol');
     expect(p.y).toBe(5);
     expect(p.damage).toBe(18);
     expect(p.lifetime).toBe(3.0);
@@ -31,7 +31,7 @@ describe('forwardArrow', () => {
 
   it('no enemy → 1 projectile 沿 player.rotation 方向', () => {
     const player = makePlayer({ rotation: 0 });
-    const ctx = makeCtx(player, [], null, makeStats({ damage: 18, range: 30, speed: 25, projectileCount: 1 }), 'bow', 'forwardArrow', ['bow']);
+    const ctx = makeCtx(player, [], null, makeStats({ damage: 18, range: 30, speed: 25, projectileCount: 1 }), 'pistol', 'forwardArrow', ['pistol']);
     forwardArrow(createWorld(), ctx);
     expect(ctx.effects.projectiles).toHaveLength(1);
     const p = ctx.effects.projectiles[0];
@@ -42,7 +42,7 @@ describe('forwardArrow', () => {
   it('count=3 → 3 projectiles, i=0 瞄准, i=1/2 spread', () => {
     const player = makePlayer({ rotation: 0 });
     const enemy = makeEnemy(1, 0, 5);
-    const ctx = makeCtx(player, [enemy], null, makeStats({ damage: 18, range: 30, speed: 25, projectileCount: 3 }), 'bow', 'forwardArrow', ['bow']);
+    const ctx = makeCtx(player, [enemy], null, makeStats({ damage: 18, range: 30, speed: 25, projectileCount: 3 }), 'pistol', 'forwardArrow', ['pistol']);
     forwardArrow(createWorld(), ctx);
     expect(ctx.effects.projectiles).toHaveLength(3);
     // i=0 朝向 enemy: 单位化 (0,1) × 25
@@ -59,7 +59,7 @@ describe('forwardArrow', () => {
   it('enemy 超出 range → fallback to player.rotation', () => {
     const player = makePlayer({ rotation: 0 });
     const farEnemy = makeEnemy(1, 0, 100);
-    const ctx = makeCtx(player, [farEnemy], null, makeStats({ damage: 18, range: 30, speed: 25, projectileCount: 1 }), 'bow', 'forwardArrow', ['bow']);
+    const ctx = makeCtx(player, [farEnemy], null, makeStats({ damage: 18, range: 30, speed: 25, projectileCount: 1 }), 'pistol', 'forwardArrow', ['pistol']);
     forwardArrow(createWorld(), ctx);
     expect(ctx.effects.projectiles).toHaveLength(1);
     expect(ctx.effects.projectiles[0].vz).toBeCloseTo(25, 4);  // forward
@@ -69,7 +69,7 @@ describe('forwardArrow', () => {
   it('damage uses computeWeaponDamage (dM=1.5 → damage=27)', () => {
     const player = makePlayer({ damageMultiplier: 1.5 });
     const enemy = makeEnemy(1, 0, 5);
-    const ctx = makeCtx(player, [enemy], null, makeStats({ damage: 18, range: 30, speed: 25 }), 'bow', 'forwardArrow', ['bow']);
+    const ctx = makeCtx(player, [enemy], null, makeStats({ damage: 18, range: 30, speed: 25 }), 'pistol', 'forwardArrow', ['pistol']);
     forwardArrow(createWorld(), ctx);
     expect(ctx.effects.projectiles[0].damage).toBe(27);  // round(18 × 1.5) = 27
   });

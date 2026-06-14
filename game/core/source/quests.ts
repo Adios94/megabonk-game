@@ -36,7 +36,7 @@ export const QUESTS: Quest[] = [
   { id: 'q6', description: 'quest.kill_10000', type: 'kill', target: 10000, reward: { type: 'silver', value: 500 } },
 
   // Survival quests
-  { id: 'q7', description: 'quest.survive_2min', type: 'survive', target: 120, reward: { type: 'weapon_unlock', value: 'bow' } },
+  { id: 'q7', description: 'quest.survive_2min', type: 'survive', target: 120, reward: { type: 'weapon_unlock', value: 'pistol' } },
   { id: 'q8', description: 'quest.survive_5min', type: 'survive', target: 300, reward: { type: 'weapon_unlock', value: 'lightning_staff' } },
   { id: 'q9', description: 'quest.survive_7min', type: 'survive', target: 420, reward: { type: 'silver', value: 200 } },
 

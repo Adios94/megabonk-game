@@ -26,15 +26,29 @@ export function tickProjectiles(engine: Engine, dt: number): void {
 
     if (proj.orbiting) {
       updateOrbitingProjectile(proj, player.x, player.z, dt, player.y);
+      // 常驻刀环的「火焰圈」式持续伤害：每隔 rehitInterval 清空命中表，
+      // 让一直绕圈的刀刃可以反复打到同一个敌人（否则 hitEnemyIds 永不清，一把刀对一个敌人一辈子只打一次）。
+      if (proj.rehitInterval && proj.rehitInterval > 0) {
+        proj.rehitTimer = (proj.rehitTimer ?? proj.rehitInterval) - dt;
+        if (proj.rehitTimer <= 0) {
+          proj.hitEnemyIds.length = 0;
+          proj.rehitTimer += proj.rehitInterval;
+        }
+      }
     } else {
       proj.x += proj.vx * dt;
       proj.y += proj.vy * dt;
       proj.z += proj.vz * dt;
     }
 
-    const terrainY = getTerrainHeightAt(engine.geo, proj.x, proj.z);
-    if (proj.y < terrainY + 0.1) {
-      proj.y = terrainY + 0.1;
+    // 地形 clamp 仅用于防止「飞行/直线」投射物穿地。orbiting 投射物（axe 常驻刀环）的高度
+    // 已锚定在玩家身上（updateOrbitingProjectile 设 proj.y = playerY + offset），不能再按
+    // 脚下地形抬升——否则斧头绕到玩家头顶的高台下方时会被顶到高台上去。
+    if (!proj.orbiting) {
+      const terrainY = getTerrainHeightAt(engine.geo, proj.x, proj.z);
+      if (proj.y < terrainY + 0.1) {
+        proj.y = terrainY + 0.1;
+      }
     }
 
     proj.lifetime -= dt;

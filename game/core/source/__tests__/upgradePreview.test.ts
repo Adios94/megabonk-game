@@ -31,7 +31,7 @@ describe('getUpgradePreviewLines', () => {
       weaponType: 'sword', currentLevel: 1, newLevel: 2,
     };
     const lines = getUpgradePreviewLines(option, player);
-    expect(lines.some(l => l.labelKey === 'upgrade.stat.damage' && l.value === '+3')).toBe(true);
+    expect(lines.some(l => l.labelKey === 'upgrade.stat.damage' && l.value === '+4')).toBe(true);
   });
 
   it('武器升级 legendary 伤害增量为 common 的 2 倍', () => {
@@ -48,8 +48,8 @@ describe('getUpgradePreviewLines', () => {
     };
     const commonDmg = getUpgradePreviewLines(common, player).find(l => l.labelKey === 'upgrade.stat.damage')?.value;
     const legDmg = getUpgradePreviewLines(legendary, player).find(l => l.labelKey === 'upgrade.stat.damage')?.value;
-    expect(commonDmg).toBe('+3');
-    expect(legDmg).toBe('+6');
+    expect(commonDmg).toBe('+4');
+    expect(legDmg).toBe('+8');
   });
 
   it('典籍攻速显示 +10.0%', () => {

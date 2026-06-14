@@ -18,9 +18,15 @@ import { findNearestEnemy } from './queries.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
 
+/** 近战击退倍率：sword 比子弹推得更远，减轻贴脸被围压力。
+ *  控制在 1.8（力 ≈ 2.7）以内，使被推后的敌人仍留在下次挥砍范围里、不被风筝。 */
+const SWORD_KNOCKBACK_MULT = 1.8;
+
 export function sweepArc(_world: GameWorld, ctx: BehaviorContext): void {
   const { player, enemies, boss, weapon, def, stats, effects } = ctx;
-  const arcAngle = Math.PI * 0.6;
+  // 170° 宽扇形（原 108°）：被群体包围时盖住更多敌人，补偿近战覆盖短板。
+  // 注意：客户端 spawnSlashSector 的 thetaLength 必须同步成 Math.PI * 0.944。
+  const arcAngle = Math.PI * 0.944;
   const swipeCount = stats.projectileCount;
 
   // 自动瞄准最近 enemy
@@ -49,7 +55,7 @@ export function sweepArc(_world: GameWorld, ctx: BehaviorContext): void {
         enemy.hitFlashTimer = 0.15;
         effects.addDamageDealt(damage);
         effects.addDamageEvent(enemy.x, enemyDamageEventY(enemy), enemy.z, damage, isCrit, false, 'sword');
-        effects.applyKnockback(enemy, player.x, player.z);
+        effects.applyKnockback(enemy, player.x, player.z, SWORD_KNOCKBACK_MULT);
         effects.bondHit?.(weapon.type, enemy, damage, isCrit);
       }
     }

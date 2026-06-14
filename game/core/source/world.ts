@@ -2,7 +2,7 @@
  * miniplex world wrapper —— Phase 2 引入。
  *
  * Phase 2: world 实例只是建立钩子，没有 entity 实际驻留（sword 是 instant hit）。
- * Phase 3: 投射型武器（axe / bow / shotgun / bone_bouncer）会 add Projectile entity。
+ * Phase 3: 投射型武器（axe / pistol / shotgun / bone_bouncer）会 add Projectile entity。
  * Phase 4: 敌人 + boss 迁移到 world，加 enemy / health / brain 等组件。
  */
 import { World } from 'miniplex';

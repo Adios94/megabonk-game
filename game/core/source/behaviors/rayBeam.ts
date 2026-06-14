@@ -11,7 +11,7 @@
 import { computeWeaponDamage } from '../stats/index.ts';
 import { normalizeDirection } from '../physics.ts';
 import { findNearestEnemy } from './queries.ts';
-import { AOE_MAX_Y_DELTA, RAY_GUN_BEAM_LENGTH, RAY_BEAM_VISUAL_LIFETIME } from '../config.ts';
+import { AOE_MAX_Y_DELTA, RAY_GUN_BEAM_LENGTH, RAY_BEAM_VISUAL_LIFETIME, RAY_BEAM_HIT_WIDTH_SCALE } from '../config.ts';
 import { bossDamageEventY, enemyDamageEventY } from '../combatHeight.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
@@ -35,7 +35,9 @@ export function rayBeam(_world: GameWorld, ctx: BehaviorContext): void {
   }
 
   const length = RAY_GUN_BEAM_LENGTH;
-  const halfWidth = stats.aoeRadius;
+  // 渲染半宽 = aoeRadius（spawnAreaEffect 用）；判定半宽收窄以对齐客户端的细激光视觉。
+  const visualHalfWidth = stats.aoeRadius;
+  const hitHalfWidth = visualHalfWidth * RAY_BEAM_HIT_WIDTH_SCALE;
 
   const hitAlongBeam = (ex: number, ez: number, entityRadius: number): boolean => {
     const ox = ex - player.x;
@@ -43,7 +45,7 @@ export function rayBeam(_world: GameWorld, ctx: BehaviorContext): void {
     const t = ox * dx + oz * dz;          // 沿光束的投影距离
     if (t < 0 || t > length) return false; // 必须在前方且不超长
     const perp = Math.abs(ox * dz - oz * dx); // 到光束直线的垂直距离
-    return perp <= halfWidth + entityRadius;
+    return perp <= hitHalfWidth + entityRadius;
   };
 
   for (const enemy of enemies) {
@@ -80,13 +82,13 @@ export function rayBeam(_world: GameWorld, ctx: BehaviorContext): void {
     x: player.x,
     y: player.y,
     z: player.z,
-    radius: halfWidth,
+    radius: visualHalfWidth,
     lifetime: RAY_BEAM_VISUAL_LIFETIME,
     maxLifetime: RAY_BEAM_VISUAL_LIFETIME,
     damage: 0,
     dirX: dx,
     dirZ: dz,
     length,
-    width: halfWidth,
+    width: visualHalfWidth,
   });
 }

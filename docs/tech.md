@@ -250,9 +250,11 @@ PlatformInput (mode: 'joystick')   ← @minigame/platform
 |---|---|---|
 | 玩家 | 直接使用 GLTF scene | 单实例，需要骨骼动画 |
 | 敌人 | `SkeletonUtils.clone(model)` | 每实例独立 AnimationMixer |
-| 投射物 (≤200) | `InstancedMesh` (SphereGeometry) | 数量多、形状简单 |
+| 玩家投射物 | OBJ/GLTF 模型克隆，每投射物一个 Object3D | 需要朝向控制（斧/剑/弓/枪弹等） |
+| 普通敌人弹幕 | `InstancedMesh` (PlaneGeometry + `enemy_bullet.png`) | 朝相机火焰 billboard，火焰尾沿速度反向拖尾，加色发光 |
+| Boss（机器人）弹幕 | `items/bullet.glb` 克隆，每弹一个 Object3D | 朝飞行方向（含俯冲炮弹垂直分量） |
+| 通用投射物兜底 | `InstancedMesh` (SphereGeometry 0.25) | **防御性 fallback**，正常对局 count=0、永不可见，保留不删 |
 | 拾取物 (≤300) | `InstancedMesh` (OctahedronGeometry) | 数量多、形状简单 |
-| 武器实例（轨道斧、剑、弓） | OBJ 模型克隆，每投射物一个 Object3D | 需要朝向控制 |
 | 龙卷风 | （已删除） | — |
 | Boss | `SkeletonUtils.clone(boss)` | 单实例，需要动画 |
 | 平台 / 装饰 | clone GLTF scene | 静态 |

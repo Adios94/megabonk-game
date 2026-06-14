@@ -55,7 +55,7 @@ describe('ranged brain', () => {
     const arg = effects.spawnProjectileSpy.mock.calls[0][0];
     expect(arg.fromPlayer).toBe(false);
     expect(arg.damage).toBe(7);
-    expect(arg.weaponType).toBe('bow');
+    expect(arg.weaponType).toBe('pistol');
     // 投射物速度 8（archer）
     const projSpeed = Math.sqrt(arg.vx ** 2 + arg.vz ** 2);
     expect(projSpeed).toBeCloseTo(8, 5);

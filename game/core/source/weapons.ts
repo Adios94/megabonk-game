@@ -4,7 +4,7 @@
  * - Sword: melee damage arc in front of player
  * - Bone Bouncer: bouncing projectile
  * - Axe: orbiting projectiles around player (Vampire Survivors style)
- * - Bow: forward arrow (high speed, single target)
+ * - Pistol: forward bullet (high speed, single target)
  * - Lightning Staff: chain lightning (instant)
  * - Flame Ring: constant AOE around player
  * - Shotgun: spread shot forward
@@ -148,7 +148,7 @@ export function fireWeapon(
       break;
     }
 
-    case 'bow': {
+    case 'pistol': {
       // Forward arrow (high speed, single target, long range)
       const count = stats.projectileCount;
       for (let i = 0; i < count; i++) {
@@ -172,7 +172,7 @@ export function fireWeapon(
         const { finalDamage } = computeDamage(stats.damage, damageMultiplier, critChance, critDamage);
         projectiles.push({
           id: currentId++,
-          weaponType: 'bow',
+          weaponType: 'pistol',
           x: playerState.x, y: playerProjectileY(playerState), z: playerState.z,
           vx, vy: 0, vz,
           damage: finalDamage,

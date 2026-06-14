@@ -84,17 +84,19 @@ export function addDamageEvent(
  * 击退 enemy。基础力 1.5，knockback_tome 每级 +30%。
  *
  * 玩家撞 enemy / 子弹击中 / gargoyle landing AOE 都用同一函数。
+ * `strengthMult` 给特定来源额外加成（如近战 sword 推得更远），默认 1。
  */
 export function applyKnockback(
   engine: Engine,
   enemy: EnemyState,
   fromX: number,
   fromZ: number,
+  strengthMult = 1,
 ): void {
   const knockbackTome = engine.state.player.tomes.find(t => t.type === 'knockback_tome');
   const baseForce = 1.5;
   const tomeMultiplier = 1 + getTomePower(knockbackTome) * 0.3;
-  const force = baseForce * tomeMultiplier;
+  const force = baseForce * tomeMultiplier * strengthMult;
 
   const dir = normalizeDirection(enemy.x - fromX, enemy.z - fromZ);
   const halfMap = (engine.config.mapSize + 10) * 0.5;

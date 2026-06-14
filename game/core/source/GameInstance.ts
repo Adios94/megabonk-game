@@ -486,7 +486,7 @@ function makeAiContext(engine: Engine, dt: number): AiContext {
 function makeEffects(engine: Engine): AiEffects {
   return {
     addDamageEvent: (x, y, z, d, c, p, w) => addDamageEvent(engine, x, y, z, d, c, p, w),
-    applyKnockback: (e, fx, fz) => applyKnockback(engine, e, fx, fz),
+    applyKnockback: (e, fx, fz, strengthMult) => applyKnockback(engine, e, fx, fz, strengthMult),
     addDamageDealt: (n) => { engine.state.stats.damageDealt += n; },
     spawnProjectile: (p) => {
       if (!p.fromPlayer) {
@@ -504,6 +504,10 @@ function makeEffects(engine: Engine): AiEffects {
       engine.state.areaEffects.push({ id, ...a });
       return id;
     },
+    getPlayerOrbitProjectiles: (weaponType) =>
+      engine.state.projectiles.filter(
+        (p) => p.fromPlayer && p.orbiting && p.weaponType === weaponType,
+      ),
     bondHit: (weaponType, target, damage, isCrit) => {
       onBondWeaponHit(engine, weaponType, target, damage, isCrit);
     },

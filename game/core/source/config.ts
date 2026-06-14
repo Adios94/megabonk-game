@@ -201,15 +201,16 @@ export interface WeaponLevelStats {
 }
 
 export const WEAPON_STATS: Record<string, WeaponLevelStats[]> = {
+  // damage 已含近战 +30% 补偿（贴脸风险 + 定向覆盖短板）。
   sword: [
-    { damage: 12, cooldown: 0.8, projectileCount: 1, bounces: 0, chains: 0, range: 2.5, aoeRadius: 2.5, pierce: 999, speed: 0 },
-    { damage: 15, cooldown: 0.8, projectileCount: 1, bounces: 0, chains: 0, range: 2.8, aoeRadius: 2.8, pierce: 999, speed: 0 },
-    { damage: 18, cooldown: 0.7, projectileCount: 1, bounces: 0, chains: 0, range: 3.0, aoeRadius: 3.0, pierce: 999, speed: 0 },
-    { damage: 22, cooldown: 0.7, projectileCount: 1, bounces: 0, chains: 0, range: 3.2, aoeRadius: 3.2, pierce: 999, speed: 0 },
-    { damage: 26, cooldown: 0.6, projectileCount: 1, bounces: 0, chains: 0, range: 3.5, aoeRadius: 3.5, pierce: 999, speed: 0 },
-    { damage: 30, cooldown: 0.6, projectileCount: 2, bounces: 0, chains: 0, range: 3.8, aoeRadius: 3.8, pierce: 999, speed: 0 },
-    { damage: 35, cooldown: 0.5, projectileCount: 2, bounces: 0, chains: 0, range: 4.0, aoeRadius: 4.0, pierce: 999, speed: 0 },
-    { damage: 42, cooldown: 0.5, projectileCount: 3, bounces: 0, chains: 0, range: 4.5, aoeRadius: 4.5, pierce: 999, speed: 0 },
+    { damage: 16, cooldown: 0.8, projectileCount: 1, bounces: 0, chains: 0, range: 3.0, aoeRadius: 3.0, pierce: 999, speed: 0 },
+    { damage: 20, cooldown: 0.8, projectileCount: 1, bounces: 0, chains: 0, range: 3.36, aoeRadius: 3.36, pierce: 999, speed: 0 },
+    { damage: 23, cooldown: 0.7, projectileCount: 1, bounces: 0, chains: 0, range: 3.6, aoeRadius: 3.6, pierce: 999, speed: 0 },
+    { damage: 29, cooldown: 0.7, projectileCount: 1, bounces: 0, chains: 0, range: 3.84, aoeRadius: 3.84, pierce: 999, speed: 0 },
+    { damage: 34, cooldown: 0.6, projectileCount: 1, bounces: 0, chains: 0, range: 4.2, aoeRadius: 4.2, pierce: 999, speed: 0 },
+    { damage: 39, cooldown: 0.6, projectileCount: 2, bounces: 0, chains: 0, range: 4.56, aoeRadius: 4.56, pierce: 999, speed: 0 },
+    { damage: 46, cooldown: 0.5, projectileCount: 2, bounces: 0, chains: 0, range: 4.8, aoeRadius: 4.8, pierce: 999, speed: 0 },
+    { damage: 55, cooldown: 0.5, projectileCount: 3, bounces: 0, chains: 0, range: 5.4, aoeRadius: 5.4, pierce: 999, speed: 0 },
   ],
   bone_bouncer: [
     { damage: 8, cooldown: 1.2, projectileCount: 1, bounces: 2, chains: 0, range: 0, aoeRadius: 0, pierce: 0, speed: 12 },
@@ -221,6 +222,9 @@ export const WEAPON_STATS: Record<string, WeaponLevelStats[]> = {
     { damage: 16, cooldown: 0.8, projectileCount: 2, bounces: 5, chains: 0, range: 0, aoeRadius: 0, pierce: 0, speed: 14 },
     { damage: 20, cooldown: 0.8, projectileCount: 3, bounces: 6, chains: 0, range: 0, aoeRadius: 0, pierce: 0, speed: 15 },
   ],
+  // 斧（常驻刀环，方案 A）：projectileCount 把刀刃永久等距绕玩家旋转，不再每次 spawn 新弹丸。
+  //   cooldown   = 「重击间隔」(rehitInterval)：同一刀刃多久能重新打到同一敌人（不再是 spawn 节奏）。
+  //   range      = 环绕半径；speed = 旋转角速度(rad/s)；aoeRadius = 刀刃命中半径；pierce 对常驻刀环已无实义。
   axe: [
     { damage: 10, cooldown: 1.5, projectileCount: 1, bounces: 0, chains: 0, range: 3.0, aoeRadius: 1.0, pierce: 999, speed: 4 },
     { damage: 12, cooldown: 1.5, projectileCount: 1, bounces: 0, chains: 0, range: 3.0, aoeRadius: 1.0, pierce: 999, speed: 4 },
@@ -231,7 +235,7 @@ export const WEAPON_STATS: Record<string, WeaponLevelStats[]> = {
     { damage: 26, cooldown: 1.0, projectileCount: 4, bounces: 0, chains: 0, range: 4.5, aoeRadius: 1.4, pierce: 999, speed: 5.5 },
     { damage: 32, cooldown: 0.9, projectileCount: 4, bounces: 0, chains: 0, range: 5.0, aoeRadius: 1.6, pierce: 999, speed: 6 },
   ],
-  bow: [
+  pistol: [
     { damage: 18, cooldown: 1.0, projectileCount: 1, bounces: 0, chains: 0, range: 30, aoeRadius: 0, pierce: 0, speed: 25 },
     { damage: 22, cooldown: 1.0, projectileCount: 1, bounces: 0, chains: 0, range: 32, aoeRadius: 0, pierce: 0, speed: 26 },
     { damage: 26, cooldown: 0.9, projectileCount: 1, bounces: 0, chains: 0, range: 34, aoeRadius: 0, pierce: 1, speed: 27 },
@@ -348,6 +352,12 @@ export const RAY_BEAM_VISUAL_LIFETIME = 0.12;
 /** 射线枪光束最大长度（穿透打到底）。 */
 export const RAY_GUN_BEAM_LENGTH = 60;
 /**
+ * ray_beam 命中半宽相对 aoeRadius 的系数，使伤害范围与客户端渲染的细激光对齐。
+ * 注意：必须与 client 渲染宽度一致——client 用 `width * 0.625` 作直径，故视觉半宽 = `width * 0.3125`。
+ * aoeRadius 仍作为 spawnAreaEffect 的 width/radius（渲染尺寸），判定时再乘本系数收窄。
+ */
+export const RAY_BEAM_HIT_WIDTH_SCALE = 0.3125;
+/**
  * 精英 / 小头目 / Boss 的减速抗性系数（elite_slow_coef）。
  * 有效减速 = 1 - (1 - factor) × coef；coef 越小，精英越难被减速。
  */
@@ -374,7 +384,7 @@ export const PASSIVE_MAX_LEVELS: Record<string, number> = TOME_MAX_LEVELS;
 
 // All weapon types available in the game
 export const ALL_WEAPON_TYPES: WeaponType[] = [
-  'sword', 'bone_bouncer', 'axe', 'bow',
+  'sword', 'bone_bouncer', 'axe', 'pistol',
   'lightning_staff', 'flame_ring',
   'shotgun',
   'ray_gun', 'poison_bomb', 'paralysis_gun', 'void_ripple', 'scorch_boots',

@@ -128,13 +128,17 @@ const VFX_TEXTURE_FILES: Record<VfxTextureKey, string> = {
   dirt: '/textures/vfx/dirt.png',
   flame: '/textures/vfx/flame.png',
   twirl: '/textures/particle_twirl.png',
-  slash_fill: '/textures/vfx/slash_fill.png',
-  flame_aura: '/textures/vfx/flame_aura.png',
-  lightning: '/textures/vfx/lightning.png',
   flare: '/textures/particle_flare.png',
   void_ripple: '/textures/vfx/void_ripple.png',
-  scorch_boots: '/textures/vfx/scorch_boots.png',
-  enemy_bullet: '/textures/vfx/enemy_bullet.png',
+  // ↓ 以下 5 个 key 的贴图当前与另一 key 字节完全相同（同一占位图被复制了两份）。
+  // 去重：删掉重复文件，让这些 key 复用对应的「主」文件，省发布体积。
+  // ⚠️ 若将来要给某个特效做专属贴图（让它与主文件分化），请：
+  //    1) 在 public/textures/vfx/ 放回独立文件（如 lightning.png）；2) 把这里的路径改回去。
+  slash_fill: '/textures/vfx/portal_swirl.png', // 原 slash_fill.png == portal_swirl.png
+  flame_aura: '/textures/vfx/light.png',        // 原 flame_aura.png == light.png
+  lightning: '/textures/vfx/spark.png',         // 原 lightning.png == spark.png
+  scorch_boots: '/textures/vfx/scorch.png',     // 原 scorch_boots.png == scorch.png
+  enemy_bullet: '/textures/vfx/muzzle.png',     // 原 enemy_bullet.png == muzzle.png
 };
 
 /** Billboard 池中每个槽位的运行时状态。 */
@@ -2490,7 +2494,6 @@ export class GameScene {
   private playerMesh!: THREE.Mesh;
   private playerRing!: THREE.Mesh;
   private groundMesh!: THREE.Mesh;
-  private gridLines!: THREE.LineSegments;
   private bossMesh: THREE.Mesh | null = null;
   /** bossMesh 当前是用哪一关的模型构建的（关卡切换时需重建）。 */
   private bossMeshStage: 1 | 2 | null = null;
@@ -2504,16 +2507,10 @@ export class GameScene {
   private bossAnimState: string | null = null;
   /** Boss 上一帧 XZ + 静止时长（移动判定，逻辑同敌人）。 */
   private bossPrevPos: { x: number; z: number; stillTime: number } | null = null;
-  /** Boss Death 动画是否已触发（只播一次）。 */
-  private bossDeathPlayed = false;
   private playerSpotLight!: THREE.SpotLight;
   // 常驻共享闪电闪光灯：永远在场景里、待命强度 0。闪电复用它而非每道新建/移除 PointLight
   // —— 场景光源数恒定，避免每次触发引发全场材质 shader 重编译（掉帧主因）。
   private lightningFlashLight!: THREE.PointLight;
-
-  // Weapon orbs (legacy — disabled, kept to avoid breaking older saves)
-  private weaponOrbMesh!: THREE.InstancedMesh;
-  private readonly MAX_WEAPON_ORBS = 6;
 
   // Weapon floaters — physical weapons orbit the player as visual indicator
   // Magic weapons (lightning_staff / flame_ring) use VFX only
@@ -2557,7 +2554,6 @@ export class GameScene {
   private wasAlive = true;
   private wasGrounded = true; // Track grounded state for jump animation trigger
   private lastPhase: GamePhase = 'playing';
-  private screenFlashEl: HTMLDivElement | null = null;
 
   // GSAP animation state
   private lastHpPercent = 100;
@@ -2600,7 +2596,6 @@ export class GameScene {
 
   // InstancedMeshes
   // Enemy rendering — individual cloned models (preserves full materials)
-  private enemyMeshes: Map<string, THREE.InstancedMesh> = new Map(); // legacy, kept for type compat
   private enemyObjects: Map<number, THREE.Object3D> = new Map(); // id → cloned model
   private enemyPool: Map<string, THREE.Object3D[]> = new Map(); // type → available pool
   private enemyMixers: Map<number, THREE.AnimationMixer> = new Map(); // id → animation mixer
@@ -2664,7 +2659,6 @@ export class GameScene {
   private shieldText!: HTMLDivElement;
   private xpBar!: HTMLDivElement;
   private xpBarInner!: HTMLDivElement;
-  private xpNumbers!: HTMLDivElement;
   private levelLabel!: HTMLDivElement;
   private timerLabel!: HTMLDivElement;
   private killLabel!: HTMLDivElement;
@@ -2682,7 +2676,6 @@ export class GameScene {
   private bondDetailOutsideHandler: ((ev: PointerEvent) => void) | null = null;
   /** timed 消耗品记录到的最大剩余时间，用于阴影下降比例。 */
   private consumableMaxRemaining = 0;
-  private consumableLabel!: HTMLDivElement;
   private weaponSlotsContainer!: HTMLDivElement;
   private tomesSlotsContainer!: HTMLDivElement;
   private relicSlotsContainer!: HTMLDivElement;
@@ -2899,8 +2892,6 @@ export class GameScene {
     this.setupLighting();
     this.setupGround();
     this.setupPlayer();
-    this.setupWeaponOrbs();
-    this.setupEnemyMeshes();
     this.setupProjectileMesh();
     this.setupPickupMesh();
     this.setupGoldMoteMesh();
@@ -2996,7 +2987,6 @@ export class GameScene {
     this.itemTooltip = null;
     this.closeBondDetail();
     this.bondDetailOverlay?.remove();
-    this.screenFlashEl?.remove();
     this.comboLabel?.remove();
     for (const el of this.damageNums) el.remove();
   }
@@ -3129,17 +3119,6 @@ export class GameScene {
 
     // 把收集到的静态遮挡物交给镜头做碰撞推镜
     this.cameraOrbit.setOccluders(this.cameraOccluders);
-
-    // =========================================================================
-    // 3. Hidden grid lines (required by type)
-    // =========================================================================
-    const gridGeo = new THREE.BufferGeometry();
-    gridGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0], 3));
-    const gridMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0 });
-    this.gridLines = new THREE.LineSegments(gridGeo, gridMat);
-    this.gridLines.name = 'GridLines';
-    this.gridLines.visible = false;
-    this.scene.add(this.gridLines);
   }
 
   private setupPlayer(): void {
@@ -3441,82 +3420,6 @@ export class GameScene {
     this.bossAnimState = target;
   }
 
-  private setupWeaponOrbs(): void {
-    const orbGeo = new THREE.SphereGeometry(0.15, 6, 4);
-    const orbMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    this.weaponOrbMesh = new THREE.InstancedMesh(orbGeo, orbMat, this.MAX_WEAPON_ORBS);
-    this.weaponOrbMesh.name = 'WeaponOrbs';
-    this.weaponOrbMesh.count = 0;
-    this.weaponOrbMesh.frustumCulled = false;
-    this.weaponOrbMesh.visible = false; // Hidden — weapon orbs disabled
-    this.scene.add(this.weaponOrbMesh);
-  }
-
-  private setupEnemyMeshes(): void {
-    const enemyTypes: string[] = [
-      'skeleton_soldier', 'zombie', 'skeleton_archer',
-      'skeleton_knight', 'necromancer', 'gargoyle',
-    ];
-
-    // Map enemy types to loaded models for geometry extraction
-    const enemyModelMap = getEnemyModelMap();
-
-    // ⚠️ Legacy InstancedMesh 路径，已不参与渲染（见文件末尾 "Hide InstancedMesh"）。
-    // 实际敌人缩放在 updateEnemyObjects 里按模型高度归一化，改大小请改那边的 enemyScales。
-    const enemyScales: Record<string, number> = {
-      skeleton_soldier: 0.675,   // Skeleton — standard (small)
-      zombie: 1.1,              // Basic zombie — big tank
-      skeleton_archer: 0.8,     // Dragon — lean flyer
-      skeleton_knight: 1.5,     // Skeleton 放大 — elite, extra large（约 2.2× 普通骷髅兵）
-      necromancer: 0.675,       // Ghost — caster (small)
-      gargoyle: 0.85,           // Bat — lunging
-    };
-
-    // Fallback box geometry if model not loaded
-    const fallbackGeo = new THREE.BoxGeometry(0.9, 1.2, 0.9);
-
-    for (const type of enemyTypes) {
-      const color = ENEMY_COLORS[type] ?? 0x888888;
-
-      // Try to extract geometry AND material from loaded model
-      let geo: THREE.BufferGeometry = fallbackGeo;
-      let mat: THREE.Material = new THREE.MeshToonMaterial({ color, gradientMap: toonGradientMap });
-
-      const modelKey = enemyModelMap[type];
-      const model = modelKey ? loadedModels[modelKey] : null;
-      if (model) {
-        let foundMesh = false;
-        model.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh && !foundMesh) {
-            foundMesh = true;
-            const meshChild = child as THREE.Mesh;
-            geo = meshChild.geometry.clone();
-            // Use the model's original material (preserves textures/colors)
-            if (meshChild.material) {
-              const originalMat = Array.isArray(meshChild.material) ? meshChild.material[0] : meshChild.material;
-              mat = originalMat.clone();
-            }
-            // Normalize geometry scale
-            geo.computeBoundingBox();
-            const box = geo.boundingBox!;
-            const size = box.max.clone().sub(box.min);
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const targetScale = (enemyScales[type] ?? 1.0) / maxDim;
-            geo.scale(targetScale, targetScale, targetScale);
-            geo.center();
-          }
-        });
-      }
-
-      const mesh = new THREE.InstancedMesh(geo, mat, MAX_ENEMIES);
-      mesh.name = `Enemy_${type}`;
-      mesh.count = 0;
-      mesh.frustumCulled = false;
-      this.enemyMeshes.set(type, mesh);
-      this.scene.add(mesh);
-    }
-  }
-
   private setupProjectileMesh(): void {
     const geo = new THREE.SphereGeometry(0.25, 6, 4);
     const mat = new THREE.MeshToonMaterial({ color: 0xffee44, gradientMap: toonGradientMap });
@@ -3528,7 +3431,8 @@ export class GameScene {
 
     // 敌人弹幕：朝相机的火焰 billboard（平面 + 火焰贴图，加法混合发光）。
     // 每帧在 renderProjectiles 里按"朝相机 + 火焰尾沿速度反向拖尾"重建实例矩阵。
-    const flameTex = new THREE.TextureLoader().load('/textures/vfx/enemy_bullet.png');
+    // enemy_bullet.png 与 muzzle.png 字节相同，已去重为后者（见 VFX_TEXTURE_FILES 注释）。
+    const flameTex = new THREE.TextureLoader().load('/textures/vfx/muzzle.png');
     flameTex.colorSpace = THREE.SRGBColorSpace;
     const flameGeo = new THREE.PlaneGeometry(1, 1);
     const flameMat = new THREE.MeshBasicMaterial({
@@ -3939,10 +3843,6 @@ export class GameScene {
 
     this.hudContainer.appendChild(topRight);
 
-    // Hidden legacy consumable label (kept to satisfy references; buffs now render in the buff row)
-    this.consumableLabel = document.createElement('div');
-    this.consumableLabel.style.cssText = 'display:none;';
-
     // ---------------------------------------------------------------------
     // Bottom cluster: buff row → green XP bar → relic bar (flush to bottom)
     // ---------------------------------------------------------------------
@@ -3972,10 +3872,6 @@ export class GameScene {
     xpContainer.appendChild(this.levelLabel);
     this.xpBar = xpContainer;
     bottomGroup.appendChild(xpContainer);
-
-    // Legacy xp numbers element kept (hidden) for compatibility
-    this.xpNumbers = document.createElement('div');
-    this.xpNumbers.style.cssText = 'display:none;';
 
     // Relic bar (long, flush to bottom edge, relics added left→right)
     this.relicSlotsContainer = document.createElement('div');
@@ -4499,39 +4395,8 @@ export class GameScene {
 
     ringMat.color.setHex(0x00ff88);
 
-    // === Weapon orbs (legacy stub) ===
-    this.renderWeaponOrbs(state);
     // === Floating weapon display (physical weapons hover near player) ===
     this.renderWeaponFloaters(state);
-  }
-
-  private renderWeaponOrbs(state: GameState): void {
-    const weapons = state.player.weapons;
-    const time = performance.now() * 0.002;
-    const count = Math.min(weapons.length, this.MAX_WEAPON_ORBS);
-
-    for (let i = 0; i < count; i++) {
-      const angle = time + i * (Math.PI * 2 / count);
-      const radius = 1.5;
-      const orbX = state.player.x + Math.cos(angle) * radius;
-      const orbZ = state.player.z + Math.sin(angle) * radius;
-      const orbY = state.player.y + 0.8 + Math.sin(time * 3 + i) * 0.1;
-
-      this._dummy.position.set(orbX, orbY, orbZ);
-      this._dummy.scale.set(1, 1, 1);
-      this._dummy.rotation.set(0, 0, 0);
-      this._dummy.updateMatrix();
-      this.weaponOrbMesh.setMatrixAt(i, this._dummy.matrix);
-
-      // Color based on weapon type
-      const wColor = WEAPON_PROJECTILE_COLORS[weapons[i].type] ?? 0xffffff;
-      this._tempColor.setHex(wColor);
-      this.weaponOrbMesh.setColorAt(i, this._tempColor);
-    }
-
-    this.weaponOrbMesh.count = state.player.alive ? count : 0;
-    this.weaponOrbMesh.instanceMatrix.needsUpdate = true;
-    if (this.weaponOrbMesh.instanceColor) this.weaponOrbMesh.instanceColor.needsUpdate = true;
   }
 
   // Build a base 3D model for the given physical weapon type to float near
@@ -4913,62 +4778,20 @@ export class GameScene {
     if (flashIntensity > 0) this.lightningFlashLight.position.set(flashX, flashY, flashZ);
   }
 
-  private spawnSlideDust(x: number, y: number, z: number): void {
-    const count = 1 + Math.floor(Math.random() * 2);
-    for (let i = 0; i < count; i++) {
-      this.spawnParticle(
-        x + (Math.random() - 0.5) * 0.5,
-        y + Math.random() * 0.2,
-        z + (Math.random() - 0.5) * 0.5,
-        (Math.random() - 0.5) * 1.0,
-        Math.random() * 0.5,
-        (Math.random() - 0.5) * 1.0,
-        0.4,
-        0.3,
-        0.8, 0.8, 0.7,
-      );
-    }
-  }
-
   private spawnDeathBurst(x: number, y: number, z: number): void {
     this.emitDeathBurst(x, y, z, 'generic');
   }
 
   private spawnLevelUpBurst(x: number, y: number, z: number): void {
+    // 粒子爆发 + 头顶星光 + 上升光柱：整套仪式特效已由 emitLevelUpBurst →
+    // emitCompensationBurst('gold') 提供。早先这里又额外 spawn 了一遍 star+light billboard，
+    // 导致每次升级星光/光柱被双绘（参数略不同的叠加），已移除该重复。
     this.emitLevelUpBurst(x, y, z);
-    // Billboard: 仪式感 ↑ —— 头顶大星光 + 上升光柱
-    this.spawnBillboard({
-      texture: 'star',
-      x, y: y + 1.6, z,
-      scale: 1.5,
-      endScale: 4.5,
-      lifetime: 0.7,
-      opacityCurve: 'flash',
-      opacity: 1.0,
-      color: 0xffd866,
-      rotationSpeed: 4.0,
-    });
-    this.spawnBillboard({
-      texture: 'light',
-      x, y: y + 0.5, z,
-      scale: 2.0,
-      endScale: 3.5,
-      lifetime: 0.8,
-      opacityCurve: 'fadeOut',
-      opacity: 0.85,
-      color: 0xffe080,
-    });
   }
 
   private triggerScreenFlash(color: string, duration: number): void {
     // 使用 GSAP 屏幕闪光动画
     gsapAnimations.screenFlash(color, duration);
-
-    // 清理旧的屏幕闪光元素（如果有）
-    if (this.screenFlashEl) {
-      this.screenFlashEl.remove();
-      this.screenFlashEl = null;
-    }
   }
 
   private renderEnemies(enemies: EnemyState[]): void {
@@ -5192,12 +5015,6 @@ export class GameScene {
 
     this.updateParalysisTriangleSprites(enemies);
     this.updateBondEnemyMarkers(enemies);
-
-    // Hide InstancedMesh (legacy — keep count at 0)
-    for (const [, mesh] of this.enemyMeshes) {
-      mesh.count = 0;
-      mesh.instanceMatrix.needsUpdate = true;
-    }
   }
 
   private updateParalysisTriangleSprites(enemies: EnemyState[]): void {
@@ -5724,7 +5541,6 @@ export class GameScene {
         // Boss 离场：重置动画状态，下一个 boss 干净起播
         this.bossAnimState = null;
         this.bossPrevPos = null;
-        this.bossDeathPlayed = false;
       }
       return;
     }
@@ -5739,7 +5555,6 @@ export class GameScene {
       this.bossAnimActions.clear();
       this.bossAnimState = null;
       this.bossPrevPos = null;
-      this.bossDeathPlayed = false;
     }
 
     if (!this.bossMesh) {
@@ -6480,29 +6295,6 @@ export class GameScene {
       const g = 0.3 + Math.random() * 0.3;
       const b = Math.random() * 0.1;
       this.spawnParticle(px, y + 0.3, pz, vx, vy, vz, size, life, r, g, b);
-    }
-  }
-
-  private emitBlackHoleVortex(x: number, y: number, z: number, radius: number): void {
-    const count = 1 + Math.floor(Math.random() * 2);
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const dist = radius * (0.8 + Math.random() * 0.4);
-      const px = x + Math.cos(angle) * dist;
-      const pz = z + Math.sin(angle) * dist;
-      // Spiral inward
-      const inwardSpeed = 3 + Math.random() * 2;
-      const tangentialSpeed = 2 + Math.random();
-      const vx = -Math.cos(angle) * inwardSpeed + Math.sin(angle) * tangentialSpeed;
-      const vy = (Math.random() - 0.5) * 1.0;
-      const vz = -Math.sin(angle) * inwardSpeed - Math.cos(angle) * tangentialSpeed;
-      const size = 0.3 + Math.random() * 0.3;
-      const life = 0.3 + Math.random() * 0.2;
-      // Purple/dark blue
-      const r = 0.4 + Math.random() * 0.3;
-      const g = 0.1 + Math.random() * 0.2;
-      const b = 0.7 + Math.random() * 0.3;
-      this.spawnParticle(px, y + 0.5, pz, vx, vy, vz, size, life, r, g, b);
     }
   }
 

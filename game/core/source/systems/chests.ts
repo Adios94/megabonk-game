@@ -1,6 +1,5 @@
 /**
  * 宝箱系统：开局生成 N 个，玩家靠近并交互时消耗金币开启，roll 遗物。
- * （从 systems/teleporters.ts 拆出来；旧文件已变成 deprecated 兼容 shim。）
  */
 import { distanceBetween } from '../physics.ts';
 import { pickRandomSubset } from '../spawnPick.ts';

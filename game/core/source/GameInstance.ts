@@ -10,7 +10,8 @@
  *   - systems/collisions.ts — 4 种碰撞 + 击退 + damage event
  *   - systems/pickups.ts    — pickup 寿命 / 吸附 / collect / deaths / thorns
  *   - systems/weapons.ts    — fireWeapons / getWeaponStats / evolution
- *   - systems/teleporters.ts — teleporter 状态机 + 宝箱
+ *   - systems/altars.ts     — 祭坛 / 传送门状态机
+ *   - systems/chests.ts     — 宝箱
  *   - systems/aiSystem.ts   — enemy AI 主循环
  *   - systems/bossAi.ts     — boss AI 主循环
  *   - systems/helpers.ts    — findNearestEnemy / addDamageEvent / applyKnockback / ...

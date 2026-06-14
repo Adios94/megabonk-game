@@ -2,10 +2,36 @@
 
 > 日期：2026-06-15 · 范围：`game/core` + `game/client` + `public/` + workspace 依赖
 > 方法：4 个角度并行调研（重复文件 / 死代码 / 复制粘贴 / 资源依赖）+ 1 轮人工抽样验证（关键结论已逐条核实）
-> 性质：**纯只读审计，本报告生成时未改动任何源码**
+> 性质：审计为只读结论；零风险 + 低风险清理项已落地（见下「落地进展」）。
 >
 > ⚠️ 落地任何清理前，先读 [`docs/contract.md`](./contract.md)：凡涉及 `game/core/source/index.ts` 公开导出、
 > `index.html`/`vite.config.ts`/`packages/*` 等锁定文件的改动，必须走 `[CONTRACT]` 流程 + `scripts/harness/check-contract.sh`。
+
+---
+
+## 0. 落地进展（2026-06-15）
+
+> 验证基线：`tsc --noEmit` ✅ · core 测试 48 文件 / 422 例全过 ✅ · `pnpm build` ✅。均未触碰锁定文件 / 公开 API。
+
+### ✅ 已完成（零风险）
+
+- **`public/**/_unused/` 整树移出 `public/` → 仓库根 `assets-archive/`**（74 文件 / 17.29 MB）。`git mv` 保留历史，不再进 `dist/`；发布体积 ~68 MB → ~51.6 MB。
+- **删除 client 死方法 / 死字段**：`emitBlackHoleVortex`、`spawnSlideDust`、`gridLines`、`bossDeathPlayed`、`screenFlashEl`、`xpNumbers`、`consumableLabel`（含各自的创建 / 清理残留）。
+
+### ✅ 已完成（低风险）
+
+- **删 core 死文件 `systems/teleporters.ts`**（零引用）；清理 `GameInstance.ts`/`chests.ts` 过时注释。
+- **删 core 死文件 `systems/terrain.ts`**；`terrain.test.ts` 改指 `collision.ts` 的 `getTerrainHeightAt(NEON_CRUCIBLE_GEOMETRY, …)`，保留 8 例地形高度覆盖。
+- **合并 5 组字节级重复 VFX 贴图**：`flame_aura→light`、`scorch_boots→scorch`、`lightning→spark`、`slash_fill→portal_swirl`、`enemy_bullet→muzzle`（重指 key + 删副本 ~377 KB + 注释「特效分化时需放回独立文件」）。
+- **删 client Legacy 渲染路径**：`weaponOrbMesh`/`MAX_WEAPON_ORBS`/`enemyMeshes` 字段、`setupWeaponOrbs`/`setupEnemyMeshes`/`renderWeaponOrbs`、构造期 setup 调用、每帧 `count=0` 清零（~120 行 + 每帧矩阵更新 + 常驻 mesh 显存）。
+- **修升级 VFX 双播**：`spawnLevelUpBurst` 移除与 `emitCompensationBurst('gold')` 重复的 star+light billboard（升级星光/光柱原被画两遍）。
+
+### ⏸️ 暂缓（中风险 / 触契约，需专项）
+
+- **findNearest 合并 / 死导出清理**：`helpers.findNearestEnemyExcluding` 实际在用；`getCompletedQuestCount`/`spendSilver` 属 core `index.ts` 公开契约；`findNearestEnemy`/`findEnemyById` 仅测试用，删除要改测试。
+- **根 `weapons.ts` 遗留**（`fireWeapon` 等）：在公开契约里，需走 `[CONTRACT]` 流程。
+- **client 大件去重**（武器注册表 / Canvas 工厂 / loader 归一 / HUD 样式常量）：量大、需较多回归测试。
+- **资源进一步瘦身**：UI PNG 压缩、GLTF→GLB+Draco、关卡 glb gltfpack、`tsx` 依赖删除。
 
 ---
 

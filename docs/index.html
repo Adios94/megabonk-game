@@ -2502,6 +2502,7 @@ player.consumableDropMult?: number       // consumable_tome</code></pre>
           <li>相机系统（屏震 / 顿帧 / 动态 FOV）</li>
           <li>GSAP 动画系统（UI 动画管理）</li>
           <li>读取 GameState 渲染（不写）</li>
+          <li>移动端鲁棒性：WebGL context-lost 自愈 + 启动 loading 进度条 + <code>destroy()</code> 跨局清理（详见性能优化页）</li>
         </ul>
       </div>
     </div>
@@ -2903,6 +2904,16 @@ gsapAnimations.screenFlash(color, duration);</code></pre>
     </ul>
   </div>
 
+  <div class="card">
+    <h4>🟣 阶段 4：静态几何广相网格 <code>GeoGrid</code> <span class="badge-new">new</span>（性能）</h4>
+    <ul>
+      <li>关卡几何（<code>col_</code> / <code>wall_</code> / <code>climb_</code> / <code>ramp_</code> / disc）数量大时，高度 / 阻挡 / climb 查询每帧被调用成百上千次（敌人寻路采样 + 投射物贴地），原实现每次都<strong>全量扫描</strong>所有形体数组。</li>
+      <li><code>GeoGrid</code> 把每个形体按「footprint 外扩 <code>margin=1.0</code>」的 AABB 插入所有重叠 cell（<code>cellSize=8</code>）；点查询只取该点所在<strong>单个 cell</strong> 的候选集。</li>
+      <li>因 margin 覆盖了所有查询用到的半径外扩（player/enemy radius ≤ 0.45、climb grab 0.6），单 cell 候选即为命中超集，结果与全量扫描<strong>完全等价、零漏判</strong>；几何为空或非 wysiwyg 时回落到全量数组。</li>
+      <li>挂在 <code>LevelGeometry.grid?</code>（仅 wysiwyg 加载关卡构建），<code>getTerrainHeightAt</code> / <code>isBlockedHorizontallyAt</code> / <code>findClimbAt</code> 命中网格走候选，是高密度场景的数量级降本。</li>
+    </ul>
+  </div>
+
   <h3>当前架构（阶段 3 后）</h3>
   <pre><code>// 启动时
 GameInstance.applyLevelConfig() {
@@ -3006,14 +3017,24 @@ window.__gm.showCollision()</code></pre>
         <tr><td>粒子 GPU 算大小</td><td>vertex shader 内 <code>gl_PointSize</code></td></tr>
         <tr><td>AdditiveBlending</td><td>无需写 depth，省 fillrate</td></tr>
         <tr><td><code>frustumCulled = false</code></td><td>关自动剔除，手动管理</td></tr>
-        <tr><td>高 DPI 限制</td><td>pixelRatio ≤ 2</td></tr>
+        <tr><td>高 DPI 限制</td><td><code>@minigame/platform</code> 钳到 pixelRatio ≤ 2</td></tr>
+        <tr><td>实时阴影</td><td><code>shadowMap.enabled = false</code>，改脚下 blob 圆阴影</td></tr>
+        <tr><td>后处理 Bloom <span class="hl">关</span></td><td><code>BLOOM_ENABLED = false</code>，省半分辨率降采样 + 高斯模糊 + mip 显存</td></tr>
+        <tr><td>antialias <span class="hl">关</span></td><td>画面走离屏 <code>EffectComposer</code>，canvas 级 MSAA 基本不生效＝白付填充率</td></tr>
+        <tr><td>HUD 差分更新</td><td>武器/法书/遗物/羁绊槽按结构签名变化才重建 DOM，逐帧只改冷却遮罩高度</td></tr>
+        <tr><td>高刷屏事件去重</td><td>按 <code>gameTime</code> 去重 <code>damageEvents</code> / 羁绊 VFX，避免 rAF &gt; 60Hz 时火花/震动翻倍</td></tr>
       </table>
     </div>
     <div class="card">
       <h4>逻辑层</h4>
       <table>
         <tr><th>措施</th><th>实现</th></tr>
-        <tr><td>SpatialHash 碰撞</td><td>网格 3 单位，避免 O(n²)</td></tr>
+        <tr><td>SpatialHash 碰撞</td><td>网格分桶，避免 O(n²)</td></tr>
+        <tr><td>SpatialHash 对象池</td><td><code>clear</code> 仅归零游标，<code>insert</code> 复用 <code>SpatialEntry</code> + 复用去重 Set，消除每帧 GC</td></tr>
+        <tr><td>平方距离判定</td><td>热路径 <code>distanceSqBetween</code> 省 <code>sqrt</code></td></tr>
+        <tr><td>投射物命中 O(1)</td><td><code>id → enemy</code> 索引，替代逐发线性扫描</td></tr>
+        <tr><td>StatBlock scratch 复用</td><td><code>reset()</code> 复用单例，避免热路径 <code>new StatBlock</code></td></tr>
+        <tr><td>静态几何广相</td><td><code>GeoGrid</code> 均匀网格，关卡高度/阻挡查询只遍历命中 cell 候选（详见物理页）</td></tr>
         <tr><td>60Hz 固定步长</td><td><code>setInterval</code>，dt 稳定</td></tr>
         <tr><td>渲染解耦</td><td>RAF 自适应帧率</td></tr>
         <tr><td>临时变量预创建</td><td>模块级 <code>_tempVec</code>，热路径零 <code>new</code></td></tr>
@@ -3041,6 +3062,40 @@ window.__gm.showCollision()</code></pre>
 
   <div class="note" style="border-left: 4px solid var(--good); background: var(--good-soft); color: #065f46;">
     <strong>✅ 已实现：</strong>AI 错峰优化。每个敌人生成时按 <code>aiPhase = id % 4</code> 确定性分配相位（0-3，零 RNG、回放稳定），每帧只有 <code>aiPhase === aiGroup</code> 的敌人重算<strong>目标</strong>，约省 75% 目标重算开销。注：charge/dive 的<strong>状态机切换</strong>（起跳 / 蓄力判定）每帧都跑、不参与错峰，以免起手延迟。
+  </div>
+
+  <h3>移动端稳定性 <span class="badge-new">new</span></h3>
+  <div class="card">
+    <h4>WebGL context lost / restored</h4>
+    <p class="sub">手机切后台 / 来电 / 系统内存吃紧时浏览器会回收 GL context——若不处理，画面黑屏且永不恢复（PC 上几乎遇不到，最易漏）。</p>
+    <ul>
+      <li><code>GameScene</code> 构造时在 canvas 挂 <code>webglcontextlost</code>（<code>preventDefault</code> + 置 <code>contextLost</code> 标志暂停渲染 + 显示「正在恢复」浮层）/ <code>webglcontextrestored</code>（清标志、隐藏浮层；three.js 下一帧自动重传 GPU 资源）</li>
+      <li><code>animate()</code> 丢失期间提前 return 但保留 rAF 循环；<code>destroy()</code> 移除监听</li>
+    </ul>
+    <h4>启动 loading 进度条</h4>
+    <p class="sub">原加载期间纯蓝白屏（4G 下首屏 ~68MB 要等几十秒，疑似卡死）。</p>
+    <ul>
+      <li>新增共享 <code>bootLoadingManager</code>（<code>LoadingManager</code>）：boot 阶段所有 GLTF/OBJ/MTL/Texture 挂同一 manager，<code>onProgress</code> 汇总「已加载 / 总数」驱动进度条，进度单调不减、完成淡出</li>
+      <li>运行期（进对局后）新建的 loader 不挂它，避免进度条移除后仍触发回调</li>
+    </ul>
+    <h4>跨局泄漏清理</h4>
+    <ul>
+      <li><code>destroy()</code> 移除全局键盘监听、退订 session 事件、移除 context-lost 监听、<code>composer.dispose()</code> / <code>blobShadows.dispose()</code>，断开旧 <code>GameScene</code> 闭包引用链</li>
+    </ul>
+  </div>
+
+  <h3>下载体积优化（待落地）</h3>
+  <p class="sub"><code>public/</code> 会被 Vite 原样拷进 <code>dist/</code>（不打包压缩），每 MB 都是玩家实际下载量。当前 ~68 MB，目标 ~20 MB。详见 <code>docs/art-assets-todo.md §14 / §15</code>。</p>
+  <table>
+    <tr><th>优化项</th><th>预计收益</th><th>风险</th></tr>
+    <tr><td>UI 图片压缩（背景转 JPEG/WebP、立绘头像转 WebP）</td><td class="num">30.7 MB → ~4-6 MB</td><td>低</td></tr>
+    <tr><td>删除 / 移出 <code>_unused</code> 死资源（代码未引用却仍被打包）</td><td class="num">省 ~16 MB</td><td>零</td></tr>
+    <tr><td>玩家/敌人 <code>.gltf</code> → <code>.glb</code> + Draco</td><td class="num">~8 MB → 2-3 MB</td><td>低</td></tr>
+    <tr><td><code>level_whitebox.glb</code> gltfpack 瘦身</td><td class="num">7.9 MB → ~3-4 MB</td><td>低</td></tr>
+    <tr><td>（可选）UI/VFX 纹理转 KTX2(Basis) 省显存</td><td>显存↓</td><td>中</td></tr>
+  </table>
+  <div class="note" style="border-left: 4px solid var(--good); background: var(--good-soft); color: #065f46;">
+    <strong>✅ 已做（保持）：</strong>shadowMap 关；敌人 / 弹幕 / 拾取 / 经验球走 InstancedMesh 合批；实例 mesh <code>frustumCulled = false</code>；模型切换 / 销毁处 <code>dispose()</code> 清理到位；core 逻辑层热路径（平方距离 / SpatialHash 池 / StatBlock scratch / 投射物 O(1)）已优化。
   </div>
 </section>
 
@@ -3118,6 +3173,10 @@ window.__gm.testLightning()    // 在玩家头顶劈一道电（VFX 测试）</c
     资源风格混搭：场景 / 角色 / 敌人为 Quaternius Cyberpunk Game Kit；武器与拾取物为 Quaternius 经典中世纪 OBJ + MTL（金色变体作为高稀有度或特效备选，不再代表武器进化）。
   </div>
 
+  <div class="note" style="border-left: 4px solid var(--bad); background: var(--bad-soft, rgba(220,38,38,0.08));">
+    <strong>📦 体积现状 ~68 MB（待优化 → ~20 MB）：</strong><code>public/</code> 会被 Vite 原样拷进 <code>dist/</code>，每 MB 都是玩家实际下载量。最大头是 <code>public/ui</code>（30.7 MB / 60 张未压缩 PNG）与 <code>_unused</code> 死资源（~16 MB，代码未引用却仍被打包）。优化项与移动端清单见 <a data-tab="performance">性能优化</a> 页及 <code>docs/art-assets-todo.md §14 / §15</code>。
+  </div>
+
   <h3>实际加载的角色与敌人</h3>
   <table>
     <tr><th>名称</th><th>文件</th><th>渲染对象</th></tr>
@@ -3180,7 +3239,7 @@ tv_1.gltf</code></pre>
   <br>
   本页内容会与代码漂移；如有疑问以源码为准。
   <br>
-  策划 v0.5 · <code>index.html</code> — 技术页新增特效实现追踪表。
+  策划 v0.5 · <code>index.html</code> — 技术页新增特效实现追踪表；性能页同步渲染/逻辑热路径优化 + 移动端稳定性 + 下载体积优化（2026-06-15）。
 </footer>
 
 </div>

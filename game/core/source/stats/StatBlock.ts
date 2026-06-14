@@ -20,6 +20,15 @@ export class StatBlock {
   private readonly base = new Map<string, number>();
   private readonly mods: Modifier[] = [];
 
+  /**
+   * 清空 base 表与修饰符列表，以便复用同一实例（避免热路径每次 new StatBlock）。
+   * 仅用于单次同步计算的 scratch 复用——不要在持有 block 引用时调用。
+   */
+  reset(): void {
+    this.base.clear();
+    this.mods.length = 0;
+  }
+
   /** 设置某个 stat 的基础值（覆盖式：多次调用以最后一次为准）。未 setBase 的 stat → base = 0。 */
   setBase(stat: string, value: number): void {
     this.base.set(stat, value);

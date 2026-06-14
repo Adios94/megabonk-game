@@ -13,6 +13,11 @@ import { bondConditionalDamageInc } from '../data/bonds.ts';
 import type { BondDamageTarget } from '../data/bonds.ts';
 import type { PlayerState, WeaponType } from '../types.ts';
 
+// 复用的 scratch StatBlock：computeWeaponDamage 是同步、非重入的叶子函数，
+// 每次命中都 new StatBlock（内部含 Map + 数组）会在高密度战斗里造成可观 GC 压力。
+// 用单例 + reset() 复用，数学结果完全等价。
+const scratchBlock = new StatBlock();
+
 /**
  * 计算单次攻击的最终伤害。
  *
@@ -29,7 +34,8 @@ export function computeWeaponDamage(
   isCrit: boolean,
   target?: BondDamageTarget | null,
 ): number {
-  const block = new StatBlock();
+  const block = scratchBlock;
+  block.reset();
   block.setBase('damage', weaponBase);
 
   // damageMultiplier 是"乘数倍率"（megachad=1.2 / roberto=1.0），折算为 increased

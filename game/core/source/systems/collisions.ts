@@ -10,15 +10,14 @@
  *
  * boss 近战伤害走 ai/bosses/common.getBossMeleeDamage（两套机甲共用）。
  */
-import { distanceBetween, normalizeDirection } from '../physics.ts';
-import { TICK_INTERVAL_MS } from '../config.ts';
+import { distanceSqBetween, normalizeDirection } from '../physics.ts';
 import { getBossMeleeDamage } from '../ai/bosses/common.ts';
 import {
   addDamageEvent,
   applyKnockback,
-  findEnemyById,
   findNearestEnemyExcluding,
 } from './helpers.ts';
+import type { EnemyState } from '../types.ts';
 import { applyPlayerHit } from './consumables.ts';
 import { applyRelicTargetDamage } from './relics.ts';
 import { applyPoison, applySlow } from './statusEffects.ts';
@@ -40,6 +39,10 @@ function projectileCanHitTarget(projectileY: number, targetY: number): boolean {
   return Math.abs(projectileY - targetY) <= PLAYER_PROJECTILE_HIT_MAX_Y_DELTA;
 }
 
+// 复用的 id→enemy 索引：随 spatial hash 每帧重建，
+// 让投射物命中时按 id 直接 O(1) 取敌人，取代 findEnemyById 的 O(n) 线性扫描。
+const enemyByIdScratch = new Map<number, EnemyState>();
+
 export function processCollisions(engine: Engine): void {
   const player = engine.state.player;
   const enemies = engine.state.enemies;
@@ -50,13 +53,6 @@ export function processCollisions(engine: Engine): void {
   for (let i = engine.state.projectiles.length - 1; i >= 0; i--) {
     const proj = engine.state.projectiles[i];
     if (!proj.fromPlayer) continue;
-
-    // gravitational 周期性重置 hit list (每 0.5s)
-    if (proj.gravitational) {
-      if (proj.lifetime % 0.5 < TICK_INTERVAL_MS / 1000) {
-        proj.hitEnemyIds = [];
-      }
-    }
 
     const nearbyIds = engine.spatialHash.query(proj.x, proj.z, proj.radius);
     let consumed = false;
@@ -91,7 +87,7 @@ export function processCollisions(engine: Engine): void {
       }
 
       // enemy 命中
-      const enemy = findEnemyById(engine, id);
+      const enemy = enemyByIdScratch.get(id);
       if (!enemy || enemy.hp <= 0) continue;
       if (!projectileCanHitTarget(proj.y, targetHitCenterY(enemy))) continue;
 
@@ -157,12 +153,13 @@ export function processCollisions(engine: Engine): void {
 
   // 2. enemy 近战 vs player
   if (player.alive && player.invincibleTimer <= 0) {
+    const meleeRangeSq = 1.2 * 1.2;
     for (const enemy of enemies) {
       if (enemy.hp <= 0 || enemy.attackCooldown > 0) continue;
       if (Math.abs(enemy.y - player.y) > ENEMY_MELEE_MAX_Y_DELTA) continue;
 
-      const dist = distanceBetween(player.x, player.z, enemy.x, enemy.z);
-      if (dist < 1.2) {
+      const distSq = distanceSqBetween(player.x, player.z, enemy.x, enemy.z);
+      if (distSq < meleeRangeSq) {
         applyPlayerHit(engine, enemy.damage);
         enemy.attackCooldown = enemy.attackCooldownMax;
         break;
@@ -173,8 +170,8 @@ export function processCollisions(engine: Engine): void {
   // 3. boss 近战 vs player
   if (player.alive && player.invincibleTimer <= 0 && engine.state.boss && engine.state.boss.hp > 0) {
     if (Math.abs(engine.state.boss.y - player.y) <= BOSS_MELEE_MAX_Y_DELTA) {
-      const dist = distanceBetween(player.x, player.z, engine.state.boss.x, engine.state.boss.z);
-      if (dist < 2.0 && engine.state.boss.attackCooldown <= 0) {
+      const distSq = distanceSqBetween(player.x, player.z, engine.state.boss.x, engine.state.boss.z);
+      if (distSq < 2.0 * 2.0 && engine.state.boss.attackCooldown <= 0) {
         const bossDmg = getBossMeleeDamage(engine.state.boss);
         applyPlayerHit(engine, bossDmg);
         engine.state.boss.attackCooldown = 2.0;
@@ -188,9 +185,10 @@ export function processCollisions(engine: Engine): void {
       const proj = engine.state.projectiles[i];
       if (proj.fromPlayer) continue;
 
-      const dist = distanceBetween(proj.x, proj.z, player.x, player.z);
+      const hitRange = proj.radius + 0.5;
+      const distSq = distanceSqBetween(proj.x, proj.z, player.x, player.z);
       const yDist = Math.abs(proj.y - (player.y + PLAYER_HIT_CENTER_OFFSET_Y));
-      if (dist < proj.radius + 0.5 && yDist < PROJECTILE_HIT_MAX_Y_DELTA) {
+      if (distSq < hitRange * hitRange && yDist < PROJECTILE_HIT_MAX_Y_DELTA) {
         applyPlayerHit(engine, proj.damage);
         engine.state.projectiles.splice(i, 1);
         break;
@@ -201,9 +199,11 @@ export function processCollisions(engine: Engine): void {
 
 function rebuildSpatialHash(engine: Engine): void {
   engine.spatialHash.clear();
+  enemyByIdScratch.clear();
   for (const enemy of engine.state.enemies) {
     if (enemy.hp <= 0) continue;
     engine.spatialHash.insert(enemy.id, enemy.x, enemy.z, 0.5);
+    enemyByIdScratch.set(enemy.id, enemy);
   }
   if (engine.state.boss && engine.state.boss.hp > 0) {
     engine.spatialHash.insert(-1, engine.state.boss.x, engine.state.boss.z, 1.5);

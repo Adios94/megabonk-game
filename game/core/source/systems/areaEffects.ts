@@ -10,7 +10,7 @@
  *
  * 伤害统一走 helpers.addDamageEvent + stats.damageDealt，飘字颜色由 weaponType 驱动。
  */
-import { distanceBetween } from '../physics.ts';
+import { distanceSqBetween } from '../physics.ts';
 import { addDamageEvent } from './helpers.ts';
 import { applyPoison } from './statusEffects.ts';
 import { onBondWeaponHit } from './bonds.ts';
@@ -50,21 +50,21 @@ export function tickAreaEffects(engine: Engine, dt: number): void {
         if (ae.tickTimer <= 0) {
           ae.tickTimer = ae.tickInterval ?? 0.5;
           const dps = ae.poisonDps ?? ae.damage;
+          const radiusSq = ae.radius * ae.radius;
           for (const enemy of enemies) {
             if (enemy.hp <= 0) continue;
-            if (distanceBetween(ae.x, ae.z, enemy.x, enemy.z) > ae.radius) continue;
+            if (distanceSqBetween(ae.x, ae.z, enemy.x, enemy.z) > radiusSq) continue;
             if (!withinAoeHeight(ae.y, enemy.y)) continue;
             applyPoison(enemy, dps, ae.poisonDuration ?? GAS_POISON_REFRESH_DURATION);
-            onBondWeaponHit(engine, ae.weaponType, enemy, Math.round(dps), false);
           }
           // boss 不可中毒 → 直接结算等量直伤
           if (
             boss && boss.hp > 0
-            && distanceBetween(ae.x, ae.z, boss.x, boss.z) <= ae.radius
+            && distanceSqBetween(ae.x, ae.z, boss.x, boss.z) <= radiusSq
             && withinAoeHeight(ae.y, boss.y)
           ) {
             damageBoss(engine, boss, Math.round(dps * (ae.tickInterval ?? 0.5)), ae);
-            onBondWeaponHit(engine, ae.weaponType, boss, Math.round(dps), false);
+            // DoT refresh is not a fresh weapon hit; avoid re-triggering hit-based bond mechanics every tick.
           }
         }
         break;
@@ -78,12 +78,13 @@ export function tickAreaEffects(engine: Engine, dt: number): void {
         }
         const prev = ae.radius;
         ae.radius = prev + (ae.expandSpeed ?? 8) * dt;
+        const rippleRadiusSq = ae.radius * ae.radius;
         if (!ae.hitEnemyIds) ae.hitEnemyIds = [];
         for (const enemy of enemies) {
           if (enemy.hp <= 0) continue;
           if (ae.hitEnemyIds.includes(enemy.id)) continue;
           if (
-            distanceBetween(ae.x, ae.z, enemy.x, enemy.z) <= ae.radius
+            distanceSqBetween(ae.x, ae.z, enemy.x, enemy.z) <= rippleRadiusSq
             && withinAoeHeight(ae.y, enemy.y)
           ) {
             damageEnemy(engine, enemy, ae.damage, ae);
@@ -93,7 +94,7 @@ export function tickAreaEffects(engine: Engine, dt: number): void {
         }
         if (boss && boss.hp > 0 && !ae.hitEnemyIds.includes(-1)) {
           if (
-            distanceBetween(ae.x, ae.z, boss.x, boss.z) <= ae.radius
+            distanceSqBetween(ae.x, ae.z, boss.x, boss.z) <= rippleRadiusSq
             && withinAoeHeight(ae.y, boss.y)
           ) {
             damageBoss(engine, boss, ae.damage, ae);
@@ -112,20 +113,19 @@ export function tickAreaEffects(engine: Engine, dt: number): void {
         ae.tickTimer = (ae.tickTimer ?? 0) - dt;
         if (ae.tickTimer <= 0) {
           ae.tickTimer = ae.tickInterval ?? 0.4;
+          const scorchRadiusSq = ae.radius * ae.radius;
           for (const enemy of enemies) {
             if (enemy.hp <= 0) continue;
-            if (distanceBetween(ae.x, ae.z, enemy.x, enemy.z) > ae.radius) continue;
+            if (distanceSqBetween(ae.x, ae.z, enemy.x, enemy.z) > scorchRadiusSq) continue;
             if (!withinAoeHeight(ae.y, enemy.y)) continue;
             damageEnemy(engine, enemy, ae.damage, ae);
-            onBondWeaponHit(engine, ae.weaponType, enemy, ae.damage, ae.isCrit ?? false);
           }
           if (
             boss && boss.hp > 0
-            && distanceBetween(ae.x, ae.z, boss.x, boss.z) <= ae.radius
+            && distanceSqBetween(ae.x, ae.z, boss.x, boss.z) <= scorchRadiusSq
             && withinAoeHeight(ae.y, boss.y)
           ) {
             damageBoss(engine, boss, ae.damage, ae);
-            onBondWeaponHit(engine, ae.weaponType, boss, ae.damage, ae.isCrit ?? false);
           }
         }
         break;

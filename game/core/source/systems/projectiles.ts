@@ -26,19 +26,20 @@ export function tickProjectiles(engine: Engine, dt: number): void {
 
     if (proj.orbiting) {
       updateOrbitingProjectile(proj, player.x, player.z, dt, player.y);
-      // 常驻刀环的「火焰圈」式持续伤害：每隔 rehitInterval 清空命中表，
-      // 让一直绕圈的刀刃可以反复打到同一个敌人（否则 hitEnemyIds 永不清，一把刀对一个敌人一辈子只打一次）。
-      if (proj.rehitInterval && proj.rehitInterval > 0) {
-        proj.rehitTimer = (proj.rehitTimer ?? proj.rehitInterval) - dt;
-        if (proj.rehitTimer <= 0) {
-          proj.hitEnemyIds.length = 0;
-          proj.rehitTimer += proj.rehitInterval;
-        }
-      }
     } else {
       proj.x += proj.vx * dt;
       proj.y += proj.vy * dt;
       proj.z += proj.vz * dt;
+    }
+
+    // 常驻/持续投射物的「火焰圈」式持续伤害：每隔 rehitInterval 清空命中表，
+    // 让 orbiting / gravitational 这类持续体可以反复打到同一个敌人。
+    if (proj.rehitInterval && proj.rehitInterval > 0) {
+      proj.rehitTimer = (proj.rehitTimer ?? proj.rehitInterval) - dt;
+      while (proj.rehitTimer <= 0) {
+        proj.hitEnemyIds.length = 0;
+        proj.rehitTimer += proj.rehitInterval;
+      }
     }
 
     // 地形 clamp 仅用于防止「飞行/直线」投射物穿地。orbiting 投射物（axe 常驻刀环）的高度

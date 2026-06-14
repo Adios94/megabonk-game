@@ -369,4 +369,38 @@ describe('collision', () => {
       expect(getTerrainHeightAt(geo2, 100, 100)).toBe(9);
     });
   });
+
+  // ─── 广相网格等价性（grid vs 全量扫描）──────────────────────────────
+  describe('GeoGrid 广相索引与全量扫描完全等价', () => {
+    const geo = geoFor({
+      collisionRects: [
+        { cx: 0, cz: 0, halfW: 8, halfD: 8, height: 0 },
+        { cx: 20, cz: -10, halfW: 4, halfD: 6, height: 3 },
+        { cx: -25, cz: 18, halfW: 5, halfD: 5, height: 5, baseY: 0 },
+      ],
+      collisionDiscs: [{ cx: 12, cz: 12, radius: 4, height: 2 }],
+      walls: [{ cx: 5, cz: -20, halfW: 2, halfD: 8, bottomY: 0, topY: 4 }],
+      ramps: [{
+        cx: -10, cz: -10, halfSlope: 6, halfPerp: 3,
+        slopeDirX: 1, slopeDirZ: 0, lowY: 0, highY: 4,
+      }],
+      climbVolumes: [{ cx: 30, cz: 30, halfW: 1.5, halfD: 1.5, bottomY: 0, topY: 6 }],
+    });
+    // 同几何但去掉 grid → 触发全量扫描分支
+    const noGrid: LevelGeometry = { ...geo, grid: undefined };
+
+    it('getTerrainHeight / getSupportHeight / isBlocked / findClimb 在采样网格上逐点一致', () => {
+      expect(geo.grid).toBeDefined();
+      for (let x = -40; x <= 40; x += 1.3) {
+        for (let z = -40; z <= 40; z += 1.7) {
+          expect(getTerrainHeightAt(geo, x, z)).toBe(getTerrainHeightAt(noGrid, x, z));
+          for (const feetY of [0, 1, 3, 5]) {
+            expect(getSupportHeightAt(geo, x, z, feetY)).toBe(getSupportHeightAt(noGrid, x, z, feetY));
+            expect(isBlockedHorizontallyAt(geo, x, z, feetY)).toBe(isBlockedHorizontallyAt(noGrid, x, z, feetY));
+          }
+          expect(findClimbAt(geo, x, z, 1)?.cx).toBe(findClimbAt(noGrid, x, z, 1)?.cx);
+        }
+      }
+    });
+  });
 });

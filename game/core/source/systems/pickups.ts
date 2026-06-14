@@ -9,7 +9,7 @@
  * Curse_tome 给 XP 增益，luck_tome 加 silver bonus，xp_gain_tome / shop xpGain
  * / combo / tier 共同决定最终 XP value。
  */
-import { distanceBetween, normalizeDirection } from '../physics.ts';
+import { distanceBetween, distanceSqBetween, normalizeDirection } from '../physics.ts';
 import {
   MAX_PICKUPS,
   XP_VALUES,
@@ -18,6 +18,7 @@ import {
   HEALTH_DROP_CHANCE,
   HEALTH_SMALL_DROP_CHANCE,
   TIER_CONFIGS,
+  AOE_MAX_Y_DELTA,
 } from '../config.ts';
 import { ENEMIES } from '../data/enemies.ts';
 import { getShopBonuses } from '../shop.ts';
@@ -234,10 +235,11 @@ export function tickThorns(engine: Engine): void {
   if (thornsPower <= 0) return;
 
   const thornsDamage = thornsPower * 3;
+  const thornsRangeSq = 1.5 * 1.5;
   for (const enemy of engine.state.enemies) {
     if (enemy.hp <= 0) continue;
-    const dist = distanceBetween(player.x, player.z, enemy.x, enemy.z);
-    if (dist < 1.5) {
+    if (Math.abs(enemy.y - player.y) > AOE_MAX_Y_DELTA) continue;
+    if (distanceSqBetween(player.x, player.z, enemy.x, enemy.z) < thornsRangeSq) {
       enemy.hp -= thornsDamage;
       enemy.hitFlashTimer = 0.1;
       engine.state.stats.damageDealt += thornsDamage;

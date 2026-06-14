@@ -15,7 +15,7 @@ import {
   evalBondCounts, getBondTier, bondThresholds, bondUpgradeTargets,
 } from '../data/bonds.ts';
 import { loadSave, saveSave } from '../save.ts';
-import { distanceBetween } from '../physics.ts';
+import { distanceSqBetween } from '../physics.ts';
 import { AOE_MAX_Y_DELTA } from '../config.ts';
 import { bossDamageEventY, enemyDamageEventY } from '../combatHeight.ts';
 import type { Engine } from './types.ts';
@@ -236,9 +236,10 @@ function onBondKill(engine: Engine, weaponType: WeaponType, killed: BondTarget):
   // 红色爆炸烟雾 VFX（替代普通死亡烟雾的观感）
   engine.state.bondVfxEvents.push({ kind: 'ember_explode', x: killed.x, y: ky + 0.6, z: killed.z });
 
+  const radiusSq = radius * radius;
   for (const e of engine.state.enemies) {
     if (e === killed || e.hp <= 0) continue;
-    if (distanceBetween(killed.x, killed.z, e.x, e.z) <= radius && sameCombatHeight(killed, e)) {
+    if (distanceSqBetween(killed.x, killed.z, e.x, e.z) <= radiusSq && sameCombatHeight(killed, e)) {
       dealBondDamage(engine, e, dmg, weaponType);
     }
   }
@@ -246,7 +247,7 @@ function onBondKill(engine: Engine, weaponType: WeaponType, killed: BondTarget):
   const boss = engine.state.boss;
   if (
     boss && boss !== killed && boss.hp > 0
-    && distanceBetween(killed.x, killed.z, boss.x, boss.z) <= radius
+    && distanceSqBetween(killed.x, killed.z, boss.x, boss.z) <= radiusSq
     && sameCombatHeight(killed, boss)
   ) {
     dealBondDamage(engine, boss, dmg, weaponType);
@@ -333,17 +334,18 @@ function tickArcaneBurst(engine: Engine): void {
 
   // 选索敌范围内当前生命值最高的目标（含 boss —— boss 血量通常最高，理应优先被爆发）
   const RANGE = 14;
+  const RANGE_SQ = RANGE * RANGE;
   let target: BondTarget | null = null;
   for (const e of engine.state.enemies) {
     if (e.hp <= 0) continue;
-    if (distanceBetween(player.x, player.z, e.x, e.z) > RANGE) continue;
+    if (distanceSqBetween(player.x, player.z, e.x, e.z) > RANGE_SQ) continue;
     if (Math.abs(e.y - player.y) > AOE_MAX_Y_DELTA) continue;
     if (!target || e.hp > target.hp) target = e;
   }
   const boss = engine.state.boss;
   if (
     boss && boss.hp > 0
-    && distanceBetween(player.x, player.z, boss.x, boss.z) <= RANGE
+    && distanceSqBetween(player.x, player.z, boss.x, boss.z) <= RANGE_SQ
     && Math.abs(boss.y - player.y) <= AOE_MAX_Y_DELTA
   ) {
     if (!target || boss.hp > target.hp) target = boss;
@@ -355,6 +357,7 @@ function tickArcaneBurst(engine: Engine): void {
   const burst = Math.max(1, Math.round(avgLevel * p.burstPerLevel * (tier >= 3 ? p.burstT3Mult : 1)));
   const splash = Math.max(1, Math.round(burst * p.splash));
   const RADIUS = 3.0;
+  const RADIUS_SQ = RADIUS * RADIUS;
 
   // 蓝紫光球 VFX：从玩家头顶飞向目标，命中处生成蓝紫烟雾
   engine.state.bondVfxEvents.push({ kind: 'arcane_burst', x: target.x, y: targetDamageEventY(target), z: target.z });
@@ -367,7 +370,7 @@ function tickArcaneBurst(engine: Engine): void {
 
   for (const e of engine.state.enemies) {
     if (e.hp <= 0 || e === target) continue;
-    if (distanceBetween(target.x, target.z, e.x, e.z) <= RADIUS && Math.abs(e.y - target.y) <= AOE_MAX_Y_DELTA) {
+    if (distanceSqBetween(target.x, target.z, e.x, e.z) <= RADIUS_SQ && Math.abs(e.y - target.y) <= AOE_MAX_Y_DELTA) {
       e.hp -= splash;
       e.hitFlashTimer = 0.15;
       engine.effects.addDamageDealt(splash);
@@ -376,7 +379,7 @@ function tickArcaneBurst(engine: Engine): void {
   }
   if (
     boss && boss.hp > 0 && boss !== target
-    && distanceBetween(target.x, target.z, boss.x, boss.z) <= RADIUS
+    && distanceSqBetween(target.x, target.z, boss.x, boss.z) <= RADIUS_SQ
     && Math.abs(boss.y - target.y) <= AOE_MAX_Y_DELTA
   ) {
     boss.hp -= splash;

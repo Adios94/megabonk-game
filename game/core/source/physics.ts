@@ -42,6 +42,17 @@ export function distanceBetween(x1: number, z1: number, x2: number, z2: number):
 }
 
 /**
+ * Squared distance between two points on XZ plane.
+ * 比较距离时（dist < r / dist > r）优先用此函数，省一次 Math.sqrt——
+ * 在每帧成百上千次的索敌 / AOE / 碰撞判定里能显著降低 CPU。
+ */
+export function distanceSqBetween(x1: number, z1: number, x2: number, z2: number): number {
+  const dx = x2 - x1;
+  const dz = z2 - z1;
+  return dx * dx + dz * dz;
+}
+
+/**
  * Normalize a 2D direction vector. Returns {x:0, z:0} if zero-length.
  */
 export function normalizeDirection(x: number, z: number): { x: number; z: number } {

@@ -6,7 +6,7 @@
  * 抽到这里避免在每个行为里重新写一遍。
  */
 import type { EnemyState } from '../types.ts';
-import { distanceBetween } from '../physics.ts';
+import { distanceSqBetween } from '../physics.ts';
 
 /**
  * 找最近的活敌人。
@@ -20,13 +20,13 @@ export function findNearestEnemy(
   maxYDelta: number = Infinity,
 ): EnemyState | null {
   let nearest: EnemyState | null = null;
-  let nearestDist = maxRange;
+  let nearestDistSq = maxRange === Infinity ? Infinity : maxRange * maxRange;
   for (const enemy of enemies) {
     if (enemy.hp <= 0) continue;
     if (sourceY !== undefined && Math.abs(enemy.y - sourceY) > maxYDelta) continue;
-    const dist = distanceBetween(x, z, enemy.x, enemy.z);
-    if (dist < nearestDist) {
-      nearestDist = dist;
+    const distSq = distanceSqBetween(x, z, enemy.x, enemy.z);
+    if (distSq < nearestDistSq) {
+      nearestDistSq = distSq;
       nearest = enemy;
     }
   }
@@ -51,14 +51,14 @@ export function findNearestEnemyExcluding(
     ? excludeIds
     : new Set(excludeIds as readonly number[]);
   let nearest: EnemyState | null = null;
-  let nearestDist = maxRange;
+  let nearestDistSq = maxRange === Infinity ? Infinity : maxRange * maxRange;
   for (const enemy of enemies) {
     if (enemy.hp <= 0) continue;
     if (excludes.has(enemy.id)) continue;
     if (sourceY !== undefined && Math.abs(enemy.y - sourceY) > maxYDelta) continue;
-    const dist = distanceBetween(x, z, enemy.x, enemy.z);
-    if (dist < nearestDist) {
-      nearestDist = dist;
+    const distSq = distanceSqBetween(x, z, enemy.x, enemy.z);
+    if (distSq < nearestDistSq) {
+      nearestDistSq = distSq;
       nearest = enemy;
     }
   }

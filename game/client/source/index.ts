@@ -1505,7 +1505,13 @@ interface LoadedModels {
   teleporter: THREE.Group | null;
 }
 
-const gltfLoader = new GLTFLoader();
+/**
+ * 启动期共享 LoadingManager：所有 boot 阶段的 GLTF/OBJ/MTL/Texture 加载都挂到它上面，
+ * 借 onProgress 汇总「已加载 / 总数」驱动启动 loading 进度条（解决「白屏无反馈」）。
+ * 运行期（进对局后）GameScene 内部新建的 loader 不挂它，避免进度条已移除后还触发回调。
+ */
+const bootLoadingManager = new THREE.LoadingManager();
+const gltfLoader = new GLTFLoader(bootLoadingManager);
 const loadedModels: LoadedModels = {
   zombie_basic: null,
   monster_bat: null,
@@ -2182,7 +2188,7 @@ let chestOpenObj: THREE.Group | null = null;
 let chestAnimations: THREE.AnimationClip[] = [];
 
 async function loadObjItems(): Promise<void> {
-  const objLoader = new OBJLoader();
+  const objLoader = new OBJLoader(bootLoadingManager);
 
   const loadAndNormalize = async (path: string, targetSize: number): Promise<THREE.BufferGeometry> => {
     try {
@@ -2236,10 +2242,10 @@ async function loadObjItems(): Promise<void> {
     brighten = false,
   ): Promise<THREE.Group | null> => {
     try {
-      const mtlLoader = new MTLLoader();
+      const mtlLoader = new MTLLoader(bootLoadingManager);
       const mtl = await mtlLoader.loadAsync(mtlPath);
       mtl.preload();
-      const loader = new OBJLoader();
+      const loader = new OBJLoader(bootLoadingManager);
       loader.setMaterials(mtl);
       const obj = await loader.loadAsync(objPath) as THREE.Group;
       obj.name = name;
@@ -2341,10 +2347,10 @@ async function loadObjItems(): Promise<void> {
     targetSize: number,
   ): Promise<THREE.Group | null> => {
     try {
-      const obj = await new OBJLoader().loadAsync(objPath) as THREE.Group;
+      const obj = await new OBJLoader(bootLoadingManager).loadAsync(objPath) as THREE.Group;
       obj.name = name;
 
-      const tex = await new THREE.TextureLoader().loadAsync(texturePath);
+      const tex = await new THREE.TextureLoader(bootLoadingManager).loadAsync(texturePath);
       tex.colorSpace = THREE.SRGBColorSpace;
       // Palette UVs target tiny color cells — nearest filtering avoids bleeding.
       tex.magFilter = THREE.NearestFilter;
@@ -2720,6 +2726,39 @@ export class GameScene {
   private mobileInteractPressed = false;
   private lastTime = 0;
   private frameDt = 1 / 60;
+  /** 全局键盘监听引用（destroy 时移除，防跨局泄漏）。 */
+  private onKeyDown?: (e: KeyboardEvent) => void;
+  private onKeyUp?: (e: KeyboardEvent) => void;
+  /** session 事件退订函数（destroy 时调用）。 */
+  private sessionUnsubscribers: Array<() => void> = [];
+  /**
+   * WebGL context lost / restored 处理（移动端必备）。
+   * 手机切后台 / 来电 / 系统内存吃紧时浏览器会回收 GL context：若不处理，画面黑屏且永不恢复。
+   * - lost：preventDefault（告诉浏览器尝试恢复）+ 置 contextLost 标志暂停渲染 + 显示提示浮层。
+   * - restored：three.js 在下一次 render 自动重传 GPU 资源，这里只需清标志、隐藏浮层、恢复循环。
+   */
+  private contextLost = false;
+  private onContextLost?: (e: Event) => void;
+  private onContextRestored?: (e: Event) => void;
+  private contextLostOverlay?: HTMLDivElement;
+  /**
+   * HUD 差分更新签名缓存：武器/法书/遗物/羁绊槽位结构很少变化，但旧实现每帧
+   * innerHTML='' 全量重建 DOM（触发 layout/reflow + GC + 每帧重绑事件）。
+   * 仅当结构签名变化时才重建，逐帧只更新真正变动的部分（如武器冷却遮罩高度）。
+   */
+  private weaponSlotsSig = '';
+  private weaponCooldownOverlays: Array<HTMLElement | null> = [];
+  private tomesSig = '';
+  private relicsSig = '';
+  private bondsSig = '';
+  /** 羁绊槽点击展开时使用最近一帧 state，避免 DOM 缓存后闭包拿到旧数值。 */
+  private latestHudState?: GameState;
+  /**
+   * 上一次消费 damageEvents / bondVfxEvents 时的 state.gameTime。
+   * 渲染走 rAF（高刷屏可 >60Hz），逻辑 tick 固定 60Hz：同一 tick 的事件会被多个 rAF 帧重复读到，
+   * 导致打击火花 / 镜头震动 / 羁绊 VFX 翻倍。按 gameTime 去重，确保每个 tick 的事件只消费一次。
+   */
+  private lastEventGameTime = -1;
 
   // Dying enemies (death animation tracking)
   private dyingEnemies: Map<number, { obj: THREE.Object3D; timer: number; type: string }> = new Map();
@@ -2768,8 +2807,10 @@ export class GameScene {
     this.container = container;
 
     // Renderer
+    // antialias:false —— 画面全程走离屏 EffectComposer target，最终由 OutputPass 把贴图全屏 blit 到
+    // 默认帧缓冲，canvas 级 MSAA 对这条离屏管线基本不生效＝白付开销（尤其移动端填充率敏感）。关掉。
     this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      antialias: false,
       powerPreference: 'high-performance',
     });
     // 关实时方向光阴影（每帧多渲一遍全场景，手机最贵的一项）——改用脚下 blob 圆阴影。
@@ -2779,6 +2820,20 @@ export class GameScene {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace; // 显式 sRGB，保证饱和度正确还原
     this.renderer.domElement.style.display = 'block';
     this.container.appendChild(this.renderer.domElement);
+
+    // WebGL context lost / restored —— 监听挂在 canvas 上，destroy 时移除。
+    this.onContextLost = (e: Event) => {
+      e.preventDefault(); // 必须：阻止默认后浏览器才会尝试恢复并触发 webglcontextrestored
+      this.contextLost = true;
+      this.showContextLostOverlay();
+    };
+    this.onContextRestored = () => {
+      // three.js 会在下一帧 render 时自动重新上传几何 / 材质 / 纹理，无需手动重建场景。
+      this.contextLost = false;
+      this.hideContextLostOverlay();
+    };
+    this.renderer.domElement.addEventListener('webglcontextlost', this.onContextLost, false);
+    this.renderer.domElement.addEventListener('webglcontextrestored', this.onContextRestored, false);
 
     // Outline Effect (cel-shading edge lines)
     this.outlineEffect = new OutlineEffect(this.renderer, {
@@ -2818,17 +2873,19 @@ export class GameScene {
       });
     }
 
-    // Keyboard bindings
-    window.addEventListener('keydown', (e) => {
+    // Keyboard bindings —— 保存引用以便 destroy() 移除，避免每开一局泄漏一对全局监听 + 旧 GameScene 闭包。
+    this.onKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space') { this.jumpKeyDown = true; e.preventDefault(); }
       if (e.code === 'KeyE') {
         // 边缘触发：keydown 那一帧标记为 pressed；发送过 input 后会清零（见 handleInput）
         if (!e.repeat) this.interactKeyPressed = true;
       }
-    });
-    window.addEventListener('keyup', (e) => {
+    };
+    this.onKeyUp = (e: KeyboardEvent) => {
       if (e.code === 'Space') { this.jumpKeyDown = false; }
-    });
+    };
+    window.addEventListener('keydown', this.onKeyDown);
+    window.addEventListener('keyup', this.onKeyUp);
 
     // 镜头视图系统：FPS pointer lock + 拖拽 + 手机右半屏滑动 + pitch 夹紧。
     // 所有事件监听、yaw/pitch 状态都封装在内；GameScene 通过 getYaw() / update() 交互。
@@ -2871,13 +2928,17 @@ export class GameScene {
       },
     });
 
-    this.session.on('game_update', ({ state }) => {
-      this.handlePhaseChange(state);
-    });
+    this.sessionUnsubscribers.push(
+      this.session.on('game_update', ({ state }) => {
+        this.handlePhaseChange(state);
+      }),
+    );
 
-    this.session.on('game_over', ({ result }) => {
-      this.showGameOver(result);
-    });
+    this.sessionUnsubscribers.push(
+      this.session.on('game_over', ({ result }) => {
+        this.showGameOver(result);
+      }),
+    );
 
     this.animate();
   }
@@ -2891,8 +2952,28 @@ export class GameScene {
     gsapAnimations.cleanup();
     this.levelPulseAnimation = null;
     this.removeDisplayListener?.();
+    // 移除全局键盘监听 + 退订 session 事件，断开旧 GameScene 闭包引用链。
+    if (this.onKeyDown) window.removeEventListener('keydown', this.onKeyDown);
+    if (this.onKeyUp) window.removeEventListener('keyup', this.onKeyUp);
+    this.onKeyDown = undefined;
+    this.onKeyUp = undefined;
+    for (const unsub of this.sessionUnsubscribers) unsub();
+    this.sessionUnsubscribers = [];
+    // 移除 canvas 上的 WebGL context lost / restored 监听 + 清理提示浮层。
+    if (this.onContextLost) this.renderer.domElement.removeEventListener('webglcontextlost', this.onContextLost);
+    if (this.onContextRestored) this.renderer.domElement.removeEventListener('webglcontextrestored', this.onContextRestored);
+    this.onContextLost = undefined;
+    this.onContextRestored = undefined;
+    this.contextLostOverlay?.remove();
+    this.contextLostOverlay = undefined;
     this.cameraOrbit?.dispose();
     this.platformInput.dispose();
+    // 释放本实例独占的后处理 / Blob 阴影 GPU 资源，再 dispose 渲染器。
+    // 注意：不盲目遍历整个场景 dispose materials/textures —— 部分是跨局复用的模块级单例
+    // （toon 渐变贴图 / 预加载 VFX 贴图），错误释放会让下一局渲染崩坏。移除全局监听 + 退订
+    // session 后，旧 GameScene 整棵场景图与 GL 上下文已无引用，可被 GC 连同 GPU 资源回收。
+    this.composer?.dispose();
+    this.blobShadows?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.hudContainer?.remove();
@@ -2961,10 +3042,15 @@ export class GameScene {
   }
 
   /**
-   * 后处理：OutlineEffect（场景+描边）→ 微微 bloom（仅高亮 / 发光特效）→ OutputPass（ACES+sRGB）。
-   * bloom 阈值高、强度低：只让大招特效、发光物等"超亮"像素辉光，不糊整体画面。
+   * 后处理：OutlineEffect（场景+描边）→ [可选 bloom] → OutputPass（ACES+sRGB）。
+   *
+   * BLOOM_ENABLED = false（默认关闭，性能优化）：UnrealBloomPass 的半分辨率降采样 +
+   * 多次高斯模糊是移动端 / 集显帧率的最大单项开销，关闭后还会释放其 mip render targets 显存。
+   * 描边与 tone map（OutputPass）不受影响，画面整体观感基本一致，仅少了发光特效的辉光晕。
+   * 想开回：把 BLOOM_ENABLED 改回 true 即可（调试面板的 Bloom 段也会随之出现）。
    */
   private setupComposer(): void {
+    const BLOOM_ENABLED = false;
     const composer = new EffectComposer(this.renderer); // 默认 HalfFloat 目标，保 HDR
     const w = this.container.clientWidth || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
@@ -2974,14 +3060,16 @@ export class GameScene {
 
     composer.addPass(new OutlineComposerPass(this.outlineEffect, this.scene, this.camera));
 
-    const bloom = new UnrealBloomPass(
-      new THREE.Vector2(Math.max(1, w * dpr * 0.5), Math.max(1, h * dpr * 0.5)), // 半分辨率省手机
-      0.3,  // strength：微微
-      0.5,  // radius
-      1.0,  // threshold：抬高 → 只让真正的发光特效辉光，普通亮面不再被晕白
-    );
-    composer.addPass(bloom);
-    this.bloomPass = bloom;
+    if (BLOOM_ENABLED) {
+      const bloom = new UnrealBloomPass(
+        new THREE.Vector2(Math.max(1, w * dpr * 0.5), Math.max(1, h * dpr * 0.5)), // 半分辨率省手机
+        0.3,  // strength：微微
+        0.5,  // radius
+        1.0,  // threshold：抬高 → 只让真正的发光特效辉光，普通亮面不再被晕白
+      );
+      composer.addPass(bloom);
+      this.bloomPass = bloom;
+    }
 
     composer.addPass(new OutputPass()); // 末端唯一 tone map：ACES + sRGB
 
@@ -2991,6 +3079,27 @@ export class GameScene {
   private renderFrame(): void {
     if (this.composer) this.composer.render();
     else this.outlineEffect.render(this.scene, this.camera);
+  }
+
+  /** GL context 丢失时显示的提示浮层（懒创建，复用同一节点）。 */
+  private showContextLostOverlay(): void {
+    if (!this.contextLostOverlay) {
+      const el = document.createElement('div');
+      el.style.cssText =
+        'position:absolute;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;' +
+        'background:rgba(0,0,0,0.82);color:#fff;font-size:clamp(14px,4vw,18px);text-align:center;' +
+        'padding:24px;pointer-events:none;';
+      el.textContent = '⚠️ 渲染上下文丢失，正在尝试恢复…\nGraphics context lost — recovering…';
+      el.style.whiteSpace = 'pre-line';
+      this.contextLostOverlay = el;
+    }
+    if (!this.contextLostOverlay.parentElement) {
+      this.container.appendChild(this.contextLostOverlay);
+    }
+  }
+
+  private hideContextLostOverlay(): void {
+    this.contextLostOverlay?.remove();
   }
 
   private setupGround(): void {
@@ -4127,6 +4236,9 @@ export class GameScene {
   private animate(): void {
     this.animationId = requestAnimationFrame(() => this.animate());
 
+    // GL context 丢失期间停止一切渲染 / 状态读取（GPU 资源已失效），保留 rAF 循环以便恢复后续跑。
+    if (this.contextLost) return;
+
     const now = performance.now();
     const dt = this.lastTime > 0 ? Math.min((now - this.lastTime) / 1000, 0.05) : 1 / 60;
     this.lastTime = now;
@@ -4141,6 +4253,11 @@ export class GameScene {
     }
 
     const state = this.session.getRenderState();
+
+    // 本帧 damageEvents / bondVfxEvents 是否属于"尚未消费过的新 tick"。
+    // 高刷屏下多个 rAF 帧会读到同一 tick 的事件，靠它去重避免 VFX/震动翻倍。
+    const eventsFresh = state.gameTime !== this.lastEventGameTime;
+    if (eventsFresh) this.lastEventGameTime = state.gameTime;
 
     // 玩家在 playing / boss_fight / portal_open 阶段都能控制角色：
     // - portal_open 是 Boss 击败后、玩家可选进传送门或留下打 overtime 的中间态
@@ -4164,15 +4281,15 @@ export class GameScene {
     this.renderTeleporters(state.altars);
     this.renderChests(state);
     this.renderShrines(state.shrines, state.player.x, state.player.z);
-    this.updateVFX(state, dt);
+    this.updateVFX(state, dt, eventsFresh);
     this.updateBillboardVfx(dt);
     this.updateCamera(state);
 
     // 游戏已结束（失败 / 胜利）后不再触发新的镜头晃动，避免"死后被打仍在晃"的违和感
     const isGameEnded = state.phase === 'defeat' || state.phase === 'victory';
 
-    // Process damage events for camera effects
-    if (!isGameEnded) {
+    // Process damage events for camera effects（仅消费未处理过的新 tick，避免高刷屏重复震动）
+    if (!isGameEnded && eventsFresh) {
       for (const evt of state.damageEvents) {
         if (evt.isPlayerDamage) {
           // Player took damage: only meaningful shake event
@@ -4203,7 +4320,7 @@ export class GameScene {
       }
     }
 
-    this.updateHUD(state);
+    this.updateHUD(state, eventsFresh);
 
     this.renderFrame();
   }
@@ -7363,19 +7480,21 @@ export class GameScene {
     });
   }
 
-  private updateVFX(state: GameState, dt: number): void {
+  private updateVFX(state: GameState, dt: number, eventsFresh = true): void {
     const enemies = state.enemies;
     const player = state.player;
 
     this.updateAreaEffects(state, dt);
     this.updateEnemyStatusVfx(state);
     this.updateMysteryNumber(state);
-    this.processBondVfxEvents(state);
+    // 事件驱动的羁绊 VFX 只在新 tick 消费一次（高刷屏去重）。
+    if (eventsFresh) this.processBondVfxEvents(state);
     this.updateArcaneBurstOrbs(dt);
 
     // --- Emit particles based on game events ---
 
-    // Hit sparks from damage events
+    // Hit sparks from damage events（事件驱动，仅新 tick 消费）
+    if (eventsFresh) {
     for (const event of state.damageEvents) {
       if (event.isPlayerDamage) continue;
 
@@ -7397,6 +7516,7 @@ export class GameScene {
       if (event.weaponType === 'lightning_staff') {
         this.spawnLightningBolt(event.x, event.y - 1.0, event.z);
       }
+    }
     }
 
     // Continuous weapon effects
@@ -7601,9 +7721,10 @@ export class GameScene {
   // HUD Update
   // ===========================================================================
 
-  private updateHUD(state: GameState): void {
+  private updateHUD(state: GameState, eventsFresh = true): void {
     const p = state.player;
     const time = performance.now();
+    this.latestHudState = state;
 
     // HP bar with GSAP animation + numeric label (current / max)
     const hpPercent = Math.max(0, Math.min(100, (p.hp / p.maxHp) * 100));
@@ -7680,67 +7801,91 @@ export class GameScene {
     this.renderWeaponSlots(p);
 
     // --- Tome stack (top-right second column): newest on the right ---
-    this.tomesSlotsContainer.innerHTML = '';
-    for (const tome of p.tomes) {
-      const slot = document.createElement('div');
-      const bgColor = TOME_COLORS[tome.type] ?? '#444';
-      slot.style.cssText = `width:clamp(34px,9vw,40px);height:clamp(34px,9vw,40px);background:${bgColor}33;border:1px solid ${bgColor};border-radius:6px;position:relative;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:help;`;
-      this.setItemTooltip(slot, this.createTomeTooltipHtml(tome));
-      const icon = document.createElement('span');
-      icon.style.cssText = 'font-size:clamp(14px,4vw,18px);';
-      icon.textContent = TOME_ICONS[tome.type] ?? '📖';
-      slot.appendChild(icon);
-      // Level number (Lv.N) bottom-center
-      const lvl = document.createElement('span');
-      lvl.style.cssText = 'position:absolute;bottom:-1px;left:0;right:0;text-align:center;font-size:8px;font-weight:bold;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.95);';
-      lvl.textContent = `Lv.${tome.level}`;
-      slot.appendChild(lvl);
-      this.tomesSlotsContainer.appendChild(slot);
+    // 仅在法书集合 / 等级变化时重建（旧实现每帧全量重建 DOM）。
+    let tomesSig = '';
+    for (const tome of p.tomes) tomesSig += `${tome.type}:${tome.level}|`;
+    if (tomesSig !== this.tomesSig) {
+      this.tomesSig = tomesSig;
+      this.tomesSlotsContainer.innerHTML = '';
+      for (const tome of p.tomes) {
+        const slot = document.createElement('div');
+        const bgColor = TOME_COLORS[tome.type] ?? '#444';
+        slot.style.cssText = `width:clamp(34px,9vw,40px);height:clamp(34px,9vw,40px);background:${bgColor}33;border:1px solid ${bgColor};border-radius:6px;position:relative;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:help;`;
+        this.setItemTooltip(slot, this.createTomeTooltipHtml(tome));
+        const icon = document.createElement('span');
+        icon.style.cssText = 'font-size:clamp(14px,4vw,18px);';
+        icon.textContent = TOME_ICONS[tome.type] ?? '📖';
+        slot.appendChild(icon);
+        // Level number (Lv.N) bottom-center
+        const lvl = document.createElement('span');
+        lvl.style.cssText = 'position:absolute;bottom:-1px;left:0;right:0;text-align:center;font-size:8px;font-weight:bold;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.95);';
+        lvl.textContent = `Lv.${tome.level}`;
+        slot.appendChild(lvl);
+        this.tomesSlotsContainer.appendChild(slot);
+      }
+    }
+    // DOM 不重建时仍刷新 tooltip，避免 growth / 文案里的动态数值停留在旧快照。
+    for (let i = 0; i < p.tomes.length; i++) {
+      const slot = this.tomesSlotsContainer.children[i] as HTMLElement | undefined;
+      if (slot) this.setItemTooltip(slot, this.createTomeTooltipHtml(p.tomes[i]));
     }
 
     // --- Relic bar (bottom): fixed empty placeholder slots, filled left → right ---
-    this.relicSlotsContainer.innerHTML = '';
     const acquiredRelics = (Object.entries(p.relicStacks ?? {}) as Array<[RelicId, number]>)
       .filter(([id, count]) => count > 0 && RELICS[id]);
-    // 槽位数：先按遗物种类数兜底，再按遗物栏实际宽度算出能铺满整条框的数量，
-    // 用空占位槽把整个框填满（已获取数量更多时则以已获取数为准，多出的由横向滚动承载）。
-    const slotPx = Math.min(36, Math.max(30, window.innerWidth * 0.08)); // 对应 clamp(30px,8vw,36px)
-    const gapPx = 6;
-    const barInnerWidth = this.relicSlotsContainer.clientWidth - 16; // padding 左右各 8px
-    const fitCount = barInnerWidth > 0
-      ? Math.floor((barInnerWidth + gapPx) / (slotPx + gapPx))
-      : 0;
-    const RELIC_SLOT_COUNT = Math.max(acquiredRelics.length, Object.keys(RELICS).length, fitCount);
-    for (let i = 0; i < RELIC_SLOT_COUNT; i++) {
-      const entry = acquiredRelics[i];
-      const slot = document.createElement('div');
-      if (!entry) {
-        // 空占位槽
+    // 仅在遗物集合 / 数量 / 视口宽度（影响占位槽数量）变化时重建。
+    // 用 innerWidth（不强制 layout）入签名，避免每帧读取 clientWidth 触发 reflow。
+    let relicsSig = `${window.innerWidth}`;
+    for (const [id, count] of acquiredRelics) relicsSig += `|${id}:${count}`;
+    if (relicsSig !== this.relicsSig) {
+      this.relicsSig = relicsSig;
+      this.relicSlotsContainer.innerHTML = '';
+      // 槽位数：先按遗物种类数兜底，再按遗物栏实际宽度算出能铺满整条框的数量，
+      // 用空占位槽把整个框填满（已获取数量更多时则以已获取数为准，多出的由横向滚动承载）。
+      const slotPx = Math.min(36, Math.max(30, window.innerWidth * 0.08)); // 对应 clamp(30px,8vw,36px)
+      const gapPx = 6;
+      const barInnerWidth = this.relicSlotsContainer.clientWidth - 16; // padding 左右各 8px
+      const fitCount = barInnerWidth > 0
+        ? Math.floor((barInnerWidth + gapPx) / (slotPx + gapPx))
+        : 0;
+      const RELIC_SLOT_COUNT = Math.max(acquiredRelics.length, Object.keys(RELICS).length, fitCount);
+      for (let i = 0; i < RELIC_SLOT_COUNT; i++) {
+        const entry = acquiredRelics[i];
+        const slot = document.createElement('div');
+        if (!entry) {
+          // 空占位槽
+          slot.style.cssText = `
+            width:clamp(30px,8vw,36px);height:clamp(30px,8vw,36px);background:rgba(0,0,0,0.32);
+            border:1px dashed rgba(255,255,255,0.16);border-radius:8px;flex-shrink:0;box-sizing:border-box;
+          `;
+          this.relicSlotsContainer.appendChild(slot);
+          continue;
+        }
+        const [id, count] = entry;
+        const relic = RELICS[id];
+        const borderColor = RARITY_COLORS[relic.rarity] ?? '#aaaaaa';
+        this.setItemTooltip(slot, this.createRelicTooltipHtml(id, count, state));
         slot.style.cssText = `
-          width:clamp(30px,8vw,36px);height:clamp(30px,8vw,36px);background:rgba(0,0,0,0.32);
-          border:1px dashed rgba(255,255,255,0.16);border-radius:8px;flex-shrink:0;box-sizing:border-box;
+          width:clamp(30px,8vw,36px);height:clamp(30px,8vw,36px);background:rgba(10,10,22,0.78);border:1px solid ${borderColor};
+          border-radius:8px;position:relative;display:flex;align-items:center;justify-content:center;
+          flex-shrink:0;box-shadow:0 0 10px ${borderColor}40;cursor:help;
         `;
+        const icon = document.createElement('span');
+        icon.style.cssText = 'font-size:clamp(15px,4vw,18px);';
+        icon.textContent = relic.emoji;
+        slot.appendChild(icon);
+        const stack = document.createElement('span');
+        stack.style.cssText = 'position:absolute;right:-4px;bottom:-5px;min-width:15px;height:15px;padding:0 3px;border-radius:999px;background:rgba(0,0,0,0.82);border:1px solid rgba(255,255,255,0.35);color:#fff;font-size:9px;font-weight:bold;display:flex;align-items:center;justify-content:center;text-shadow:0 1px 2px #000;';
+        stack.textContent = String(count);
+        slot.appendChild(stack);
         this.relicSlotsContainer.appendChild(slot);
-        continue;
       }
-      const [id, count] = entry;
-      const relic = RELICS[id];
-      const borderColor = RARITY_COLORS[relic.rarity] ?? '#aaaaaa';
-      this.setItemTooltip(slot, this.createRelicTooltipHtml(id, count, state));
-      slot.style.cssText = `
-        width:clamp(30px,8vw,36px);height:clamp(30px,8vw,36px);background:rgba(10,10,22,0.78);border:1px solid ${borderColor};
-        border-radius:8px;position:relative;display:flex;align-items:center;justify-content:center;
-        flex-shrink:0;box-shadow:0 0 10px ${borderColor}40;cursor:help;
-      `;
-      const icon = document.createElement('span');
-      icon.style.cssText = 'font-size:clamp(15px,4vw,18px);';
-      icon.textContent = relic.emoji;
-      slot.appendChild(icon);
-      const stack = document.createElement('span');
-      stack.style.cssText = 'position:absolute;right:-4px;bottom:-5px;min-width:15px;height:15px;padding:0 3px;border-radius:999px;background:rgba(0,0,0,0.82);border:1px solid rgba(255,255,255,0.35);color:#fff;font-size:9px;font-weight:bold;display:flex;align-items:center;justify-content:center;text-shadow:0 1px 2px #000;';
-      stack.textContent = String(count);
-      slot.appendChild(stack);
-      this.relicSlotsContainer.appendChild(slot);
+    }
+    // 部分遗物 tooltip 依赖当前武器等级 / overtime 秒数，结构不变时也需要刷新。
+    for (let i = 0; i < acquiredRelics.length; i++) {
+      const slot = this.relicSlotsContainer.children[i] as HTMLElement | undefined;
+      const [id, count] = acquiredRelics[i];
+      if (slot) this.setItemTooltip(slot, this.createRelicTooltipHtml(id, count, state));
     }
 
     // --- Bond slots (right of buff row); tap to expand a detail layer ---
@@ -7934,13 +8079,17 @@ export class GameScene {
     }
 
     // Damage numbers
-    for (const evt of state.damageEvents) {
-      this.spawnDamageNumber(evt);
+    if (eventsFresh) {
+      for (const evt of state.damageEvents) {
+        this.spawnDamageNumber(evt);
+      }
     }
 
     // 空池升级补偿特效（银币/金币）
-    for (const evt of state.levelUpCompensationEvents) {
-      this.playCompensationLevelUpFx(evt);
+    if (eventsFresh) {
+      for (const evt of state.levelUpCompensationEvents) {
+        this.playCompensationLevelUpFx(evt);
+      }
     }
 
     // 宝箱开启揭示特效（事件在下一次 core tick 会清空，render loop 内用 key 防重复）
@@ -7997,7 +8146,35 @@ export class GameScene {
   private renderWeaponSlots(p: GameState['player']): void {
     const TOTAL_SLOTS = 6;
     const unlocked = Math.max(1, Math.min(TOTAL_SLOTS, p.maxWeaponSlots ?? 5));
+
+    // 结构签名：仅武器种类 / 等级 / 解锁数变化时才重建 DOM。
+    let sig = `${unlocked}`;
+    for (let i = 0; i < TOTAL_SLOTS; i++) {
+      const w = p.weapons[i];
+      sig += w ? `|${w.type}:${w.level}` : '|_';
+    }
+    if (sig !== this.weaponSlotsSig) {
+      this.weaponSlotsSig = sig;
+      this.rebuildWeaponSlots(p, unlocked, TOTAL_SLOTS);
+    }
+
+    // 每帧只更新冷却遮罩高度（结构不变，避免重建整排 DOM）。
+    for (let i = 0; i < TOTAL_SLOTS; i++) {
+      const weapon = p.weapons[i];
+      const overlay = this.weaponCooldownOverlays[i];
+      if (!weapon || !overlay) continue;
+      const pct = this.getWeaponCooldownInfo(weapon).cooldownPercent;
+      overlay.style.height = `${pct}%`;
+      const slot = overlay.parentElement;
+      if (slot instanceof HTMLElement) {
+        this.setItemTooltip(slot, this.createWeaponTooltipHtml(weapon));
+      }
+    }
+  }
+
+  private rebuildWeaponSlots(p: GameState['player'], unlocked: number, TOTAL_SLOTS: number): void {
     this.weaponSlotsContainer.innerHTML = '';
+    this.weaponCooldownOverlays = new Array(TOTAL_SLOTS).fill(null);
     for (let i = 0; i < TOTAL_SLOTS; i++) {
       const weapon = p.weapons[i];
       const isLocked = i >= unlocked;
@@ -8021,12 +8198,11 @@ export class GameScene {
         icon.style.cssText = 'font-size:clamp(18px,5vw,22px);';
         icon.textContent = WEAPON_ICONS[weapon.type] ?? '?';
         slot.appendChild(icon);
-        const cd = this.getWeaponCooldownInfo(weapon);
-        if (cd.cooldownPercent > 0) {
-          const overlay = document.createElement('div');
-          overlay.style.cssText = `position:absolute;bottom:0;left:0;right:0;height:${cd.cooldownPercent}%;background:rgba(0,0,0,0.7);border-radius:0 0 4px 4px;pointer-events:none;`;
-          slot.appendChild(overlay);
-        }
+        // 始终创建冷却遮罩（初始高度 0），逐帧只改 height —— 不再每帧增删 DOM。
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `position:absolute;bottom:0;left:0;right:0;height:0%;background:rgba(0,0,0,0.7);border-radius:0 0 4px 4px;pointer-events:none;`;
+        slot.appendChild(overlay);
+        this.weaponCooldownOverlays[i] = overlay;
         const lvl = document.createElement('span');
         lvl.style.cssText = 'position:absolute;bottom:-1px;left:0;right:0;text-align:center;font-size:8px;font-weight:bold;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.95);';
         lvl.textContent = `Lv.${weapon.level}`;
@@ -8098,44 +8274,57 @@ export class GameScene {
    */
   private renderBondSlots(state: GameState): void {
     const bonds = state.player.bonds ?? [];
-    this.bondSlotsContainer.innerHTML = '';
     // 当前展开的羁绊若已不存在则关闭浮层
     if (this.openBondId && !bonds.some(b => b.bondId === this.openBondId)) {
       this.closeBondDetail();
     }
-    for (const prog of bonds) {
-      const def = BONDS[prog.bondId];
-      if (!def) continue;
-      const tierColor = BOND_TIER_COLORS[prog.tier] ?? BOND_TIER_COLORS[1];
-      const slot = document.createElement('div');
-      slot.dataset.cameraBlock = 'true';
-      slot.style.cssText = `width:clamp(36px,9.5vw,42px);height:clamp(36px,9.5vw,42px);position:relative;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:manipulation;`;
-      this.setItemTooltip(slot, this.createBondTooltipHtml(prog.bondId, prog.tier, state));
-      const diamond = document.createElement('div');
-      diamond.style.cssText = `position:absolute;inset:3px;transform:rotate(45deg);background:rgba(10,10,22,0.85);border:2px solid ${tierColor};border-radius:6px;box-shadow:0 0 10px ${tierColor}66;`;
-      slot.appendChild(diamond);
-      const icon = document.createElement('span');
-      icon.style.cssText = 'position:relative;z-index:1;font-size:clamp(14px,4vw,17px);line-height:1;';
-      icon.textContent = def.icon;
-      slot.appendChild(icon);
-      // Tier label (T1/T2/T3) bottom-center
-      const tierLabel = document.createElement('span');
-      tierLabel.style.cssText = `position:absolute;bottom:-3px;left:0;right:0;text-align:center;font-size:9px;font-weight:bold;color:${tierColor};text-shadow:0 1px 2px rgba(0,0,0,0.95);z-index:2;`;
-      tierLabel.textContent = `T${prog.tier}`;
-      slot.appendChild(tierLabel);
 
-      const bondId = prog.bondId;
-      const tier = prog.tier;
-      slot.addEventListener('pointerdown', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        if (this.openBondId === bondId) {
-          this.closeBondDetail();
-        } else {
-          this.openBondDetail(bondId, tier, state, slot);
-        }
-      });
-      this.bondSlotsContainer.appendChild(slot);
+    // 仅在羁绊集合 / 档位变化时重建槽位（旧实现每帧重建 + 每帧重绑 pointerdown 监听）。
+    let bondsSig = '';
+    for (const prog of bonds) bondsSig += `${prog.bondId}:${prog.tier}|`;
+    if (bondsSig !== this.bondsSig) {
+      this.bondsSig = bondsSig;
+      this.bondSlotsContainer.innerHTML = '';
+      for (const prog of bonds) {
+        const def = BONDS[prog.bondId];
+        if (!def) continue;
+        const tierColor = BOND_TIER_COLORS[prog.tier] ?? BOND_TIER_COLORS[1];
+        const slot = document.createElement('div');
+        slot.dataset.cameraBlock = 'true';
+        slot.style.cssText = `width:clamp(36px,9.5vw,42px);height:clamp(36px,9.5vw,42px);position:relative;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:manipulation;`;
+        this.setItemTooltip(slot, this.createBondTooltipHtml(prog.bondId, prog.tier, state));
+        const diamond = document.createElement('div');
+        diamond.style.cssText = `position:absolute;inset:3px;transform:rotate(45deg);background:rgba(10,10,22,0.85);border:2px solid ${tierColor};border-radius:6px;box-shadow:0 0 10px ${tierColor}66;`;
+        slot.appendChild(diamond);
+        const icon = document.createElement('span');
+        icon.style.cssText = 'position:relative;z-index:1;font-size:clamp(14px,4vw,17px);line-height:1;';
+        icon.textContent = def.icon;
+        slot.appendChild(icon);
+        // Tier label (T1/T2/T3) bottom-center
+        const tierLabel = document.createElement('span');
+        tierLabel.style.cssText = `position:absolute;bottom:-3px;left:0;right:0;text-align:center;font-size:9px;font-weight:bold;color:${tierColor};text-shadow:0 1px 2px rgba(0,0,0,0.95);z-index:2;`;
+        tierLabel.textContent = `T${prog.tier}`;
+        slot.appendChild(tierLabel);
+
+        const bondId = prog.bondId;
+        const tier = prog.tier;
+        slot.addEventListener('pointerdown', (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (this.openBondId === bondId) {
+            this.closeBondDetail();
+          } else {
+            this.openBondDetail(bondId, tier, this.latestHudState ?? state, slot);
+          }
+        });
+        this.bondSlotsContainer.appendChild(slot);
+      }
+    }
+    // 羁绊 tooltip 展示已持有武器等级等动态内容，槽位未重建时也刷新。
+    for (let i = 0; i < bonds.length; i++) {
+      const prog = bonds[i];
+      const slot = this.bondSlotsContainer.children[i] as HTMLElement | undefined;
+      if (slot) this.setItemTooltip(slot, this.createBondTooltipHtml(prog.bondId, prog.tier, state));
     }
 
     // 浮层若已打开，刷新其内容（数值会随游戏推进变化）
@@ -10938,6 +11127,68 @@ function startGame(character: CharacterType = 'megachad'): void {
 // Bootstrap
 // =============================================================================
 
+// =============================================================================
+// 启动 loading 进度条
+// =============================================================================
+// 旧行为：boot 期间（加载所有模型 + 关卡）整屏停在 index.html 的纯蓝背景，无任何反馈，
+// 手机慢网下几十秒白屏，用户易以为卡死退出。这里加一个进度浮层，由 bootLoadingManager
+// 的 onProgress 汇总「已加载/总数」驱动，进度只增不减（新 load 入队会抬高 total，避免回跳）。
+let bootLoadingOverlay: HTMLDivElement | null = null;
+let bootLoadingBar: HTMLDivElement | null = null;
+let bootLoadingPct = 0;
+
+function showBootLoadingOverlay(): void {
+  const overlay = document.createElement('div');
+  overlay.id = 'boot-loading';
+  overlay.style.cssText =
+    'position:fixed;inset:0;z-index:5000;display:flex;flex-direction:column;align-items:center;' +
+    'justify-content:center;gap:18px;background:#87ceeb;color:#fff;' +
+    "font-family:'Press Start 2P',monospace;";
+
+  const title = document.createElement('div');
+  title.textContent = 'MEGABONK';
+  title.style.cssText = 'font-size:clamp(20px,7vw,40px);letter-spacing:2px;text-shadow:3px 3px 0 rgba(0,0,0,0.3);';
+
+  const track = document.createElement('div');
+  track.style.cssText =
+    'width:min(70vw,420px);height:14px;border:3px solid rgba(0,0,0,0.5);border-radius:8px;' +
+    'background:rgba(0,0,0,0.2);overflow:hidden;';
+  const bar = document.createElement('div');
+  bar.style.cssText = 'width:0%;height:100%;background:#ffd93b;transition:width 0.2s ease-out;';
+  track.appendChild(bar);
+
+  const hint = document.createElement('div');
+  hint.textContent = 'Loading…';
+  hint.style.cssText = 'font-size:clamp(8px,2.5vw,11px);opacity:0.85;';
+
+  overlay.appendChild(title);
+  overlay.appendChild(track);
+  overlay.appendChild(hint);
+  document.body.appendChild(overlay);
+
+  bootLoadingOverlay = overlay;
+  bootLoadingBar = bar;
+  bootLoadingPct = 0;
+}
+
+function setBootLoadingProgress(pct: number): void {
+  // 单调不减：load 队列 total 会随阶段增长导致比例回跳，这里取历史最大值平滑显示。
+  const clamped = Math.max(bootLoadingPct, Math.min(100, Math.round(pct)));
+  bootLoadingPct = clamped;
+  if (bootLoadingBar) bootLoadingBar.style.width = `${clamped}%`;
+}
+
+function hideBootLoadingOverlay(): void {
+  setBootLoadingProgress(100);
+  const overlay = bootLoadingOverlay;
+  if (!overlay) return;
+  bootLoadingOverlay = null;
+  bootLoadingBar = null;
+  overlay.style.transition = 'opacity 0.35s ease-out';
+  overlay.style.opacity = '0';
+  window.setTimeout(() => overlay.remove(), 400);
+}
+
 async function main(): Promise<void> {
   const i18nMode = (import.meta.env.VITE_I18N_MODE as I18nMode | undefined) ?? 'locked';
   const i18nLocale = import.meta.env.VITE_I18N_LOCALE as string | undefined;
@@ -10950,9 +11201,20 @@ async function main(): Promise<void> {
     locale: i18nLocale,
   });
 
-  await loadModels();
-  // 唯一关卡：whitebox。激进方案下 URL 参数全部废弃，加载失败直接抛错。
-  await tryLoadLevel();
+  showBootLoadingOverlay();
+  // 进度封顶 95%，留最后 5% 给关卡解析 / 主菜单构建，hide 时补满到 100%。
+  bootLoadingManager.onProgress = (_url, loaded, total) => {
+    if (total > 0) setBootLoadingProgress((loaded / total) * 95);
+  };
+  bootLoadingManager.onError = (url) => console.warn('[Boot] asset failed:', url);
+
+  try {
+    await loadModels();
+    // 唯一关卡：whitebox。激进方案下 URL 参数全部废弃，加载失败直接抛错。
+    await tryLoadLevel();
+  } finally {
+    hideBootLoadingOverlay();
+  }
 
   showMainMenu();
 }

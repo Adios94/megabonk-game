@@ -10,7 +10,7 @@
  *
  * 数学等价 + 视觉等价于 fireSword（用 `__tests__/parity.test.ts` 锁住）。
  */
-import { distanceBetween } from '../physics.ts';
+import { distanceSqBetween } from '../physics.ts';
 import { computeWeaponDamage } from '../stats/index.ts';
 import { AOE_MAX_Y_DELTA } from '../config.ts';
 import { bossDamageEventY, enemyDamageEventY } from '../combatHeight.ts';
@@ -35,13 +35,13 @@ export function sweepArc(_world: GameWorld, ctx: BehaviorContext): void {
     ? Math.atan2(target.x - player.x, target.z - player.z)
     : player.rotation;
 
+  const rangeSq = stats.range * stats.range;
   for (let s = 0; s < swipeCount; s++) {
     const baseAngle = aimAngle + (s - (swipeCount - 1) / 2) * 0.3;
     for (const enemy of enemies) {
       if (enemy.hp <= 0) continue;
       if (Math.abs(enemy.y - player.y) > AOE_MAX_Y_DELTA) continue;
-      const dist = distanceBetween(player.x, player.z, enemy.x, enemy.z);
-      if (dist > stats.range) continue;
+      if (distanceSqBetween(player.x, player.z, enemy.x, enemy.z) > rangeSq) continue;
 
       const angleToEnemy = Math.atan2(enemy.x - player.x, enemy.z - player.z);
       let angleDiff = angleToEnemy - baseAngle;
@@ -63,8 +63,7 @@ export function sweepArc(_world: GameWorld, ctx: BehaviorContext): void {
 
   // boss 命中（保持原 fireSword 逻辑：不受角度限制，仅距离检查）
   if (boss && boss.hp > 0) {
-    const dist = distanceBetween(player.x, player.z, boss.x, boss.z);
-    if (dist <= stats.range && Math.abs(boss.y - player.y) <= AOE_MAX_Y_DELTA) {
+    if (distanceSqBetween(player.x, player.z, boss.x, boss.z) <= rangeSq && Math.abs(boss.y - player.y) <= AOE_MAX_Y_DELTA) {
       const isCrit = Math.random() < player.critChance;
       const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit, boss);
       boss.hp -= damage;

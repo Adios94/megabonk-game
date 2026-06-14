@@ -62,7 +62,131 @@ export interface LevelGeometry {
    * - false（内置 Neon Crucible）：盒外 RAMP_WIDTH 内自动斜坡过渡
    */
   readonly wysiwyg: boolean;
+  /**
+   * 可选：静态几何的均匀网格广相索引（仅 wysiwyg 加载关卡构建）。
+   * 高度/阻挡查询命中网格时只遍历点所在 cell 的候选形体，而非全量数组——
+   * 对每帧成百上千次（敌人寻路采样 + 投射物贴地）查询是数量级降本。
+   * 结果与全量扫描**完全等价**（候选集是按 footprint+margin 精确插桶的超集，
+   * 单 cell 查询即可覆盖所有可能命中点的形体）；不存在时回落到全量数组。
+   */
+  readonly grid?: GeoGrid;
 }
+
+/**
+ * 静态几何广相网格。每个形体按"footprint 外扩 margin"的 AABB 插入所有重叠 cell。
+ * 由于 margin（1.0）覆盖所有查询用到的半径外扩（player/enemy radius ≤0.45、
+ * climb grab margin 0.6），点查询只需取该点所在单 cell 的候选即精确无漏。
+ */
+class GeoGrid {
+  private readonly invCell: number;
+  private readonly minX: number;
+  private readonly minZ: number;
+  private readonly cols: number;
+  private readonly rows: number;
+  private readonly rectCells: Rect[][];
+  private readonly rampCells: RampVolume[][];
+  private readonly discCells: Disc[][];
+  private readonly solidCells: SolidBox[][];
+  private readonly climbCells: ClimbVolume[][];
+
+  constructor(
+    rects: readonly Rect[],
+    ramps: readonly RampVolume[],
+    discs: readonly Disc[],
+    solidBoxes: readonly SolidBox[],
+    climbs: readonly ClimbVolume[],
+    cellSize = 8,
+    margin = 1.0,
+  ) {
+    // 1) 求全体 AABB 包围盒。
+    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+    const acc = (cx: number, cz: number, ex: number, ez: number): void => {
+      if (cx - ex < minX) minX = cx - ex;
+      if (cx + ex > maxX) maxX = cx + ex;
+      if (cz - ez < minZ) minZ = cz - ez;
+      if (cz + ez > maxZ) maxZ = cz + ez;
+    };
+    for (const r of rects) acc(r[0], r[1], r[2] + margin, r[3] + margin);
+    for (const rm of ramps) { const e = rm.halfSlope + rm.halfPerp + margin; acc(rm.cx, rm.cz, e, e); }
+    for (const d of discs) acc(d.cx, d.cz, d.radius + margin, d.radius + margin);
+    for (const b of solidBoxes) acc(b.cx, b.cz, b.halfW + margin, b.halfD + margin);
+    for (const c of climbs) acc(c.cx, c.cz, c.halfW + margin, c.halfD + margin);
+
+    if (!Number.isFinite(minX)) { minX = 0; minZ = 0; maxX = 0; maxZ = 0; }
+
+    this.invCell = 1 / cellSize;
+    this.minX = minX;
+    this.minZ = minZ;
+    this.cols = Math.max(1, Math.floor((maxX - minX) * this.invCell) + 1);
+    this.rows = Math.max(1, Math.floor((maxZ - minZ) * this.invCell) + 1);
+
+    const cellCount = this.cols * this.rows;
+    this.rectCells = GeoGrid.alloc(cellCount);
+    this.rampCells = GeoGrid.alloc(cellCount);
+    this.discCells = GeoGrid.alloc(cellCount);
+    this.solidCells = GeoGrid.alloc(cellCount);
+    this.climbCells = GeoGrid.alloc(cellCount);
+
+    // 2) 按外扩 AABB 把每个形体插入所覆盖的所有 cell。
+    for (const r of rects) this.insert(this.rectCells, r, r[0], r[1], r[2] + margin, r[3] + margin);
+    for (const rm of ramps) { const e = rm.halfSlope + rm.halfPerp + margin; this.insert(this.rampCells, rm, rm.cx, rm.cz, e, e); }
+    for (const d of discs) this.insert(this.discCells, d, d.cx, d.cz, d.radius + margin, d.radius + margin);
+    for (const b of solidBoxes) this.insert(this.solidCells, b, b.cx, b.cz, b.halfW + margin, b.halfD + margin);
+    for (const c of climbs) this.insert(this.climbCells, c, c.cx, c.cz, c.halfW + margin, c.halfD + margin);
+  }
+
+  private static alloc<T>(n: number): T[][] {
+    const a = new Array<T[]>(n);
+    for (let i = 0; i < n; i++) a[i] = [];
+    return a;
+  }
+
+  private insert<T>(cells: T[][], item: T, cx: number, cz: number, ex: number, ez: number): void {
+    const x0 = Math.max(0, Math.floor((cx - ex - this.minX) * this.invCell));
+    const x1 = Math.min(this.cols - 1, Math.floor((cx + ex - this.minX) * this.invCell));
+    const z0 = Math.max(0, Math.floor((cz - ez - this.minZ) * this.invCell));
+    const z1 = Math.min(this.rows - 1, Math.floor((cz + ez - this.minZ) * this.invCell));
+    for (let zi = z0; zi <= z1; zi++) {
+      for (let xi = x0; xi <= x1; xi++) {
+        cells[zi * this.cols + xi].push(item);
+      }
+    }
+  }
+
+  private cellIndex(x: number, z: number): number {
+    const xi = Math.floor((x - this.minX) * this.invCell);
+    const zi = Math.floor((z - this.minZ) * this.invCell);
+    if (xi < 0 || xi >= this.cols || zi < 0 || zi >= this.rows) return -1;
+    return zi * this.cols + xi;
+  }
+
+  rectsAt(x: number, z: number): readonly Rect[] {
+    const i = this.cellIndex(x, z);
+    return i < 0 ? EMPTY_RECTS : this.rectCells[i];
+  }
+  rampsAt(x: number, z: number): readonly RampVolume[] {
+    const i = this.cellIndex(x, z);
+    return i < 0 ? EMPTY_RAMPS : this.rampCells[i];
+  }
+  discsAt(x: number, z: number): readonly Disc[] {
+    const i = this.cellIndex(x, z);
+    return i < 0 ? EMPTY_DISCS : this.discCells[i];
+  }
+  solidBoxesAt(x: number, z: number): readonly SolidBox[] {
+    const i = this.cellIndex(x, z);
+    return i < 0 ? EMPTY_SOLIDS : this.solidCells[i];
+  }
+  climbsAt(x: number, z: number): readonly ClimbVolume[] {
+    const i = this.cellIndex(x, z);
+    return i < 0 ? EMPTY_CLIMBS : this.climbCells[i];
+  }
+}
+
+const EMPTY_RECTS: readonly Rect[] = [];
+const EMPTY_RAMPS: readonly RampVolume[] = [];
+const EMPTY_DISCS: readonly Disc[] = [];
+const EMPTY_SOLIDS: readonly SolidBox[] = [];
+const EMPTY_CLIMBS: readonly ClimbVolume[] = [];
 
 /** 内置 Neon Crucible 几何（缺省关卡 / 单测基线）。 */
 const NEON_CRUCIBLE: readonly Rect[] = [
@@ -138,13 +262,16 @@ export function makeLevelGeometry(level?: LevelData): LevelGeometry {
     bottomY: d.baseY ?? Number.NEGATIVE_INFINITY,
     topY: d.height,
   }));
+  const ramps = level.ramps ?? [];
+  const climbs = level.climbVolumes ?? [];
   return {
     rects,
-    ramps: level.ramps ?? [],
+    ramps,
     solidBoxes,
     discs,
-    climbs: level.climbVolumes ?? [],
+    climbs,
     wysiwyg: true,
+    grid: new GeoGrid(rects, ramps, discs, solidBoxes, climbs),
   };
 }
 
@@ -221,15 +348,19 @@ function rectHeightAt(rect: Rect, x: number, z: number, wysiwyg: boolean): numbe
  */
 export function getTerrainHeightAt(geo: LevelGeometry, x: number, z: number): number {
   let height = 0; // 统一保底地板，软虚空
-  for (const rect of geo.rects) {
+  const grid = geo.grid;
+  const rects = grid ? grid.rectsAt(x, z) : geo.rects;
+  const ramps = grid ? grid.rampsAt(x, z) : geo.ramps;
+  const discs = grid ? grid.discsAt(x, z) : geo.discs;
+  for (const rect of rects) {
     const h = rectHeightAt(rect, x, z, geo.wysiwyg);
     if (h !== null && h > height) height = h;
   }
-  for (const ramp of geo.ramps) {
+  for (const ramp of ramps) {
     const h = rampHeightAt(ramp, x, z);
     if (h !== null && h > height) height = h;
   }
-  for (const disc of geo.discs) {
+  for (const disc of discs) {
     const h = discHeightAt(disc, x, z);
     if (h !== null && h > height) height = h;
   }
@@ -249,15 +380,19 @@ export function getTerrainHeightAt(geo: LevelGeometry, x: number, z: number): nu
 export function getSupportHeightAt(geo: LevelGeometry, x: number, z: number, feetY: number): number {
   const limit = feetY + STEP_HEIGHT;
   let best = 0 <= limit ? 0 : VOID_HEIGHT;
-  for (const rect of geo.rects) {
+  const grid = geo.grid;
+  const rects = grid ? grid.rectsAt(x, z) : geo.rects;
+  const ramps = grid ? grid.rampsAt(x, z) : geo.ramps;
+  const discs = grid ? grid.discsAt(x, z) : geo.discs;
+  for (const rect of rects) {
     const h = rectHeightAt(rect, x, z, geo.wysiwyg);
     if (h !== null && h <= limit && h > best) best = h;
   }
-  for (const ramp of geo.ramps) {
+  for (const ramp of ramps) {
     const h = rampHeightAt(ramp, x, z);
     if (h !== null && h <= limit && h > best) best = h;
   }
-  for (const disc of geo.discs) {
+  for (const disc of discs) {
     const h = discHeightAt(disc, x, z);
     if (h !== null && h <= limit && h > best) best = h;
   }
@@ -334,11 +469,16 @@ export function isBlockedHorizontallyAt(
   x: number, z: number, feetY: number,
   includeClimb = true, radius = PLAYER_RADIUS,
 ): boolean {
-  if (blockedByAny(geo.solidBoxes, x, z, feetY, radius)) return true;
-  if (geo.discs.length > 0 && blockedByDiscs(geo.discs, x, z, feetY, radius)) return true;
-  if (geo.ramps.length > 0 && blockedByRamp(geo.ramps, x, z, feetY, radius)) return true;
-  if (includeClimb && geo.climbs.length > 0) {
-    for (const c of geo.climbs) {
+  const grid = geo.grid;
+  const solidBoxes = grid ? grid.solidBoxesAt(x, z) : geo.solidBoxes;
+  const discs = grid ? grid.discsAt(x, z) : geo.discs;
+  const ramps = grid ? grid.rampsAt(x, z) : geo.ramps;
+  const climbs = grid ? grid.climbsAt(x, z) : geo.climbs;
+  if (blockedByAny(solidBoxes, x, z, feetY, radius)) return true;
+  if (discs.length > 0 && blockedByDiscs(discs, x, z, feetY, radius)) return true;
+  if (ramps.length > 0 && blockedByRamp(ramps, x, z, feetY, radius)) return true;
+  if (includeClimb && climbs.length > 0) {
+    for (const c of climbs) {
       if (
         Math.abs(x - c.cx) <= c.halfW + radius &&
         Math.abs(z - c.cz) <= c.halfD + radius
@@ -354,7 +494,8 @@ export function isBlockedHorizontallyAt(
 
 /** 找到 (x,z,feetY) 处可抓取的攀爬体；无则返回 null。 */
 export function findClimbAt(geo: LevelGeometry, x: number, z: number, feetY: number): ClimbVolume | null {
-  for (const c of geo.climbs) {
+  const climbs = geo.grid ? geo.grid.climbsAt(x, z) : geo.climbs;
+  for (const c of climbs) {
     if (
       Math.abs(x - c.cx) <= c.halfW + CLIMB_GRAB_MARGIN &&
       Math.abs(z - c.cz) <= c.halfD + CLIMB_GRAB_MARGIN &&

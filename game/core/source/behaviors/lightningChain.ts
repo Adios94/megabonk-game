@@ -16,7 +16,7 @@
  *  Phase 5 可能改为 'chain' tag 的 more 修饰符，那时移除此 hack。
  */
 import { computeWeaponDamage } from '../stats/index.ts';
-import { distanceBetween } from '../physics.ts';
+import { distanceSqBetween } from '../physics.ts';
 import { AOE_MAX_Y_DELTA } from '../config.ts';
 import { bossDamageEventY, enemyDamageEventY } from '../combatHeight.ts';
 import { findNearestEnemy, findNearestEnemyExcluding } from './queries.ts';
@@ -70,8 +70,7 @@ export function lightningChain(_world: GameWorld, ctx: BehaviorContext): void {
 
   // boss 在 chainsLeft > 0 + range 内时也命中
   if (boss && boss.hp > 0 && chainsLeft > 0) {
-    const bossDist = distanceBetween(currentX, currentZ, boss.x, boss.z);
-    if (bossDist < stats.range && Math.abs(boss.y - currentY) <= AOE_MAX_Y_DELTA) {
+    if (distanceSqBetween(currentX, currentZ, boss.x, boss.z) < stats.range * stats.range && Math.abs(boss.y - currentY) <= AOE_MAX_Y_DELTA) {
       const bossCrit = Math.random() < player.critChance;
       const bossDmg = computeWeaponDamage(stats.damage * CHAIN_DECAY, player, def.tags, bossCrit, boss);
       boss.hp -= bossDmg;

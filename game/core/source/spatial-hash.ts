@@ -16,16 +16,43 @@ export class SpatialHash {
   private readonly buckets: Map<number, SpatialEntry[]>;
   // Pre-allocated array for query results to avoid allocations during tick
   private readonly queryResults: number[];
+  // 复用的去重集合，避免每次 query 都 new Set（每帧可被调用数十次）。
+  private readonly seen: Set<number>;
+  // SpatialEntry 对象池：clear 只把游标归零，insert 复用旧对象，消除每帧大量 GC。
+  private readonly entryPool: SpatialEntry[];
+  private entryCount: number;
 
   constructor(cellSize: number = 4) {
     this.cellSize = cellSize;
     this.invCellSize = 1 / cellSize;
     this.buckets = new Map();
     this.queryResults = [];
+    this.seen = new Set();
+    this.entryPool = [];
+    this.entryCount = 0;
   }
 
   clear(): void {
-    this.buckets.clear();
+    // 保留 bucket 数组对象，仅清空其内容，避免 Map 反复增删 + 数组重建。
+    for (const bucket of this.buckets.values()) {
+      bucket.length = 0;
+    }
+    this.entryCount = 0;
+  }
+
+  private acquireEntry(id: number, x: number, z: number, radius: number): SpatialEntry {
+    let entry = this.entryPool[this.entryCount];
+    if (entry === undefined) {
+      entry = { id, x, z, radius };
+      this.entryPool[this.entryCount] = entry;
+    } else {
+      entry.id = id;
+      entry.x = x;
+      entry.z = z;
+      entry.radius = radius;
+    }
+    this.entryCount++;
+    return entry;
   }
 
   insert(id: number, x: number, z: number, radius: number): void {
@@ -34,7 +61,7 @@ export class SpatialHash {
     const minCellZ = Math.floor((z - radius) * this.invCellSize);
     const maxCellZ = Math.floor((z + radius) * this.invCellSize);
 
-    const entry: SpatialEntry = { id, x, z, radius };
+    const entry = this.acquireEntry(id, x, z, radius);
 
     for (let cx = minCellX; cx <= maxCellX; cx++) {
       for (let cz = minCellZ; cz <= maxCellZ; cz++) {
@@ -57,8 +84,8 @@ export class SpatialHash {
     const minCellZ = Math.floor((z - radius) * this.invCellSize);
     const maxCellZ = Math.floor((z + radius) * this.invCellSize);
 
-    const seen = new Set<number>();
-    const radiusSq = radius * radius;
+    const seen = this.seen;
+    seen.clear();
 
     for (let cx = minCellX; cx <= maxCellX; cx++) {
       for (let cz = minCellZ; cz <= maxCellZ; cz++) {
@@ -84,7 +111,7 @@ export class SpatialHash {
       }
     }
 
-    return this.queryResults;
+    return this.queryResults.slice();
   }
 
   private hashCell(cx: number, cz: number): number {

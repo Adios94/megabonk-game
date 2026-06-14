@@ -9,7 +9,7 @@
  * 数学等价于 fireFlameRing，由 parity 测试锁定。
  */
 import { computeWeaponDamage } from '../stats/index.ts';
-import { distanceBetween } from '../physics.ts';
+import { distanceSqBetween } from '../physics.ts';
 import { AOE_MAX_Y_DELTA } from '../config.ts';
 import { bossDamageEventY, enemyDamageEventY } from '../combatHeight.ts';
 import type { BehaviorContext } from './types.ts';
@@ -18,10 +18,10 @@ import type { GameWorld } from '../world.ts';
 export function flameAura(_world: GameWorld, ctx: BehaviorContext): void {
   const { player, enemies, boss, weapon, def, stats, effects } = ctx;
 
+  const aoeRadiusSq = stats.aoeRadius * stats.aoeRadius;
   for (const enemy of enemies) {
     if (enemy.hp <= 0) continue;
-    const dist = distanceBetween(player.x, player.z, enemy.x, enemy.z);
-    if (dist > stats.aoeRadius) continue;
+    if (distanceSqBetween(player.x, player.z, enemy.x, enemy.z) > aoeRadiusSq) continue;
     if (Math.abs(enemy.y - player.y) > AOE_MAX_Y_DELTA) continue;
 
     const isCrit = Math.random() < player.critChance;
@@ -34,8 +34,7 @@ export function flameAura(_world: GameWorld, ctx: BehaviorContext): void {
   }
 
   if (boss && boss.hp > 0) {
-    const dist = distanceBetween(player.x, player.z, boss.x, boss.z);
-    if (dist <= stats.aoeRadius && Math.abs(boss.y - player.y) <= AOE_MAX_Y_DELTA) {
+    if (distanceSqBetween(player.x, player.z, boss.x, boss.z) <= aoeRadiusSq && Math.abs(boss.y - player.y) <= AOE_MAX_Y_DELTA) {
       const isCrit = Math.random() < player.critChance;
       const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit, boss);
       boss.hp -= damage;

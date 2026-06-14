@@ -51,6 +51,18 @@ describe('gas_cloud', () => {
     tickAreaEffects(engine, 1 / 60);
     expect(below.poisonTimer ?? 0).toBe(0);
   });
+
+  it('毒云周期刷新不计作 poison_master 武器命中叠层', () => {
+    const engine = makeEngine();
+    engine.state.player.bonds = [{ bondId: 'poison_master', tier: 2 }];
+    const inside = enemyAt(1, 1, 0, 100);
+    engine.state.enemies.push(inside);
+    engine.state.areaEffects.push(gasCloud());
+
+    tickAreaEffects(engine, 1 / 60);
+    expect(inside.poisonTimer ?? 0).toBeGreaterThan(0);
+    expect(inside.neuroStacks ?? 0).toBe(0);
+  });
 });
 
 describe('void_ripple', () => {
@@ -164,5 +176,21 @@ describe('scorch_trail', () => {
     });
     tickAreaEffects(engine, 1 / 60);
     expect(below.hp).toBe(100);
+  });
+
+  it('灼地周期伤害不计作 arcane 武器命中充能', () => {
+    const engine = makeEngine();
+    engine.state.player.bonds = [{ bondId: 'arcane', tier: 2 }];
+    const inside = enemyAt(1, 0.5, 0, 100);
+    engine.state.enemies.push(inside);
+    engine.state.areaEffects.push({
+      id: 1, kind: 'scorch_trail', weaponType: 'scorch_boots',
+      x: 0, y: 0, z: 0, radius: 1.0, lifetime: 2.5, maxLifetime: 2.5,
+      damage: 8, tickTimer: 0, tickInterval: 0.4,
+    });
+
+    tickAreaEffects(engine, 1 / 60);
+    expect(inside.hp).toBeLessThan(100);
+    expect(engine.state.player.bondMystery ?? 0).toBe(0);
   });
 });

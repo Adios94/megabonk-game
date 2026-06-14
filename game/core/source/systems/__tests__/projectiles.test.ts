@@ -61,6 +61,27 @@ describe('tickProjectiles: 寿命', () => {
   });
 });
 
+describe('tickProjectiles: rehit timer', () => {
+  it('gravitational 投射物按 rehitInterval 清空命中表', () => {
+    const engine = makeEngine();
+    const proj = makeProj({
+      gravitational: true,
+      gravityStrength: 5,
+      rehitInterval: 0.5,
+      rehitTimer: 0.1,
+      hitEnemyIds: [1, 2],
+      vx: 0,
+      vz: 0,
+    });
+    engine.state.projectiles.push(proj);
+
+    tickProjectiles(engine, 0.2);
+
+    expect(proj.hitEnemyIds).toEqual([]);
+    expect(proj.rehitTimer).toBeCloseTo(0.4, 5);
+  });
+});
+
 describe('tickProjectiles: 出界', () => {
   it('|x| > (mapSize+20)/2 时 splice', () => {
     const engine = makeEngine();

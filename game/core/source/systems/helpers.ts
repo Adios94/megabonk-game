@@ -7,7 +7,7 @@
  *   - applyKnockback: 子弹击退 + gargoyle landing AOE 共用
  *   - checkPlayerDeath / checkGameOver: 多个 damage / phase 路径触发
  */
-import { distanceBetween, normalizeDirection } from '../physics.ts';
+import { distanceSqBetween, normalizeDirection } from '../physics.ts';
 import { getTomePower } from '../tomeProgression.ts';
 import { AOE_MAX_Y_DELTA } from '../config.ts';
 import { targetHitCenterY } from '../combatHeight.ts';
@@ -27,12 +27,12 @@ export function findNearestEnemy(
   maxRange?: number,
 ): EnemyState | null {
   let nearest: EnemyState | null = null;
-  let nearestDist = maxRange ?? Infinity;
+  let nearestDistSq = maxRange !== undefined ? maxRange * maxRange : Infinity;
   for (const enemy of engine.state.enemies) {
     if (enemy.hp <= 0) continue;
-    const dist = distanceBetween(x, z, enemy.x, enemy.z);
-    if (dist < nearestDist) {
-      nearestDist = dist;
+    const distSq = distanceSqBetween(x, z, enemy.x, enemy.z);
+    if (distSq < nearestDistSq) {
+      nearestDistSq = distSq;
       nearest = enemy;
     }
   }
@@ -47,14 +47,14 @@ export function findNearestEnemyExcluding(
   sourceY?: number,
 ): EnemyState | null {
   let nearest: EnemyState | null = null;
-  let nearestDist = 20;
+  let nearestDistSq = 20 * 20;
   for (const enemy of engine.state.enemies) {
     if (enemy.hp <= 0) continue;
     if (excludeIds.includes(enemy.id)) continue;
     if (sourceY !== undefined && Math.abs(sourceY - targetHitCenterY(enemy)) > AOE_MAX_Y_DELTA) continue;
-    const dist = distanceBetween(x, z, enemy.x, enemy.z);
-    if (dist < nearestDist) {
-      nearestDist = dist;
+    const distSq = distanceSqBetween(x, z, enemy.x, enemy.z);
+    if (distSq < nearestDistSq) {
+      nearestDistSq = distSq;
       nearest = enemy;
     }
   }

@@ -184,6 +184,15 @@ describe('tickThorns', () => {
     expect(enemy.hp).toBe(30);
   });
 
+  it('水平接近但不同高度平台上的敌人不被反伤', () => {
+    const player = makePlayer({ x: 0, y: 0, z: 0, tomes: [{ type: 'thorns_tome', level: 5 }] });
+    const engine = makeEngine({ state: { ...makeEngine().state, player } });
+    const enemy = makeEnemy(1, 'skeleton_soldier', 1.0, 0, { hp: 30, y: 4 });
+    engine.state.enemies = [enemy];
+    tickThorns(engine);
+    expect(enemy.hp).toBe(30);
+  });
+
   it('无 thorns_tome no-op', () => {
     const engine = makeEngine();
     const enemy = makeEnemy(1, 'skeleton_soldier', 0.5, 0, { hp: 30 });

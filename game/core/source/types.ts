@@ -432,6 +432,12 @@ export interface ProjectileState {
   lifetime: number;
   radius: number;
   fromPlayer: boolean;
+  /**
+   * 是否由 Boss 发射（而非普通敌人）。仅在 `fromPlayer === false` 时有意义。
+   * 客户端据此选择渲染方式：Boss 弹丸用 bullet.glb 模型，普通敌人弹丸用火焰 billboard。
+   * 与具体 `weaponType` 解耦——Boss 改用任意 weaponType 都不影响识别。
+   */
+  fromBoss?: boolean;
   hitEnemyIds: number[];
   // Special behaviors
   orbiting?: boolean;

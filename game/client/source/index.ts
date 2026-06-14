@@ -1490,12 +1490,8 @@ const TIER_COLORS: Record<number, string> = {
 
 interface LoadedModels {
   zombie_basic: THREE.Group | null;
-  // Quaternius Animated Monster Pack — 带骨骼动画 GLB
-  monster_skeleton: THREE.Group | null;
+  // Quaternius Animated Monster Pack — 带骨骼动画 GLB（Bat 用作 gargoyle 渲染）
   monster_bat: THREE.Group | null;
-  monster_dragon: THREE.Group | null;
-  // 模块化骷髅人形（idle/walk/sprint/die/attack-melee... 小写 clip，加载时归一化），用作 skeleton_knight 渲染
-  monster_knight: THREE.Group | null;
   // 通用 ghost 模型，用作 necromancer 渲染（带 32 个小写命名 clip，加载时归一化）
   ghost: THREE.Group | null;
   // --- 皮肤试验：KayKit Skeletons（低多边形奇幻，静态网格，无动画）---
@@ -1512,10 +1508,7 @@ interface LoadedModels {
 const gltfLoader = new GLTFLoader();
 const loadedModels: LoadedModels = {
   zombie_basic: null,
-  monster_skeleton: null,
   monster_bat: null,
-  monster_dragon: null,
-  monster_knight: null,
   ghost: null,
   kk_warrior: null,
   kk_minion: null,
@@ -1712,14 +1705,9 @@ async function loadModels(): Promise<void> {
     ['boss_2legs', '/models/enemy_2legs_gun.gltf'],
     ['boss', '/models/enemy_large_gun.gltf'],
     ['teleporter', '/models/turret_teleporter.gltf'],
-    // Quaternius Animated Monster Pack（带骨骼动画 GLB）
-    // 用于替换 skeleton_soldier / gargoyle 的 zombie 贴皮，clip 名带前缀
-    // （Skeleton_Idle / Bat_Flying 等），加载完后会做归一化（见 normalizeEnemyClips）
-    ['monster_skeleton', '/models/monsters/Skeleton.glb'],
+    // Quaternius Animated Monster Pack（带骨骼动画 GLB）：Bat 用作 gargoyle 渲染，
+    // clip 名带前缀（Bat_Flying 等），加载完后会做归一化（见 normalizeEnemyClips）
     ['monster_bat', '/models/monsters/Bat.glb'],
-    ['monster_dragon', '/models/monsters/Dragon.glb'],
-    // 模块化骷髅人形，用作 skeleton_knight（精英），与 soldier 的 Skeleton.glb 外形区分
-    ['monster_knight', '/models/knight.glb'],
     // ghost.glb：通用幽灵模型，clip 全小写（idle/walk/sprint/die...），加载时归一化为
     // Idle/Walk/Run/Death；用作 necromancer 渲染
     ['ghost', '/models/ghost.glb'],
@@ -2167,7 +2155,6 @@ let crystalGeometry: THREE.BufferGeometry | null = null;
 let crystal2Geometry: THREE.BufferGeometry | null = null;
 let crystal3Geometry: THREE.BufferGeometry | null = null;
 let crystal4Geometry: THREE.BufferGeometry | null = null;
-let crystal5Geometry: THREE.BufferGeometry | null = null;
 let heartGeometry: THREE.BufferGeometry | null = null;
 let heartHalfGeometry: THREE.BufferGeometry | null = null;
 let coinGeometry: THREE.BufferGeometry | null = null;
@@ -2227,7 +2214,7 @@ async function loadObjItems(): Promise<void> {
     }
   };
 
-  [crystalGeometry, heartGeometry, heartHalfGeometry, coinGeometry, boneGeometry, crystal2Geometry, crystal3Geometry, crystal4Geometry, crystal5Geometry] = await Promise.all([
+  [crystalGeometry, heartGeometry, heartHalfGeometry, coinGeometry, boneGeometry, crystal2Geometry, crystal3Geometry, crystal4Geometry] = await Promise.all([
     loadAndNormalize('/models/items/Crystal1.obj', 0.4),
     loadAndNormalize('/models/items/Heart.obj', 0.5),
     loadAndNormalize('/models/items/Heart_Half.obj', 0.42),
@@ -2236,7 +2223,6 @@ async function loadObjItems(): Promise<void> {
     loadAndNormalize('/models/items/Crystal2.obj', 0.4),
     loadAndNormalize('/models/items/Crystal3.obj', 0.4),
     loadAndNormalize('/models/items/Crystal4.obj', 0.4),
-    loadAndNormalize('/models/items/Crystal5.obj', 0.4),
   ]);
 
   // Helper: load full model with materials (MTL + OBJ)
@@ -5235,7 +5221,6 @@ export class GameScene {
         case 'pistol': return bulletModel; // pistol 子弹模型（items/bullet.glb）
         case 'paralysis_gun': return bulletModel; // 麻痹弹复用 items/bullet.glb
         case 'bone_bouncer': return null; // handled with boneGeometry fallback below
-        case 'revolver': return null; // uses InstancedMesh (bullet)
         case 'shotgun': return dartGoldenModel; // golden dart pellets
         case 'hammer': return hammerModel;
         case 'dagger': return daggerModel;
@@ -5246,7 +5231,7 @@ export class GameScene {
 
     // Weapon types that use individual model clones (not InstancedMesh)
     // 'pistol' included — its bullets render with the bullet.glb model.
-    const modelWeaponTypes = new Set(['axe', 'sword', 'katana', 'hammer', 'dagger', 'dart', 'bone_bouncer', 'revolver', 'shotgun', 'pistol', 'paralysis_gun']);
+    const modelWeaponTypes = new Set(['axe', 'sword', 'katana', 'hammer', 'dagger', 'dart', 'bone_bouncer', 'shotgun', 'pistol', 'paralysis_gun']);
 
     for (const proj of projectiles) {
       // Axe projectiles: orbiting, blade faces outward
@@ -5341,8 +5326,11 @@ export class GameScene {
         continue;
       }
 
-      // Boss（机器人）弹丸：用 items/bullet.glb 模型，朝飞行方向
-      if (!proj.fromPlayer && proj.weaponType === 'flame_ring') {
+      // Boss（机器人）弹丸：用 items/bullet.glb 模型，朝飞行方向。
+      // 通过 core 的 `fromBoss` 标记识别，而非匹配具体 weaponType——
+      // 这样 Boss 改用任意 weaponType 发射时仍走模型渲染分支，
+      // 不会掉到下面普通敌人的火焰 billboard 分支。
+      if (!proj.fromPlayer && proj.fromBoss) {
         activeBossProjIds.add(proj.id);
         let obj = this.bossProjectileObjects.get(proj.id);
         if (!obj) {

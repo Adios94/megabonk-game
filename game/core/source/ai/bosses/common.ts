@@ -63,6 +63,7 @@ export function fireBolt(
     lifetime: 4.0,
     radius: 0.5,
     fromPlayer: false,
+    fromBoss: true,
   });
 }
 

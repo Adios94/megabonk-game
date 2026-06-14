@@ -38,6 +38,7 @@ function barrage(_boss: BossState, ctx: AiContext): void {
       bouncesLeft: 0, pierceLeft: 0,
       lifetime: 2.0, radius: 1.0,
       fromPlayer: false,
+      fromBoss: true,
     });
     if (id === null) break;  // 达 MAX_PROJECTILES
   }

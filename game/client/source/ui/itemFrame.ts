@@ -132,3 +132,189 @@ export function itemFrameAccentLine(text: string, color: string, extraCss = ''):
   el.textContent = text;
   return el;
 }
+
+// ============================================================================
+// 升级卡片专用框（局内 level-up 面板）
+// ----------------------------------------------------------------------------
+// 视觉来源：public/ui/panel/svg/frame_upgrade_<rarity>.svg（170×220）
+// 与 frame_item_*.svg 不同的地方：
+//   - 顶部 banner 是独立圆角条，向上凸出于卡身（更"卡牌"）
+//   - 底部多了一个稀有度 tab，向下凸出于卡身
+//   - 中部预留区域更高，能放下 icon + 描述 + 内嵌数值面板 + 等级行
+// 三个区段的高度按 SVG 锚点对齐：
+//   banner 区 0-13.6%（y=0~30，banner 视觉占 0~30）
+//   主体区 13.6%-85.5%（y=30~188，body 视觉 14~200）
+//   稀有度 tab 区 85.5%-100%（y=188~220，tab 视觉 190~216）
+// ============================================================================
+
+/** 升级卡 SVG viewBox 尺寸（用于 aspect-ratio）。 */
+export const UPGRADE_FRAME_SIZE = { w: 170, h: 220 } as const;
+
+const UPGRADE_FRAME_SRC: Record<ItemFrameRarity, string> = {
+  common: '/ui/panel/svg/frame_upgrade_common.svg',
+  uncommon: '/ui/panel/svg/frame_upgrade_uncommon.svg',
+  rare: '/ui/panel/svg/frame_upgrade_rare.svg',
+  legendary: '/ui/panel/svg/frame_upgrade_legendary.svg',
+  bond: '/ui/panel/svg/frame_upgrade_bond.svg',
+};
+
+const UPGRADE_TITLE_BAR_PCT = `${(30 / UPGRADE_FRAME_SIZE.h) * 100}%`; // 13.6% — banner 区
+const UPGRADE_RARITY_BAR_PCT = `${((220 - 188) / UPGRADE_FRAME_SIZE.h) * 100}%`; // 14.5% — tab 区
+
+export interface UpgradeFrameOptions {
+  rarity: ItemFrameRarity;
+  /** 数值面板边框 / 等级行强调色。 */
+  accentColor: string;
+  /** 物品名（顶部 banner）。 */
+  title: string;
+  /** 卡片宽度。 */
+  width?: string;
+  interactive?: boolean;
+  /**
+   * 标题在 banner 内的垂直偏移（增大→标题更靠下，避开 banner 上沿圆角）。
+   * 默认 '15px'（升级卡视觉），充能神殿等场景可用更小的值。
+   */
+  titlePaddingTop?: string;
+  /**
+   * 稀有度文字在 tab 内的垂直偏移（增大→文字更靠上，避开 tab 下沿圆角）。
+   * 默认 '15px'（升级卡视觉）。
+   */
+  rarityPaddingBottom?: string;
+  /**
+   * 等级行 margin-top（负值→等级行往上贴近数值面板）。默认 '-2px'。
+   */
+  levelMarginTop?: string;
+}
+
+export interface UpgradeFrameParts {
+  /** 外层框，append 到卡片行；可点击时由调用方绑定 click。 */
+  card: HTMLDivElement;
+  /** 顶部 banner 里的物品名。 */
+  titleEl: HTMLDivElement;
+  /** 图标槽（appendChild 一个 div / img / emoji 即可）。 */
+  iconSlot: HTMLDivElement;
+  /** 描述行。 */
+  descEl: HTMLDivElement;
+  /** 内嵌数值面板（带稀有度色边框，调用方 appendChild 每行）。 */
+  statsBox: HTMLDivElement;
+  /** 等级行（"等级 1 → 2"）；位于数值面板下方、稀有度 tab 上方。 */
+  levelEl: HTMLDivElement;
+  /** 底部 tab 里的稀有度文案。 */
+  rarityEl: HTMLDivElement;
+}
+
+export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameParts {
+  const {
+    rarity,
+    accentColor,
+    title,
+    width = 'min(180px,90vw)',
+    interactive = false,
+    titlePaddingTop = '15px',
+    rarityPaddingBottom = '15px',
+    levelMarginTop = '-2px',
+  } = opts;
+
+  const card = document.createElement('div');
+  card.style.cssText = `
+    width:${width};aspect-ratio:${UPGRADE_FRAME_SIZE.w} / ${UPGRADE_FRAME_SIZE.h};box-sizing:border-box;
+    background:url(${UPGRADE_FRAME_SRC[rarity] ?? UPGRADE_FRAME_SRC.common}) center / 100% 100% no-repeat;
+    display:flex;flex-direction:column;align-items:stretch;
+    filter:drop-shadow(0 4px 10px rgba(0,0,0,0.5));
+    ${interactive ? 'cursor:pointer;touch-action:manipulation;user-select:none;transition:transform 0.15s;' : ''}
+  `;
+
+  // === 顶部 banner（物品名）===
+  // banner 视觉中心在 y=15，但 SVG 的圆角让上沿视觉偏厚，标题用 padding-top 往下偏一点更居中
+  const titleBar = document.createElement('div');
+  titleBar.style.cssText = `
+    flex:0 0 ${UPGRADE_TITLE_BAR_PCT};min-height:0;display:flex;align-items:center;justify-content:center;
+    padding:${titlePaddingTop} 12% 0;box-sizing:border-box;overflow:hidden;
+  `;
+  const titleEl = document.createElement('div');
+  titleEl.style.cssText = uiPlainText(
+    'font-size:clamp(11px,3.2vw,14px);font-weight:bold;line-height:1.05;text-align:center;width:100%;',
+  );
+  titleEl.textContent = title;
+  titleBar.appendChild(titleEl);
+
+  // === 中部主体（icon + desc + stats + level）===
+  const mid = document.createElement('div');
+  mid.style.cssText = `
+    flex:1 1 auto;min-height:0;display:flex;flex-direction:column;align-items:center;
+    padding:5% 9% 3%;box-sizing:border-box;gap:3px;
+  `;
+
+  const iconSlot = document.createElement('div');
+  iconSlot.style.cssText = `
+    display:flex;align-items:center;justify-content:center;
+    width:100%;font-size:clamp(28px,8vw,36px);line-height:1;
+  `;
+
+  const descEl = document.createElement('div');
+  descEl.style.cssText = uiPlainText(
+    'font-size:clamp(10px,2.7vw,11px);line-height:1.3;text-align:center;width:100%;',
+  );
+
+  const statsBox = document.createElement('div');
+  statsBox.style.cssText = `
+    width:100%;background:rgba(255,255,255,0.55);
+    border:2px solid ${accentColor};border-radius:8px;
+    padding:4px 7px;box-sizing:border-box;
+    display:flex;flex-direction:column;gap:1px;
+  `;
+
+  const grow = document.createElement('div');
+  grow.style.cssText = 'flex:1 1 auto;min-height:0;';
+
+  const levelEl = document.createElement('div');
+  levelEl.style.cssText = uiPlainText(
+    `font-size:clamp(10px,2.7vw,12px);font-weight:bold;line-height:1.2;text-align:center;width:100%;margin-top:${levelMarginTop};`,
+  );
+
+  mid.appendChild(iconSlot);
+  mid.appendChild(descEl);
+  mid.appendChild(statsBox);
+  mid.appendChild(grow);
+  mid.appendChild(levelEl);
+
+  // === 底部 tab（稀有度）===
+  // tab 视觉位于 SVG y=190~216，rarityBar 容器覆盖 y=188~220（14.5%）
+  // 加大 padding-bottom 把文字往上推，避开 tab 视觉底部圆角
+  const rarityBar = document.createElement('div');
+  rarityBar.style.cssText = `
+    flex:0 0 ${UPGRADE_RARITY_BAR_PCT};min-height:0;display:flex;align-items:center;justify-content:center;
+    padding:0 25% ${rarityPaddingBottom};box-sizing:border-box;overflow:hidden;
+  `;
+  const rarityEl = document.createElement('div');
+  rarityEl.style.cssText = uiPlainText(
+    'font-size:clamp(10px,2.6vw,12px);font-weight:bold;letter-spacing:0.5px;line-height:1;text-align:center;width:100%;',
+  );
+  rarityBar.appendChild(rarityEl);
+
+  card.appendChild(titleBar);
+  card.appendChild(mid);
+  card.appendChild(rarityBar);
+
+  if (interactive) {
+    card.addEventListener('mouseenter', () => { card.style.transform = 'scale(1.05)'; });
+    card.addEventListener('mouseleave', () => { card.style.transform = 'scale(1)'; });
+  }
+
+  return { card, titleEl, iconSlot, descEl, statsBox, levelEl, rarityEl };
+}
+
+/** 升级卡数值面板的一行（左标签 / 右数值），值用稀有度色。 */
+export function upgradeStatRow(label: string, value: string, accentColor: string): HTMLDivElement {
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;justify-content:space-between;gap:6px;line-height:1.45;';
+  const lab = document.createElement('span');
+  lab.style.cssText = uiPlainText('font-size:clamp(9px,2.6vw,11px);line-height:1.45;');
+  lab.textContent = label;
+  const val = document.createElement('span');
+  val.style.cssText = uiColoredText(accentColor, '') + 'font-size:clamp(9px,2.6vw,11px);font-weight:bold;line-height:1.45;';
+  val.textContent = value;
+  row.appendChild(lab);
+  row.appendChild(val);
+  return row;
+}

@@ -28,13 +28,31 @@ export const UI_TEXT_OUTLINE_GUTTER = 'padding-inline:3px;box-sizing:border-box;
 
 
 
+/**
+ * 全局轻量加粗：用同色 text-stroke 模拟 ~0.4px 的字重增加。
+ * 之所以不直接调 font-weight：Lilita One 只有 400 一档，单调 weight 只能让中文/像素字体变粗，
+ * 英文不动会显得脱节。text-stroke 对所有字体一视同仁。
+ */
+export const UI_TEXT_FAUX_BOLD = '-webkit-text-stroke:0.4px currentColor;text-stroke:0.4px currentColor;paint-order:stroke fill;';
+
+
+
 export const UI_PLAIN_TEXT_COLOR = '#ffffff';
+
+
+
+/**
+ * 统一字体族：英文/数字优先 Lilita One，中文优先 Noto Sans SC，
+ * 兜底为 MegaBonk UI（zlabs pixel + zlabs-roundpix-m-cn）→ Arial → sans-serif。
+ * 与 game/client/source/index.ts 的 UI_FONT_FACE 保持一致。
+ */
+export const UI_FONT_FAMILY = '"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif';
 
 
 
 export function uiPlainText(extraCss = ''): string {
 
-  const base = `color:${UI_PLAIN_TEXT_COLOR};text-shadow:${UI_TEXT_OUTLINE_SHADOW};${UI_TEXT_OUTLINE_GUTTER}`;
+  const base = `color:${UI_PLAIN_TEXT_COLOR};font-family:${UI_FONT_FAMILY};text-shadow:${UI_TEXT_OUTLINE_SHADOW};${UI_TEXT_FAUX_BOLD}${UI_TEXT_OUTLINE_GUTTER}`;
 
   return extraCss ? `${base};${extraCss}` : base;
 
@@ -52,7 +70,7 @@ export function uiColoredText(color: string, extraShadow = ''): string {
 
     : UI_TEXT_OUTLINE_SHADOW;
 
-  return `color:${color};text-shadow:${shadow};${UI_TEXT_OUTLINE_GUTTER}`;
+  return `color:${color};font-family:${UI_FONT_FAMILY};text-shadow:${shadow};${UI_TEXT_FAUX_BOLD}${UI_TEXT_OUTLINE_GUTTER}`;
 
 }
 
@@ -60,7 +78,7 @@ export function uiColoredText(color: string, extraShadow = ''): string {
 
 /** 用于 tooltip innerHTML 内联 style */
 
-export const UI_PLAIN_TEXT_STYLE = `color:${UI_PLAIN_TEXT_COLOR};text-shadow:${UI_TEXT_OUTLINE_SHADOW};${UI_TEXT_OUTLINE_GUTTER}`;
+export const UI_PLAIN_TEXT_STYLE = `color:${UI_PLAIN_TEXT_COLOR};font-family:${UI_FONT_FAMILY};text-shadow:${UI_TEXT_OUTLINE_SHADOW};${UI_TEXT_FAUX_BOLD}${UI_TEXT_OUTLINE_GUTTER}`;
 
 
 

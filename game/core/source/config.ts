@@ -111,7 +111,7 @@ export const TELEPORTER_RADIUS = ALTAR_INTERACT_RADIUS;
 
 // Charge Shrine settings
 /** 一局生成多少个充能圣殿。 */
-export const SHRINE_COUNT = 3;
+export const SHRINE_COUNT = 5;
 /** 玩家进入充能圈的半径。 */
 export const SHRINE_RADIUS = 2.5;
 /** 充满 / 解锁需要的站立秒数。 */

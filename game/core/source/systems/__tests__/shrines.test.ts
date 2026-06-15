@@ -1,8 +1,12 @@
+/**
+ * shrines.generateShrines / isShrineSpotWalkable 单元测试。
+ */
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_GAME_CONFIG } from '../../config.ts';
+import { DEFAULT_GAME_CONFIG, SHRINE_COUNT } from '../../config.ts';
 import { makeLevelGeometry } from '../collision.ts';
 import { generateShrines, isShrineSpotWalkable } from '../shrines.ts';
 import type { LevelData } from '../../types.ts';
+import { makeEngine } from './_fixtures.ts';
 
 function geoFor(partial: Partial<LevelData>) {
   return makeLevelGeometry({
@@ -43,10 +47,43 @@ describe('generateShrines', () => {
       collisionRects: [{ cx: 0, cz: 0, halfW: 40, halfD: 40, height: 0, baseY: 0 }],
     });
     const shrines = generateShrines(DEFAULT_GAME_CONFIG, geo);
-    expect(shrines).toHaveLength(3);
+    expect(shrines).toHaveLength(SHRINE_COUNT);
     for (const s of shrines) {
       expect(isShrineSpotWalkable(geo, s.x, s.z)).toBe(true);
       expect(s.y).toBeDefined();
     }
+  });
+
+  it('无关卡时生成固定数量的程序化神殿', () => {
+    const shrines = generateShrines(makeEngine().config);
+    expect(shrines).toHaveLength(SHRINE_COUNT);
+    expect(shrines.every(shrine => shrine.phase === 'charging')).toBe(true);
+  });
+
+  it('关卡模式从 chestSpawns 固定选四角和中心 5 个点', () => {
+    const expected = [
+      { x: -100, y: 1, z: -100 },
+      { x: -100, y: 2, z: 100 },
+      { x: 100, y: 3, z: -100 },
+      { x: 100, y: 4, z: 100 },
+      { x: 0, y: 5, z: 0 },
+    ];
+    const config = makeEngine().config;
+    config.level = {
+      collisionRects: [],
+      walls: [],
+      climbVolumes: [],
+      ramps: [],
+      spawnPoints: {},
+      chestSpawns: [
+        ...expected,
+        ...Array.from({ length: 20 }, (_, i) => ({ x: -50 + i * 5, y: 0, z: 30 })),
+      ],
+    };
+
+    const shrines = generateShrines(config);
+    expect(shrines).toHaveLength(5);
+    expect(shrines.map(shrine => ({ x: shrine.x, y: shrine.y, z: shrine.z }))).toEqual(expected);
+    expect(shrines.every(shrine => shrine.phase === 'charging')).toBe(true);
   });
 });

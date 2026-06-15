@@ -48,6 +48,29 @@ function canMoveAlong(
 }
 
 /**
+ * mover 已嵌在实体内时，绕当前点做径向搜索找最近的无阻挡落点（8 方向、半径由近到远）。
+ * 返回第一个未被挡的点；全被挡返回 null（极端被完全包裹场景，调用方原地不动）。
+ * 目的：朝"最近的外侧"推出去，避免沿玩家朝向越陷越深。
+ */
+function findNearestEscape(
+  x: number,
+  z: number,
+  blocked: (x: number, z: number) => boolean,
+): { x: number; z: number } | null {
+  const radii = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0];
+  const dirs = 8;
+  for (const r of radii) {
+    for (let i = 0; i < dirs; i++) {
+      const a = (i / dirs) * Math.PI * 2;
+      const cx = x + Math.cos(a) * r;
+      const cz = z + Math.sin(a) * r;
+      if (!blocked(cx, cz)) return { x: cx, z: cz };
+    }
+  }
+  return null;
+}
+
+/**
  * 把 mover 从 (oldX, oldZ) 移到 (desiredX, desiredZ)，遇到 col_/wall_ 沿墙滑行。
  *
  * 返回最终落点（已应用阻挡）。调用方负责把结果写回 mover.x / mover.z。
@@ -73,15 +96,16 @@ export function tryMoveHorizontally(
   const blocked = (x: number, z: number): boolean =>
     isBlockedHorizontallyAt(geo, x, z, feetY, includeClimb, radius);
 
-  // 脱困：当前位置已嵌在实体内（dash / 击退 / 出生点等绕过碰撞导致）。
+  // 脱困：当前位置已嵌在实体内（出生点落在实体 / 残留旧存档等绕过碰撞导致）。
   // 此时常规路径采样会因"起点就被挡"而每个方向都失败 → 永久卡死。
-  // 改为直接挑一个"终点未被挡"的相邻候选把 mover 救出去；都被挡则放行 desired，
-  // 靠玩家朝向脱困，避免冻死原地。
+  // 先挑一个"终点未被挡"的相邻候选把 mover 救出去；若三者都被挡，则做径向搜索
+  // 找最近的无阻挡出口（避免直接放行 desired 把玩家越推越深）；彻底找不到才原地不动。
   if (blocked(oldX, oldZ)) {
     if (!blocked(desiredX, desiredZ)) return { x: desiredX, z: desiredZ };
     if (!blocked(desiredX, oldZ)) return { x: desiredX, z: oldZ };
     if (!blocked(oldX, desiredZ)) return { x: oldX, z: desiredZ };
-    return { x: desiredX, z: desiredZ };
+    const escape = findNearestEscape(oldX, oldZ, blocked);
+    return escape ?? { x: oldX, z: oldZ };
   }
 
   // Path 1: 整体直走

@@ -337,8 +337,16 @@ export function tickDash(engine: Engine, dt: number): void {
       engine.config.mapSize,
     );
     if (result) {
-      player.x = result.x;
-      player.z = result.z;
+      // dash 也要走横向碰撞：被 col_/wall_/climb_ 挡住时沿墙滑/停下，
+      // 而不是直接改坐标穿进实体里（旧逻辑会把玩家塞进墙体造成偶现嵌入）。
+      const moved = tryMoveHorizontally(
+        engine.geo,
+        player.x, player.z,
+        result.x, result.z,
+        player.y,
+      );
+      player.x = moved.x;
+      player.z = moved.z;
     }
   }
 }

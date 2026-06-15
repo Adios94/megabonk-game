@@ -92,4 +92,13 @@ describe('tryMoveHorizontally', () => {
     const r = tryMoveHorizontally(geo, 0, 0, 5, 0, 0); // 朝 +X 空地
     expect(r.x).toBe(5); // 脱困到空地，而非永久卡在 (0,0)
   });
+
+  it('已嵌入墙体且 desired 朝墙体更深处 → 径向找最近出口，不越陷越深', () => {
+    // 小墙 (halfW/halfD 1)，mover 卡在墙心 (0,0)，desired (0.3,0.3) 仍在墙内。
+    // 旧逻辑会放行 desired 把玩家推得更深；新逻辑应径向脱困到墙外。
+    const geo = levelWithWall({ cx: 0, cz: 0, halfW: 1, halfD: 1, bottomY: 0, topY: 3 });
+    const r = tryMoveHorizontally(geo, 0, 0, 0.3, 0.3, 0);
+    // 脱困点应落在墙外（离墙心距离 > halfW + 半径 ≈ 1.45），而不是被推进墙里。
+    expect(Math.hypot(r.x, r.z)).toBeGreaterThan(1.45);
+  });
 });

@@ -23,6 +23,7 @@ import {
 } from '../config.ts';
 import { rollShrineOptions } from '../data/shrineRewards.ts';
 import { getTerrainHeightAt, isBlockedHorizontallyAt, type LevelGeometry } from './collision.ts';
+import { selectShrineMarkerPoints } from '../levelMarkerSelection.ts';
 import type { ShrineState, GameConfig, PlayerState } from '../types.ts';
 import type { Engine } from './types.ts';
 
@@ -113,6 +114,20 @@ function baseAngleFallback(index: number): number {
 }
 
 export function generateShrines(config: GameConfig, geo?: LevelGeometry): ShrineState[] {
+  // 关卡模式：固定占用 spawn_chest 的四角 + 中心 5 个标记点（与 chests 排除逻辑配对，避免重叠）。
+  if (config.level) {
+    return selectShrineMarkerPoints(config.level.chestSpawns ?? [], SHRINE_COUNT).map((point, i) => ({
+      id: i + 1,
+      x: point.x,
+      y: point.y ?? 0,
+      z: point.z,
+      phase: 'charging',
+      chargeTimer: 0,
+      chargeDuration: SHRINE_CHARGE_DURATION,
+      options: null,
+    }));
+  }
+
   const shrines: ShrineState[] = [];
   const placed: { x: number; z: number }[] = [];
   for (let i = 0; i < SHRINE_COUNT; i++) {
@@ -152,7 +167,8 @@ export function tickShrines(engine: Engine, dt: number): void {
     if (shrine.phase === 'consumed' || shrine.phase === 'ready' || shrine.phase === 'inactive') continue;
     // shrine.phase === 'charging'
     const dist = distanceBetween(player.x, player.z, shrine.x, shrine.z);
-    if (dist <= SHRINE_RADIUS) {
+    const yDelta = Math.abs((player.y ?? 0) - (shrine.y ?? 0));
+    if (dist <= SHRINE_RADIUS && yDelta <= SHRINE_RADIUS) {
       shrine.chargeTimer = Math.min(shrine.chargeDuration, shrine.chargeTimer + dt);
       if (shrine.chargeTimer >= shrine.chargeDuration) {
         // 检查是否已有 active shrine —— 同时只能有一个进入 reward phase

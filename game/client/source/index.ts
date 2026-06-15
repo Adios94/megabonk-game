@@ -1134,12 +1134,18 @@ function applyStylizedToonShading(mat: THREE.MeshToonMaterial, specStrength = 0,
  * 游戏内风格化调参面板（仅 dev）。把 stylizedUniforms + 雾 + bloom 全部接上滑块，实时拖动即时生效，
  * 不用改代码重编译。按 ` 键（反引号）或点右上角按钮开关。"复制参数"把当前值导成可粘回代码的片段。
  */
-function createStylizedDebugPanel(opts: { scene: THREE.Scene; bloom: UnrealBloomPass | null; renderer: THREE.WebGLRenderer }): void {
+function createStylizedDebugPanel(opts: {
+  scene: THREE.Scene;
+  bloom: UnrealBloomPass | null;
+  renderer: THREE.WebGLRenderer;
+  colorGrade: ColorGradePass | null;
+}): void {
   if (document.getElementById('stylized-debug-panel')) return; // 幂等
   const u = stylizedUniforms;
   const fog = opts.scene.fog instanceof THREE.Fog ? opts.scene.fog : null;
   const bloom = opts.bloom;
   const renderer = opts.renderer;
+  const colorGrade = opts.colorGrade;
 
   type Ctl = { label: string; min: number; max: number; step: number; get: () => number; set: (v: number) => void };
   const vec3ctls = (v: THREE.Vector3, min: number, max: number, prefix = ''): Ctl[] => {
@@ -1174,6 +1180,15 @@ function createStylizedDebugPanel(opts: { scene: THREE.Scene; bloom: UnrealBloom
     { title: '阴影色 ShadowTint (×albedo)', ctls: vec3ctls(u.uShadowTint.value, 0, 1.5) },
     { title: '受光色 LightTint (×albedo)', ctls: vec3ctls(u.uLightTint.value, 0, 1.5) },
   ];
+  if (colorGrade) {
+    sections.push({
+      title: '美漫调色 ColorGrade', ctls: [
+        { label: 'Saturation 饱和', min: 0.5, max: 2.5, step: 0.01, get: () => colorGrade.saturation, set: (v) => { colorGrade.saturation = v; } },
+        { label: 'Contrast 对比', min: 0.5, max: 2.0, step: 0.01, get: () => colorGrade.contrast, set: (v) => { colorGrade.contrast = v; } },
+        { label: 'Brightness 亮度', min: 0.5, max: 2.0, step: 0.01, get: () => colorGrade.brightness, set: (v) => { colorGrade.brightness = v; } },
+      ],
+    });
+  }
   if (fog) {
     sections.push({
       title: '雾 Fog', ctls: [
@@ -1258,6 +1273,7 @@ function createStylizedDebugPanel(opts: { scene: THREE.Scene; bloom: UnrealBloom
       `uLightTint: { value: ${v3(u.uLightTint.value)} },`,
       fog ? `// fog: new THREE.Fog('#87CEEB', ${fog.near}, ${fog.far})` : '',
       bloom ? `// bloom: strength=${bloom.strength}, radius=${bloom.radius}, threshold=${bloom.threshold}` : '',
+      colorGrade ? `// ColorGrade: saturation=${colorGrade.saturation.toFixed(3)}, contrast=${colorGrade.contrast.toFixed(3)}, brightness=${colorGrade.brightness.toFixed(3)}` : '',
     ].filter(Boolean).join('\n');
     navigator.clipboard?.writeText(snippet).catch(() => { /* ignore */ });
     console.log('[stylized] 当前参数：\n' + snippet);
@@ -1356,6 +1372,15 @@ class ColorGradePass extends Pass {
     });
     this.fsQuad = new FullScreenQuad(this.material);
   }
+
+  get saturation(): number { return this.material.uniforms.uSaturation.value; }
+  set saturation(v: number) { this.material.uniforms.uSaturation.value = v; }
+
+  get contrast(): number { return this.material.uniforms.uContrast.value; }
+  set contrast(v: number) { this.material.uniforms.uContrast.value = v; }
+
+  get brightness(): number { return this.material.uniforms.uBrightness.value; }
+  set brightness(v: number) { this.material.uniforms.uBrightness.value = v; }
 
   render(renderer: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget): void {
     this.material.uniforms.tDiffuse.value = readBuffer.texture;
@@ -2561,6 +2586,7 @@ export class GameScene {
   private readonly outlineEffect: any; // OutlineEffect
   private composer: EffectComposer | null = null;
   private bloomPass: UnrealBloomPass | null = null;
+  private colorGradePass: ColorGradePass | null = null;
   private blobShadows: BlobShadowPool | null = null;
   private readonly scene: THREE.Scene;
   private readonly camera: THREE.PerspectiveCamera;
@@ -2995,7 +3021,12 @@ export class GameScene {
 
     // Dev-only 风格化调参面板（按 ` 开关），生产构建不创建。
     if (import.meta.env.DEV) {
-      createStylizedDebugPanel({ scene: this.scene, bloom: this.bloomPass, renderer: this.renderer });
+      createStylizedDebugPanel({
+        scene: this.scene,
+        bloom: this.bloomPass,
+        renderer: this.renderer,
+        colorGrade: this.colorGradePass,
+      });
     }
 
     this.removeDisplayListener = installThreeHighDpi({
@@ -3155,7 +3186,9 @@ export class GameScene {
 
     composer.addPass(new OutputPass()); // tone map：ACES + sRGB
     // 末端美漫调色：提饱和 / 对比 / 亮度，让画面更鲜亮、色块更跳。
-    composer.addPass(new ColorGradePass(GRADE_SATURATION, GRADE_CONTRAST, GRADE_BRIGHTNESS));
+    const colorGrade = new ColorGradePass(GRADE_SATURATION, GRADE_CONTRAST, GRADE_BRIGHTNESS);
+    composer.addPass(colorGrade);
+    this.colorGradePass = colorGrade;
 
     this.composer = composer;
   }

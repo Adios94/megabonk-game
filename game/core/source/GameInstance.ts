@@ -203,7 +203,7 @@ export class GameInstance {
     this.applyLevelConfig();
     state.waveIndex = 0;
     state.altars = generateAltars(config, state.player, engine.geo);
-    state.shrines = generateShrines(config);
+    state.shrines = generateShrines(config, engine.geo);
     state.activeShrineId = null;
     state.chests = generateChests(config);
     engine.nextChestId = nextChestId(state.chests);

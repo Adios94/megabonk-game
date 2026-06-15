@@ -322,6 +322,8 @@ export interface ShrineState {
   id: number;
   x: number;
   z: number;
+  /** 地表高度（与祭坛 / 宝箱一致，用于贴地渲染）。 */
+  y?: number;
   phase: ShrinePhase;
   /** 当前充能进度（秒）。 */
   chargeTimer: number;

@@ -54,7 +54,9 @@ export function processCollisions(engine: Engine): void {
     const proj = engine.state.projectiles[i];
     if (!proj.fromPlayer) continue;
 
-    const nearbyIds = engine.spatialHash.query(proj.x, proj.z, proj.radius);
+    // queryRef 返回内部复用 buffer（零分配）：本投射物在进入下一个投射物的 query 前
+    // 同步遍历完 nearbyIds，期间无其它 spatial hash 查询，复用安全。
+    const nearbyIds = engine.spatialHash.queryRef(proj.x, proj.z, proj.radius);
     let consumed = false;
 
     for (const id of nearbyIds) {

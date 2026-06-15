@@ -76,7 +76,24 @@ export class SpatialHash {
     }
   }
 
+  /**
+   * 查询命中 (x,z,radius) 圆的所有 entry id，返回**内部复用 buffer**（不拷贝）。
+   *
+   * 零分配版：返回值仅在下一次 query / queryRef 调用前有效，调用方必须同步遍历完、
+   * 不可缓存或跨调用持有。命中逻辑与 query() 完全一致。
+   * 每帧被每个投射物各调一次的热路径用它，省掉 query() 的 .slice()（每帧大量小数组 GC）。
+   */
+  queryRef(x: number, z: number, radius: number): readonly number[] {
+    this.runQuery(x, z, radius);
+    return this.queryResults;
+  }
+
   query(x: number, z: number, radius: number): number[] {
+    this.runQuery(x, z, radius);
+    return this.queryResults.slice();
+  }
+
+  private runQuery(x: number, z: number, radius: number): void {
     this.queryResults.length = 0;
 
     const minCellX = Math.floor((x - radius) * this.invCellSize);
@@ -110,8 +127,6 @@ export class SpatialHash {
         }
       }
     }
-
-    return this.queryResults.slice();
   }
 
   private hashCell(cx: number, cz: number): number {

@@ -12,7 +12,6 @@
 import { distanceBetween, distanceSqBetween, normalizeDirection } from '../physics.ts';
 import {
   MAX_PICKUPS,
-  XP_VALUES,
   PICKUP_LIFETIME,
   PICKUP_ATTRACT_SPEED,
   HEALTH_DROP_CHANCE,
@@ -25,6 +24,7 @@ import { getShopBonuses } from '../shop.ts';
 import { getTomePower } from '../tomeProgression.ts';
 import { applyRelicKillEffects, getRelicBonusGoldOnKill, rollGoldForEnemy } from './relics.ts';
 import { getXpPickupRadius, isXpPickupType, spawnConsumablesFromEnemy } from './consumables.ts';
+import { recordWeaponKill } from './weaponDamageStats.ts';
 import type { EnemyState, PickupState, PickupType } from '../types.ts';
 import type { Engine } from './types.ts';
 
@@ -41,6 +41,9 @@ export function processDeaths(engine: Engine): void {
       applyRelicKillEffects(engine, enemy);
       spawnGoldMoteFromEnemy(engine, enemy);
       engine.state.stats.killCount++;
+      if (enemy.lastHitWeaponType) {
+        recordWeaponKill(engine, enemy.lastHitWeaponType);
+      }
       engine.state.player.comboCount++;
       engine.state.player.comboTimer = 2.0;
       enemies.splice(i, 1);
@@ -68,7 +71,7 @@ function spawnPickupFromEnemy(engine: Engine, enemy: EnemyState): void {
       id: engine.nextPickupId++,
       type: pickupType,
       x: enemy.x, y: dropY, z: enemy.z,
-      value: XP_VALUES[pickupType] ?? 1,
+      value: xpReward,
       lifetime: PICKUP_LIFETIME,
       attracted: false,
     });

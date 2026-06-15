@@ -398,6 +398,7 @@ let neuroTriangleTexture: THREE.Texture | null = null;
 let hunterCrosshairTexture: THREE.Texture | null = null;
 let conductorGlowTexture: THREE.Texture | null = null;
 let arcaneOrbTexture: THREE.Texture | null = null;
+const DAMAGE_NUMBER_FONT_FAMILY = "'Press Start 2P', monospace";
 
 function getConsumableEmojiTexture(consumableId: string): THREE.Texture {
   const cached = consumableEmojiTextureCache.get(consumableId);
@@ -3068,6 +3069,7 @@ export class GameScene {
   private conductorGlowSprites: Map<number, THREE.Sprite> = new Map(); // 弧光导体 蓝色发光
   private mysteryNumberSprite: THREE.Sprite | null = null; // 奥术奥秘计数（玩家头顶）
   private mysteryNumberValue = -1;
+  private mysteryNumberPulse = 0;
   private arcaneBurstOrbs: { sprite: THREE.Sprite; from: THREE.Vector3; to: THREE.Vector3; t: number; life: number }[] = [];
   private projectileMesh!: THREE.InstancedMesh;
   private enemyProjectileMesh!: THREE.InstancedMesh; // 敌人弹幕：朝相机的火焰 billboard
@@ -3122,6 +3124,8 @@ export class GameScene {
   private killCountEl!: HTMLSpanElement;
   private goldLabel!: HTMLDivElement;
   private silverLabel!: HTMLDivElement;
+  private gmWeaponDamagePanel: HTMLDivElement | null = null;
+  private gmWeaponDamageBody: HTMLDivElement | null = null;
   /** 局内任务条（武器槽下方）。 */
   private questRow!: HTMLDivElement;
   private questLabel!: HTMLDivElement;
@@ -3217,6 +3221,12 @@ export class GameScene {
    */
   private weaponSlotsSig = '';
   private weaponCooldownOverlays: Array<HTMLElement | null> = [];
+  private gmWeaponDamageSig = '';
+  private gmWeaponDamageRows = new Map<string, {
+    kills: HTMLSpanElement;
+    dps: HTMLSpanElement;
+    total: HTMLSpanElement;
+  }>();
   private tomesSig = '';
   private relicsSig = '';
   private bondsSig = '';
@@ -3378,6 +3388,7 @@ export class GameScene {
     // Dev-only 风格化调参面板（按 ` 开关），生产构建不创建。
     if (import.meta.env.DEV) {
       createStylizedDebugPanel({ scene: this.scene, bloom: this.bloomPass, renderer: this.renderer });
+      this.setupGmWeaponDamagePanel();
     }
 
     this.removeDisplayListener = installThreeHighDpi({
@@ -3450,6 +3461,11 @@ export class GameScene {
       window.removeEventListener('keydown', this.perfKeyHandler);
       this.perfKeyHandler = null;
     }
+    this.gmWeaponDamagePanel?.remove();
+    this.gmWeaponDamagePanel = null;
+    this.gmWeaponDamageBody = null;
+    this.gmWeaponDamageRows.clear();
+    this.gmWeaponDamageSig = '';
     this.upgradePanel?.remove();
     this.gameOverPanel?.remove();
     this.pausePanel?.remove();
@@ -4528,7 +4544,7 @@ export class GameScene {
   private setupDamageNumbers(): void {
     for (let i = 0; i < DAMAGE_NUM_POOL_SIZE; i++) {
       const el = document.createElement('div');
-      el.style.cssText = `position:fixed;pointer-events:none;font-size:16px;font-weight:bold;opacity:0;transition:none;z-index:200;text-shadow:${UI_TEXT_OUTLINE_SHADOW};white-space:nowrap;padding-inline:3px;box-sizing:border-box;`;
+      el.style.cssText = `position:fixed;pointer-events:none;font-size:16px;font-weight:bold;opacity:0;transition:none;z-index:200;text-shadow:${UI_TEXT_OUTLINE_SHADOW};white-space:nowrap;padding-inline:3px;box-sizing:border-box;font-family:${DAMAGE_NUMBER_FONT_FAMILY};`;
       el.dataset.animId = String(i);  // 稳定 id：GSAP 按元素 keying，池复用时 cancel 上一个 tween
       document.body.appendChild(el);
       this.damageNums.push(el);
@@ -7847,9 +7863,12 @@ export class GameScene {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const grad = ctx.createLinearGradient(0, 18, 0, 78);
-    grad.addColorStop(0, '#c79bff');
-    grad.addColorStop(1, '#5a8cff');
-    ctx.lineWidth = 7;
+    grad.addColorStop(0, '#f0d8ff');
+    grad.addColorStop(0.45, '#b06bff');
+    grad.addColorStop(1, '#4d8dff');
+    ctx.shadowColor = 'rgba(122,88,255,0.8)';
+    ctx.shadowBlur = 14;
+    ctx.lineWidth = 8;
     ctx.lineJoin = 'round';
     ctx.strokeStyle = 'rgba(10,4,30,0.92)';
     ctx.strokeText(text, 64, 50);
@@ -7877,15 +7896,26 @@ export class GameScene {
     }
     const sprite = this.mysteryNumberSprite;
     if (value !== this.mysteryNumberValue) {
+      if (this.mysteryNumberValue >= 0 && value > this.mysteryNumberValue) {
+        this.mysteryNumberPulse = 0.18;
+      }
       this.mysteryNumberValue = value;
       const oldMap = sprite.material.map;
       sprite.material.map = this.makeMysteryNumberTexture(value);
       sprite.material.needsUpdate = true;
       oldMap?.dispose();
     }
+    this.mysteryNumberPulse = Math.max(0, this.mysteryNumberPulse - this.frameDt);
+    const pulse = this.mysteryNumberPulse > 0
+      ? 1 + Math.sin((this.mysteryNumberPulse / 0.18) * Math.PI) * 0.22
+      : 1;
+    const arcaneParams = BONDS.arcane.params;
+    const threshold = arcaneTier >= 3 ? arcaneParams.thresholdT3 : arcaneParams.threshold;
+    const mysteryScale = 0.5 + Math.min(1, value / threshold) * 0.5;
+    const visualScale = Math.min(1, mysteryScale * pulse);
     sprite.visible = true;
     sprite.position.set(player.x, player.y + 2.5, player.z);
-    sprite.scale.set(1.15, 0.86, 1);
+    sprite.scale.set(1.15 * visualScale, 0.86 * visualScale, 1);
   }
 
   /** 消费羁绊 VFX 事件：奥术光球 / 余烬红色爆炸烟雾。 */
@@ -7909,6 +7939,12 @@ export class GameScene {
           texture: 'muzzle', x: from.x, y: from.y, z: from.z,
           scale: 1.6, endScale: 2.6, lifetime: 0.22, opacityCurve: 'flash',
           opacity: 0.95, color: 0xa97bff, rotation: Math.random() * Math.PI * 2,
+        });
+        this.spawnBillboard({
+          texture: 'light', x: from.x, y: from.y, z: from.z,
+          scale: 1.2, endScale: 2.2, lifetime: 0.28, opacityCurve: 'fadeOut',
+          opacity: 0.75, color: 0x6f7cff, rotation: Math.random() * Math.PI * 2,
+          blending: 'additive',
         });
         this.arcaneBurstOrbs.push({ sprite, from, to, t: 0, life: 0.42 });
       } else if (evt.kind === 'ember_explode') {
@@ -7951,6 +7987,12 @@ export class GameScene {
         opacity: 0.65, color: 0x9a6bff, blending: 'additive',
         rotation: Math.random() * Math.PI * 2,
       });
+      this.spawnBillboard({
+        texture: 'light', x: pos.x, y: pos.y, z: pos.z,
+        scale: 0.85, endScale: 0.25, lifetime: 0.18, opacityCurve: 'fadeOut',
+        opacity: 0.55, color: 0x5f7cff, blending: 'additive',
+        rotation: Math.random() * Math.PI * 2,
+      });
 
       if (k >= 1) {
         this.emitArcaneSmoke(orb.to.x, orb.to.y, orb.to.z);
@@ -7979,6 +8021,11 @@ export class GameScene {
       opacityCurve: 'flash', opacity: 1.0, color: 0xc8a0ff,
       rotation: Math.random() * Math.PI * 2, blending: 'additive',
     });
+    this.spawnBillboard({
+      texture: 'light', x, y, z, scale: 2.8, endScale: 5.0, lifetime: 0.28,
+      opacityCurve: 'flash', opacity: 0.9, color: 0x8b7cff,
+      rotation: Math.random() * Math.PI * 2, blending: 'additive',
+    });
     // 蓝紫扩散烟团
     this.spawnBillboard({
       texture: 'smoke', x, y, z, scale: 2.0, endScale: 4.4, lifetime: 0.6,
@@ -7989,6 +8036,11 @@ export class GameScene {
     this.spawnBillboard({
       texture: 'scorch', x, y: y - 1.0 + 0.06, z, scale: 1.6, endScale: 3.0, lifetime: 0.45,
       opacityCurve: 'fadeOut', opacity: 0.6, color: 0x6a4cff,
+      facing: 'up', rotation: Math.random() * Math.PI * 2, blending: 'additive',
+    });
+    this.spawnBillboard({
+      texture: 'magic_circle', x, y: y - 1.0 + 0.08, z, scale: 1.2, endScale: 3.4, lifetime: 0.5,
+      opacityCurve: 'fadeOut', opacity: 0.5, color: 0xb16dff,
       facing: 'up', rotation: Math.random() * Math.PI * 2, blending: 'additive',
     });
   }
@@ -8322,6 +8374,7 @@ export class GameScene {
 
     // --- Weapon slots (top-left): fixed grid of maxWeaponSlots + a locked 6th slot ---
     this.renderWeaponSlots(p);
+    this.renderGmWeaponDamagePanel(state);
 
     // --- Tome stack (top-right second column): newest on the right ---
     // 仅在法书集合 / 等级变化时重建（旧实现每帧全量重建 DOM）。
@@ -8727,6 +8780,109 @@ export class GameScene {
       }
       this.weaponSlotsContainer.appendChild(slot);
     }
+  }
+
+  private setupGmWeaponDamagePanel(): void {
+    const debugPanel = document.getElementById('stylized-debug-panel');
+    if (!debugPanel) return;
+
+    this.gmWeaponDamagePanel?.remove();
+    this.gmWeaponDamageRows.clear();
+    this.gmWeaponDamageSig = '';
+
+    this.gmWeaponDamagePanel = document.createElement('div');
+    this.gmWeaponDamagePanel.style.cssText = `
+      margin:10px 0 8px;padding:8px 0 0;border-top:1px solid rgba(255,255,255,0.14);
+      color:#eaf3ff;font-variant-numeric:tabular-nums;
+    `;
+
+    const gmTitle = document.createElement('div');
+    gmTitle.style.cssText = 'margin:0 0 6px;color:#9fd0ff;font-weight:800;';
+    gmTitle.textContent = 'GM Tools - Weapon Damage';
+
+    this.gmWeaponDamageBody = document.createElement('div');
+    this.gmWeaponDamageBody.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
+
+    this.gmWeaponDamagePanel.appendChild(gmTitle);
+    this.gmWeaponDamagePanel.appendChild(this.gmWeaponDamageBody);
+    debugPanel.appendChild(this.gmWeaponDamagePanel);
+  }
+
+  private renderGmWeaponDamagePanel(state: GameState): void {
+    if (!this.gmWeaponDamageBody) return;
+
+    const statsByWeapon = new Map((state.weaponDamageStats ?? []).map(s => [s.weaponType, s]));
+    const orderedStats = state.player.weapons.map((weapon) => (
+      statsByWeapon.get(weapon.type) ?? {
+        weaponType: weapon.type,
+        killCount: 0,
+        totalDamage: 0,
+        dps: 0,
+      }
+    ));
+
+    const sig = orderedStats.map(s => s.weaponType).join('|');
+    if (sig !== this.gmWeaponDamageSig) {
+      this.gmWeaponDamageSig = sig;
+      this.gmWeaponDamageRows.clear();
+      this.gmWeaponDamageBody.innerHTML = '';
+
+      const header = document.createElement('div');
+      header.style.cssText = 'display:grid;grid-template-columns:minmax(92px,1fr) 38px 54px 58px;gap:6px;align-items:center;color:rgba(215,232,255,0.68);font-size:9px;text-transform:uppercase;';
+      for (const label of ['Weapon', 'Kills', 'DPS', 'Total']) {
+        const cell = document.createElement('span');
+        cell.textContent = label;
+        cell.style.textAlign = label === 'Weapon' ? 'left' : 'right';
+        header.appendChild(cell);
+      }
+      this.gmWeaponDamageBody.appendChild(header);
+
+      for (const stat of orderedStats) {
+        this.createGmWeaponDamageRow(stat.weaponType);
+      }
+    }
+
+    for (const stat of orderedStats) {
+      const row = this.gmWeaponDamageRows.get(stat.weaponType);
+      if (!row) continue;
+      row.kills.textContent = String(stat.killCount);
+      row.dps.textContent = this.formatGmDamageNumber(stat.dps, 1);
+      row.total.textContent = this.formatGmDamageNumber(stat.totalDamage, 0);
+    }
+  }
+
+  private createGmWeaponDamageRow(weaponType: string): void {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:minmax(92px,1fr) 38px 54px 58px;gap:6px;align-items:center;min-height:18px;border-top:1px solid rgba(255,255,255,0.06);padding-top:3px;';
+
+    const name = document.createElement('span');
+    name.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#ffffff;font-weight:700;';
+    name.textContent = `${WEAPON_ICONS[weaponType] ?? '?'} ${t(`upgrade.weapon.${weaponType}`)}`;
+    row.appendChild(name);
+
+    const kills = this.createGmWeaponDamageValue();
+    const dps = this.createGmWeaponDamageValue();
+    const total = this.createGmWeaponDamageValue();
+    row.appendChild(kills);
+    row.appendChild(dps);
+    row.appendChild(total);
+
+    this.gmWeaponDamageBody?.appendChild(row);
+    this.gmWeaponDamageRows.set(weaponType, { kills, dps, total });
+  }
+
+  private createGmWeaponDamageValue(): HTMLSpanElement {
+    const value = document.createElement('span');
+    value.style.cssText = 'text-align:right;color:#bfe5ff;';
+    return value;
+  }
+
+  private formatGmDamageNumber(value: number, decimals: number): string {
+    if (!Number.isFinite(value)) return '0';
+    const abs = Math.abs(value);
+    if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+    if (abs >= 10_000) return `${(value / 1_000).toFixed(1)}K`;
+    return value.toFixed(decimals);
   }
 
   /**

@@ -22,6 +22,7 @@ import { applyPlayerHit } from './consumables.ts';
 import { applyRelicTargetDamage } from './relics.ts';
 import { applyPoison, applySlow } from './statusEffects.ts';
 import { onBondWeaponHit } from './bonds.ts';
+import { recordWeaponDamage } from './weaponDamageStats.ts';
 import { bondConditionalDamageInc } from '../data/bonds.ts';
 import { bossDamageEventY, enemyDamageEventY, targetHitCenterY } from '../combatHeight.ts';
 import type { Engine } from './types.ts';
@@ -71,7 +72,7 @@ export function processCollisions(engine: Engine): void {
         const dmg = condInc !== 0 ? Math.round(proj.damage * (1 + condInc)) : proj.damage;
         boss.hp -= dmg;
         boss.hitFlashTimer = 0.15;
-        engine.state.stats.damageDealt += dmg;
+        recordWeaponDamage(engine, proj.weaponType, dmg, boss);
         addDamageEvent(engine, boss.x, bossDamageEventY(boss), boss.z, dmg, false, false, proj.weaponType);
         proj.hitEnemyIds.push(id);
 
@@ -100,7 +101,7 @@ export function processCollisions(engine: Engine): void {
       const damage = applyRelicTargetDamage(engine, bondScaled, enemy);
       enemy.hp -= damage;
       enemy.hitFlashTimer = 0.15;
-      engine.state.stats.damageDealt += damage;
+      recordWeaponDamage(engine, proj.weaponType, damage, enemy);
       addDamageEvent(engine, enemy.x, enemyDamageEventY(enemy), enemy.z, damage, false, false, proj.weaponType);
       proj.hitEnemyIds.push(id);
 

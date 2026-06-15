@@ -21,6 +21,19 @@ describe('processDeaths', () => {
     expect(engine.state.player.comboTimer).toBeCloseTo(2.0, 5);
   });
 
+  it('按最后命中的武器归因 GM 击杀统计', () => {
+    const engine = makeEngine();
+    engine.state.enemies = [
+      makeEnemy(1, 'skeleton_soldier', 5, 5, { hp: 0, lastHitWeaponType: 'sword' }),
+    ];
+
+    processDeaths(engine);
+
+    expect(engine.state.weaponDamageStats).toEqual([
+      { weaponType: 'sword', killCount: 1, totalDamage: 0, dps: 0 },
+    ]);
+  });
+
   it('每只死敌生成至少 1 个 XP pickup', () => {
     const engine = makeEngine();
     engine.state.enemies = [makeEnemy(1, 'skeleton_soldier', 5, 5, { hp: 0 })];
@@ -30,6 +43,26 @@ describe('processDeaths', () => {
       p.type === 'xp_green' || p.type === 'xp_blue' || p.type === 'xp_purple' || p.type === 'xp_orange'
     );
     expect(xpPickup).toBeDefined();
+  });
+
+  it('enemy xpReward 直接作为 XP pickup 基础值', () => {
+    const engine = makeEngine();
+    engine.state.enemies = [
+      makeEnemy(1, 'skeleton_soldier', 0, 0, { hp: 0 }),
+      makeEnemy(2, 'zombie', 1, 0, { hp: 0 }),
+      makeEnemy(3, 'skeleton_archer', 2, 0, { hp: 0 }),
+      makeEnemy(4, 'skeleton_knight', 3, 0, { hp: 0 }),
+      makeEnemy(5, 'necromancer', 4, 0, { hp: 0 }),
+      makeEnemy(6, 'gargoyle', 5, 0, { hp: 0 }),
+    ];
+
+    processDeaths(engine);
+
+    const xpValues = engine.state.pickups
+      .filter(p => p.type === 'xp_green' || p.type === 'xp_blue' || p.type === 'xp_purple' || p.type === 'xp_orange')
+      .map(p => p.value)
+      .sort((a, b) => a - b);
+    expect(xpValues).toEqual([1, 3, 3, 5, 10, 10]);
   });
 
   it('高处死亡的敌人会在死亡高度生成 XP pickup', () => {

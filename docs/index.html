@@ -1239,13 +1239,17 @@ attackSpeedMult × (1 + traitAspd)</code></pre>
     <tr><td>71–100</td><td>封顶前冲刺</td><td>高成本少量升级，避免后期选项泛滥</td></tr>
   </table>
 
-  <h3>XP 宝石值</h3>
-  <table style="max-width: 380px;">
-    <tr><th>颜色</th><th class="num">XP 值</th></tr>
-    <tr><td><span class="gem" style="background: var(--good);"></span> xp_green</td><td class="num">1</td></tr>
-    <tr><td><span class="gem" style="background: var(--accent);"></span> xp_blue</td><td class="num">5</td></tr>
-    <tr><td><span class="gem" style="background: var(--accent-2);"></span> xp_purple</td><td class="num">25</td></tr>
-    <tr><td><span class="gem" style="background: var(--warn);"></span> xp_orange</td><td class="num">100</td></tr>
+  <h3>XP 掉落</h3>
+  <p class="note">敌人死亡时，<code>enemy.xpReward</code> 会直接写入 XP pickup 的 <code>value</code>，颜色只用于视觉分档。Boss 死亡额外掉落一个 <code>value = 100</code> 的橙色 XP pickup。</p>
+  <table style="max-width: 520px;">
+    <tr><th>来源</th><th class="num">基础 EXP</th></tr>
+    <tr><td><code>skeleton_soldier</code></td><td class="num">1</td></tr>
+    <tr><td><code>zombie</code></td><td class="num">3</td></tr>
+    <tr><td><code>skeleton_archer</code></td><td class="num">3</td></tr>
+    <tr><td><code>skeleton_knight</code></td><td class="num">5</td></tr>
+    <tr><td><code>necromancer</code></td><td class="num">10</td></tr>
+    <tr><td><code>gargoyle</code></td><td class="num">10</td></tr>
+    <tr><td>Boss</td><td class="num">100</td></tr>
   </table>
 
   <h3>升级流程</h3>
@@ -1384,18 +1388,18 @@ actualTargetCount = floor(storedTargetCount)
   <h3>武器基础升级表（草案）</h3>
   <table>
     <tr><th>武器</th><th>Lv1 基准</th><th>Common 每级基础增量</th><th>数量字段</th><th>机制备注</th></tr>
-    <tr><td>Sword 大剑</td><td>伤害 12；范围 2.5；攻击数 1.0</td><td>伤害 +3.2；范围 +0.22；攻击数 +0.22</td><td><code>attackCount</code> floor</td><td>扇扫命中数仍由范围与碰撞决定</td></tr>
-    <tr><td>Bone 骨头</td><td>伤害 8；弹射 2.0；投射数 1.0</td><td>伤害 +1.5；弹射 +0.45；投射数 +0.20</td><td><code>projectileCount</code> / <code>bounces</code> floor</td><td>弹射数小数可让高品质更早多弹一次</td></tr>
-    <tr><td>Axe 飞斧</td><td>伤害 10；斧数 1.0；范围 3.0</td><td>伤害 +2.4；斧数 +0.28；范围 +0.22</td><td><code>axeCount</code> floor</td><td>攻速/旋转速度另由典籍与羁绊影响</td></tr>
-    <tr><td>Bow 左轮</td><td>伤害 18；弹数 1.0；穿透 0.0</td><td>伤害 +4.5；弹数 +0.22；穿透 +0.32</td><td><code>projectileCount</code> / <code>pierce</code> floor</td><td>射程固定偏高，升级重点是伤害和穿透</td></tr>
-    <tr><td>Lightning 闪电</td><td>伤害 15；链数 3.0；范围 8</td><td>伤害 +2.8；链数 +0.42；范围 +1.6</td><td><code>chains</code> floor</td><td>高品质升级可提前跨链数阈值</td></tr>
-    <tr><td>Flame 烈焰环</td><td>秒伤 4；半径 3.5；tick 间隔 0.5</td><td>秒伤 +0.9；半径 +0.45；tick 间隔 −0.02</td><td>无</td><td>不做数量成长，稳定 AoE</td></tr>
-    <tr><td>Shotgun 霰弹</td><td>伤害 8；弹丸 5.0；穿透 0.0</td><td>伤害 +1.7；弹丸 +0.42；穿透 +0.18</td><td><code>pelletCount</code> / <code>pierce</code> floor</td><td>品质越高越早增加弹丸密度</td></tr>
-    <tr><td>Ray 射线枪</td><td>伤害 14；半宽 0.50；射程 18；CD 0.90</td><td>伤害 ≈+4.6；半宽 <strong>+0.05</strong>；射程 +1.1；CD −0.05</td><td>无（pierce 999）</td><td>瞬发激光，沿直线无限穿透；半宽每级 +0.05，敌人成直线时收益极高</td></tr>
-    <tr><td>Poison 毒气弹</td><td>秒伤 6；云半径 3.0；CD 2.00</td><td>秒伤 ≈+4.0（后期陡峭，Lv8=34）；半径 +0.26；CD −0.086</td><td>无</td><td>投出毒气云，云内持续刷新中毒（gas_dot）；DoT 后期成长强，发育越久越猛</td></tr>
-    <tr><td>Paralyze 麻痹枪</td><td>伤害 10；穿透 0；弹速 26；CD 1.10</td><td>伤害 ≈+3.7；穿透 +0.43；CD −0.057</td><td><code>pierce</code> floor</td><td>命中施加强减速（仅剩 20% 速度，1.5s）；精英按 elite_slow_coef 抗性减弱</td></tr>
-    <tr><td>Void 虚空涟漪</td><td>伤害 16；最大半径 6.0；扩散 8.0；CD 2.20</td><td>伤害 ≈+5.7；半径 +0.71；扩散 +0.57；CD −0.10</td><td>无</td><td>以玩家为圆心向外扩散的环波，波前扫到的近处敌人先结算（每敌一次）</td></tr>
-    <tr><td>Scorch 灼地靴</td><td>每击 5；痕迹半径 0.9；CD 0.30</td><td>每击 ≈+2.1；半径 +0.10；CD −0.011</td><td>无</td><td>高频在脚下留灼地痕迹（存活 2.5s，每 0.4s 灼伤一次）；痕迹消失即停</td></tr>
+    <tr><td>Sword 大剑</td><td>伤害 16；范围 3.0；AoE 3.0；攻击数 1.0；CD 0.80；速度 10</td><td>Lv8: 伤害 55；范围 8.0；AoE 6.0；攻击数 3；CD 0.50；速度 20</td><td><code>attackCount</code> floor</td><td>扇扫命中数仍由范围与碰撞决定</td></tr>
+    <tr><td>Bone 骨头</td><td>伤害 10；弹射 2.0；投射数 1.0；速度 12</td><td>Lv8: 伤害 30；弹射 6；投射数 3；速度 18；CD 0.60</td><td><code>projectileCount</code> / <code>bounces</code> floor</td><td>弹射数小数可让高品质更早多弹一次</td></tr>
+    <tr><td>Axe 飞斧</td><td>伤害 10；斧数 1.0；范围 3.0；AoE 1.0</td><td>Lv8: 伤害 24；斧数 3；范围 5.0；AoE 1.0；角速度 6</td><td><code>axeCount</code> floor</td><td>攻速/旋转速度另由典籍与羁绊影响</td></tr>
+    <tr><td>Bow 左轮</td><td>伤害 18；弹数 1.0；穿透 0.0；射程 20；CD 1.20</td><td>Lv8: 伤害 58；弹数 3；穿透 4；射程 40；CD 0.80</td><td><code>projectileCount</code> / <code>pierce</code> floor</td><td>射程固定偏高，升级重点是伤害和穿透</td></tr>
+    <tr><td>Lightning 闪电</td><td>伤害 15；链数 3.0；范围 8；CD 1.80</td><td>Lv8: 伤害 35；链数 8；范围 40；CD 0.60</td><td><code>chains</code> floor</td><td>高品质升级可提前跨链数阈值</td></tr>
+    <tr><td>Flame 烈焰环</td><td>秒伤 4；半径 3.5；tick 间隔 0.5</td><td>Lv8: 伤害 16；半径 8.0；tick 间隔 0.3</td><td>无</td><td>不做数量成长，稳定 AoE</td></tr>
+    <tr><td>Shotgun 霰弹</td><td>伤害 16；弹丸 5.0；穿透 0.0；速度 18</td><td>Lv8: 伤害 36；弹丸 9；穿透 2；速度 38；CD 0.60</td><td><code>pelletCount</code> / <code>pierce</code> floor</td><td>品质越高越早增加弹丸密度</td></tr>
+    <tr><td>Ray 射线枪</td><td>伤害 6；半宽 0.50；射程 8；CD 1.50</td><td>Lv8: 伤害 26；半宽 0.60；射程 18；CD 0.90</td><td>无（pierce 999）</td><td>瞬发激光，沿直线无限穿透；敌人成直线时收益极高</td></tr>
+    <tr><td>Poison 毒气弹</td><td>秒伤 6；云半径 3.0；投射数 1；CD 2.00</td><td>Lv8: 秒伤 34；云半径 4.8；投射数 3；投掷范围 24；CD 1.40</td><td><code>projectileCount</code> floor</td><td>投出毒气云，云内持续刷新中毒（gas_dot）；DoT 后期成长强，发育越久越猛</td></tr>
+    <tr><td>Paralyze 麻痹枪</td><td>伤害 14；弹数 1；穿透 0；弹速 26；CD 1.10</td><td>Lv8: 伤害 38；弹数 4；穿透 3；射程 34；CD 0.70</td><td><code>projectileCount</code> / <code>pierce</code> floor</td><td>命中施加强减速（仅剩 20% 速度，1.5s）；精英按 elite_slow_coef 抗性减弱</td></tr>
+    <tr><td>Void 虚空涟漪</td><td>伤害 12；最大半径 4.0；扩散 8.0；CD 2.20</td><td>Lv8: 伤害 36；最大半径 7.0；扩散 12.0；CD 1.50</td><td>无</td><td>以玩家为圆心向外扩散的环波，波前扫到的近处敌人先结算（每敌一次）</td></tr>
+    <tr><td>Scorch 灼地靴</td><td>每击 5；痕迹半径 0.9；CD 0.30</td><td>Lv8: 每击 20；痕迹半径 2.0；CD 0.22</td><td>无</td><td>高频在脚下留灼地痕迹（存活 2.5s，每 0.4s 灼伤一次）；痕迹消失即停</td></tr>
   </table>
   <p style="color: var(--dim);">说明：新武数值非线性（见 <code>config.ts → WEAPON_STATS</code> 的 8 级表），"每级增量"为 Lv1→Lv8 的平均近似；升级实际取「本级→下一级」表步进 × 品质倍率。</p>
 
@@ -1412,11 +1416,11 @@ actualTargetCount = floor(storedTargetCount)
     <tr><td>Axe 飞斧</td><td>B+</td><td>A</td><td class="num">~140×刮</td><td>近轨</td><td>环绕</td><td><strong>A-</strong></td></tr>
     <tr><td>Flame 烈焰环</td><td>C+</td><td>A</td><td class="num">40+/s</td><td>近 AoE</td><td>零操作</td><td><strong>B+</strong></td></tr>
     <tr><td colspan="7" style="background:var(--accent-2-soft);font-weight:600;">新实现 · 5</td></tr>
-    <tr><td>Ray 射线枪</td><td>B+</td><td>A-</td><td class="num">46×N</td><td>线穿透</td><td>无衰减、无限穿透</td><td><strong>B+</strong></td></tr>
+    <tr><td>Ray 射线枪</td><td>B+</td><td>A-</td><td class="num">26×N</td><td>线穿透</td><td>无衰减、无限穿透</td><td><strong>B+</strong></td></tr>
     <tr><td>Poison 毒气弹</td><td>B</td><td>B+</td><td class="num">34/s DoT</td><td>投掷云</td><td>中毒后期强</td><td><strong>B+</strong></td></tr>
-    <tr><td>Paralyze 麻痹枪</td><td>C+</td><td>B</td><td class="num">36+控场</td><td>多目标</td><td>强减速、精英抗性</td><td><strong>B</strong></td></tr>
+    <tr><td>Paralyze 麻痹枪</td><td>C+</td><td>B</td><td class="num">38+控场</td><td>多目标</td><td>强减速、精英抗性</td><td><strong>B</strong></td></tr>
     <tr><td>Scorch 灼地靴</td><td>C+</td><td>A-</td><td class="num">20/击</td><td>移动轨迹</td><td>跑图 AoE</td><td><strong>B</strong></td></tr>
-    <tr><td>Void 虚空涟漪</td><td>C+</td><td>B+</td><td class="num">56/圈</td><td>360° 扩散</td><td>近者先结算</td><td><strong>B</strong></td></tr>
+    <tr><td>Void 虚空涟漪</td><td>C+</td><td>B+</td><td class="num">36/圈</td><td>360° 扩散</td><td>近者先结算</td><td><strong>B</strong></td></tr>
   </table>
 
   <h3>羁绊联动（新武器）</h3>
@@ -1544,9 +1548,9 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
     <tr><td><code>skeleton_soldier</code></td><td>骷髅步兵</td><td class="num">15</td><td class="num">5</td><td class="num">3.0</td><td><span class="badge chase">chase</span></td><td class="num">1</td><td class="num">1.5</td><td>—</td><td class="num">0</td><td class="num">40</td></tr>
     <tr><td><code>zombie</code></td><td>僵尸</td><td class="num">30</td><td class="num">10</td><td class="num">1.5</td><td><span class="badge chase">chase</span></td><td class="num">3</td><td class="num">2.5</td><td>—</td><td class="num">60</td><td class="num">25</td></tr>
     <tr><td><code>skeleton_archer</code></td><td>骷髅弓手</td><td class="num">12</td><td class="num">7</td><td class="num">2.5</td><td><span class="badge ranged">ranged · 8</span></td><td class="num">3</td><td class="num">3.0</td><td>—</td><td class="num">120</td><td class="num">15</td></tr>
-    <tr><td><code>skeleton_knight</code></td><td>骷髅骑士</td><td class="num">120</td><td class="num">20</td><td class="num">3.5</td><td><span class="badge charge">charge</span></td><td class="num">25</td><td class="num">2.0</td><td><span class="badge elite">精英</span></td><td class="num">180</td><td class="num">5</td></tr>
-    <tr><td><code>necromancer</code></td><td>死灵法师</td><td class="num">80</td><td class="num">15</td><td class="num">2.0</td><td><span class="badge ranged">ranged · 10</span></td><td class="num">30</td><td class="num">4.0</td><td><span class="badge elite">精英</span></td><td class="num">240</td><td class="num">3</td></tr>
-    <tr><td><code>gargoyle</code></td><td>石像鬼</td><td class="num">200</td><td class="num">25</td><td class="num">4.0</td><td><span class="badge dive">dive</span></td><td class="num">40</td><td class="num">3.0</td><td><span class="badge elite">精英</span></td><td class="num">360</td><td class="num">2</td></tr>
+    <tr><td><code>skeleton_knight</code></td><td>骷髅骑士</td><td class="num">120</td><td class="num">20</td><td class="num">3.5</td><td><span class="badge charge">charge</span></td><td class="num">5</td><td class="num">2.0</td><td><span class="badge elite">精英</span></td><td class="num">180</td><td class="num">5</td></tr>
+    <tr><td><code>necromancer</code></td><td>死灵法师</td><td class="num">80</td><td class="num">15</td><td class="num">2.0</td><td><span class="badge ranged">ranged · 10</span></td><td class="num">10</td><td class="num">4.0</td><td><span class="badge elite">精英</span></td><td class="num">240</td><td class="num">3</td></tr>
+    <tr><td><code>gargoyle</code></td><td>石像鬼</td><td class="num">200</td><td class="num">25</td><td class="num">4.0</td><td><span class="badge dive">dive</span></td><td class="num">10</td><td class="num">3.0</td><td><span class="badge elite">精英</span></td><td class="num">360</td><td class="num">2</td></tr>
   </table>
 
   <h3>精英 Buff（50% 概率随机滚一种）</h3>
@@ -2158,7 +2162,7 @@ scale(k, N) = 0.6 + 0.4 × (k / N)²</code></pre>
     <div class="card">
       <h4>B5 · 弹幕 <code>volley</code> <span class="pill purple">N=4</span></h4>
       <p style="color:var(--dim);font-size:12.5px;">投射物齐射 · 弓 / 霰弹 / 骨弹 / 毒气弹</p>
-      <p><span class="pill">bow</span> <span class="pill">shotgun</span> <span class="pill">bone_bouncer</span> <span class="pill">poison_grenade</span></p>
+      <p><span class="pill">bow</span> <span class="pill">shotgun</span> <span class="pill">bone_bouncer</span> <span class="pill">poison_bomb</span></p>
       <table>
         <tr><th>档</th><th>类型</th><th>效果</th></tr>
         <tr><td>T1</td><td>激活</td><td>羁绊内武器伤害 <strong>+5%</strong>，攻击速度 <strong>+5%</strong></td></tr>
@@ -2191,7 +2195,7 @@ scale(k, N) = 0.6 + 0.4 × (k / N)²</code></pre>
     <div class="card">
       <h4>B8 · 毒师 <code>poison_master</code> <span class="pill purple">N=2</span></h4>
       <p style="color:var(--dim);font-size:12.5px;">毒控 · 毒气弹 / 麻痹枪（强减速 + 攻击减慢）</p>
-      <p><span class="pill">poison_grenade</span> <span class="pill">paralyze_gun</span></p>
+      <p><span class="pill">poison_bomb</span> <span class="pill">paralysis_gun</span></p>
       <table>
         <tr><th>档</th><th>类型</th><th>效果</th></tr>
         <tr><td>T1</td><td>激活</td><td>羁绊内武器施加的<strong>负面效果持续时间 +0.8s</strong></td></tr>
@@ -2202,11 +2206,11 @@ scale(k, N) = 0.6 + 0.4 × (k / N)²</code></pre>
     <div class="card">
       <h4>B9 · 猎标烙印 <code>hunter_mark</code> <span class="pill purple">N=3</span></h4>
       <p style="color:var(--dim);font-size:12.5px;">烙印处决 · 弓 / 射线 / 麻痹枪（强减速 + 攻击减慢）</p>
-      <p><span class="pill">bow</span> <span class="pill">ray_gun</span> <span class="pill">paralyze_gun</span></p>
+      <p><span class="pill">bow</span> <span class="pill">ray_gun</span> <span class="pill">paralysis_gun</span></p>
       <table>
         <tr><th>档</th><th>类型</th><th>效果</th></tr>
         <tr><td>T1</td><td>激活</td><td>羁绊内武器暴击率 <strong>+5%</strong>，暴击伤害 <strong>+10%</strong></td></tr>
-        <tr><td>T2</td><td>机制</td><td><code>hunter_brand</code>：<code>paralyze_gun</code> 攻击时为敌人施加<strong>不可解除的猎标烙印</strong>：优先被索敌，且受到羁绊内武器伤害 <strong>+16%</strong></td></tr>
+        <tr><td>T2</td><td>机制</td><td><code>hunter_brand</code>：<code>paralysis_gun</code> 攻击时为敌人施加<strong>不可解除的猎标烙印</strong>：优先被索敌，且受到羁绊内武器伤害 <strong>+16%</strong></td></tr>
         <tr><td>T3</td><td>升格</td><td>羁绊内武器攻击烙印且 <strong>HP&lt;16%</strong> 的敌人时<strong>直接绞杀</strong>（处决，走 elite 免疫表）</td></tr>
       </table>
     </div>
@@ -2225,8 +2229,8 @@ scale(k, N) = 0.6 + 0.4 × (k / N)²</code></pre>
     <tr><td>shotgun</td><td class="num">2</td><td></td><td></td><td class="hl">●</td><td></td><td class="hl">●</td><td></td><td></td><td></td><td></td></tr>
     <tr><td>void_ripple</td><td class="num">3</td><td></td><td class="hl">●</td><td class="hl">●</td><td></td><td></td><td></td><td class="hl">●</td><td></td><td></td></tr>
     <tr><td>ray_gun</td><td class="num">2</td><td></td><td></td><td></td><td></td><td></td><td></td><td class="hl">●</td><td></td><td class="hl">●</td></tr>
-    <tr><td>poison_grenade</td><td class="num">2</td><td></td><td></td><td></td><td></td><td class="hl">●</td><td></td><td></td><td class="hl">●</td><td></td></tr>
-    <tr><td>paralyze_gun</td><td class="num">2</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="hl">●</td><td class="hl">●</td></tr>
+    <tr><td>poison_bomb</td><td class="num">2</td><td></td><td></td><td></td><td></td><td class="hl">●</td><td></td><td></td><td class="hl">●</td><td></td></tr>
+    <tr><td>paralysis_gun</td><td class="num">2</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="hl">●</td><td class="hl">●</td></tr>
     <tr><td>scorch_boots</td><td class="num">2</td><td></td><td class="hl">●</td><td></td><td class="hl">●</td><td></td><td></td><td></td><td></td><td></td></tr>
   </table>
   <p style="color:var(--dim);font-size:13px;">虚空涟漪：奥术 + 寸劲 + 弧光（导体标记由虚空施加）。灼地靴：余烬爆炸留痕 + 奥术奥秘计数。</p>
@@ -3265,28 +3269,28 @@ const WEAPONS = [
   { id: 'sword', name: '大剑 Sword', icon: '🗡️', color: 'var(--c-sword)',
     desc: '弧形剑气，pierce=999 穿透所有',
     stats: [
-      { d: 12, c: 0.80, p: 1, b: 0, ch: 0, r: 2.5, a: 2.5, pi: 999, sp: 0 },
-      { d: 15, c: 0.80, p: 1, b: 0, ch: 0, r: 2.8, a: 2.8, pi: 999, sp: 0 },
-      { d: 18, c: 0.70, p: 1, b: 0, ch: 0, r: 3.0, a: 3.0, pi: 999, sp: 0 },
-      { d: 22, c: 0.70, p: 1, b: 0, ch: 0, r: 3.2, a: 3.2, pi: 999, sp: 0 },
-      { d: 26, c: 0.60, p: 1, b: 0, ch: 0, r: 3.5, a: 3.5, pi: 999, sp: 0 },
-      { d: 30, c: 0.60, p: 2, b: 0, ch: 0, r: 3.8, a: 3.8, pi: 999, sp: 0 },
-      { d: 35, c: 0.50, p: 2, b: 0, ch: 0, r: 4.0, a: 4.0, pi: 999, sp: 0 },
-      { d: 42, c: 0.50, p: 3, b: 0, ch: 0, r: 4.5, a: 4.5, pi: 999, sp: 0 },
+      { d: 16, c: 0.80, p: 1, b: 0, ch: 0, r: 3.0, a: 3.0, pi: 999, sp: 10 },
+      { d: 20, c: 0.80, p: 1, b: 0, ch: 0, r: 3.7, a: 3.4, pi: 999, sp: 11 },
+      { d: 23, c: 0.70, p: 1, b: 0, ch: 0, r: 4.4, a: 3.8, pi: 999, sp: 12 },
+      { d: 29, c: 0.70, p: 1, b: 0, ch: 0, r: 5.1, a: 4.2, pi: 999, sp: 14 },
+      { d: 34, c: 0.60, p: 1, b: 0, ch: 0, r: 5.8, a: 4.6, pi: 999, sp: 15 },
+      { d: 39, c: 0.60, p: 2, b: 0, ch: 0, r: 6.5, a: 5.0, pi: 999, sp: 17 },
+      { d: 46, c: 0.50, p: 2, b: 0, ch: 0, r: 7.2, a: 5.5, pi: 999, sp: 18 },
+      { d: 55, c: 0.50, p: 3, b: 0, ch: 0, r: 8.0, a: 6.0, pi: 999, sp: 20 },
     ],
-    fields: ['d','c','p','r','a']
+    fields: ['d','c','p','r','a','sp']
   },
   { id: 'bone_bouncer', name: '弹射骨头 Bone Bouncer', icon: '🦴', color: 'var(--c-bone)',
     desc: '直线投射物，命中后弹射',
     stats: [
-      { d: 8,  c: 1.20, p: 1, b: 2, ch: 0, r: 0, a: 0, pi: 0, sp: 12 },
       { d: 10, c: 1.20, p: 1, b: 2, ch: 0, r: 0, a: 0, pi: 0, sp: 12 },
-      { d: 10, c: 1.20, p: 1, b: 3, ch: 0, r: 0, a: 0, pi: 0, sp: 12 },
-      { d: 12, c: 1.00, p: 1, b: 3, ch: 0, r: 0, a: 0, pi: 0, sp: 13 },
-      { d: 12, c: 1.00, p: 2, b: 4, ch: 0, r: 0, a: 0, pi: 0, sp: 13 },
-      { d: 16, c: 1.00, p: 2, b: 4, ch: 0, r: 0, a: 0, pi: 0, sp: 14 },
-      { d: 16, c: 0.80, p: 2, b: 5, ch: 0, r: 0, a: 0, pi: 0, sp: 14 },
-      { d: 20, c: 0.80, p: 3, b: 6, ch: 0, r: 0, a: 0, pi: 0, sp: 15 },
+      { d: 13, c: 1.10, p: 1, b: 2, ch: 0, r: 0, a: 0, pi: 0, sp: 13 },
+      { d: 16, c: 1.00, p: 1, b: 3, ch: 0, r: 0, a: 0, pi: 0, sp: 14 },
+      { d: 19, c: 0.90, p: 1, b: 3, ch: 0, r: 0, a: 0, pi: 0, sp: 15 },
+      { d: 22, c: 0.80, p: 2, b: 4, ch: 0, r: 0, a: 0, pi: 0, sp: 16 },
+      { d: 25, c: 0.70, p: 2, b: 4, ch: 0, r: 0, a: 0, pi: 0, sp: 17 },
+      { d: 28, c: 0.65, p: 2, b: 5, ch: 0, r: 0, a: 0, pi: 0, sp: 17 },
+      { d: 30, c: 0.60, p: 3, b: 6, ch: 0, r: 0, a: 0, pi: 0, sp: 18 },
     ],
     fields: ['d','c','p','b','sp']
   },
@@ -3296,39 +3300,39 @@ const WEAPONS = [
       { d: 10, c: 1.50, p: 1, b: 0, ch: 0, r: 3.0, a: 1.0, pi: 999, sp: 4 },
       { d: 12, c: 1.50, p: 1, b: 0, ch: 0, r: 3.0, a: 1.0, pi: 999, sp: 4 },
       { d: 14, c: 1.40, p: 2, b: 0, ch: 0, r: 3.5, a: 1.0, pi: 999, sp: 4.5 },
-      { d: 16, c: 1.30, p: 2, b: 0, ch: 0, r: 3.5, a: 1.2, pi: 999, sp: 4.5 },
-      { d: 18, c: 1.20, p: 3, b: 0, ch: 0, r: 4.0, a: 1.2, pi: 999, sp: 5 },
-      { d: 22, c: 1.10, p: 3, b: 0, ch: 0, r: 4.0, a: 1.4, pi: 999, sp: 5 },
-      { d: 26, c: 1.00, p: 4, b: 0, ch: 0, r: 4.5, a: 1.4, pi: 999, sp: 5.5 },
-      { d: 32, c: 0.90, p: 4, b: 0, ch: 0, r: 5.0, a: 1.6, pi: 999, sp: 6 },
+      { d: 16, c: 1.30, p: 2, b: 0, ch: 0, r: 3.5, a: 1.0, pi: 999, sp: 4.5 },
+      { d: 18, c: 1.20, p: 3, b: 0, ch: 0, r: 4.0, a: 1.0, pi: 999, sp: 5 },
+      { d: 20, c: 1.10, p: 3, b: 0, ch: 0, r: 4.0, a: 1.0, pi: 999, sp: 5 },
+      { d: 22, c: 1.00, p: 3, b: 0, ch: 0, r: 4.5, a: 1.0, pi: 999, sp: 5.5 },
+      { d: 24, c: 0.90, p: 3, b: 0, ch: 0, r: 5.0, a: 1.0, pi: 999, sp: 6 },
     ],
     fields: ['d','c','p','r','a','sp']
   },
   { id: 'bow', name: '左轮手枪 Bow', icon: '🔫', color: 'var(--c-bow)',
     desc: '前向高速子弹',
     stats: [
-      { d: 18, c: 1.00, p: 1, b: 0, ch: 0, r: 30, a: 0, pi: 0, sp: 25 },
-      { d: 22, c: 1.00, p: 1, b: 0, ch: 0, r: 32, a: 0, pi: 0, sp: 26 },
-      { d: 26, c: 0.90, p: 1, b: 0, ch: 0, r: 34, a: 0, pi: 1, sp: 27 },
-      { d: 30, c: 0.85, p: 2, b: 0, ch: 0, r: 36, a: 0, pi: 1, sp: 28 },
-      { d: 35, c: 0.80, p: 2, b: 0, ch: 0, r: 38, a: 0, pi: 2, sp: 29 },
-      { d: 40, c: 0.75, p: 2, b: 0, ch: 0, r: 40, a: 0, pi: 2, sp: 30 },
-      { d: 48, c: 0.70, p: 3, b: 0, ch: 0, r: 42, a: 0, pi: 3, sp: 32 },
-      { d: 58, c: 0.60, p: 3, b: 0, ch: 0, r: 45, a: 0, pi: 4, sp: 35 },
+      { d: 18, c: 1.20, p: 1, b: 0, ch: 0, r: 20, a: 0, pi: 0, sp: 25 },
+      { d: 22, c: 1.15, p: 1, b: 0, ch: 0, r: 23, a: 0, pi: 0, sp: 26 },
+      { d: 26, c: 1.10, p: 1, b: 0, ch: 0, r: 26, a: 0, pi: 1, sp: 27 },
+      { d: 30, c: 1.00, p: 2, b: 0, ch: 0, r: 29, a: 0, pi: 1, sp: 28 },
+      { d: 35, c: 0.95, p: 2, b: 0, ch: 0, r: 32, a: 0, pi: 2, sp: 29 },
+      { d: 40, c: 0.90, p: 2, b: 0, ch: 0, r: 35, a: 0, pi: 2, sp: 30 },
+      { d: 48, c: 0.85, p: 3, b: 0, ch: 0, r: 38, a: 0, pi: 3, sp: 32 },
+      { d: 58, c: 0.80, p: 3, b: 0, ch: 0, r: 40, a: 0, pi: 4, sp: 35 },
     ],
     fields: ['d','c','p','r','pi','sp']
   },
   { id: 'lightning_staff', name: '闪电法杖 Lightning Staff', icon: '⚡', color: 'var(--c-lightning)',
     desc: '即时连锁打击，无投射物',
     stats: [
-      { d: 15, c: 2.00, p: 1, b: 0, ch: 3, r: 8,  a: 0, pi: 0, sp: 0 },
-      { d: 18, c: 2.00, p: 1, b: 0, ch: 3, r: 8,  a: 0, pi: 0, sp: 0 },
-      { d: 18, c: 2.00, p: 1, b: 0, ch: 4, r: 10, a: 0, pi: 0, sp: 0 },
-      { d: 22, c: 1.70, p: 1, b: 0, ch: 4, r: 10, a: 0, pi: 0, sp: 0 },
-      { d: 22, c: 1.70, p: 1, b: 0, ch: 5, r: 12, a: 0, pi: 0, sp: 0 },
-      { d: 28, c: 1.50, p: 1, b: 0, ch: 5, r: 12, a: 0, pi: 0, sp: 0 },
-      { d: 28, c: 1.50, p: 1, b: 0, ch: 6, r: 14, a: 0, pi: 0, sp: 0 },
-      { d: 35, c: 1.20, p: 1, b: 0, ch: 8, r: 40, a: 0, pi: 0, sp: 0 },
+      { d: 15, c: 1.80, p: 1, b: 0, ch: 3, r: 8,  a: 0, pi: 0, sp: 0 },
+      { d: 18, c: 1.60, p: 1, b: 0, ch: 3, r: 8,  a: 0, pi: 0, sp: 0 },
+      { d: 18, c: 1.40, p: 1, b: 0, ch: 4, r: 10, a: 0, pi: 0, sp: 0 },
+      { d: 22, c: 1.20, p: 1, b: 0, ch: 4, r: 10, a: 0, pi: 0, sp: 0 },
+      { d: 22, c: 1.00, p: 1, b: 0, ch: 5, r: 12, a: 0, pi: 0, sp: 0 },
+      { d: 28, c: 0.80, p: 1, b: 0, ch: 5, r: 12, a: 0, pi: 0, sp: 0 },
+      { d: 28, c: 0.70, p: 1, b: 0, ch: 6, r: 14, a: 0, pi: 0, sp: 0 },
+      { d: 35, c: 0.60, p: 1, b: 0, ch: 8, r: 40, a: 0, pi: 0, sp: 0 },
     ],
     fields: ['d','c','ch','r']
   },
@@ -3342,21 +3346,21 @@ const WEAPONS = [
       { d: 7,  c: 0.40, p: 0, b: 0, ch: 0, r: 5.5, a: 5.5, pi: 0, sp: 0 },
       { d: 9,  c: 0.40, p: 0, b: 0, ch: 0, r: 5.5, a: 5.5, pi: 0, sp: 0 },
       { d: 9,  c: 0.30, p: 0, b: 0, ch: 0, r: 6.5, a: 6.5, pi: 0, sp: 0 },
-      { d: 12, c: 0.30, p: 0, b: 0, ch: 0, r: 8.0, a: 8.0, pi: 0, sp: 0 },
+      { d: 16, c: 0.30, p: 0, b: 0, ch: 0, r: 8.0, a: 8.0, pi: 0, sp: 0 },
     ],
     fields: ['d','c','r']
   },
   { id: 'shotgun', name: '霰弹枪 Shotgun', icon: '💥', color: 'var(--c-shotgun)',
     desc: '前向扇形多弹',
     stats: [
-      { d: 8,  c: 1.40, p: 5, b: 0, ch: 0, r: 12, a: 0, pi: 0, sp: 16 },
-      { d: 9,  c: 1.30, p: 5, b: 0, ch: 0, r: 13, a: 0, pi: 0, sp: 17 },
-      { d: 10, c: 1.20, p: 6, b: 0, ch: 0, r: 14, a: 0, pi: 0, sp: 18 },
-      { d: 12, c: 1.10, p: 6, b: 0, ch: 0, r: 15, a: 0, pi: 0, sp: 18 },
-      { d: 14, c: 1.00, p: 7, b: 0, ch: 0, r: 16, a: 0, pi: 1, sp: 19 },
-      { d: 16, c: 0.90, p: 7, b: 0, ch: 0, r: 17, a: 0, pi: 1, sp: 20 },
-      { d: 18, c: 0.80, p: 8, b: 0, ch: 0, r: 18, a: 0, pi: 1, sp: 21 },
-      { d: 22, c: 0.70, p: 9, b: 0, ch: 0, r: 20, a: 0, pi: 2, sp: 22 },
+      { d: 16, c: 1.40, p: 5, b: 0, ch: 0, r: 12, a: 0, pi: 0, sp: 18 },
+      { d: 18, c: 1.30, p: 5, b: 0, ch: 0, r: 13, a: 0, pi: 0, sp: 21 },
+      { d: 20, c: 1.20, p: 6, b: 0, ch: 0, r: 14, a: 0, pi: 0, sp: 24 },
+      { d: 23, c: 1.10, p: 6, b: 0, ch: 0, r: 15, a: 0, pi: 0, sp: 27 },
+      { d: 26, c: 1.00, p: 7, b: 0, ch: 0, r: 16, a: 0, pi: 1, sp: 30 },
+      { d: 29, c: 0.90, p: 7, b: 0, ch: 0, r: 17, a: 0, pi: 1, sp: 33 },
+      { d: 32, c: 0.75, p: 8, b: 0, ch: 0, r: 18, a: 0, pi: 1, sp: 36 },
+      { d: 36, c: 0.60, p: 9, b: 0, ch: 0, r: 20, a: 0, pi: 2, sp: 38 },
     ],
     fields: ['d','c','p','r','pi']
   }
@@ -3364,79 +3368,79 @@ const WEAPONS = [
 
 const EXT_WEAPONS = [
   { id: 'void_ripple', name: '虚空涟漪 Void Ripple', icon: '🌊', color: 'var(--c-void)',
-    desc: '玩家中心扩散环；穿透 99；附带击退',
-    fieldNote: '<code>r</code>=环最大半径 · <code>a</code>=环宽 · <code>b</code>=击退×10',
+    desc: '以玩家为圆心扩散的环波，近处敌人先结算',
+    fieldNote: '<code>a</code>=最大半径 · <code>sp</code>=扩散速度',
     stats: [
-      { d: 10, c: 1.90, p: 0, b: 4, ch: 0, r: 3.8, a: 1.2, pi: 99, sp: 0 },
-      { d: 11, c: 1.82, p: 0, b: 4, ch: 0, r: 4.0, a: 1.4, pi: 99, sp: 0 },
-      { d: 12, c: 1.75, p: 0, b: 4, ch: 0, r: 4.1, a: 1.6, pi: 99, sp: 0 },
-      { d: 14, c: 1.68, p: 0, b: 4, ch: 0, r: 4.2, a: 1.8, pi: 99, sp: 0 },
-      { d: 15, c: 1.61, p: 0, b: 5, ch: 0, r: 4.3, a: 2.0, pi: 99, sp: 0 },
-      { d: 17, c: 1.55, p: 0, b: 5, ch: 0, r: 4.4, a: 2.3, pi: 99, sp: 0 },
-      { d: 19, c: 1.48, p: 0, b: 5, ch: 0, r: 4.5, a: 2.6, pi: 99, sp: 0 },
-      { d: 22, c: 1.42, p: 0, b: 6, ch: 0, r: 4.5, a: 3.0, pi: 99, sp: 0 },
+      { d: 12, c: 2.20, p: 1, b: 0, ch: 0, r: 0, a: 4.0, pi: 0, sp: 8.0 },
+      { d: 15, c: 2.10, p: 1, b: 0, ch: 0, r: 0, a: 4.4, pi: 0, sp: 8.5 },
+      { d: 18, c: 2.00, p: 1, b: 0, ch: 0, r: 0, a: 4.8, pi: 0, sp: 9.0 },
+      { d: 21, c: 1.90, p: 1, b: 0, ch: 0, r: 0, a: 5.2, pi: 0, sp: 9.5 },
+      { d: 24, c: 1.80, p: 1, b: 0, ch: 0, r: 0, a: 5.6, pi: 0, sp: 10.0 },
+      { d: 28, c: 1.70, p: 1, b: 0, ch: 0, r: 0, a: 6.1, pi: 0, sp: 10.5 },
+      { d: 32, c: 1.60, p: 1, b: 0, ch: 0, r: 0, a: 6.5, pi: 0, sp: 11.0 },
+      { d: 36, c: 1.50, p: 1, b: 0, ch: 0, r: 0, a: 7.0, pi: 0, sp: 12.0 },
     ],
-    fields: ['d','c','r','a','b']
+    fields: ['d','c','a','sp']
   },
   { id: 'ray_gun', name: '射线枪 Ray Gun', icon: '🔦', color: 'var(--c-ray)',
-    desc: '直线射线；路径无衰减；射程固定',
-    fieldNote: '<code>r</code>=射程 12 固定 · <code>a</code>=射线宽度',
+    desc: '瞬发激光，沿直线无限穿透',
+    fieldNote: '<code>r</code>=索敌范围 · <code>a</code>=射线宽度 · <code>pi</code>=无限穿透',
     stats: [
-      { d: 24, c: 1.40, p: 1, b: 0, ch: 0, r: 12, a: 0.32, pi: 99, sp: 0 },
-      { d: 27, c: 1.40, p: 1, b: 0, ch: 0, r: 12, a: 0.36, pi: 99, sp: 0 },
-      { d: 30, c: 1.40, p: 1, b: 0, ch: 0, r: 12, a: 0.40, pi: 99, sp: 0 },
-      { d: 34, c: 1.40, p: 1, b: 0, ch: 0, r: 12, a: 0.44, pi: 99, sp: 0 },
-      { d: 38, c: 1.40, p: 1, b: 0, ch: 0, r: 12, a: 0.48, pi: 99, sp: 0 },
-      { d: 42, c: 1.40, p: 1, b: 0, ch: 0, r: 12, a: 0.52, pi: 99, sp: 0 },
-      { d: 47, c: 1.40, p: 1, b: 0, ch: 0, r: 12, a: 0.57, pi: 99, sp: 0 },
-      { d: 52, c: 1.40, p: 1, b: 0, ch: 0, r: 12, a: 0.63, pi: 99, sp: 0 },
+      { d: 6, c: 1.50, p: 1, b: 0, ch: 0, r: 8, a: 0.50, pi: 999, sp: 0 },
+      { d: 9, c: 1.40, p: 1, b: 0, ch: 0, r: 10, a: 0.52, pi: 999, sp: 0 },
+      { d: 12, c: 1.30, p: 1, b: 0, ch: 0, r: 12, a: 0.54, pi: 999, sp: 0 },
+      { d: 15, c: 1.20, p: 1, b: 0, ch: 0, r: 14, a: 0.55, pi: 999, sp: 0 },
+      { d: 18, c: 1.10, p: 1, b: 0, ch: 0, r: 15, a: 0.56, pi: 999, sp: 0 },
+      { d: 21, c: 1.00, p: 1, b: 0, ch: 0, r: 16, a: 0.58, pi: 999, sp: 0 },
+      { d: 24, c: 0.95, p: 1, b: 0, ch: 0, r: 17, a: 0.59, pi: 999, sp: 0 },
+      { d: 26, c: 0.90, p: 1, b: 0, ch: 0, r: 18, a: 0.60, pi: 999, sp: 0 },
     ],
-    fields: ['d','c','r','a']
+    fields: ['d','c','r','a','pi']
   },
-  { id: 'poison_grenade', name: '毒气弹 Poison Grenade', icon: '☁️', color: 'var(--c-gas)',
-    desc: '投掷毒气弹；落点毒雾无直伤，雾内秒伤平滑扣血',
-    fieldNote: '<code>sp</code>=雾秒伤 · <code>ch</code>=雾持续 s · <code>c</code>=投掷 CD',
+  { id: 'poison_bomb', name: '毒气弹 Poison Bomb', icon: '☁️', color: 'var(--c-gas)',
+    desc: '投出毒气云，持续毒伤敌人',
+    fieldNote: '<code>d</code>=中毒 DPS · <code>p</code>=毒云数 · <code>r</code>=投掷范围 · <code>a</code>=云半径',
     stats: [
-      { d: 0, c: 1.80, p: 1, b: 0, ch: 3.00, r: 0, a: 0, pi: 0, sp: 10 },
-      { d: 0, c: 1.75, p: 1, b: 0, ch: 3.25, r: 0, a: 0, pi: 0, sp: 11 },
-      { d: 0, c: 1.70, p: 1, b: 0, ch: 3.50, r: 0, a: 0, pi: 0, sp: 12 },
-      { d: 0, c: 1.65, p: 1, b: 0, ch: 3.75, r: 0, a: 0, pi: 0, sp: 13 },
-      { d: 0, c: 1.60, p: 1, b: 0, ch: 4.00, r: 0, a: 0, pi: 0, sp: 15 },
-      { d: 0, c: 1.55, p: 1, b: 0, ch: 4.25, r: 0, a: 0, pi: 0, sp: 17 },
-      { d: 0, c: 1.50, p: 1, b: 0, ch: 4.60, r: 0, a: 0, pi: 0, sp: 19 },
-      { d: 0, c: 1.45, p: 1, b: 0, ch: 5.00, r: 0, a: 0, pi: 0, sp: 21 },
-    ],
-    fields: ['c','sp','ch']
-  },
-  { id: 'paralyze_gun', name: '麻痹枪 Paralyze Gun', icon: '⚡', color: 'var(--c-paralyze)',
-    desc: '优先精英；施加强减速与攻击减慢',
-    fieldNote: '<code>p</code>=同时目标数 · <code>r</code>=强减速 s · <code>a</code>=攻击减慢 s',
-    stats: [
-      { d: 17, c: 2.00, p: 1, b: 0, ch: 0, r: 1.00, a: 5.00, pi: 0, sp: 0 },
-      { d: 19, c: 1.95, p: 1, b: 0, ch: 0, r: 1.15, a: 5.15, pi: 0, sp: 0 },
-      { d: 21, c: 1.90, p: 2, b: 0, ch: 0, r: 1.30, a: 5.30, pi: 0, sp: 0 },
-      { d: 24, c: 1.85, p: 2, b: 0, ch: 0, r: 1.45, a: 5.45, pi: 0, sp: 0 },
-      { d: 27, c: 1.80, p: 3, b: 0, ch: 0, r: 1.60, a: 5.60, pi: 0, sp: 0 },
-      { d: 30, c: 1.75, p: 3, b: 0, ch: 0, r: 1.75, a: 5.75, pi: 0, sp: 0 },
-      { d: 33, c: 1.70, p: 3, b: 0, ch: 0, r: 1.90, a: 5.90, pi: 0, sp: 0 },
-      { d: 36, c: 1.65, p: 5, b: 0, ch: 0, r: 2.05, a: 6.05, pi: 0, sp: 0 },
+      { d: 6, c: 2.00, p: 1, b: 0, ch: 0, r: 10, a: 3.0, pi: 0, sp: 0 },
+      { d: 8, c: 1.90, p: 1, b: 0, ch: 0, r: 12, a: 3.0, pi: 0, sp: 0 },
+      { d: 11, c: 1.80, p: 1, b: 0, ch: 0, r: 14, a: 3.3, pi: 0, sp: 0 },
+      { d: 14, c: 1.70, p: 2, b: 0, ch: 0, r: 16, a: 3.6, pi: 0, sp: 0 },
+      { d: 18, c: 1.60, p: 2, b: 0, ch: 0, r: 18, a: 3.9, pi: 0, sp: 0 },
+      { d: 22, c: 1.50, p: 2, b: 0, ch: 0, r: 20, a: 4.2, pi: 0, sp: 0 },
+      { d: 27, c: 1.45, p: 3, b: 0, ch: 0, r: 22, a: 4.5, pi: 0, sp: 0 },
+      { d: 34, c: 1.40, p: 3, b: 0, ch: 0, r: 24, a: 4.8, pi: 0, sp: 0 },
     ],
     fields: ['d','c','p','r','a']
   },
-  { id: 'scorch_boots', name: '灼地靴 Scorch Boots', icon: '👢', color: 'var(--c-scorch)',
-    desc: '移动留火焰轨迹；被动无武器 CD',
-    fieldNote: '<code>d</code>=轨迹秒伤 · <code>r</code>=轨迹宽 · <code>c</code>=段间隔 s · <code>ch</code>=段持续 s',
+  { id: 'paralysis_gun', name: '麻痹枪 Paralysis Gun', icon: '⚡', color: 'var(--c-paralyze)',
+    desc: '自动索敌弹，命中强力减速',
+    fieldNote: '<code>p</code>=弹数 · <code>r</code>=射程 · <code>pi</code>=穿透 · <code>sp</code>=弹速',
     stats: [
-      { d: 6, c: 0.15, p: 0, b: 0, ch: 2.0, r: 1.0, a: 0, pi: 0, sp: 0 },
-      { d: 7, c: 0.15, p: 0, b: 0, ch: 2.0, r: 1.1, a: 0, pi: 0, sp: 0 },
-      { d: 7, c: 0.15, p: 0, b: 0, ch: 2.0, r: 1.2, a: 0, pi: 0, sp: 0 },
-      { d: 8, c: 0.15, p: 0, b: 0, ch: 2.0, r: 1.3, a: 0, pi: 0, sp: 0 },
-      { d: 8, c: 0.15, p: 0, b: 0, ch: 2.0, r: 1.4, a: 0, pi: 0, sp: 0 },
-      { d: 9, c: 0.15, p: 0, b: 0, ch: 2.0, r: 1.5, a: 0, pi: 0, sp: 0 },
-      { d: 10, c: 0.15, p: 0, b: 0, ch: 2.0, r: 1.6, a: 0, pi: 0, sp: 0 },
-      { d: 11, c: 0.15, p: 0, b: 0, ch: 2.0, r: 1.8, a: 0, pi: 0, sp: 0 },
+      { d: 14, c: 1.10, p: 1, b: 0, ch: 0, r: 24, a: 0, pi: 0, sp: 26 },
+      { d: 17, c: 1.05, p: 1, b: 0, ch: 0, r: 26, a: 0, pi: 0, sp: 27 },
+      { d: 20, c: 1.00, p: 2, b: 0, ch: 0, r: 28, a: 0, pi: 1, sp: 28 },
+      { d: 23, c: 0.95, p: 2, b: 0, ch: 0, r: 30, a: 0, pi: 1, sp: 29 },
+      { d: 27, c: 0.90, p: 3, b: 0, ch: 0, r: 31, a: 0, pi: 2, sp: 30 },
+      { d: 31, c: 0.85, p: 3, b: 0, ch: 0, r: 32, a: 0, pi: 2, sp: 31 },
+      { d: 35, c: 0.78, p: 4, b: 0, ch: 0, r: 33, a: 0, pi: 3, sp: 33 },
+      { d: 38, c: 0.70, p: 4, b: 0, ch: 0, r: 34, a: 0, pi: 3, sp: 35 },
     ],
-    fields: ['d','r','c','ch']
+    fields: ['d','c','p','r','pi','sp']
+  },
+  { id: 'scorch_boots', name: '灼地靴 Scorch Boots', icon: '👢', color: 'var(--c-scorch)',
+    desc: '走过留下灼地痕迹，灼伤路过敌人',
+    fieldNote: '<code>d</code>=每次灼伤 · <code>a</code>=痕迹半径 · <code>c</code>=落痕间隔',
+    stats: [
+      { d: 5, c: 0.30, p: 1, b: 0, ch: 0, r: 0, a: 0.9, pi: 0, sp: 0 },
+      { d: 6, c: 0.30, p: 1, b: 0, ch: 0, r: 0, a: 1.0, pi: 0, sp: 0 },
+      { d: 7, c: 0.28, p: 1, b: 0, ch: 0, r: 0, a: 1.1, pi: 0, sp: 0 },
+      { d: 9, c: 0.28, p: 1, b: 0, ch: 0, r: 0, a: 1.2, pi: 0, sp: 0 },
+      { d: 11, c: 0.26, p: 1, b: 0, ch: 0, r: 0, a: 1.3, pi: 0, sp: 0 },
+      { d: 13, c: 0.26, p: 1, b: 0, ch: 0, r: 0, a: 1.4, pi: 0, sp: 0 },
+      { d: 16, c: 0.24, p: 1, b: 0, ch: 0, r: 0, a: 1.5, pi: 0, sp: 0 },
+      { d: 20, c: 0.22, p: 1, b: 0, ch: 0, r: 0, a: 2.0, pi: 0, sp: 0 },
+    ],
+    fields: ['d','c','a']
   },
 ];
 
@@ -3447,11 +3451,11 @@ const FIELD_LABELS = {
 
 function extFieldLabel(weaponId, field) {
   const m = {
-    void_ripple: { r: '环最大半径', a: '环宽', b: '击退×10' },
+    void_ripple: { a: '最大半径', sp: '扩散速度' },
     ray_gun: { r: '射程', a: '射线宽度' },
-    poison_grenade: { sp: '雾秒伤', ch: '雾持续 (s)', c: '投掷 CD (s)' },
-    paralyze_gun: { p: '目标数', r: '强减速 (s)', a: '攻击减慢 (s)' },
-    scorch_boots: { d: '轨迹秒伤', r: '轨迹宽', c: '段间隔 (s)', ch: '段持续 (s)' },
+    poison_bomb: { d: '毒 DPS', p: '毒云数', r: '投掷范围', a: '云半径' },
+    paralysis_gun: { p: '弹数', r: '射程', pi: '穿透', sp: '弹速' },
+    scorch_boots: { d: '每次灼伤', a: '痕迹半径', c: '落痕间隔 (s)' },
   };
   return (m[weaponId] && m[weaponId][field]) || FIELD_LABELS[field];
 }

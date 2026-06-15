@@ -137,7 +137,7 @@ describe('checkGameOver', () => {
     expect(engine.state.running).toBe(false);
   });
 
-  it('第一关 boss hp ≤ 0 → portal_open + silver +50 + boss 宝箱', () => {
+  it('第一关 boss hp ≤ 0 → portal_open + silver +50 + boss 宝箱 + 100 XP', () => {
     const engine = makeEngine();
     engine.config.tier = 2;
     engine.state.tier = 2;
@@ -161,6 +161,12 @@ describe('checkGameOver', () => {
     expect(engine.state.altars[0].phase).toBe('portal_ready');
     expect(engine.state.chests).toHaveLength(1);
     expect(engine.state.chests[0]).toMatchObject({ x: 6, z: -3, opened: false, bossDrop: true });
+    expect(engine.state.pickups).toContainEqual(expect.objectContaining({
+      type: 'xp_orange',
+      x: 6,
+      z: -3,
+      value: 100,
+    }));
   });
 
   it('第二关 boss hp ≤ 0 → 回到 playing，祭坛进入冷却', () => {
@@ -177,6 +183,21 @@ describe('checkGameOver', () => {
     expect(engine.state.boss).toBeNull();
     expect(engine.state.altars[0].phase).toBe('cooldown');
     expect(engine.state.chests[0].bossDrop).toBe(true);
+  });
+
+  it('boss XP pickup 生成时吃 curse_tome 加成', () => {
+    const engine = makeEngine();
+    engine.state.player.tomes.push({ type: 'curse_tome', level: 1 });
+    engine.state.boss = makeBoss();
+    engine.state.boss.hp = 0;
+    engine.state.phase = 'boss_fight';
+
+    checkGameOver(engine);
+
+    expect(engine.state.pickups).toContainEqual(expect.objectContaining({
+      type: 'xp_orange',
+      value: 120,
+    }));
   });
 
   it('player 活, boss 没死 → 不变', () => {

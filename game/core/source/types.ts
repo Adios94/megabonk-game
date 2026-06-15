@@ -386,6 +386,8 @@ export interface EnemyState {
   slowTimer?: number;
   /** 减速后的速度倍率（0..1，越小越慢；麻痹接近 0）。多源取最强（最小值）。 */
   slowFactor?: number;
+  /** 最近一次造成伤害的玩家武器，用于 GM 统计击杀归因。 */
+  lastHitWeaponType?: WeaponType;
   // --- Bond marks（羁绊 T2/T3 机制；全部 optional）---
   /** B7 弧光导体：导体标记剩余秒数（被 void_ripple 命中后获得）。 */
   conductorMarkTimer?: number;
@@ -766,6 +768,13 @@ export interface GameStats {
   silverEarned: number;
 }
 
+export interface WeaponDamageStats {
+  weaponType: WeaponType;
+  killCount: number;
+  totalDamage: number;
+  dps: number;
+}
+
 export interface GameState {
   tick: number;
   gameTime: number;
@@ -804,6 +813,8 @@ export interface GameState {
   /** 已消耗金币和宝箱、等待玩家留下/丢弃的遗物。 */
   pendingChestReward: PendingChestReward | null;
   stats: GameStats;
+  /** GM tool: 本局每把玩家武器的击杀 / 5 秒滚动 DPS / 总伤。 */
+  weaponDamageStats: WeaponDamageStats[];
   waveIndex: number;
   /**
    * 祭坛 / 传送门列表。Boss 召唤前是祭坛，Boss 死亡后变传送门，进入后被消费。

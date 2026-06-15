@@ -36,7 +36,7 @@ export function lightningChain(_world: GameWorld, ctx: BehaviorContext): void {
   const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit, target);
   target.hp -= damage;
   target.hitFlashTimer = 0.15;
-  effects.addDamageDealt(damage);
+  effects.addDamageDealt(damage, weapon.type, target);
   effects.addDamageEvent(target.x, enemyDamageEventY(target), target.z, damage, isCrit, false, 'lightning_staff');
   effects.bondHit?.(weapon.type, target, damage, isCrit);
 
@@ -57,7 +57,7 @@ export function lightningChain(_world: GameWorld, ctx: BehaviorContext): void {
     const chainDmg = computeWeaponDamage(stats.damage * CHAIN_DECAY, player, def.tags, chainCrit, nearestEnemy);
     nearestEnemy.hp -= chainDmg;
     nearestEnemy.hitFlashTimer = 0.15;
-    effects.addDamageDealt(chainDmg);
+    effects.addDamageDealt(chainDmg, weapon.type, nearestEnemy);
     effects.addDamageEvent(nearestEnemy.x, enemyDamageEventY(nearestEnemy), nearestEnemy.z, chainDmg, chainCrit, false, 'lightning_staff');
     effects.bondHit?.(weapon.type, nearestEnemy, chainDmg, chainCrit);
 
@@ -75,7 +75,7 @@ export function lightningChain(_world: GameWorld, ctx: BehaviorContext): void {
       const bossDmg = computeWeaponDamage(stats.damage * CHAIN_DECAY, player, def.tags, bossCrit, boss);
       boss.hp -= bossDmg;
       boss.hitFlashTimer = 0.15;
-      effects.addDamageDealt(bossDmg);
+      effects.addDamageDealt(bossDmg, weapon.type, boss);
       effects.addDamageEvent(boss.x, bossDamageEventY(boss), boss.z, bossDmg, bossCrit, false, 'lightning_staff');
       effects.bondHit?.(weapon.type, boss, bossDmg, bossCrit);
     }

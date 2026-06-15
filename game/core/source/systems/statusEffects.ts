@@ -11,6 +11,7 @@
 import { ELITE_SLOW_COEF } from '../config.ts';
 import { enemyDamageEventY } from '../combatHeight.ts';
 import { addDamageEvent } from './helpers.ts';
+import { recordWeaponDamage } from './weaponDamageStats.ts';
 import type { EnemyState } from '../types.ts';
 import type { Engine } from './types.ts';
 
@@ -56,7 +57,7 @@ export function tickStatusEffects(engine: Engine, dt: number): void {
       const before = enemy.poisonTimer!;
       const dmg = dps * dt;
       enemy.hp -= dmg;
-      engine.state.stats.damageDealt += dmg;
+      recordWeaponDamage(engine, 'poison_bomb', dmg, enemy);
       if (enemy.hitFlashTimer < 0.05) enemy.hitFlashTimer = 0.05;
 
       const after = before - dt;

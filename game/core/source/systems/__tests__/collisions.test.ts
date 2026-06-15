@@ -34,6 +34,12 @@ describe('player projectile vs enemy', () => {
     expect(enemy.hp).toBe(35);
     expect(engine.state.projectiles).toHaveLength(0);
     expect(engine.state.stats.damageDealt).toBe(15);
+    expect(enemy.lastHitWeaponType).toBe('sword');
+    expect(engine.state.weaponDamageStats[0]).toMatchObject({
+      weaponType: 'sword',
+      totalDamage: 15,
+      dps: 3,
+    });
   });
 
   it('pierce 1 → 第一击不消耗, hit list 累加, pierceLeft--', () => {

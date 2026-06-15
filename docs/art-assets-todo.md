@@ -279,12 +279,12 @@
 颜色仍走 `setColorAt()` 染色）。silver/health/health_small 已换上各自的专属 OBJ 模型（2026-06-14）。
 
 
-| 类型           | 数值    | 当前模型                  | 状态                      |
+| 类型           | 用途    | 当前模型                  | 状态                      |
 | ------------ | ----- | --------------------- | ----------------------- |
-| xp_green     | 1 xp  | **Crystal1.obj 染绿**   | ✅ 已接专属模型                |
-| xp_blue      | 3 xp  | **Crystal2.obj 染蓝**   | ✅ 已接专属模型                |
-| xp_purple    | 10 xp | **Crystal3.obj 染紫**   | ✅ 已接专属模型                |
-| xp_orange    | 20 xp | **Crystal4.obj 染橙**   | ✅ 已接专属模型（Crystal5 备用未接） |
+| xp_green     | XP 视觉分档 | **Crystal1.obj 染绿**   | ✅ 已接专属模型                |
+| xp_blue      | XP 视觉分档 | **Crystal2.obj 染蓝**   | ✅ 已接专属模型                |
+| xp_purple    | XP 视觉分档 | **Crystal3.obj 染紫**   | ✅ 已接专属模型                |
+| xp_orange    | XP 视觉分档 / Boss XP | **Crystal4.obj 染橙**   | ✅ 已接专属模型（Crystal5 备用未接） |
 | silver       | 银币    | **Coin.obj 染银白**      | ✅ 已接专属模型                |
 | health       | 大心    | **Heart.obj 染红**      | ✅ 已接专属模型                |
 | health_small | 小心    | **Heart_Half.obj 染红** | ✅ 已接专属模型                |

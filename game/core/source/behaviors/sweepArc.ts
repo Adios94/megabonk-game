@@ -53,7 +53,7 @@ export function sweepArc(_world: GameWorld, ctx: BehaviorContext): void {
         const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit, enemy);
         enemy.hp -= damage;
         enemy.hitFlashTimer = 0.15;
-        effects.addDamageDealt(damage);
+        effects.addDamageDealt(damage, weapon.type, enemy);
         effects.addDamageEvent(enemy.x, enemyDamageEventY(enemy), enemy.z, damage, isCrit, false, 'sword');
         effects.applyKnockback(enemy, player.x, player.z, SWORD_KNOCKBACK_MULT);
         effects.bondHit?.(weapon.type, enemy, damage, isCrit);
@@ -68,7 +68,7 @@ export function sweepArc(_world: GameWorld, ctx: BehaviorContext): void {
       const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit, boss);
       boss.hp -= damage;
       boss.hitFlashTimer = 0.15;
-      effects.addDamageDealt(damage);
+      effects.addDamageDealt(damage, weapon.type, boss);
       effects.addDamageEvent(boss.x, bossDamageEventY(boss), boss.z, damage, isCrit, false, 'sword');
       effects.bondHit?.(weapon.type, boss, damage, isCrit);
     }

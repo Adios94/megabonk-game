@@ -59,6 +59,7 @@ import { processCollisions } from './systems/collisions.ts';
 import { tickStatusEffects } from './systems/statusEffects.ts';
 import { tickAreaEffects } from './systems/areaEffects.ts';
 import { processDeaths, tickPickups, tickThorns } from './systems/pickups.ts';
+import { recordWeaponDamage, refreshAllWeaponDps } from './systems/weaponDamageStats.ts';
 import { applyPlayerHit, tickConsumableEffects, tickConsumablePickups } from './systems/consumables.ts';
 import { tickSpawning, checkBossSpawn } from './systems/spawning.ts';
 import { tickAltars, generateAltars } from './systems/altars.ts';
@@ -101,6 +102,7 @@ export class GameInstance {
       chestOpenEvents: [],
       pendingChestReward: null,
       stats: { killCount: 0, damageDealt: 0, damageTaken: 0, shieldAbsorbed: 0, silverEarned: 0 },
+      weaponDamageStats: [],
       waveIndex: 0,
       altars: [],
       shrines: [],
@@ -136,6 +138,7 @@ export class GameInstance {
       lastJumpInput: false,
       facingX: 0,
       facingZ: 1,
+      weaponDamageWindows: {},
     } satisfies Engine;
 
     engine.effects = makeEffects(engine);
@@ -197,6 +200,7 @@ export class GameInstance {
     state.boss = null;
     state.upgradeOptions = null;
     state.stats = { killCount: 0, damageDealt: 0, damageTaken: 0, shieldAbsorbed: 0, silverEarned: 0 };
+    state.weaponDamageStats = [];
     state.character = config.character;
     state.finalSwarm = false;
     state.player = createInitialPlayer(config);
@@ -220,6 +224,7 @@ export class GameInstance {
     engine.aiGroup = 0;
     engine.landingTimer = 0;
     engine.miniBossTimer = 0;
+    engine.weaponDamageWindows = {};
   }
 
   tick(): boolean {
@@ -291,6 +296,7 @@ export class GameInstance {
     tickTierTransition(engine);
     // Overtime 累加（仅在 gameTime ≥ 540 且玩家未死且未在结算时）。
     tickOvertime(engine, dt);
+    refreshAllWeaponDps(engine);
 
     engine.aiGroup = (engine.aiGroup + 1) % 4;
 
@@ -488,7 +494,13 @@ function makeEffects(engine: Engine): AiEffects {
   return {
     addDamageEvent: (x, y, z, d, c, p, w) => addDamageEvent(engine, x, y, z, d, c, p, w),
     applyKnockback: (e, fx, fz, strengthMult) => applyKnockback(engine, e, fx, fz, strengthMult),
-    addDamageDealt: (n) => { engine.state.stats.damageDealt += n; },
+    addDamageDealt: (n, weaponType, target) => {
+      if (weaponType) {
+        recordWeaponDamage(engine, weaponType, n, target);
+      } else {
+        engine.state.stats.damageDealt += n;
+      }
+    },
     spawnProjectile: (p) => {
       if (!p.fromPlayer) {
         const enemyProjectileCount = engine.state.projectiles.filter(proj => !proj.fromPlayer).length;

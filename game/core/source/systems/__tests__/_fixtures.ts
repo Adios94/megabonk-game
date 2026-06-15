@@ -43,6 +43,7 @@ function defaultState(
     upgradeOptions: null, damageEvents: [], bondVfxEvents: [], levelUpCompensationEvents: [],
     chestOpenEvents: [], pendingChestReward: null,
     stats: { killCount: 0, damageDealt: 0, damageTaken: 0, shieldAbsorbed: 0, silverEarned: 0 },
+    weaponDamageStats: [],
     waveIndex: 0, altars: [], shrines: [], activeShrineId: null, chests: [],
     character,
     finalSwarm: false,
@@ -109,6 +110,7 @@ export function makeEngine(overrides: Partial<Engine> = {}): Engine {
     lastJumpInput: false,
     facingX: 0,
     facingZ: 1,
+    weaponDamageWindows: {},
     ...overrides,
   };
 }

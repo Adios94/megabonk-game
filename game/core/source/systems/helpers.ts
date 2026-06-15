@@ -9,7 +9,7 @@
  */
 import { distanceSqBetween, normalizeDirection } from '../physics.ts';
 import { getTomePower } from '../tomeProgression.ts';
-import { AOE_MAX_Y_DELTA } from '../config.ts';
+import { AOE_MAX_Y_DELTA, MAX_PICKUPS, PICKUP_LIFETIME } from '../config.ts';
 import { targetHitCenterY } from '../combatHeight.ts';
 import type { EnemyState, WeaponType } from '../types.ts';
 import type { Engine } from './types.ts';
@@ -19,6 +19,8 @@ import { tryMoveHorizontally } from './horizontalMove.ts';
 
 /** 敌人横向碰撞半径（与 _move.ts 一致）。 */
 const ENEMY_RADIUS = 0.4;
+const BOSS_XP_REWARD = 100;
+const BOSS_XP_PICKUP_OFFSET_Y = 0.2;
 
 export function findNearestEnemy(
   engine: Engine,
@@ -129,6 +131,7 @@ export function checkGameOver(engine: Engine): void {
   if (engine.state.boss && engine.state.boss.hp <= 0) {
     const defeatedBoss = engine.state.boss;
     spawnBossChest(engine, defeatedBoss);
+    spawnBossXpPickup(engine, defeatedBoss);
     engine.state.boss = null;
     engine.state.stats.silverEarned += 50;
     onBossDefeated(engine);
@@ -136,4 +139,23 @@ export function checkGameOver(engine: Engine): void {
       engine.state.phase = (engine.state.stage ?? 1) === 1 ? 'portal_open' : 'playing';
     }
   }
+}
+
+function spawnBossXpPickup(engine: Engine, boss: NonNullable<Engine['state']['boss']>): void {
+  if (engine.state.pickups.length >= MAX_PICKUPS) return;
+
+  let xpReward = BOSS_XP_REWARD;
+  const curseTome = engine.state.player.tomes.find(t => t.type === 'curse_tome');
+  if (curseTome) xpReward = Math.round(xpReward * (1 + getTomePower(curseTome) * 0.2));
+
+  engine.state.pickups.push({
+    id: engine.nextPickupId++,
+    type: 'xp_orange',
+    x: boss.x,
+    y: boss.y + BOSS_XP_PICKUP_OFFSET_Y,
+    z: boss.z,
+    value: xpReward,
+    lifetime: PICKUP_LIFETIME,
+    attracted: false,
+  });
 }

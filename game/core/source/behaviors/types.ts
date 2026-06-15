@@ -26,8 +26,8 @@ export interface BehaviorEffects {
   /** 给 enemy 施加击退（同 GameInstance.applyKnockback 签名）。
    *  `strengthMult` 可选，给特定来源额外击退倍率（默认 1）。 */
   applyKnockback(enemy: EnemyState, fromX: number, fromZ: number, strengthMult?: number): void;
-  /** 累加 state.stats.damageDealt */
-  addDamageDealt(amount: number): void;
+  /** 累加伤害统计；玩家武器伤害可附带来源和目标，供 GM tool 归因。 */
+  addDamageDealt(amount: number, weaponType?: WeaponType, target?: EnemyState | BossState): void;
   /**
    * 推一个投射物到 state.projectiles[]。返回分配的 id；
    * 达 MAX_PROJECTILES 上限时返回 null（行为应优雅 break / continue）。

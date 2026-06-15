@@ -244,9 +244,9 @@
 | skeleton_soldier | 15 | 5 | 3.0 | chase | 1 | 1.5s | 否 | 0s | 40 | — | `config.ts` L104 |
 | zombie | 30 | 10 | 1.5 | chase | 3 | 2.5s | 否 | 60s | 25 | — | `config.ts` L105 |
 | skeleton_archer | 12 | 7 | 2.5 | ranged | 3 | 3.0s | 否 | 120s | 15 | 8 | `config.ts` L106 |
-| skeleton_knight | 120 | 20 | 3.5 | charge | 25 | 2.0s | 是 | 180s | 5 | — | `config.ts` L107 |
-| necromancer | 80 | 15 | 2.0 | ranged | 30 | 4.0s | 是 | 240s | 3 | 10 | `config.ts` L108 |
-| gargoyle | 200 | 25 | 4.0 | dive | 40 | 3.0s | 是 | 360s | 2 | — | `config.ts` L109 |
+| skeleton_knight | 120 | 20 | 3.5 | charge | 5 | 2.0s | 是 | 180s | 5 | — | `config.ts` L107 |
+| necromancer | 80 | 15 | 2.0 | ranged | 10 | 4.0s | 是 | 240s | 3 | 10 | `config.ts` L108 |
+| gargoyle | 200 | 25 | 4.0 | dive | 10 | 3.0s | 是 | 360s | 2 | — | `config.ts` L109 |
 
 ### 6.2 敌人 AI 关键距离
 
@@ -474,13 +474,11 @@
 | 经验增长 `XP_GROWTH` | 0.35 | `config.ts` L33 |
 | 升级回血量 | 当前 maxHp × 10% | `GameInstance.ts` L2070 |
 | Combo 经验加成上限 | 2× | `GameInstance.ts` L2047 (1 + min(combo*0.05, 1.0)) |
-| xp_green 价值 | 1 | `config.ts` L49 |
-| xp_blue 价值 | 5 | `config.ts` L50 |
-| xp_purple 价值 | 25 | `config.ts` L51 |
-| xp_orange 价值 | 100 | `config.ts` L52 |
-| XP 类型分配阈值（橙） | enemy.xpReward ≥ 30 | `GameInstance.ts` L1948 |
-| XP 类型分配阈值（紫） | ≥ 10 | L1950 |
-| XP 类型分配阈值（蓝） | ≥ 3 | L1952 |
+| 普通怪基础 EXP | `enemy.xpReward` 直接写入 pickup.value：1 / 3 / 3 / 5 / 10 / 10 | `data/enemies.ts` |
+| Boss 基础 EXP | 100，死亡时生成 `xp_orange` pickup | `systems/helpers.ts` |
+| XP 颜色分档（橙） | pickup.value ≥ 30 | `systems/pickups.ts` |
+| XP 颜色分档（紫） | ≥ 10 | `systems/pickups.ts` |
+| XP 颜色分档（蓝） | ≥ 3 | `systems/pickups.ts` |
 | 精英死亡额外掉落 silver | 5 | `GameInstance.ts` L1977 |
 | 胜利奖励 silver | 100 | `GameInstance.ts` L326 |
 | Boss 击败固定 silver | 50 | `GameInstance.ts` L2611 |

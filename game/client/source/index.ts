@@ -4,9 +4,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 // @ts-ignore
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 // @ts-ignore
-import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { Pass } from 'three/examples/jsm/postprocessing/Pass.js';
+import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 // @ts-ignore
@@ -293,6 +292,16 @@ const ENEMY_HOVER_OFFSET: Record<string, number> = {
   // skeleton_archer 现用 KayKit 法师（落地人形），不再悬浮；仅 necromancer(ghost) 飘浮
   necromancer: 1.0,     // 幽灵 — 飘浮（离地 1m）
 };
+
+// ── 敌人动画 LOD（同屏大量怪：按到相机距离 + 视锥分档降频 mixer.update）─────────
+// 蒙皮动画的骨骼矩阵重算是同屏 100 怪时的主 CPU 开销，且与是否在屏幕内无关。
+// 近处满帧、中/远降频、视锥外冻结；降频时累积 dt 一次性补上，保证动画速率不变。
+const ENEMY_ANIM_LOD_NEAR = 16;        // 米：此距离内每帧更新
+const ENEMY_ANIM_LOD_FAR = 34;         // 米：NEAR..FAR 隔帧，超过则每 4 帧
+const ENEMY_ANIM_LOD_NEAR_SQ = ENEMY_ANIM_LOD_NEAR * ENEMY_ANIM_LOD_NEAR;
+const ENEMY_ANIM_LOD_FAR_SQ = ENEMY_ANIM_LOD_FAR * ENEMY_ANIM_LOD_FAR;
+const ENEMY_ANIM_LOD_MID_STRIDE = 2;   // 中距：每 2 帧更新一次
+const ENEMY_ANIM_LOD_FAR_STRIDE = 4;   // 远距：每 4 帧更新一次
 
 const WEAPON_PROJECTILE_COLORS: Record<string, number> = {
   sword: 0xcccccc,
@@ -1056,7 +1065,7 @@ uniform vec3 uLightTint;
  *   第 2 层 colored shadow：col = mix(albedo×冷暗, albedo×暖亮, light)（Godot shadow_tint）
  *   第 3 层 toon specular ：硬边塑料高光（per-material uSpec，主角/武器>0）
  *   末尾叠回 totalEmissiveRadiance —— 霓虹/发光贴图不丢。
- *   （rim 边缘光已移除：轮廓由 OutlineEffect 黑描边负责，省掉每像素的菲涅尔运算。）
+ *   （rim 边缘光已移除：轮廓由屏幕空间深度描边负责，省掉每像素的菲涅尔运算。）
  *
  * 所有调参项都是 uniform（见 stylizedUniforms）：可在游戏内面板实时拖，也可改 stylizedUniforms 初值定基线。
  */
@@ -1289,25 +1298,141 @@ function createStylizedDebugPanel(opts: { scene: THREE.Scene; bloom: UnrealBloom
 }
 
 /**
- * EffectComposer 首道 pass：用 OutlineEffect 把「场景 + 黑描边」渲进 composer 缓冲，
- * 让后续 bloom 能在保留描边的前提下叠加辉光（OutlineEffect 尊重预设 renderTarget）。
- * 渲到目标时引擎自动禁 in-material tonemap → 缓冲为线性 HDR，交末端 OutputPass 统一 ACES+sRGB。
+ * 描边模式：
+ *  - screenSpace：基于深度的屏幕空间描边，固定一道全屏 pass，开销与怪数无关。保留卡通黑轮廓。
+ *    （替代旧的逐网格 OutlineEffect——后者放大翻面把不透明场景再画一遍，draw call 翻倍、
+ *    开销随怪数线性增长，是手机掉帧元凶。已于本次性能优化移除。）
+ *  - none：不描边（仅平涂着色，cel 来自材质本身，与描边无关）。dev 下按 O 在两态间切，供对比。
  */
-class OutlineComposerPass extends Pass {
+type OutlineMode = 'screenSpace' | 'none';
+
+const OUTLINE_EDGE_VERT = /* glsl */`
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+// 深度边缘检测：线性化深度(viewZ)后做 Roberts-cross 4-tap，差超阈值即描黑。
+// 阈值随距离放宽(近处细线/远处粗或无)；天空背景(viewZ≈-far)处抑制，避免天边整圈黑。
+const OUTLINE_EDGE_FRAG = /* glsl */`
+  precision highp float;
+  uniform sampler2D tColor;
+  uniform highp sampler2D tDepth;   // 必须 highp，否则移动端 mediump 截断 → 满屏黑边/噪点
+  uniform vec2 uResolution;
+  uniform float uCameraNear;
+  uniform float uCameraFar;
+  uniform float uThickness;
+  uniform float uOutlineAlpha;
+  varying vec2 vUv;
+
+  // perspectiveDepthToViewZ：NDC 深度[0,1] → 视空间 z（负值，-near..-far）
+  float toViewZ(float d) {
+    return (uCameraNear * uCameraFar) / ((uCameraFar - uCameraNear) * d - uCameraFar);
+  }
+  float sampleZ(vec2 uv) { return toViewZ(texture2D(tDepth, uv).r); }
+
+  void main() {
+    vec4 color = texture2D(tColor, vUv);
+    vec2 texel = uThickness / uResolution;
+    float c = sampleZ(vUv);
+    float n = sampleZ(vUv + vec2(0.0,  texel.y));
+    float s = sampleZ(vUv + vec2(0.0, -texel.y));
+    float e = sampleZ(vUv + vec2( texel.x, 0.0));
+    float w = sampleZ(vUv + vec2(-texel.x, 0.0));
+    float hor = abs(e - w);
+    float ver = abs(n - s);
+    float delta = sqrt(hor * hor + ver * ver);
+    float threshold = abs(c) * 0.02 + 0.05;          // 距离自适应阈值（k、floor 可调）
+    float edge = smoothstep(threshold, threshold * 2.0, delta);
+    float depthMask = 1.0 - step(uCameraFar * 0.9, -c); // 极远(天空/far 区)不描边
+    edge *= depthMask;
+    gl_FragColor = vec4(mix(color.rgb, vec3(0.0), edge * uOutlineAlpha), color.a);
+  }
+`;
+
+/**
+ * EffectComposer 首道 pass：把场景渲进 composer 缓冲，并按 mode 叠加描边。
+ * 渲到 RT 时引擎自动禁 in-material tonemap → 缓冲为线性 HDR，描边在线性空间 mix 向黑，
+ * tonemap 交末端 OutputPass(Neutral + sRGB)。needsSwap=false，合成结果写 readBuffer。
+ */
+class SceneOutlinePass extends Pass {
+  mode: OutlineMode = 'screenSpace';
+
+  private readonly sceneRT: THREE.WebGLRenderTarget;
+  private readonly fsqMaterial: THREE.ShaderMaterial;
+  private readonly fsq: FullScreenQuad;
+
   constructor(
-    private readonly outline: { render(scene: THREE.Scene, camera: THREE.Camera): void },
     private readonly scene: THREE.Scene,
-    private readonly camera: THREE.Camera,
+    private readonly camera: THREE.PerspectiveCamera,
+    w: number, // 有效像素（CSS × dpr）
+    h: number,
   ) {
     super();
     this.needsSwap = false;
     this.clear = true;
+
+    // 深度纹理用默认 DepthFormat + UnsignedIntType（→ GL DEPTH_COMPONENT24），不要 HalfFloat / stencil。
+    const depthTexture = new THREE.DepthTexture(w, h);
+    this.sceneRT = new THREE.WebGLRenderTarget(w, h, {
+      type: THREE.HalfFloatType,   // 颜色：线性 HDR，匹配 composer 缓冲
+      depthTexture,
+      depthBuffer: true,
+      stencilBuffer: false,
+    });
+
+    this.fsqMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        tColor: { value: this.sceneRT.texture },
+        tDepth: { value: this.sceneRT.depthTexture },
+        uResolution: { value: new THREE.Vector2(w, h) },
+        uCameraNear: { value: camera.near },
+        uCameraFar: { value: camera.far },
+        uThickness: { value: 1.5 },
+        uOutlineAlpha: { value: 0.85 },
+      },
+      vertexShader: OUTLINE_EDGE_VERT,
+      fragmentShader: OUTLINE_EDGE_FRAG,
+      depthTest: false,
+      depthWrite: false,
+    });
+    this.fsq = new FullScreenQuad(this.fsqMaterial);
   }
 
-  render(renderer: THREE.WebGLRenderer, _writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget): void {
+  override setSize(width: number, height: number): void {
+    // width/height 由 EffectComposer 传入，已是 CSS×dpr 像素。深度纹理随 setSize 自动重建。
+    this.sceneRT.setSize(width, height);
+    this.fsqMaterial.uniforms.uResolution.value.set(width, height);
+  }
+
+  override render(renderer: THREE.WebGLRenderer, _writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget): void {
+    this.fsqMaterial.uniforms.uCameraNear.value = this.camera.near;
+    this.fsqMaterial.uniforms.uCameraFar.value = this.camera.far;
+
+    // 先把场景渲到带深度的 sceneRT
+    renderer.setRenderTarget(this.sceneRT);
+    renderer.clear();
+    renderer.render(this.scene, this.camera);
+
+    // 合成到 pass 输出（readBuffer，交 OutputPass tonemap）
     renderer.setRenderTarget(this.renderToScreen ? null : readBuffer);
     if (this.clear) renderer.clear();
-    this.outline.render(this.scene, this.camera);
+    if (this.mode === 'none') {
+      const prev = this.fsqMaterial.uniforms.uOutlineAlpha.value;
+      this.fsqMaterial.uniforms.uOutlineAlpha.value = 0.0; // 只 blit 颜色，不叠边
+      this.fsq.render(renderer);
+      this.fsqMaterial.uniforms.uOutlineAlpha.value = prev;
+    } else {
+      this.fsq.render(renderer);
+    }
+  }
+
+  override dispose(): void {
+    this.sceneRT.dispose(); // 链式释放 depthTexture
+    this.fsqMaterial.dispose();
+    this.fsq.dispose(); // 仅释放几何，材质已单独 dispose
   }
 }
 
@@ -2466,8 +2591,8 @@ async function loadObjItems(): Promise<void> {
 export class GameScene {
   private readonly container: HTMLElement;
   private readonly renderer: THREE.WebGLRenderer;
-  private readonly outlineEffect: any; // OutlineEffect
   private composer: EffectComposer | null = null;
+  private outlinePass: SceneOutlinePass | null = null; // 屏幕空间描边 pass（screenSpace/none，dev 下 O 键切换）
   private bloomPass: UnrealBloomPass | null = null;
   private blobShadows: BlobShadowPool | null = null;
   private readonly scene: THREE.Scene;
@@ -2599,6 +2724,9 @@ export class GameScene {
   private enemyObjects: Map<number, THREE.Object3D> = new Map(); // id → cloned model
   private enemyPool: Map<string, THREE.Object3D[]> = new Map(); // type → available pool
   private enemyMixers: Map<number, THREE.AnimationMixer> = new Map(); // id → animation mixer
+  // id → 自上次 mixer.update 以来累积的 dt。动画 LOD 降频时不丢时间：轮到更新时一次性补上，
+  // 保证降频敌人的动画速率与满帧一致（只是时间分辨率变低）。视锥外冻结的敌人不累积。
+  private enemyAnimAccum: Map<number, number> = new Map();
   private enemyAnimStates: Map<number, string> = new Map(); // id → current anim name
   private enemyAnimActions: Map<number, Map<string, THREE.AnimationAction>> = new Map(); // id → actions map
   // id → 上一帧 x/z + 静止累计时长。core(setInterval 60Hz) 与渲染(rAF, 可能 120/144Hz) 不同步，
@@ -2706,6 +2834,18 @@ export class GameScene {
   private wasOvertime = false;
   private xpFlashTimer = 0;
   private seenChestOpenEvents = new Set<string>();
+  /** 帧率 / Draw Call 调试 overlay */
+  private perfStatsEl: HTMLDivElement | null = null;
+  private perfFpsSampleTime = 0;
+  private perfFpsFrameCount = 0;
+  private perfFpsDisplay = 0;
+
+  // 渲染帧计数器（动画 LOD 错峰用：不同 id 的敌人在不同帧更新，把降频开销摊开）。
+  private frameIndex = 0;
+  // 复用的视锥/矩阵，避免每帧分配。renderEnemies 开头由当前相机重建后做点剔除。
+  private readonly cullFrustum = new THREE.Frustum();
+  private readonly cullMatrix = new THREE.Matrix4();
+  private readonly cullPoint = new THREE.Vector3();
 
   // State
   private isPaused = false;
@@ -2828,13 +2968,6 @@ export class GameScene {
     this.renderer.domElement.addEventListener('webglcontextlost', this.onContextLost, false);
     this.renderer.domElement.addEventListener('webglcontextrestored', this.onContextRestored, false);
 
-    // Outline Effect (cel-shading edge lines)
-    this.outlineEffect = new OutlineEffect(this.renderer, {
-      defaultThickness: 0.003, // 黑描边（细一点，更轻）
-      defaultColor: [0, 0, 0],
-      defaultAlpha: 0.8,
-    });
-
     // Scene
     this.scene = new THREE.Scene();
     this.scene.name = 'MainScene';
@@ -2898,6 +3031,7 @@ export class GameScene {
     this.setupVFX();
     this.setupHUD();
     this.setupDamageNumbers();
+    this.setupPerfStats();
 
     this.setupComposer();
 
@@ -2964,10 +3098,17 @@ export class GameScene {
     // （toon 渐变贴图 / 预加载 VFX 贴图），错误释放会让下一局渲染崩坏。移除全局监听 + 退订
     // session 后，旧 GameScene 整棵场景图与 GL 上下文已无引用，可被 GC 连同 GPU 资源回收。
     this.composer?.dispose();
+    this.outlinePass?.dispose(); // EffectComposer.dispose 不级联各 pass，手动释放 sceneRT / 深度纹理 / 描边材质
     this.blobShadows?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.hudContainer?.remove();
+    this.perfStatsEl?.remove();
+    this.perfStatsEl = null;
+    if (this.perfKeyHandler) {
+      window.removeEventListener('keydown', this.perfKeyHandler);
+      this.perfKeyHandler = null;
+    }
     this.upgradePanel?.remove();
     this.gameOverPanel?.remove();
     this.pausePanel?.remove();
@@ -3032,7 +3173,7 @@ export class GameScene {
   }
 
   /**
-   * 后处理：OutlineEffect（场景+描边）→ [可选 bloom] → OutputPass（ACES+sRGB）。
+   * 后处理：SceneOutlinePass（场景渲染 + 屏幕空间深度描边）→ [可选 bloom] → OutputPass（tonemap）。
    *
    * BLOOM_ENABLED = false（默认关闭，性能优化）：UnrealBloomPass 的半分辨率降采样 +
    * 多次高斯模糊是移动端 / 集显帧率的最大单项开销，关闭后还会释放其 mip render targets 显存。
@@ -3048,7 +3189,12 @@ export class GameScene {
     composer.setPixelRatio(dpr);
     composer.setSize(w, h);
 
-    composer.addPass(new OutlineComposerPass(this.outlineEffect, this.scene, this.camera));
+    const outlinePass = new SceneOutlinePass(
+      this.scene, this.camera,
+      Math.round(w * dpr), Math.round(h * dpr),
+    );
+    composer.addPass(outlinePass);
+    this.outlinePass = outlinePass;
 
     if (BLOOM_ENABLED) {
       const bloom = new UnrealBloomPass(
@@ -3067,9 +3213,16 @@ export class GameScene {
   }
 
   private renderFrame(): void {
+    // dev 诊断：渲染提交墙钟耗时(EMA)。不被 vsync(60封顶)掩盖，反映 CPU 端 draw 提交负载——
+    // 这个 ms 越接近 16.6 越接近掉帧临界点。生产构建里 import.meta.env.DEV 恒为 false，整块计时被 tree-shake。
+    const t0 = import.meta.env.DEV ? performance.now() : 0;
     if (this.composer) this.composer.render();
-    else this.outlineEffect.render(this.scene, this.camera);
+    else this.renderer.render(this.scene, this.camera);
+    if (import.meta.env.DEV) {
+      this.perfRenderMs = this.perfRenderMs * 0.9 + (performance.now() - t0) * 0.1;
+    }
   }
+  private perfRenderMs = 0;
 
   /** GL context 丢失时显示的提示浮层（懒创建，复用同一节点）。 */
   private showContextLostOverlay(): void {
@@ -3969,6 +4122,151 @@ export class GameScene {
     }
   }
 
+  /**
+   * 左下角 FPS + Draw Call + 分类拆解诊断 overlay（EffectComposer 多 pass 需关闭 autoReset 后手动 reset）。
+   * 仅 dev 构建启用（生产 `import.meta.env.DEV === false` 直接 return，不创建 DOM、不改 renderer.info、不挂键盘）。
+   * 保留它是为了后续做敌人模型合批时还能用 enemy draws / sig 验证。
+   */
+  private setupPerfStats(): void {
+    if (!import.meta.env.DEV) return;
+    if (this.perfStatsEl) return;
+    this.renderer.info.autoReset = false;
+    const el = document.createElement('div');
+    el.style.cssText = `
+      position:fixed;left:max(8px,env(safe-area-inset-left));bottom:max(8px,env(safe-area-inset-bottom));
+      z-index:150;pointer-events:none;padding:4px 8px;border-radius:6px;
+      background:rgba(0,0,0,0.55);color:#b8ffb8;font-family:monospace;
+      font-size:11px;line-height:1.45;font-variant-numeric:tabular-nums;
+      text-shadow:0 1px 2px rgba(0,0,0,0.9);white-space:pre;
+    `;
+    el.textContent = 'FPS: --\nDraw: --';
+    document.body.appendChild(el);
+    this.perfStatsEl = el;
+
+    // dev 诊断：按 O 在描边两态（screenSpace → none）间切换，对比 render ms 与画面。
+    this.perfKeyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'o' || e.key === 'O') {
+        if (this.outlinePass) {
+          const modes: OutlineMode[] = ['screenSpace', 'none'];
+          const cur = modes.indexOf(this.outlinePass.mode);
+          this.outlinePass.mode = modes[(cur + 1) % modes.length];
+        }
+      }
+    };
+    window.addEventListener('keydown', this.perfKeyHandler);
+  }
+  private perfKeyHandler: ((e: KeyboardEvent) => void) | null = null;
+
+  private updatePerfStats(dt: number): void {
+    if (!this.perfStatsEl) return;
+    this.perfFpsFrameCount += 1;
+    this.perfFpsSampleTime += dt;
+    if (this.perfFpsSampleTime >= 0.25) {
+      this.perfFpsDisplay = Math.round(this.perfFpsFrameCount / this.perfFpsSampleTime);
+      this.perfFpsFrameCount = 0;
+      this.perfFpsSampleTime = 0;
+    }
+    const drawCalls = this.renderer.info.render.calls;
+    const tris = this.renderer.info.render.triangles;
+    // 临时诊断：统计敌人贡献的可见子网格数（= draw call 数），定位 draw call 来源。
+    // 每 0.25s 才重算一次（与 FPS 采样同步），O(敌人数) 遍历，开销可忽略。
+    if (this.perfFpsSampleTime === 0) {
+      let enemyMeshes = 0;
+      let enemyMerged = 0;
+      let enemyMergedSig = 0;
+      for (const obj of this.enemyObjects.values()) {
+        const type = obj.userData['enemyType'] as string | undefined;
+        let stat = type ? this.enemyMeshCountByType.get(type) : undefined;
+        if (stat === undefined) {
+          let meshes = 0;
+          const texes = new Set<string>();
+          const sigs = new Set<string>();
+          obj.traverse((c) => {
+            const m = c as THREE.Mesh;
+            if (!m.isMesh) return;
+            meshes++;
+            const mm = m.material;
+            const arr = Array.isArray(mm) ? mm : [mm];
+            for (const x of arr) {
+              const tm = x as THREE.MeshToonMaterial;
+              const tex = tm?.map?.uuid ?? `color:${tm?.color?.getHexString?.() ?? 'none'}`;
+              texes.add(tex);
+              // 完整材质签名：贴图 + 颜色 + 自发光 + 透明/面向。同签名 = 可直接复用一个材质合并。
+              const sig = `${tex}|${tm?.color?.getHexString?.() ?? '-'}|${tm?.emissiveMap?.uuid ?? '-'}|${tm?.emissive?.getHexString?.() ?? '-'}|${tm?.transparent ? 't' : 'o'}|${tm?.side ?? 0}`;
+              sigs.add(sig);
+            }
+          });
+          stat = { meshes, tex: texes.size, sig: sigs.size };
+          if (type) this.enemyMeshCountByType.set(type, stat);
+        }
+        enemyMeshes += stat.meshes;
+        enemyMerged += stat.tex;
+        enemyMergedSig += stat.sig;
+      }
+      this.perfEnemyMeshes = enemyMeshes;
+      this.perfEnemyMerged = enemyMerged;
+      this.perfEnemyMergedSig = enemyMergedSig;
+      this.perfEnemyCount = this.enemyObjects.size;
+      this.computeDrawBreakdown();
+    }
+    const b = this.perfDrawBreakdown;
+    const bSum = b.enemy + b.shadow + b.level + b.other;
+    this.perfStatsEl.textContent =
+      `FPS: ${this.perfFpsDisplay}\nDraw: ${drawCalls}\nTris: ${(tris / 1000).toFixed(0)}k\n` +
+      `Enemies: ${this.perfEnemyCount} → ${this.perfEnemyMeshes} draws\n` +
+      `merge tex→ ${this.perfEnemyMerged} / sig→ ${this.perfEnemyMergedSig}\n` +
+      `real draws (frustum):\n` +
+      `  enemy ${b.enemy}  shadow ${b.shadow}\n` +
+      `  level ${b.level}  other ${b.other}\n` +
+      `  sum ${bSum} (+post ${Math.max(0, drawCalls - bSum)})\n` +
+      `outline: ${this.outlinePass?.mode ?? 'off'} (press O)\n` +
+      `render: ${this.perfRenderMs.toFixed(1)}ms (submit)`;
+    this.renderer.info.reset();
+  }
+
+  /**
+   * 临时诊断：把场景里**实际会渲染**的 draw 按类别拆开（敌人 / blob 阴影 / 地图 / 其它），
+   * 定位 2419 draw 的大头。带视锥剔除 + 祖先 visible 判断 + 多材质 group 计数，
+   * 四类之和应 ≈ renderer.calls（差额 = 后处理 pass / shadowmap 等）。每 0.25s 算一次。
+   */
+  private computeDrawBreakdown(): void {
+    this.cullMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+    this.cullFrustum.setFromProjectionMatrix(this.cullMatrix);
+    let enemy = 0, shadow = 0, level = 0, other = 0;
+    this.scene.traverse((obj) => {
+      const m = obj as THREE.Mesh;
+      if (!m.isMesh || !m.visible) return;
+      // 祖先任一不可见 → 不渲染
+      for (let p = m.parent; p; p = p.parent) if (!p.visible) return;
+      // 视锥剔除（frustumCulled=false 的强制渲染，如 blob 阴影）
+      if (m.frustumCulled && !this.cullFrustum.intersectsObject(m)) return;
+      // draw 数：多材质按 geometry.groups 拆，否则 1
+      const groups = (m.geometry as THREE.BufferGeometry | undefined)?.groups;
+      const draws = Array.isArray(m.material) && groups && groups.length > 0 ? groups.length : 1;
+      // 归类：沿 parent 链找标记
+      let cat = 3; // 0 enemy / 1 shadow / 2 level / 3 other
+      for (let p: THREE.Object3D | null = m; p; p = p.parent) {
+        if (p.userData && p.userData['enemyType'] !== undefined) { cat = 0; break; }
+        if (p.name === 'BlobShadow') { cat = 1; break; }
+        if (p.name === 'LevelRoot') { cat = 2; break; }
+      }
+      if (cat === 0) enemy += draws;
+      else if (cat === 1) shadow += draws;
+      else if (cat === 2) level += draws;
+      else other += draws;
+    });
+    this.perfDrawBreakdown.enemy = enemy;
+    this.perfDrawBreakdown.shadow = shadow;
+    this.perfDrawBreakdown.level = level;
+    this.perfDrawBreakdown.other = other;
+  }
+  private enemyMeshCountByType = new Map<string, { meshes: number; tex: number; sig: number }>();
+  private perfEnemyMeshes = 0;
+  private perfEnemyMerged = 0;
+  private perfEnemyMergedSig = 0;
+  private perfEnemyCount = 0;
+  private perfDrawBreakdown = { enemy: 0, shadow: 0, level: 0, other: 0 };
+
   // ===========================================================================
   // Camera Effects — Layered Shake & Hit Stop
   // ===========================================================================
@@ -4135,6 +4433,8 @@ export class GameScene {
     // GL context 丢失期间停止一切渲染 / 状态读取（GPU 资源已失效），保留 rAF 循环以便恢复后续跑。
     if (this.contextLost) return;
 
+    this.frameIndex++;
+
     const now = performance.now();
     const dt = this.lastTime > 0 ? Math.min((now - this.lastTime) / 1000, 0.05) : 1 / 60;
     this.lastTime = now;
@@ -4145,6 +4445,7 @@ export class GameScene {
       this.hitStopTimer -= dt;
       // Still render the frozen frame
       this.renderFrame();
+      this.updatePerfStats(dt);
       return;
     }
 
@@ -4219,6 +4520,7 @@ export class GameScene {
     this.updateHUD(state, eventsFresh);
 
     this.renderFrame();
+    this.updatePerfStats(dt);
   }
 
   // ===========================================================================
@@ -4795,6 +5097,16 @@ export class GameScene {
   }
 
   private renderEnemies(enemies: EnemyState[]): void {
+    // 动画 LOD：每帧重建一次视锥（点剔除）+ 缓存相机位置，循环内据此对 mixer 降频。
+    this.cullMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+    this.cullFrustum.setFromProjectionMatrix(this.cullMatrix);
+    const camX = this.camera.position.x;
+    const camY = this.camera.position.y;
+    const camZ = this.camera.position.z;
+
+    // 玩家坐标（敌人朝向用）只需每帧读一次，避免在循环内对每个敌人重复 getRenderState。
+    const playerPos = this.session.getRenderState().player;
+
     // Track which enemy IDs are alive this frame
     const aliveIds = new Set<number>();
     for (const enemy of enemies) {
@@ -4831,6 +5143,7 @@ export class GameScene {
         }
         this.enemyAnimStates.delete(id);
         this.enemyAnimActions.delete(id);
+        this.enemyAnimAccum.delete(id);
         this.enemyPrevPos.delete(id);
         // Return to pool
         const pool = this.enemyPool.get(dying.type) ?? [];
@@ -4954,9 +5267,8 @@ export class GameScene {
       }
 
       // Face toward player (or movement direction)
-      const state = this.session.getRenderState();
-      const dx = state.player.x - enemy.x;
-      const dz = state.player.z - enemy.z;
+      const dx = playerPos.x - enemy.x;
+      const dz = playerPos.z - enemy.z;
       if (dx !== 0 || dz !== 0) {
         obj.rotation.y = Math.atan2(dx, dz);
       }
@@ -5006,10 +5318,32 @@ export class GameScene {
         this.playEnemyAnim(enemy.id, 'Idle');
       }
 
-      // Update enemy mixer
+      // Update enemy mixer — 动画 LOD：按到相机距离 + 视锥分档降频。
+      // 蒙皮骨骼矩阵重算是同屏大量怪的主 CPU 开销；近处满帧，中/远隔帧，视锥外冻结。
       const mixer = this.enemyMixers.get(enemy.id);
       if (mixer) {
-        mixer.update(this.frameDt);
+        // 视锥点剔除（取胸高一点，减少脚点在画面下沿时的误剔除 / 边缘 pop）。
+        this.cullPoint.set(enemy.x, enemy.y + 1, enemy.z);
+        if (this.cullFrustum.containsPoint(this.cullPoint)) {
+          const ddx = enemy.x - camX;
+          const ddy = (enemy.y + 1) - camY;
+          const ddz = enemy.z - camZ;
+          const distSq = ddx * ddx + ddy * ddy + ddz * ddz;
+          const stride = distSq < ENEMY_ANIM_LOD_NEAR_SQ
+            ? 1
+            : distSq < ENEMY_ANIM_LOD_FAR_SQ
+              ? ENEMY_ANIM_LOD_MID_STRIDE
+              : ENEMY_ANIM_LOD_FAR_STRIDE;
+          const accum = (this.enemyAnimAccum.get(enemy.id) ?? 0) + this.frameDt;
+          // 错峰：同 stride 的敌人按 id 散到不同帧更新，避免同一帧集中开销。
+          if (stride === 1 || (this.frameIndex + enemy.id) % stride === 0) {
+            mixer.update(accum);
+            this.enemyAnimAccum.set(enemy.id, 0);
+          } else {
+            this.enemyAnimAccum.set(enemy.id, accum);
+          }
+        }
+        // 视锥外：不更新（冻结姿势），也不累积——重入视锥后从冻结帧继续，可接受。
       }
     }
 

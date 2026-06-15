@@ -3,6 +3,7 @@
  * 负责 UI 和特效动画，与 Three.js 动画系统共存
  */
 import gsap from 'gsap';
+import { UI_TEXT_OUTLINE_SHADOW } from './ui/textStyle.ts';
 
 export class GSAPAnimationManager {
   private animations: Map<string, gsap.core.Tween> = new Map();
@@ -58,9 +59,7 @@ export class GSAPAnimationManager {
     element.style.fontSize = `${options.fontSize}px`;
     element.style.opacity = '1';
     element.style.display = 'block';
-    element.style.transform = 'translateY(0px) scale(1)';
-
-    // 根据是否为暴击调整动画参数
+    element.style.textShadow = UI_TEXT_OUTLINE_SHADOW;
     const flyDistance = options.isCrit ? -60 : (options.damage > 20 ? -50 : -40);
     const endScale = options.isCrit ? 0.6 : 0.8;
 
@@ -108,7 +107,9 @@ export class GSAPAnimationManager {
     element.style.top = `${options.y}px`;
     element.style.fontSize = `${options.fontSize}px`;
     element.style.fontWeight = 'bold';
-    if (options.textShadow) element.style.textShadow = options.textShadow;
+    element.style.textShadow = options.textShadow
+      ? `${UI_TEXT_OUTLINE_SHADOW},${options.textShadow}`
+      : UI_TEXT_OUTLINE_SHADOW;
     element.style.opacity = '1';
     element.style.display = 'block';
     gsap.set(element, { y: 0, scale: 1.1 });
@@ -138,8 +139,7 @@ export class GSAPAnimationManager {
     const animationId = 'level-label-pulse';
     this.cancelAnimation(animationId);
 
-    // 等级标签现在用 flex(inset:0) 居中，不再需要 translateX(-50%) 偏移，
-    // 因此脉冲只做 scale + 颜色，避免标签水平跳位。
+    // 等级标签由外层 wrap 负责 translate 定位，脉冲仅 scale + 颜色，避免水平跳位。
     const timeline = gsap.timeline({ repeat: -1 });
 
     timeline
@@ -153,7 +153,7 @@ export class GSAPAnimationManager {
       .to(element, {
         scale: 1.0,
         color: '#ffffff',
-        textShadow: '0 1px 3px rgba(0,0,0,0.9)',
+        textShadow: UI_TEXT_OUTLINE_SHADOW,
         duration: 0.3,
         ease: "sine.inOut"
       });
@@ -253,10 +253,10 @@ export class GSAPAnimationManager {
   }
 
   /**
-   * 超时横幅动画
+   * 充能神殿 HUD 指示器动画
    */
-  animateOvertimeBanner(element: HTMLElement, show: boolean, duration: number = 0.4): void {
-    const animationId = 'overtime';
+  animateShrineIndicator(element: HTMLElement, show: boolean, duration: number = 0.25): void {
+    const animationId = 'shrine';
     if (this.showStates.get(animationId) === show) return;
     this.showStates.set(animationId, show);
     this.cancelAnimation(animationId);
@@ -264,26 +264,81 @@ export class GSAPAnimationManager {
     if (show) {
       const tween = gsap.to(element, {
         opacity: 1,
-        display: 'block',
-        y: 0,
-        duration: duration,
-        ease: "back.out(1.2)",
-        onComplete: () => this.animations.delete(animationId)
+        display: 'flex',
+        duration,
+        ease: 'power2.out',
+        onComplete: () => this.animations.delete(animationId),
       });
       this.animations.set(animationId, tween);
     } else {
       const tween = gsap.to(element, {
         opacity: 0,
-        y: -20,
-        duration: duration,
-        ease: "power2.in",
+        duration,
+        ease: 'power2.in',
         onComplete: () => {
           element.style.display = 'none';
           this.animations.delete(animationId);
-        }
+        },
       });
       this.animations.set(animationId, tween);
     }
+  }
+
+  /**
+   * 标题类提示图：自上方弹入 → 快速淡入淡出闪烁 → 消失。
+   */
+  playTitlePopupNotice(element: HTMLElement, animationId: string, blinkSeconds: number = 3): void {
+    this.cancelAnimation(animationId);
+    this.showStates.delete(animationId);
+
+    element.style.display = 'block';
+    gsap.set(element, { xPercent: -50, yPercent: -50, y: -100, opacity: 0 });
+
+    const blinkHalf = 0.1;
+    const blinkRepeats = Math.max(0, Math.round(blinkSeconds / (blinkHalf * 2)) - 1);
+
+    const timeline = gsap.timeline({
+      onComplete: () => {
+        element.style.display = 'none';
+        gsap.set(element, { clearProps: 'transform,opacity' });
+        this.timelines.delete(animationId);
+      },
+    });
+
+    timeline
+      .to(element, { y: 0, opacity: 1, duration: 0.45, ease: 'back.out(1.4)' })
+      .to(element, {
+        opacity: 0.2,
+        duration: blinkHalf,
+        ease: 'power1.inOut',
+        yoyo: true,
+        repeat: blinkRepeats,
+      })
+      .to(element, { opacity: 0, y: -32, duration: 0.35, ease: 'power2.in' });
+
+    this.timelines.set(animationId, timeline);
+  }
+
+  playOvertimeNotice(element: HTMLElement, blinkSeconds: number = 3): void {
+    this.playTitlePopupNotice(element, 'overtime-notice', blinkSeconds);
+  }
+
+  cancelOvertimeNotice(element: HTMLElement): void {
+    this.cancelTitlePopupNotice(element, 'overtime-notice');
+  }
+
+  playFinalSwarmNotice(element: HTMLElement, blinkSeconds: number = 3): void {
+    this.playTitlePopupNotice(element, 'final-swarm-notice', blinkSeconds);
+  }
+
+  cancelFinalSwarmNotice(element: HTMLElement): void {
+    this.cancelTitlePopupNotice(element, 'final-swarm-notice');
+  }
+
+  cancelTitlePopupNotice(element: HTMLElement, animationId: string): void {
+    this.cancelAnimation(animationId);
+    element.style.display = 'none';
+    gsap.set(element, { clearProps: 'transform,opacity' });
   }
 
   /**
@@ -410,32 +465,47 @@ export class GSAPAnimationManager {
   }
 
   /**
-   * 最终蜂群标签动画
+   * 停止最终蜂群边框动画
    */
-  animateFinalSwarmLabel(element: HTMLElement, intensity: number, duration: number = 0.6): void {
-    const animationId = 'final-swarm-label';
+  stopFinalSwarmAnimations(): void {
+    this.cancelAnimation('final-swarm-border');
+  }
+
+  /**
+   * 局内主线任务条完成：先向右弹一下，再向左滑出屏幕。
+   */
+  animateQuestTrackDismiss(element: HTMLElement, onComplete?: () => void): void {
+    const animationId = 'quest-track-dismiss';
     this.cancelAnimation(animationId);
 
+    const slideOutX = () => -(element.getBoundingClientRect().right + 48);
+
     const timeline = gsap.timeline({
-      repeat: -1,
-      yoyo: true
+      onComplete: () => {
+        onComplete?.();
+        this.timelines.delete(animationId);
+      },
     });
 
-    timeline.to(element, {
-      opacity: 0.7 + intensity * 0.3,
-      duration: duration,
-      ease: "sine.inOut"
-    });
+    timeline
+      .to(element, {
+        x: 28,
+        duration: 0.28,
+        ease: 'back.out(2.4)',
+      })
+      .to(element, {
+        x: slideOutX,
+        duration: 0.62,
+        ease: 'power2.in',
+      });
 
     this.timelines.set(animationId, timeline);
   }
 
-  /**
-   * 停止最终蜂群动画
-   */
-  stopFinalSwarmAnimations(): void {
-    this.cancelAnimation('final-swarm-border');
-    this.cancelAnimation('final-swarm-label');
+  /** 重置局内任务条位置（重开本局 / tier 重置后恢复显示）。 */
+  resetQuestTrackHud(element: HTMLElement): void {
+    this.cancelAnimation('quest-track-dismiss');
+    gsap.set(element, { x: 0, opacity: 1, clearProps: 'transform' });
   }
 
   /**

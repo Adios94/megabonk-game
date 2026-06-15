@@ -1,6 +1,6 @@
 {
   "game": {
-    "title": "MEGABONK"
+    "title": "梆了个梆"
   },
   "menu": {
     "start": "开始游戏",
@@ -83,7 +83,7 @@
     "silver": "银币: {{count}}",
     "finalSwarm": "最终狂潮！",
     "combo": "连击 x{{count}}",
-    "quest": "找到祭坛，召唤并击败BOSS",
+    "quest": "找到祭坛，召唤并击败BOSS！",
     "weaponSlotLocked": "完成「装备 7 把不同武器」任务后解锁",
     "compass": {
       "altar": "祭坛",
@@ -399,15 +399,20 @@
       "body": "怪物正在快速变强：血量、数量和移动速度将持续提升"
     }
   },
+  "chest": {
+    "rewardTitle": "宝箱遗物",
+    "discard": "丢弃",
+    "keep": "留下"
+  },
   "shrine": {
     "title": "充能神殿奖励",
     "indicator_far": "充能神殿: {{dist}}m",
     "indicator_charging": "充能中... {{percent}}%",
     "rarity": {
-      "common": "常见的",
+      "common": "普通",
       "uncommon": "罕见",
-      "rare": "稀有的",
-      "legendary": "传说的"
+      "rare": "稀有",
+      "legendary": "传说"
     },
     "reward": {
       "damage_name": "伤害",
@@ -461,6 +466,8 @@
     "exit": "退出",
     "restart": "重新开始",
     "confirmExitMessage": "是否退出本局游戏？退出后你将无法获得本局的奖励！",
+    "confirmRestartMessage": "是否重新开始？重新开始后你将失去现在获得的所有奖励！",
+    "confirm": "确定",
     "cancel": "取消",
     "inventory": "背包",
     "weapons": "武器",
@@ -479,7 +486,13 @@
       "armor": "护甲",
       "moveSpeed": "移动速度",
       "pickupRadius": "拾取范围",
-      "projectileBonus": "额外弹药"
+      "projectileBonus": "额外弹药",
+      "xpGain": "经验获取",
+      "luck": "幸运",
+      "difficulty": "难度",
+      "lifesteal": "吸血",
+      "thorns": "荆棘",
+      "jumpHeight": "跳跃高度"
     }
   },
   "tutorial": {

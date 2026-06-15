@@ -19,23 +19,110 @@ import {
   SHRINE_RADIUS,
   SHRINE_CHARGE_DURATION,
   SHRINE_REWARD_COUNT,
+  STEP_HEIGHT,
 } from '../config.ts';
 import { rollShrineOptions } from '../data/shrineRewards.ts';
+import { getTerrainHeightAt, isBlockedHorizontallyAt, type LevelGeometry } from './collision.ts';
 import type { ShrineState, GameConfig, PlayerState } from '../types.ts';
 import type { Engine } from './types.ts';
 
-export function generateShrines(config: GameConfig): ShrineState[] {
-  const shrines: ShrineState[] = [];
+/** 与 collision.ts PLAYER_RADIUS 一致，用于生成点可走性检测。 */
+const SHRINE_WALK_RADIUS = 0.45;
+
+const SHRINE_SPAWN_ATTEMPTS = 64;
+
+function shrineGroundY(geo: LevelGeometry | undefined, x: number, z: number): number {
+  if (!geo) return 0;
+  const y = getTerrainHeightAt(geo, x, z);
+  return Number.isFinite(y) ? y : 0;
+}
+
+/**
+ * 充能圈范围内是否都可站立（避免刷在 colcyl_ 侧壁 / 墙内导致“空气墙”）。
+ * 除贴地高度外，还检测「地面高度 (feetY≈0) 是否被圆柱平台侧壁挡住」。
+ */
+export function isShrineSpotWalkable(
+  geo: LevelGeometry,
+  x: number,
+  z: number,
+  chargeRadius = SHRINE_RADIUS,
+): boolean {
+  const samplePoints: { sx: number; sz: number }[] = [{ sx: x, sz: z }];
+  for (let i = 0; i < 12; i++) {
+    const ang = (i / 12) * Math.PI * 2;
+    samplePoints.push({
+      sx: x + Math.cos(ang) * chargeRadius,
+      sz: z + Math.sin(ang) * chargeRadius,
+    });
+  }
+
+  const heights: number[] = [];
+  for (const { sx, sz } of samplePoints) {
+    const feetY = shrineGroundY(geo, sx, sz);
+    heights.push(feetY);
+    if (!canStandAtShrinePoint(geo, sx, sz, feetY)) return false;
+  }
+
+  const minH = Math.min(...heights);
+  const maxH = Math.max(...heights);
+  return maxH - minH <= STEP_HEIGHT;
+}
+
+function canStandAtShrinePoint(geo: LevelGeometry, x: number, z: number, feetY: number): boolean {
+  if (isBlockedHorizontallyAt(geo, x, z, feetY, true, SHRINE_WALK_RADIUS)) return false;
+  // 抬高平台：地面玩家若在此处会被 colcyl_ 侧壁挡住 → 不可作为神殿生成点
+  if (feetY > STEP_HEIGHT && isBlockedHorizontallyAt(geo, x, z, 0, true, SHRINE_WALK_RADIUS)) {
+    return false;
+  }
+  return true;
+}
+
+function pickShrinePosition(
+  index: number,
+  config: GameConfig,
+  geo: LevelGeometry | undefined,
+  used: readonly { x: number; z: number }[],
+): { x: number; z: number; y: number } {
   const halfMap = config.mapSize * 0.4;
-  // 散布在地图四周 —— 不挤在一起 + 离玩家出生点 (0,0) 至少 12m
+  const minDistFromOrigin = 12;
+  const minSeparation = SHRINE_RADIUS * 2.5;
+
+  for (let attempt = 0; attempt < SHRINE_SPAWN_ATTEMPTS; attempt++) {
+    const baseAngle = (index / SHRINE_COUNT) * Math.PI * 2;
+    const angle = baseAngle + (Math.random() - 0.5) * 0.8 + attempt * 0.11;
+    const dist = 18 + Math.random() * (halfMap * 0.45) + attempt * 0.35;
+    const x = Math.cos(angle) * dist;
+    const z = Math.sin(angle) * dist;
+
+    if (Math.hypot(x, z) < minDistFromOrigin) continue;
+    if (used.some((p) => Math.hypot(p.x - x, p.z - z) < minSeparation)) continue;
+    if (geo && !isShrineSpotWalkable(geo, x, z)) continue;
+
+    return { x, z, y: shrineGroundY(geo, x, z) };
+  }
+
+  // 兜底：固定角度，尽量远离出生点（无 geo 的单测 / 极端关卡）
+  const fallbackAngle = baseAngleFallback(index);
+  const fx = Math.cos(fallbackAngle) * 22;
+  const fz = Math.sin(fallbackAngle) * 22;
+  return { x: fx, z: fz, y: shrineGroundY(geo, fx, fz) };
+}
+
+function baseAngleFallback(index: number): number {
+  return (index / SHRINE_COUNT) * Math.PI * 2 + 0.25;
+}
+
+export function generateShrines(config: GameConfig, geo?: LevelGeometry): ShrineState[] {
+  const shrines: ShrineState[] = [];
+  const placed: { x: number; z: number }[] = [];
   for (let i = 0; i < SHRINE_COUNT; i++) {
-    const baseAngle = (i / SHRINE_COUNT) * Math.PI * 2;
-    const angle = baseAngle + (Math.random() - 0.5) * 0.6;
-    const dist = 18 + Math.random() * (halfMap * 0.45);
+    const { x, z, y } = pickShrinePosition(i, config, geo, placed);
+    placed.push({ x, z });
     shrines.push({
       id: i + 1,
-      x: Math.cos(angle) * dist,
-      z: Math.sin(angle) * dist,
+      x,
+      z,
+      y,
       phase: 'charging',
       chargeTimer: 0,
       chargeDuration: SHRINE_CHARGE_DURATION,

@@ -1,6 +1,6 @@
 {
   "game": {
-    "title": "MEGABONK"
+    "title": "BONK of BONK"
   },
   "menu": {
     "start": "Start Game",
@@ -83,7 +83,7 @@
     "silver": "Silver: {{count}}",
     "finalSwarm": "FINAL SWARM!",
     "combo": "COMBO x{{count}}",
-    "quest": "Find the altar, summon and defeat the BOSS",
+    "quest": "Find the altar, summon and defeat the BOSS!",
     "weaponSlotLocked": "Unlocked after completing the \"equip 7 different weapons\" quest",
     "compass": {
       "altar": "Altar",
@@ -399,6 +399,11 @@
       "body": "Monsters are ramping fast: health, numbers, and movement speed keep rising"
     }
   },
+  "chest": {
+    "rewardTitle": "Chest Relic",
+    "discard": "Discard",
+    "keep": "Keep"
+  },
   "shrine": {
     "title": "Charge Shrine Rewards",
     "indicator_far": "Charge Shrine: {{dist}}m",
@@ -461,6 +466,8 @@
     "exit": "Exit",
     "restart": "Restart",
     "confirmExitMessage": "Quit this run? You will not receive any rewards from this run!",
+    "confirmRestartMessage": "Restart this run? You will lose all rewards earned so far!",
+    "confirm": "Confirm",
     "cancel": "Cancel",
     "inventory": "Inventory",
     "weapons": "Weapons",
@@ -479,7 +486,13 @@
       "armor": "Armor",
       "moveSpeed": "Move Speed",
       "pickupRadius": "Pickup Range",
-      "projectileBonus": "Extra Ammo"
+      "projectileBonus": "Extra Ammo",
+      "xpGain": "XP Gain",
+      "luck": "Luck",
+      "difficulty": "Difficulty",
+      "lifesteal": "Lifesteal",
+      "thorns": "Thorns",
+      "jumpHeight": "Jump Height"
     }
   },
   "tutorial": {

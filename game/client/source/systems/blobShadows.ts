@@ -8,22 +8,26 @@
  *   pool.begin();
  *   pool.place(x, footY, z, radius);   // 每个可见单位调一次
  *   ...
- *   pool.end();                        // 回收本帧未用到的贴片
+ *   pool.end();                        // 提交本帧实例数
  *
- * 实现：共享一张径向渐变 CanvasTexture + 共享材质 + 共享几何体，
- * 用 Mesh 池循环复用，无每帧分配。
+ * 实现：**单个 InstancedMesh** 承载所有阴影 —— 不管同屏多少单位都只占 1 个 draw call。
+ * （早期版本每个单位一个独立 Mesh，超时狂潮 400+ 怪时贡献几百个 draw，是 draw call 大户。）
+ * 共享一张径向渐变 CanvasTexture + 共享材质 + 共享几何体，每帧只更新实例矩阵，无每帧分配。
  */
 
 import * as THREE from 'three';
 
 const TEX_SIZE = 128;
 const BASE_OPACITY = 0.4; // 整体阴影浓度（克制，不压住纯色块）
+// 实例上限：玩家(1) + 敌人(overtime 狂潮峰值 ~400+) + boss(1)，留足余量。超出的阴影本帧丢弃（不崩）。
+const MAX_SHADOWS = 1024;
 
 export class BlobShadowPool {
   private readonly geometry: THREE.PlaneGeometry;
   private readonly material: THREE.MeshBasicMaterial;
   private readonly texture: THREE.Texture;
-  private readonly pool: THREE.Mesh[] = [];
+  private readonly mesh: THREE.InstancedMesh;
+  private readonly dummy = new THREE.Object3D();
   private cursor = 0;
 
   constructor(private readonly scene: THREE.Scene) {
@@ -34,11 +38,21 @@ export class BlobShadowPool {
       color: 0x000000,
       transparent: true,
       opacity: BASE_OPACITY,
-      depthWrite: false, // 不写深度，避免挡住其它透明物
+      depthWrite: false, // 不写深度，避免挡住其它透明物（也使屏幕空间描边不会描到阴影）
       depthTest: true,   // 仍受遮挡：平台下方的 blob 不会透上来
     });
-    // 单位 1×1 平面，绕 X 转 -90° 平铺在地面（法线朝上）。
+    // 单位 1×1 平面，每个实例矩阵自带绕 X 转 -90°（平铺地面，法线朝上）。
     this.geometry = new THREE.PlaneGeometry(1, 1);
+
+    this.mesh = new THREE.InstancedMesh(this.geometry, this.material, MAX_SHADOWS);
+    this.mesh.name = 'BlobShadow'; // 场景对象标识（dev overlay 的 draw 分类亦按此名归类阴影）
+    this.mesh.frustumCulled = false; // 实例分布全场，整体包围球不可靠，关剔除
+    this.mesh.renderOrder = 1;       // 地面之后再画
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); // 每帧更新矩阵
+    this.mesh.count = 0;             // 首帧 end() 前不画任何实例
+    // 平铺旋转固定，place 时只改 position/scale。
+    this.dummy.rotation.x = -Math.PI / 2;
+    this.scene.add(this.mesh);
   }
 
   /** 每帧渲染前调用：重置游标。 */
@@ -51,32 +65,24 @@ export class BlobShadowPool {
    * footY 应为单位站立面的高度（= 单位 y 脚位）。
    */
   place(x: number, footY: number, z: number, radius: number): void {
-    let mesh = this.pool[this.cursor];
-    if (!mesh) {
-      mesh = new THREE.Mesh(this.geometry, this.material);
-      mesh.rotation.x = -Math.PI / 2; // 平铺
-      mesh.renderOrder = 1;           // 地面之后再画
-      mesh.frustumCulled = false;
-      this.scene.add(mesh);
-      this.pool[this.cursor] = mesh;
-    }
+    if (this.cursor >= MAX_SHADOWS) return; // 超上限：本帧丢弃，不扩容不崩
     const d = radius * 2; // plane 是 1×1，scale = 直径
-    mesh.position.set(x, footY + 0.02, z); // 抬一点防 z-fighting
-    mesh.scale.set(d, d, 1);
-    mesh.visible = true;
+    this.dummy.position.set(x, footY + 0.02, z); // 抬一点防 z-fighting
+    this.dummy.scale.set(d, d, 1);
+    this.dummy.updateMatrix();
+    this.mesh.setMatrixAt(this.cursor, this.dummy.matrix);
     this.cursor++;
   }
 
-  /** 每帧贴完后调用：隐藏本帧未用到的贴片。 */
+  /** 每帧贴完后调用：提交本帧实例数 + 标记矩阵更新。 */
   end(): void {
-    for (let i = this.cursor; i < this.pool.length; i++) {
-      this.pool[i].visible = false;
-    }
+    this.mesh.count = this.cursor;
+    this.mesh.instanceMatrix.needsUpdate = true;
   }
 
   dispose(): void {
-    for (const m of this.pool) this.scene.remove(m);
-    this.pool.length = 0;
+    this.scene.remove(this.mesh);
+    this.mesh.dispose();
     this.geometry.dispose();
     this.material.dispose();
     this.texture.dispose();

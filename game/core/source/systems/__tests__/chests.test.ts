@@ -56,6 +56,12 @@ describe('generateChests', () => {
         { x: -14, z: 0 },
         { x: 16, z: 0 },
         { x: -16, z: 0 },
+        { x: 18, z: 0 },
+        { x: -18, z: 0 },
+        { x: 20, z: 0 },
+        { x: -20, z: 0 },
+        { x: 22, z: 0 },
+        { x: -22, z: 0 },
       ],
     };
     const chests = generateChests(config);
@@ -88,6 +94,32 @@ describe('generateChests', () => {
         expect(Math.hypot(dx, dz)).toBeGreaterThanOrEqual(6);
       }
     }
+  });
+
+  it('关卡 chestSpawns 会排除 5 个固定神殿保留点', () => {
+    const reserved = [
+      { x: -100, y: 0, z: -100 },
+      { x: -100, y: 0, z: 100 },
+      { x: 100, y: 0, z: -100 },
+      { x: 100, y: 0, z: 100 },
+      { x: 0, y: 0, z: 0 },
+    ];
+    const config = makeEngine().config;
+    config.level = {
+      collisionRects: [],
+      walls: [],
+      climbVolumes: [],
+      ramps: [],
+      spawnPoints: {},
+      chestSpawns: [
+        ...reserved,
+        ...Array.from({ length: CHEST_COUNT }, (_, i) => ({ x: -45 + i * 10, y: 2, z: 20 })),
+      ],
+    };
+    const chests = generateChests(config);
+    const reservedKeys = new Set(reserved.map(p => `${p.x}:${p.y}:${p.z}`));
+    expect(chests).toHaveLength(CHEST_COUNT);
+    expect(chests.every(c => !reservedKeys.has(`${c.x}:${c.y ?? 0}:${c.z}`))).toBe(true);
   });
 });
 

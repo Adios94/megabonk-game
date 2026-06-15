@@ -321,6 +321,7 @@ export interface ShrineRewardOption {
 export interface ShrineState {
   id: number;
   x: number;
+  y?: number;
   z: number;
   phase: ShrinePhase;
   /** 当前充能进度（秒）。 */

@@ -6,7 +6,7 @@ import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.j
 // @ts-ignore
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { Pass } from 'three/examples/jsm/postprocessing/Pass.js';
+import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 // @ts-ignore
@@ -1311,6 +1311,69 @@ class OutlineComposerPass extends Pass {
   }
 }
 
+/**
+ * 末端调色 pass（美漫风格强化）：在 OutputPass 之后对最终显示色做
+ * 饱和度 / 对比度 / 亮度提升，让整体更鲜亮、色块更"跳"、明暗更分明。
+ * 全屏单 draw call，开销极低；参数集中在 GRADE_* 常量便于调。
+ */
+const GRADE_SATURATION = 1.28; // 饱和度（>1 更艳）
+const GRADE_CONTRAST = 1.14;   // 对比度（绕中灰 0.5 拉伸）
+const GRADE_BRIGHTNESS = 1.05; // 整体亮度微提
+
+class ColorGradePass extends Pass {
+  private readonly material: THREE.ShaderMaterial;
+  private readonly fsQuad: FullScreenQuad;
+
+  constructor(saturation: number, contrast: number, brightness: number) {
+    super();
+    this.material = new THREE.ShaderMaterial({
+      uniforms: {
+        tDiffuse: { value: null },
+        uSaturation: { value: saturation },
+        uContrast: { value: contrast },
+        uBrightness: { value: brightness },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        varying vec2 vUv;
+        uniform sampler2D tDiffuse;
+        uniform float uSaturation;
+        uniform float uContrast;
+        uniform float uBrightness;
+        void main() {
+          vec4 tex = texture2D(tDiffuse, vUv);
+          vec3 c = tex.rgb * uBrightness;
+          c = (c - 0.5) * uContrast + 0.5;            // 对比度：绕中灰拉伸
+          float l = dot(c, vec3(0.2126, 0.7152, 0.0722)); // 感知亮度
+          c = mix(vec3(l), c, uSaturation);            // 饱和度：朝灰度反向外推
+          gl_FragColor = vec4(clamp(c, 0.0, 1.0), tex.a);
+        }`,
+    });
+    this.fsQuad = new FullScreenQuad(this.material);
+  }
+
+  render(renderer: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget): void {
+    this.material.uniforms.tDiffuse.value = readBuffer.texture;
+    if (this.renderToScreen) {
+      renderer.setRenderTarget(null);
+    } else {
+      renderer.setRenderTarget(writeBuffer);
+      if (this.clear) renderer.clear();
+    }
+    this.fsQuad.render(renderer);
+  }
+
+  override dispose(): void {
+    this.material.dispose();
+    this.fsQuad.dispose?.();
+  }
+}
+
 function convertToToonMaterials(root: THREE.Object3D, halftone = true): void {
   root.traverse((child) => {
     if (!(child as THREE.Mesh).isMesh) return;
@@ -2191,6 +2254,35 @@ let chestOpenObj: THREE.Group | null = null;
 // glTF 宝箱自带的动画 clip（Open / Close / Idle_*），开箱时播放 "Open"。
 let chestAnimations: THREE.AnimationClip[] = [];
 
+// 贴地朝向：把摆件（宝箱等）的"上"对齐到斜坡法线，避免平底盒子在斜面上一角内嵌。
+const GROUND_UP = new THREE.Vector3(0, 1, 0);
+const _groundNormalTmp = new THREE.Vector3();
+const _groundQuatTmp = new THREE.Quaternion();
+const _groundIdentityQuat = new THREE.Quaternion();
+
+/**
+ * 求 (x,z) 处地面的朝向四元数：若点落在某条 ramp_ 斜坡的 footprint 内，
+ * 返回把世界 +Y 旋到斜面法线的最小旋转；否则返回单位四元数（平地竖直）。
+ * 斜面法线 = (-slopeDir * slope, 1, ...)，slope = (highY-lowY)/(2*halfSlope)。
+ */
+function groundQuaternionAt(x: number, z: number): THREE.Quaternion {
+  const ramps = loadedLevel?.data.ramps;
+  if (ramps && ramps.length > 0) {
+    for (const r of ramps) {
+      const dx = x - r.cx;
+      const dz = z - r.cz;
+      const s = dx * r.slopeDirX + dz * r.slopeDirZ;
+      const p = dx * -r.slopeDirZ + dz * r.slopeDirX;
+      if (Math.abs(s) > r.halfSlope || Math.abs(p) > r.halfPerp) continue;
+      const slope = r.halfSlope > 0 ? (r.highY - r.lowY) / (r.halfSlope * 2) : 0;
+      if (slope === 0) break;
+      _groundNormalTmp.set(-r.slopeDirX * slope, 1, -r.slopeDirZ * slope).normalize();
+      return _groundQuatTmp.setFromUnitVectors(GROUND_UP, _groundNormalTmp);
+    }
+  }
+  return _groundIdentityQuat.identity();
+}
+
 async function loadObjItems(): Promise<void> {
   const objLoader = new OBJLoader(bootLoadingManager);
 
@@ -2830,9 +2922,9 @@ export class GameScene {
 
     // Outline Effect (cel-shading edge lines)
     this.outlineEffect = new OutlineEffect(this.renderer, {
-      defaultThickness: 0.003, // 黑描边（细一点，更轻）
+      defaultThickness: 0.0045, // 黑描边加粗：美漫线条感更强
       defaultColor: [0, 0, 0],
-      defaultAlpha: 0.8,
+      defaultAlpha: 0.95,
     });
 
     // Scene
@@ -3061,7 +3153,9 @@ export class GameScene {
       this.bloomPass = bloom;
     }
 
-    composer.addPass(new OutputPass()); // 末端唯一 tone map：ACES + sRGB
+    composer.addPass(new OutputPass()); // tone map：ACES + sRGB
+    // 末端美漫调色：提饱和 / 对比 / 亮度，让画面更鲜亮、色块更跳。
+    composer.addPass(new ColorGradePass(GRADE_SATURATION, GRADE_CONTRAST, GRADE_BRIGHTNESS));
 
     this.composer = composer;
   }
@@ -6459,6 +6553,8 @@ export class GameScene {
 
       // Gentle hover animation（对可见宝箱统一处理）
       obj.position.set(chest.x, (chest.y ?? 0) + 0.1 + Math.sin(time * 1.5 + chest.id) * 0.05, chest.z);
+      // 斜坡上的宝箱：底面跟随斜面倾斜，避免一角嵌进地面。
+      obj.quaternion.copy(groundQuaternionAt(chest.x, chest.z));
       if (chest.bossDrop) {
         this.updateBossChestGlow(this.ensureBossChestGlow(obj), time + chest.id);
       } else {
@@ -6576,10 +6672,10 @@ export class GameScene {
         pillar.position.y = 1.75;
         group.add(pillar);
 
-        group.position.set(shrine.x, 0, shrine.z);
         this.scene.add(group);
         this.shrineMeshes.set(shrine.id, group);
       }
+      group.position.set(shrine.x, shrine.y ?? 0, shrine.z);
 
       // Animate by phase
       const disc = group.children[0] as THREE.Mesh;

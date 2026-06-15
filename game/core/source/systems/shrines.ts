@@ -21,11 +21,25 @@ import {
   SHRINE_REWARD_COUNT,
 } from '../config.ts';
 import { rollShrineOptions } from '../data/shrineRewards.ts';
+import { selectShrineMarkerPoints } from '../levelMarkerSelection.ts';
 import type { ShrineState, GameConfig, PlayerState } from '../types.ts';
 import type { Engine } from './types.ts';
 
 export function generateShrines(config: GameConfig): ShrineState[] {
   const shrines: ShrineState[] = [];
+  if (config.level) {
+    return selectShrineMarkerPoints(config.level.chestSpawns ?? [], SHRINE_COUNT).map((point, i) => ({
+      id: i + 1,
+      x: point.x,
+      y: point.y ?? 0,
+      z: point.z,
+      phase: 'charging',
+      chargeTimer: 0,
+      chargeDuration: SHRINE_CHARGE_DURATION,
+      options: null,
+    }));
+  }
+
   const halfMap = config.mapSize * 0.4;
   // 散布在地图四周 —— 不挤在一起 + 离玩家出生点 (0,0) 至少 12m
   for (let i = 0; i < SHRINE_COUNT; i++) {
@@ -35,6 +49,7 @@ export function generateShrines(config: GameConfig): ShrineState[] {
     shrines.push({
       id: i + 1,
       x: Math.cos(angle) * dist,
+      y: 0,
       z: Math.sin(angle) * dist,
       phase: 'charging',
       chargeTimer: 0,
@@ -65,7 +80,8 @@ export function tickShrines(engine: Engine, dt: number): void {
     if (shrine.phase === 'consumed' || shrine.phase === 'ready' || shrine.phase === 'inactive') continue;
     // shrine.phase === 'charging'
     const dist = distanceBetween(player.x, player.z, shrine.x, shrine.z);
-    if (dist <= SHRINE_RADIUS) {
+    const yDelta = Math.abs((player.y ?? 0) - (shrine.y ?? 0));
+    if (dist <= SHRINE_RADIUS && yDelta <= SHRINE_RADIUS) {
       shrine.chargeTimer = Math.min(shrine.chargeDuration, shrine.chargeTimer + dt);
       if (shrine.chargeTimer >= shrine.chargeDuration) {
         // 检查是否已有 active shrine —— 同时只能有一个进入 reward phase

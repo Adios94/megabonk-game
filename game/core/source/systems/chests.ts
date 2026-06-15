@@ -4,6 +4,11 @@
 import { distanceBetween } from '../physics.ts';
 import { pickRandomSubset } from '../spawnPick.ts';
 import {
+  excludeMarkerPoints,
+  markerPointKey,
+  selectShrineMarkerPoints,
+} from '../levelMarkerSelection.ts';
+import {
   CHEST_COUNT,
   CHEST_MAX_ACTIVE,
   CHEST_INTERACT_RADIUS,
@@ -48,7 +53,8 @@ export function spawnBossChest(engine: Engine, boss: BossState): ChestState {
 
 export function generateChests(config: GameConfig): ChestState[] {
   if (config.level) {
-    const placed = (config.level.chestSpawns ?? []).map(normalizeChestSpawnPoint);
+    const allPlaced = (config.level.chestSpawns ?? []).map(normalizeChestSpawnPoint);
+    const placed = excludeMarkerPoints(allPlaced, selectShrineMarkerPoints(allPlaced));
     return selectLevelChestSpawns(placed, CHEST_COUNT).map((p, i) => ({
       id: i + 1,
       x: p.x,
@@ -166,7 +172,8 @@ function tickChestRespawn(engine: Engine, dt: number): void {
 
 function chooseChestSpawn(engine: Engine): ChestSpawnPoint | undefined {
   if (engine.config.level) {
-    const placed = (engine.config.level.chestSpawns ?? []).map(normalizeChestSpawnPoint);
+    const allPlaced = (engine.config.level.chestSpawns ?? []).map(normalizeChestSpawnPoint);
+    const placed = excludeMarkerPoints(allPlaced, selectShrineMarkerPoints(allPlaced));
     const candidates = placed.filter(p => isAvailableLevelChestSpawn(engine, p));
     const active = engine.state.chests
       .filter(c => !c.opened && !c.bossDrop)
@@ -302,7 +309,7 @@ function isGoodChestSpawn(engine: Engine, x: number, z: number): boolean {
 }
 
 function chestSpawnKey(point: { x: number; y?: number; z: number }): string {
-  return `${roundCoord(point.x)}:${roundCoord(point.y ?? 0)}:${roundCoord(point.z)}`;
+  return markerPointKey(point);
 }
 
 function heightLayerKey(point: { y?: number }): string {

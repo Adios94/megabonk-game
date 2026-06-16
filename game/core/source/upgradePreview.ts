@@ -104,7 +104,19 @@ function previewWeaponUpgrade(option: UpgradeOption, player: PlayerState): Upgra
   const weapon = player.weapons.find(w => w.type === option.weaponType);
   if (!weapon) return [];
   const current = getWeaponStats(weapon);
-  const deltas = computeWeaponUpgradeDeltas(weapon, option.rarity);
+  const steps = Math.max(1, option.newLevel - option.currentLevel);
+  const oneStep = computeWeaponUpgradeDeltas(weapon, option.rarity);
+  const deltas: WeaponLevelStats = {
+    damage: oneStep.damage * steps,
+    cooldown: oneStep.cooldown * steps,
+    projectileCount: oneStep.projectileCount * steps,
+    bounces: oneStep.bounces * steps,
+    chains: oneStep.chains * steps,
+    range: oneStep.range * steps,
+    aoeRadius: oneStep.aoeRadius * steps,
+    pierce: oneStep.pierce * steps,
+    speed: oneStep.speed * steps,
+  };
 
   return WEAPON_FIELD_META
     .map(({ field, labelKey, priority, format }) => {
@@ -144,7 +156,7 @@ function previewNewWeapon(weaponType: WeaponType): UpgradePreviewLine[] {
 function previewTome(option: UpgradeOption): UpgradePreviewLine[] {
   const tomeType = option.tomeType ?? option.passiveType;
   if (!tomeType) return [];
-  const power = getTomeUpgradePower(option.rarity);
+  const power = getTomeUpgradePower(option.rarity) * Math.max(1, option.newLevel - option.currentLevel);
 
   switch (tomeType) {
     case 'attack_speed_tome':

@@ -22,7 +22,7 @@
  */
 
 import type {
-  GameConfig, GameState, GameResult, InputState, PlayerState,
+  GameConfig, GameState, GameResult, InputState, PlayerState, TomeState, UpgradeRarity,
 } from './types.ts';
 import {
   TICK_INTERVAL_MS,
@@ -103,6 +103,7 @@ export class GameInstance {
       pendingChestReward: null,
       stats: { killCount: 0, damageDealt: 0, damageTaken: 0, shieldAbsorbed: 0, silverEarned: 0 },
       weaponDamageStats: [],
+      bondDamageStats: [],
       waveIndex: 0,
       altars: [],
       shrines: [],
@@ -201,6 +202,7 @@ export class GameInstance {
     state.upgradeOptions = null;
     state.stats = { killCount: 0, damageDealt: 0, damageTaken: 0, shieldAbsorbed: 0, silverEarned: 0 };
     state.weaponDamageStats = [];
+    state.bondDamageStats = [];
     state.character = config.character;
     state.finalSwarm = false;
     state.player = createInitialPlayer(config);
@@ -211,6 +213,7 @@ export class GameInstance {
     state.activeShrineId = null;
     state.chests = generateChests(config);
     engine.nextChestId = nextChestId(state.chests);
+    engine.weaponDamageWindows = {};
     this.resultSettled = false;
     engine.nextEnemyId = 1;
     engine.nextProjectileId = 1;
@@ -333,17 +336,9 @@ export class GameInstance {
           const weapon = player.weapons.find(w => w.type === option.weaponType);
           // 新规则：level +1，并按选项稀有度缩放「本级→下一级」步进累加到 growth。
           if (weapon) {
-            applyWeaponUpgrade(weapon, option.rarity);
-            const bonus = player.nextWeaponUpgradeBonus ?? 0;
-            if (bonus > 0) {
-              player.nextWeaponUpgradeBonus = 0;
-              if (player.activeConsumable?.id === 'craftsman_hammer') {
-                player.activeConsumable = null;
-              }
-              for (let i = 0; i < bonus; i++) {
-                applyWeaponUpgrade(weapon, option.rarity);
-              }
-            }
+            const levels = Math.max(1, option.newLevel - weapon.level);
+            for (let i = 0; i < levels; i++) applyWeaponUpgrade(weapon, option.rarity);
+            if ((player.nextWeaponUpgradeBonus ?? 0) > 0) consumeNextUpgradeBonus(player);
           }
         }
         break;
@@ -351,12 +346,13 @@ export class GameInstance {
         if (option.tomeType) {
           const existing = player.tomes.find(t => t.type === option.tomeType);
           if (existing) {
-            applyTomeUpgrade(existing, option.rarity, option.newLevel);
+            applyTomeUpgradeSteps(existing, option.rarity, option.newLevel);
           } else {
             const tome = { type: option.tomeType!, level: 0 };
-            applyTomeUpgrade(tome, option.rarity, option.newLevel);
+            applyTomeUpgradeSteps(tome, option.rarity, option.newLevel);
             player.tomes.push(tome);
           }
+          if ((player.nextWeaponUpgradeBonus ?? 0) > 0) consumeNextUpgradeBonus(player);
           player.passives = player.tomes;
           recomputePlayerStats(player, engine.config.character, getShopBonuses());
         }
@@ -462,6 +458,14 @@ export class GameInstance {
       killCount: state.stats.killCount,
       level: state.player.level,
       silverEarned: totalSilver,
+      weaponDamageStats: state.player.weapons.map((weapon) => (
+        state.weaponDamageStats.find(stat => stat.weaponType === weapon.type) ?? {
+          weaponType: weapon.type,
+          killCount: 0,
+          totalDamage: 0,
+          dps: 0,
+        }
+      )),
     };
   }
 }
@@ -469,6 +473,19 @@ export class GameInstance {
 // ─────────────────────────────────────────────────────────────────────────
 // Helpers (file-private)
 // ─────────────────────────────────────────────────────────────────────────
+
+function consumeNextUpgradeBonus(player: PlayerState): void {
+  player.nextWeaponUpgradeBonus = 0;
+  if (player.activeConsumable?.id === 'craftsman_hammer') {
+    player.activeConsumable = null;
+  }
+}
+
+function applyTomeUpgradeSteps(tome: TomeState, rarity: UpgradeRarity, targetLevel: number): void {
+  while (tome.level < targetLevel) {
+    applyTomeUpgrade(tome, rarity, tome.level + 1);
+  }
+}
 
 function makeAiContext(engine: Engine, dt: number): AiContext {
   return {
@@ -508,13 +525,25 @@ function makeEffects(engine: Engine): AiEffects {
       }
       if (engine.state.projectiles.length >= MAX_PROJECTILES) return null;
       const id = engine.nextProjectileId++;
-      engine.state.projectiles.push({ id, hitEnemyIds: [], ...p });
+      const durationMult = p.fromPlayer ? (engine.state.player.durationMult ?? 1) : 1;
+      engine.state.projectiles.push({
+        id,
+        hitEnemyIds: [],
+        ...p,
+        lifetime: p.lifetime * durationMult,
+      });
       return id;
     },
     spawnAreaEffect: (a) => {
       if (engine.state.areaEffects.length >= MAX_AREA_EFFECTS) return null;
       const id = engine.nextAreaEffectId++;
-      engine.state.areaEffects.push({ id, ...a });
+      const durationMult = engine.state.player.durationMult ?? 1;
+      engine.state.areaEffects.push({
+        id,
+        ...a,
+        lifetime: a.lifetime * durationMult,
+        maxLifetime: a.maxLifetime * durationMult,
+      });
       return id;
     },
     getPlayerOrbitProjectiles: (weaponType) =>

@@ -206,8 +206,8 @@ tryMoveHorizontally(geo, oldX, oldZ, desiredX, desiredZ, feetY, opts)
 | Player | 重力 + 严格支撑面 | helper(0.45) + climb | FALL_RESPAWN_Y = -20 → 复活 |
 | Enemy | 软虚空贴地 | helper(0.4) | 不会发生 |
 | Boss | 软虚空贴地 | helper(1.0) | 同上 |
-| Projectile | vy 重力 + clamp ≥ terrainY+0.1 | 无（穿墙） | 同上 |
-| Gargoyle | 固定 y=3 | 飞越所有阻挡 | 不适用 |
+| Projectile | vy 重力 + clamp ≥ terrainY+0.1 | wall_ 命中销毁 | 同上 |
+| Gargoyle | 地形高度 + 1.8 | 飞越所有阻挡 | 不适用 |
 
 **关卡加载：**
 

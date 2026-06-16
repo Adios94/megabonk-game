@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { tickProjectiles } from '../projectiles.ts';
 import { makeEngine } from './_fixtures.ts';
+import { makeLevelGeometry } from '../collision.ts';
 import type { ProjectileState } from '../../types.ts';
 
 function makeProj(overrides: Partial<ProjectileState> = {}): ProjectileState {
@@ -116,5 +117,92 @@ describe('tickProjectiles: 地形 y clamp', () => {
     engine.state.projectiles.push(proj);
     tickProjectiles(engine, 0.01);
     expect(proj.y).toBe(10);
+  });
+
+  it('bone_bouncer 在底层/高架下方飞行时不被最高地表上抬', () => {
+    const engine = makeEngine();
+    engine.geo = makeLevelGeometry({
+      collisionRects: [{ cx: 0, cz: 0, halfW: 5, halfD: 5, height: 6 }],
+      walls: [],
+      climbVolumes: [],
+      ramps: [],
+      spawnPoints: {},
+      chestSpawns: [],
+    });
+    const proj = makeProj({
+      weaponType: 'bone_bouncer',
+      x: 0,
+      y: 1,
+      z: 0,
+      vx: 0,
+      vz: 0,
+    });
+    engine.state.projectiles.push(proj);
+    tickProjectiles(engine, 0.01);
+    expect(proj.y).toBe(1);
+  });
+});
+
+describe('tickProjectiles: wall_ 阻挡', () => {
+  function wallGeo() {
+    return makeLevelGeometry({
+      collisionRects: [],
+      walls: [{ cx: 0.5, cz: 0, halfW: 0.1, halfD: 2, bottomY: 0, topY: 3 }],
+      climbVolumes: [],
+      ramps: [],
+      spawnPoints: {},
+      chestSpawns: [],
+    });
+  }
+
+  it('我方直线投射物穿过 wall_ 路径时销毁', () => {
+    const engine = makeEngine();
+    engine.geo = wallGeo();
+    engine.state.projectiles.push(makeProj({
+      x: 0,
+      y: 1,
+      z: 0,
+      vx: 10,
+      vz: 0,
+      fromPlayer: true,
+    }));
+
+    tickProjectiles(engine, 0.1);
+
+    expect(engine.state.projectiles).toHaveLength(0);
+  });
+
+  it('敌方直线投射物穿过 wall_ 路径时销毁', () => {
+    const engine = makeEngine();
+    engine.geo = wallGeo();
+    engine.state.projectiles.push(makeProj({
+      x: 0,
+      y: 1,
+      z: 0,
+      vx: 10,
+      vz: 0,
+      fromPlayer: false,
+    }));
+
+    tickProjectiles(engine, 0.1);
+
+    expect(engine.state.projectiles).toHaveLength(0);
+  });
+
+  it('高于 wall_ 顶部的投射物不被阻挡', () => {
+    const engine = makeEngine();
+    engine.geo = wallGeo();
+    engine.state.projectiles.push(makeProj({
+      x: 0,
+      y: 4,
+      z: 0,
+      vx: 10,
+      vz: 0,
+      fromPlayer: true,
+    }));
+
+    tickProjectiles(engine, 0.1);
+
+    expect(engine.state.projectiles).toHaveLength(1);
   });
 });

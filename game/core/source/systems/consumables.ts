@@ -9,6 +9,7 @@ import {
   PICKUP_ATTRACT_SPEED,
   PICKUP_LIFETIME,
   PLAYER_INVINCIBLE_DURATION,
+  SHIELD_REGEN_DELAY,
 } from '../config.ts';
 import { CONSUMABLES, rollConsumableForEnemy, rollMiniBossBonusConsumable } from '../data/consumables.ts';
 import { getTomePower } from '../tomeProgression.ts';
@@ -126,11 +127,13 @@ export function applyConsumable(engine: Engine, consumableId: ConsumableId): voi
   const def = CONSUMABLES[consumableId];
   if (!def) return;
 
+  const powerupMult = player.powerupMult ?? 1;
+  const durationMult = player.durationMult ?? 1;
   clearConsumableEffects(player);
 
   switch (consumableId) {
     case 'wild_berry':
-      player.hp = Math.min(player.maxHp, player.hp + Math.round(player.maxHp * 0.15));
+      player.hp = Math.min(player.maxHp, player.hp + Math.round(player.maxHp * 0.15 * powerupMult));
       return;
 
     case 'hard_bread':
@@ -154,7 +157,7 @@ export function applyConsumable(engine: Engine, consumableId: ConsumableId): voi
     case 'magnet':
     case 'iron_meal':
     case 'rage_potion':
-      applyTimedConsumable(player, consumableId, def.duration ?? 0);
+      applyTimedConsumable(player, consumableId, (def.duration ?? 0) * durationMult, powerupMult);
       return;
   }
 }
@@ -163,24 +166,25 @@ function applyTimedConsumable(
   player: Engine['state']['player'],
   consumableId: ConsumableId,
   duration: number,
+  powerupMult = 1,
 ): void {
   player.activeConsumable = { id: consumableId, remaining: duration };
 
   switch (consumableId) {
     case 'mint_candy':
-      player.consumableSpeedMult = 1.15;
+      player.consumableSpeedMult = 1 + 0.15 * powerupMult;
       break;
     case 'energy_bar':
-      player.consumableAttackSpeedMult = 1.20;
+      player.consumableAttackSpeedMult = 1 + 0.20 * powerupMult;
       break;
     case 'magnet':
-      player.xpPickupRadiusMult = 2.0;
+      player.xpPickupRadiusMult = 1 + 1.0 * powerupMult;
       break;
     case 'iron_meal':
-      player.consumableArmorBonus = 4;
+      player.consumableArmorBonus = Math.max(1, Math.round(4 * powerupMult));
       break;
     case 'rage_potion':
-      player.consumableDamageMult = 1.18;
+      player.consumableDamageMult = 1 + 0.18 * powerupMult;
       player.consumableDamageTakenMult = 1.10;
       break;
     case 'hot_soup':
@@ -197,7 +201,7 @@ export function tickConsumableEffects(engine: Engine, dt: number): void {
   const active = player.activeConsumable;
   if (active && active.remaining > 0) {
     if (active.id === 'hot_soup' && player.hp < player.maxHp) {
-      const heal = player.maxHp * 0.02 * dt;
+      const heal = player.maxHp * 0.02 * (player.powerupMult ?? 1) * dt;
       player.hp = Math.min(player.maxHp, player.hp + heal);
     }
 
@@ -238,6 +242,7 @@ export function applyPlayerHit(engine: Engine, rawDamage: number): number {
   const damage = computePlayerHitDamage(engine, rawDamage);
   const { hpDamage, absorbed } = applyShieldAbsorb(player, damage);
   player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;
+  player.shieldRegenAccum = -SHIELD_REGEN_DELAY;
   engine.state.stats.damageTaken += hpDamage + absorbed;
   engine.state.stats.shieldAbsorbed += absorbed;
   // 铁血反击：受击（含护盾吸收）即触发。

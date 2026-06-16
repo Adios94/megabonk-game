@@ -131,3 +131,9 @@ export function updateRunStats(killCount: number, survivalTime: number, level: n
   if (damageTaken === 0 && survivalTime > 60) save.stats.noDamageRuns += 1;
   saveSave(save);
 }
+
+export function recordBossDefeated(): void {
+  const save = loadSave();
+  save.stats.bossesDefeated += 1;
+  saveSave(save);
+}

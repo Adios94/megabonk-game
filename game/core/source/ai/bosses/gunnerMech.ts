@@ -20,6 +20,11 @@ import { fireBolt, aimAngle } from './common.ts';
 
 const MELEE_RANGE = 3.5;
 const LEAP_RANGE = 4.0;
+const BOSS_ATTACK_MAX_Y_DELTA = 2.8;
+
+function canHitPlayerByHeight(boss: BossState, ctx: AiContext): boolean {
+  return Math.abs(boss.y - ctx.player.y) <= BOSS_ATTACK_MAX_Y_DELTA;
+}
 
 /** 三连点射：朝玩家小扇形发 3 发直线弹，每发 12 dmg（speed 12）。 */
 function aimedBurst(boss: BossState, ctx: AiContext): void {
@@ -40,13 +45,13 @@ function suppressFire(boss: BossState, ctx: AiContext): void {
 /** 近战横扫 25 dmg / 3.5 单位。 */
 function meleeSwipe(boss: BossState, ctx: AiContext): void {
   const dist = distanceBetween(boss.x, boss.z, ctx.player.x, ctx.player.z);
-  if (dist < MELEE_RANGE) ctx.effects.damagePlayer(25);
+  if (dist < MELEE_RANGE && canHitPlayerByHeight(boss, ctx)) ctx.effects.damagePlayer(25);
 }
 
 /** 跳击：落地小范围 AOE 20 dmg / 4.0 单位（Jump 动画演出换位）。 */
 function leapStrike(boss: BossState, ctx: AiContext): void {
   const dist = distanceBetween(boss.x, boss.z, ctx.player.x, ctx.player.z);
-  if (dist < LEAP_RANGE) ctx.effects.damagePlayer(20);
+  if (dist < LEAP_RANGE && canHitPlayerByHeight(boss, ctx)) ctx.effects.damagePlayer(20);
 }
 
 export const GUNNER_MECH_PHASES: readonly BossPhaseConfig[] = [

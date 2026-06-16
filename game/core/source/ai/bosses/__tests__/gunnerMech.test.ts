@@ -67,6 +67,15 @@ describe('attack: melee_swipe', () => {
     GUNNER_MECH.attacks.melee_swipe!(gunnerAt(1), ctx);
     expect(effects.damagePlayerSpy).not.toHaveBeenCalled();
   });
+
+  it('高度差超过 2.8 不伤害', () => {
+    const effects = makeAiEffects();
+    const ctx = makeAiContext({ player: makePlayer({ x: 1, y: 4, z: 0 }), effects });
+    const boss = gunnerAt(1);
+    boss.y = 0;
+    GUNNER_MECH.attacks.melee_swipe!(boss, ctx);
+    expect(effects.damagePlayerSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('attack: leap_strike', () => {
@@ -81,6 +90,15 @@ describe('attack: leap_strike', () => {
     const effects = makeAiEffects();
     const ctx = makeAiContext({ player: makePlayer({ x: 5, z: 0 }), effects });
     GUNNER_MECH.attacks.leap_strike!(gunnerAt(2), ctx);
+    expect(effects.damagePlayerSpy).not.toHaveBeenCalled();
+  });
+
+  it('高度差超过 2.8 不伤害', () => {
+    const effects = makeAiEffects();
+    const ctx = makeAiContext({ player: makePlayer({ x: 3, y: 4, z: 0 }), effects });
+    const boss = gunnerAt(2);
+    boss.y = 0;
+    GUNNER_MECH.attacks.leap_strike!(boss, ctx);
     expect(effects.damagePlayerSpy).not.toHaveBeenCalled();
   });
 });

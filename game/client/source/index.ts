@@ -36,6 +36,7 @@ import {
   type ConsumableId,
   getChestGoldCost,
   loadSave,
+  saveSave,
   purchaseUpgrade,
   getUpgradeCost,
   canAfford,
@@ -3359,6 +3360,7 @@ export class GameScene {
   private finalSwarmNoticeImg!: HTMLImageElement;
   private majorNoticeEl: HTMLDivElement | null = null;
   private majorNoticeTimer: ReturnType<typeof setTimeout> | null = null;
+  private lowHealthOverlay: HTMLDivElement | null = null;
   private pauseBtn!: HTMLDivElement;
   private pauseBtnIcon!: HTMLImageElement;
   private upgradePanel: HTMLDivElement | null = null;
@@ -3370,6 +3372,7 @@ export class GameScene {
   private finalSwarmBorder: HTMLDivElement | null = null;
   private wasFinalSwarm = false;
   private lastNoticeTier: DifficultyTier | null = null;
+  private lastNoticeStage: GameState['stage'] | null = null;
   private wasOvertime = false;
   private xpFlashTimer = 0;
   private seenChestOpenEvents = new Set<string>();
@@ -3683,6 +3686,8 @@ export class GameScene {
     }
     this.majorNoticeEl?.remove();
     this.majorNoticeEl = null;
+    this.lowHealthOverlay?.remove();
+    this.lowHealthOverlay = null;
     this.finalSwarmBorder?.remove();
     gsapAnimations.cancelOvertimeNotice(this.overtimeNoticeEl);
     this.overtimeNoticeEl?.remove();
@@ -8537,6 +8542,7 @@ export class GameScene {
       this.lastHpPercent = hpPercent;
     }
     this.hpText.textContent = `${Math.max(0, Math.ceil(p.hp))} / ${Math.ceil(p.maxHp)}`;
+    this.updateLowHealthFx(p);
 
     // Shield bar (only shown when player has shield capacity)
     const maxShield = p.maxShield ?? 0;
@@ -8921,6 +8927,32 @@ export class GameScene {
     }
   }
 
+  private updateLowHealthFx(p: GameState['player']): void {
+    const hpRatio = p.maxHp > 0 ? p.hp / p.maxHp : 1;
+    if (hpRatio >= 0.15 || !p.alive) {
+      if (this.lowHealthOverlay) {
+        this.lowHealthOverlay.remove();
+        this.lowHealthOverlay = null;
+      }
+      return;
+    }
+
+    if (!this.lowHealthOverlay) {
+      const overlay = document.createElement('div');
+      overlay.style.cssText = `
+        position:fixed;inset:0;pointer-events:none;z-index:88;opacity:0;
+        background:rgba(0,0,0,0.18);
+        box-shadow:inset 0 0 72px rgba(255,0,0,0.62),inset 0 0 22px rgba(255,40,40,0.44);
+        transition:opacity 160ms ease;
+      `;
+      document.body.appendChild(overlay);
+      this.lowHealthOverlay = overlay;
+    }
+
+    const severity = Math.max(0, Math.min(1, (0.15 - hpRatio) / 0.15));
+    this.lowHealthOverlay.style.opacity = String(0.42 + severity * 0.28);
+  }
+
   private getWeaponCooldownInfo(weapon: { type: string; cooldownTimer: number; level: number }): { cooldownPercent: number } {
     // Show cooldown as proportion — use a reasonable max cooldown for visual display
     const maxCd = 4.0;
@@ -9032,16 +9064,38 @@ export class GameScene {
     if (!this.gmWeaponDamageBody) return;
 
     const statsByWeapon = new Map((state.weaponDamageStats ?? []).map(s => [s.weaponType, s]));
-    const orderedStats = state.player.weapons.map((weapon) => (
-      statsByWeapon.get(weapon.type) ?? {
+    const weaponRows = state.player.weapons.map((weapon) => {
+      const stat = statsByWeapon.get(weapon.type) ?? {
         weaponType: weapon.type,
         killCount: 0,
         totalDamage: 0,
         dps: 0,
-      }
-    ));
+      };
+      return {
+        id: `weapon:${weapon.type}`,
+        label: `${WEAPON_ICONS[weapon.type] ?? '?'} ${t(`upgrade.weapon.${weapon.type}`)}`,
+        killCount: stat.killCount,
+        totalDamage: stat.totalDamage,
+        dps: stat.dps,
+        isBond: false,
+      };
+    });
+    const bondRows = (state.bondDamageStats ?? [])
+      .filter(stat => stat.totalDamage > 0 || stat.killCount > 0)
+      .map(stat => {
+        const bond = BONDS[stat.bondId];
+        return {
+          id: `bond:${stat.bondId}`,
+          label: `${bond?.icon ?? '🔗'} ${bond ? t(bond.nameKey) : stat.bondId}`,
+          killCount: stat.killCount,
+          totalDamage: stat.totalDamage,
+          dps: stat.dps,
+          isBond: true,
+        };
+      });
+    const orderedStats = [...weaponRows, ...bondRows];
 
-    const sig = orderedStats.map(s => s.weaponType).join('|');
+    const sig = orderedStats.map(s => s.id).join('|');
     if (sig !== this.gmWeaponDamageSig) {
       this.gmWeaponDamageSig = sig;
       this.gmWeaponDamageRows.clear();
@@ -9058,12 +9112,12 @@ export class GameScene {
       this.gmWeaponDamageBody.appendChild(header);
 
       for (const stat of orderedStats) {
-        this.createGmWeaponDamageRow(stat.weaponType);
+        this.createGmWeaponDamageRow(stat.id, stat.label, stat.isBond);
       }
     }
 
     for (const stat of orderedStats) {
-      const row = this.gmWeaponDamageRows.get(stat.weaponType);
+      const row = this.gmWeaponDamageRows.get(stat.id);
       if (!row) continue;
       row.kills.textContent = String(stat.killCount);
       row.dps.textContent = this.formatGmDamageNumber(stat.dps, 1);
@@ -9071,13 +9125,13 @@ export class GameScene {
     }
   }
 
-  private createGmWeaponDamageRow(weaponType: string): void {
+  private createGmWeaponDamageRow(rowId: string, label: string, isBond: boolean): void {
     const row = document.createElement('div');
     row.style.cssText = 'display:grid;grid-template-columns:minmax(92px,1fr) 38px 54px 58px;gap:6px;align-items:center;min-height:18px;border-top:1px solid rgba(255,255,255,0.06);padding-top:3px;';
 
     const name = document.createElement('span');
-    name.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#ffffff;font-weight:700;';
-    name.textContent = `${WEAPON_ICONS[weaponType] ?? '?'} ${t(`upgrade.weapon.${weaponType}`)}`;
+    name.style.cssText = `overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${isBond ? '#ffd966' : '#ffffff'};font-weight:700;`;
+    name.textContent = label;
     row.appendChild(name);
 
     const kills = this.createGmWeaponDamageValue();
@@ -9088,7 +9142,7 @@ export class GameScene {
     row.appendChild(total);
 
     this.gmWeaponDamageBody?.appendChild(row);
-    this.gmWeaponDamageRows.set(weaponType, { kills, dps, total });
+    this.gmWeaponDamageRows.set(rowId, { kills, dps, total });
   }
 
   private createGmWeaponDamageValue(): HTMLSpanElement {
@@ -9123,13 +9177,27 @@ export class GameScene {
 
     this.consumableBuffsContainer.innerHTML = '';
     const slot = document.createElement('div');
-    slot.style.cssText = 'width:clamp(38px,10vw,44px);height:clamp(38px,10vw,44px);background:rgba(20,12,34,0.82);border:1px solid rgba(180,120,255,0.5);border-radius:8px;position:relative;overflow:visible;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 0 10px rgba(160,90,255,0.25);';
+    slot.style.cssText = 'min-width:clamp(92px,22vw,126px);height:clamp(38px,10vw,44px);background:rgba(20,12,34,0.86);border:1px solid rgba(180,120,255,0.5);border-radius:8px;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:flex-start;gap:6px;padding:3px 7px;box-sizing:border-box;flex-shrink:0;box-shadow:0 0 10px rgba(160,90,255,0.25);';
     this.setItemTooltip(slot, this.createConsumableTooltipHtml(active.id, active.remaining));
 
     const icon = document.createElement('span');
-    icon.style.cssText = 'font-size:clamp(18px,5vw,22px);line-height:1;';
+    icon.style.cssText = 'font-size:clamp(18px,5vw,22px);line-height:1;position:relative;z-index:1;flex:0 0 auto;';
     setIconImage(icon, consumableIconSrc(active.id), CONSUMABLE_EMOJI[active.id] ?? '✨');
     slot.appendChild(icon);
+
+    const textCol = document.createElement('div');
+    textCol.style.cssText = 'position:relative;z-index:1;min-width:0;display:flex;flex-direction:column;gap:1px;line-height:1.05;';
+    const effect = document.createElement('div');
+    effect.style.cssText = uiPlainText('font-size:clamp(8px,2.1vw,10px);font-weight:bold;color:#f3e9ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;');
+    effect.textContent = t(`consumable.${active.id}_short`);
+    textCol.appendChild(effect);
+    const timerLine = document.createElement('div');
+    timerLine.style.cssText = uiPlainText('font-size:clamp(7px,1.8vw,9px);font-weight:bold;color:#cdb7ff;white-space:nowrap;');
+    timerLine.textContent = active.remaining < 0
+      ? t('consumable.pending')
+      : t('consumable.timer', { seconds: String(Math.ceil(active.remaining)) });
+    textCol.appendChild(timerLine);
+    slot.appendChild(textCol);
 
     // 限时 buff：顶部向下降的阴影（剩余越少阴影越高）
     if (active.remaining > 0 && this.consumableMaxRemaining > 0) {
@@ -9138,7 +9206,7 @@ export class GameScene {
       shade.style.cssText = `position:absolute;top:0;left:0;right:0;height:${Math.round((1 - ratio) * 100)}%;background:rgba(0,0,0,0.62);pointer-events:none;border-radius:8px 8px 0 0;overflow:hidden;`;
       slot.appendChild(shade);
       const secs = document.createElement('span');
-      secs.style.cssText = uiPlainText('position:absolute;bottom:-1px;left:0;right:0;text-align:center;font-size:8px;font-weight:bold;');
+      secs.style.cssText = uiPlainText('position:absolute;right:4px;bottom:1px;text-align:right;font-size:8px;font-weight:bold;z-index:2;');
       secs.textContent = `${Math.ceil(active.remaining)}s`;
       slot.appendChild(secs);
     }
@@ -9682,6 +9750,19 @@ export class GameScene {
       );
     }
 
+    if (this.lastNoticeStage === null) {
+      this.lastNoticeStage = state.stage;
+    } else if (state.stage !== this.lastNoticeStage) {
+      this.lastNoticeStage = state.stage;
+      if (state.stage === 2) {
+        this.showMajorNotice(
+          t('stage.notice.secondTitle'),
+          t('stage.notice.secondBody'),
+          '#ffcc00',
+        );
+      }
+    }
+
     const isOvertime = state.overtimeSeconds > 0;
     if (isOvertime && !this.wasOvertime) {
       this.overtimeNoticeImg.src = overtimeNoticeImagePath();
@@ -9809,6 +9890,10 @@ export class GameScene {
 
     // Description
     descEl.textContent = this.getUpgradeDesc(option);
+    const upgradeSteps = option.newLevel - option.currentLevel;
+    if (!isBond && upgradeSteps > 1) {
+      descEl.textContent = `${descEl.textContent} · ${t('upgrade.doubleLevel', { count: String(upgradeSteps) })}`;
+    }
 
     // 数值预览（基础步进 × 稀有度 / 典籍每级增益）
     const previewLines = getUpgradePreviewLines(option, player);
@@ -9919,6 +10004,48 @@ export class GameScene {
     silverRow.style.cssText = 'display:flex;justify-content:center;margin-top:2px;';
     silverRow.appendChild(createSilverBadge(result.silverEarned));
     statsContainer.appendChild(silverRow);
+
+    const weaponStats = [...(result.weaponDamageStats ?? [])];
+    if (weaponStats.length > 0) {
+      weaponStats.sort((a, b) => (b.killCount - a.killCount) || (b.totalDamage - a.totalDamage));
+      const mvp = weaponStats[0];
+      const weaponStatsBox = document.createElement('div');
+      weaponStatsBox.style.cssText = `
+        width:min(92vw,420px);margin-top:8px;padding:8px 10px;border-radius:10px;
+        background:rgba(12,12,24,0.72);border:1px solid rgba(255,255,255,0.16);
+        display:flex;flex-direction:column;gap:4px;box-sizing:border-box;
+      `;
+      const header = document.createElement('div');
+      header.style.cssText = uiPlainText('font-size:13px;font-weight:bold;color:#ffcc66;text-align:left;margin-bottom:2px;');
+      header.textContent = t('result.weaponStatsTitle');
+      weaponStatsBox.appendChild(header);
+
+      for (const stat of weaponStats) {
+        const isMvp = stat.weaponType === mvp.weaponType;
+        const row = document.createElement('div');
+        row.style.cssText = `
+          display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;
+          padding:3px 4px;border-radius:6px;font-size:12px;
+          color:${isMvp ? '#ffd700' : '#f3f3ff'};
+          background:${isMvp ? 'rgba(255,200,40,0.13)' : 'transparent'};
+          border:${isMvp ? '1px solid rgba(255,215,0,0.38)' : '1px solid transparent'};
+        `;
+        const name = document.createElement('span');
+        name.style.cssText = 'min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:bold;text-align:left;';
+        name.innerHTML = `${iconImgHtml(weaponIconSrc(stat.weaponType), 16)} ${escapeTooltipText(t(`upgrade.weapon.${stat.weaponType}`))}${isMvp ? ` <span style="color:#ffd700;">${escapeTooltipText(t('result.mvp'))}</span>` : ''}`;
+        const kills = document.createElement('span');
+        kills.style.cssText = 'font-variant-numeric:tabular-nums;text-align:right;';
+        kills.textContent = t('result.weaponKills', { count: String(stat.killCount) });
+        const damage = document.createElement('span');
+        damage.style.cssText = 'font-variant-numeric:tabular-nums;text-align:right;';
+        damage.textContent = t('result.weaponDamage', { damage: this.formatGmDamageNumber(stat.totalDamage, 0) });
+        row.appendChild(name);
+        row.appendChild(kills);
+        row.appendChild(damage);
+        weaponStatsBox.appendChild(row);
+      }
+      statsContainer.appendChild(weaponStatsBox);
+    }
 
     if (newQuests.length > 0) {
       const questHeader = document.createElement('div');
@@ -10311,8 +10438,11 @@ export class GameScene {
     this.resetQuestHudTrack();
     this.cameraOrbit.setEnabled(true);
     this.lastNoticeTier = null;
+    this.lastNoticeStage = null;
     this.wasOvertime = false;
     this.wasFinalSwarm = false;
+    this.lowHealthOverlay?.remove();
+    this.lowHealthOverlay = null;
     gsapAnimations.cancelOvertimeNotice(this.overtimeNoticeEl);
     gsapAnimations.cancelFinalSwarmNotice(this.finalSwarmNoticeEl);
     this.session.restart();
@@ -10376,6 +10506,20 @@ let selectedCharacter: CharacterType = 'megachad';
 let selectedTier: DifficultyTier = 1;
 
 const CHARACTER_ORDER: CharacterType[] = ['megachad', 'roberto', 'skateboard_skeleton'];
+
+function getUnlockedCharacters(): Set<CharacterType> {
+  return new Set(loadSave().charactersUnlocked as CharacterType[]);
+}
+
+function isCharacterUnlocked(char: CharacterType): boolean {
+  return getUnlockedCharacters().has(char);
+}
+
+function ensureSelectableCharacter(): void {
+  if (!isCharacterUnlocked(selectedCharacter)) {
+    selectedCharacter = 'megachad';
+  }
+}
 
 const PREP_SCREEN_STYLE = `
   position:fixed;top:0;left:0;width:100%;height:100%;box-sizing:border-box;
@@ -10592,16 +10736,19 @@ function scheduleCharacterSelectDetailLayout(): void {
 
 function mountCharacterSelectSlots(host: HTMLElement): void {
   host.replaceChildren();
+  const unlocked = getUnlockedCharacters();
 
   for (const char of CHARACTER_ORDER) {
+    const isUnlocked = unlocked.has(char);
     const isSelected = char === selectedCharacter;
     const frames = CHARACTER_AVATAR_FRAME_PATHS[char];
 
     const slot = document.createElement('div');
     slot.style.cssText = `
       position:relative;width:clamp(46px,12vw,56px);min-width:44px;min-height:44px;
-      cursor:pointer;flex-shrink:0;transition:transform 0.15s;
+      cursor:${isUnlocked ? 'pointer' : 'not-allowed'};flex-shrink:0;transition:transform 0.15s;
       touch-action:manipulation;user-select:none;
+      opacity:${isUnlocked ? '1' : '0.48'};filter:${isUnlocked ? 'none' : 'grayscale(1)'};
     `;
 
     const frameImg = document.createElement('img');
@@ -10612,12 +10759,25 @@ function mountCharacterSelectSlots(host: HTMLElement): void {
 
     slot.appendChild(frameImg);
 
+    if (!isUnlocked) {
+      const lock = document.createElement('div');
+      lock.style.cssText = `
+        position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+        color:#fff;font-size:clamp(18px,5vw,24px);text-shadow:0 2px 5px #000;
+        pointer-events:none;
+      `;
+      lock.textContent = '🔒';
+      slot.appendChild(lock);
+      slot.title = t('characterSelect.locked');
+    }
+
     slot.addEventListener('click', () => {
+      if (!isUnlocked) return;
       selectedCharacter = char;
       mountCharacterSelectSlots(host);
       refreshCharacterSelectUI();
     });
-    slot.addEventListener('mouseenter', () => { slot.style.transform = 'scale(1.05)'; });
+    slot.addEventListener('mouseenter', () => { if (isUnlocked) slot.style.transform = 'scale(1.05)'; });
     slot.addEventListener('mouseleave', () => { slot.style.transform = 'scale(1)'; });
 
     host.appendChild(slot);
@@ -10909,8 +11069,10 @@ function formatWeaponStatLines(weaponType: string): string[] {
 
 function refreshCharacterSelectDetail(): void {
   if (!characterSelectDetailHost) return;
+  ensureSelectableCharacter();
 
   const id = selectedCharacter;
+  const unlocked = isCharacterUnlocked(id);
   const cfg = CHARACTER_CONFIGS[id];
   const weapon = cfg.startingWeapon;
   const detailFont = (size: string, extra = '') =>
@@ -11091,10 +11253,17 @@ function refreshCharacterSelectDetail(): void {
     flex:0 0 auto;width:100%;display:flex;align-items:center;justify-content:center;
     box-sizing:border-box;margin-top:${weaponConfirmGap};
   `;
-  confirmSection.appendChild(createCharacterConfirmButton(t('characterSelect.confirm'), () => {
+  const confirmBtn = createCharacterConfirmButton(unlocked ? t('characterSelect.confirm') : t('characterSelect.locked'), () => {
+    if (!isCharacterUnlocked(selectedCharacter)) return;
     destroyCharacterSelectScreen();
     showTierSelectScreen();
-  }));
+  });
+  if (!unlocked) {
+    confirmBtn.style.filter = 'grayscale(1)';
+    confirmBtn.style.opacity = '0.55';
+    confirmBtn.style.cursor = 'not-allowed';
+  }
+  confirmSection.appendChild(confirmBtn);
   bodyArea.appendChild(confirmSection);
   card.appendChild(bodyArea);
 
@@ -11152,6 +11321,7 @@ let tierSelectEl: HTMLDivElement | null = null;
 
 function showCharacterSelectScreen(): void {
   if (characterSelectEl) return;
+  ensureSelectableCharacter();
 
   characterSelectEl = document.createElement('div');
   characterSelectEl.id = 'character-select-root';
@@ -11292,6 +11462,11 @@ function showTierSelectScreen(): void {
   const startWrap = document.createElement('div');
   startWrap.style.cssText = 'margin-top:16px;width:100%;display:flex;justify-content:center;box-sizing:border-box;';
   startWrap.appendChild(createMainMenuButton(MENU_BUTTON_ICONS.start, t('menu.start'), () => {
+    if (!isCharacterUnlocked(selectedCharacter)) {
+      destroyTierSelectScreen();
+      showCharacterSelectScreen();
+      return;
+    }
     destroyTierSelectScreen();
     startGame(selectedCharacter);
   }));
@@ -12505,6 +12680,7 @@ function setupGMTool(): void {
     skipTo(minutes: number) { gmSkipTime(minutes); },
     giveWeapon(type: string, level: number = 1) { gmGiveWeapon(type, level); },
     giveAllWeapons() { gmGiveAllWeapons(); },
+    unlockAllCharacters() { gmUnlockAllCharacters(); },
     listWeapons() { console.log('[GM] 可选武器:\n' + ALL_WEAPON_TYPES.map((t) => `  ${t.padEnd(16)} ${GM_WEAPON_LABELS[t]}`).join('\n')); },
     testLightning() { gmTestLightning(); },
     showCollision() { gmToggleCollisionViz(); },
@@ -12524,6 +12700,8 @@ GM Commands (window.__gm):
                       — 加指定武器（type 见 .listWeapons()，槽位不足自动扩容）
   .listWeapons()      — 列出全部 12 把可选武器（id + 中文名）
   .giveAllWeapons()   — 一键塞满全部武器
+  .unlockAllCharacters()
+                    — 解锁全部角色
   .testLightning()    — 在玩家头顶劈一道电（VFX 测试）
   .showCollision()    — 切换碰撞盒可视化（绿 col_ / 红 wall_ /
                         蓝 climb_ / 黄 ramp_ / 品红 spawn_*）
@@ -12661,6 +12839,15 @@ function gmGiveAllWeapons(): void {
   console.log(`[GM] All weapons granted (${player.weapons.length}/${player.maxWeaponSlots})`);
 }
 
+function gmUnlockAllCharacters(): void {
+  const save = loadSave();
+  save.charactersUnlocked = [...CHARACTER_ORDER];
+  saveSave(save);
+  if (characterSelectSlotsHost) mountCharacterSelectSlots(characterSelectSlotsHost);
+  refreshCharacterSelectUI();
+  console.log('[GM] All characters unlocked');
+}
+
 function gmTestLightning(): void {
   if (!gmSession || !activeScene) {
     console.warn('[GM] No active scene');
@@ -12712,6 +12899,7 @@ function toggleGMPanel(): void {
     ['+剑 (Lv5)', () => gmGiveWeapon('sword', 5)],
     ['+火焰环 (Lv5)', () => gmGiveWeapon('flame_ring', 5)],
     ['给我所有武器', gmGiveAllWeapons],
+    ['解锁全部角色', gmUnlockAllCharacters],
     ['⚡测试闪电特效⚡', gmTestLightning],
     ['🟩 切换碰撞盒可视化', gmToggleCollisionViz],
   ];

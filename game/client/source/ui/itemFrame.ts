@@ -9,7 +9,7 @@
  * 框用 background-size:100% 100% 拉伸贴满卡片，所有内部分区用百分比高度，
  * 因此无论卡片被 flex 拉高还是按 aspect-ratio 自适应，标题条与内容区分界都自动对齐。
  */
-import { uiColoredText, uiPlainText } from './textStyle.ts';
+import { uiColoredText, uiColoredTextCrisp, uiPlainText, uiPlainTextCrisp } from './textStyle.ts';
 
 /** 框图原图尺寸（与 SVG viewBox 一致，用于 aspect-ratio）。 */
 export const ITEM_FRAME_SIZE = { w: 149, h: 170 } as const;
@@ -232,7 +232,7 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
     padding:${titlePaddingTop} 12% 0;box-sizing:border-box;overflow:hidden;
   `;
   const titleEl = document.createElement('div');
-  titleEl.style.cssText = uiPlainText(
+  titleEl.style.cssText = uiPlainTextCrisp(
     'font-size:clamp(11px,3.2vw,14px);font-weight:bold;line-height:1.05;text-align:center;width:100%;',
   );
   titleEl.textContent = title;
@@ -252,13 +252,14 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
   `;
 
   const descEl = document.createElement('div');
-  descEl.style.cssText = uiPlainText(
+  descEl.style.cssText = uiPlainTextCrisp(
     'font-size:clamp(10px,2.7vw,11px);line-height:1.3;text-align:center;width:100%;',
   );
 
+  const statsBoxBg = rarity === 'common' ? 'rgba(28,28,32,0.72)' : 'rgba(255,255,255,0.55)';
   const statsBox = document.createElement('div');
   statsBox.style.cssText = `
-    width:100%;background:rgba(255,255,255,0.55);
+    width:100%;background:${statsBoxBg};
     border:2px solid ${accentColor};border-radius:8px;
     padding:4px 7px;box-sizing:border-box;
     display:flex;flex-direction:column;gap:1px;
@@ -268,7 +269,7 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
   grow.style.cssText = 'flex:1 1 auto;min-height:0;';
 
   const levelEl = document.createElement('div');
-  levelEl.style.cssText = uiPlainText(
+  levelEl.style.cssText = uiPlainTextCrisp(
     `font-size:clamp(10px,2.7vw,12px);font-weight:bold;line-height:1.2;text-align:center;width:100%;margin-top:${levelMarginTop};`,
   );
 
@@ -287,7 +288,7 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
     padding:0 25% ${rarityPaddingBottom};box-sizing:border-box;overflow:hidden;
   `;
   const rarityEl = document.createElement('div');
-  rarityEl.style.cssText = uiPlainText(
+  rarityEl.style.cssText = uiPlainTextCrisp(
     'font-size:clamp(10px,2.6vw,12px);font-weight:bold;letter-spacing:0.5px;line-height:1;text-align:center;width:100%;',
   );
   rarityBar.appendChild(rarityEl);
@@ -309,10 +310,10 @@ export function upgradeStatRow(label: string, value: string, accentColor: string
   const row = document.createElement('div');
   row.style.cssText = 'display:flex;justify-content:space-between;gap:6px;line-height:1.45;';
   const lab = document.createElement('span');
-  lab.style.cssText = uiPlainText('font-size:clamp(9px,2.6vw,11px);line-height:1.45;');
+  lab.style.cssText = uiPlainTextCrisp('font-size:clamp(9px,2.6vw,11px);line-height:1.45;');
   lab.textContent = label;
   const val = document.createElement('span');
-  val.style.cssText = uiColoredText(accentColor, '') + 'font-size:clamp(9px,2.6vw,11px);font-weight:bold;line-height:1.45;';
+  val.style.cssText = uiColoredTextCrisp(accentColor, '') + 'font-size:clamp(9px,2.6vw,11px);font-weight:bold;line-height:1.45;';
   val.textContent = value;
   row.appendChild(lab);
   row.appendChild(val);

@@ -2839,14 +2839,47 @@ async function loadObjItems(): Promise<void> {
     }
   };
 
+  // 同 loadAndNormalize，但从 GLB 取几何体。GLB 的 mesh 常带 node 变换（导出工具的 scale/rotation），
+  // 必须先把 matrixWorld 烘焙进 geometry，否则 InstancedMesh 用裸 geometry 会丢变换、错位/错尺寸。
+  const loadAndNormalizeGlb = async (path: string, targetSize: number): Promise<THREE.BufferGeometry> => {
+    try {
+      const gltf = await gltfLoader.loadAsync(path);
+      gltf.scene.updateMatrixWorld(true);
+      let foundGeo: THREE.BufferGeometry | null = null;
+      let foundMatrix: THREE.Matrix4 | null = null;
+      gltf.scene.traverse((child: THREE.Object3D) => {
+        if (!foundGeo && (child as THREE.Mesh).isMesh) {
+          foundGeo = (child as THREE.Mesh).geometry.clone();
+          foundMatrix = (child as THREE.Mesh).matrixWorld.clone();
+        }
+      });
+      if (!foundGeo) return new THREE.OctahedronGeometry(targetSize, 0);
+      const geo: THREE.BufferGeometry = foundGeo;
+      geo.applyMatrix4(foundMatrix!); // 烘焙 node 变换，与 obj（无 node）行为对齐
+      geo.computeBoundingBox();
+      const size = geo.boundingBox!.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z, 0.01);
+      const scale = targetSize / maxDim;
+      geo.scale(scale, scale, scale);
+      geo.computeBoundingBox();
+      const center = geo.boundingBox!.getCenter(new THREE.Vector3());
+      geo.translate(-center.x, -center.y, -center.z);
+      console.log(`[GLB] Loaded geometry: ${path} (${(geo.getAttribute('position') as THREE.BufferAttribute).count} verts)`);
+      return geo;
+    } catch (err) {
+      console.warn(`[GLB] Failed geometry: ${path}`, err);
+      return new THREE.OctahedronGeometry(targetSize, 0);
+    }
+  };
+
   [crystalGeometry, heartGeometry, heartHalfGeometry, boneGeometry, crystal2Geometry, crystal3Geometry, crystal4Geometry] = await Promise.all([
-    loadAndNormalize('/models/items/Crystal1.obj', 0.4),
+    loadAndNormalizeGlb('/models/items/Crystal1.glb', 0.4),
     loadAndNormalize('/models/items/Heart.obj', 0.5),
     loadAndNormalize('/models/items/Heart_Half.obj', 0.42),
-    loadAndNormalize('/models/items/Bone.obj', 0.5),
-    loadAndNormalize('/models/items/Crystal2.obj', 0.4),
-    loadAndNormalize('/models/items/Crystal3.obj', 0.4),
-    loadAndNormalize('/models/items/Crystal4.obj', 0.4),
+    loadAndNormalizeGlb('/models/items/Bone.glb', 0.5),
+    loadAndNormalizeGlb('/models/items/Crystal2.glb', 0.4),
+    loadAndNormalizeGlb('/models/items/Crystal3.glb', 0.4),
+    loadAndNormalizeGlb('/models/items/Crystal4.glb', 0.4),
   ]);
 
   // Helper: load full model with materials (MTL + OBJ)
@@ -3004,7 +3037,7 @@ async function loadObjItems(): Promise<void> {
 
   // Load all weapon models in parallel — pass brighten=true for weapons only
   const [ax, sw, kat, pistol, dag, ham, dar, darG, bul, lstaff, fring, pbomb, vbook, rgun, sgun, pgun, sboots] = await Promise.all([
-    loadFullModel('AxeModel', '/models/items/Axe_small.mtl', '/models/items/Axe_small.obj', 0.6, true),
+    loadGlbWeaponModel('AxeModel', '/models/items/Axe_small.glb', 0.6, true),
     loadFullModel('SwordModel', '/models/items/greatsword.mtl', '/models/items/greatsword.obj', 0.8, true),
     loadFullModel('KatanaModel', '/models/items/Sword_big.mtl', '/models/items/Sword_big.obj', 0.9, true),
     // pistol 武器自身的悬浮模型（自导出 GLB + 贴图）
@@ -3017,9 +3050,9 @@ async function loadObjItems(): Promise<void> {
     loadGlbWeaponModel('BulletModel', '/models/items/bullet.glb', 0.5, true),
     // Magic weapon floater models (previously VFX-only)
     loadTexturedGlbWeaponModel('LightningStaffModel', '/models/items/lightning_staff.glb', 1.0),
-    loadFullModel('FlameRingModel', '/models/items/Ring3.mtl', '/models/items/Ring3.obj', 0.45, true),
+    loadGlbWeaponModel('FlameRingModel', '/models/items/Ring3.glb', 0.45, true),
     loadTexturedGlbWeaponModel('PoisonBombModel', '/models/items/poison_bomb.glb', 0.5),
-    loadFullModel('VoidRippleModel', '/models/items/Book4_Closed.mtl', '/models/items/Book4_Closed.obj', 0.5, true),
+    loadGlbWeaponModel('VoidRippleModel', '/models/items/Book4_Closed.glb', 0.5, true),
     loadGlbWeaponModel('RayGunModel', '/models/items/ray_gun.glb', 0.7, true),
     loadPaletteObjWeaponModel('ShotgunModel', '/models/items/shotgun_2.obj', '/models/items/uv_palette.png', 0.8),
     loadPaletteObjWeaponModel('ParalysisGunModel', '/models/items/pistol_6.obj', '/models/items/uv_palette.png', 0.6),

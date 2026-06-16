@@ -3245,6 +3245,10 @@ export class GameScene {
   private chestMixers: Map<number, THREE.AnimationMixer> = new Map();
   private chestRewardPanel: HTMLDivElement | null = null;
   private chestRewardPanelKey: string | null = null;
+  /** chest_reward 阶段已就绪、待开箱动画播完后再展示的奖励。 */
+  private pendingChestRewardReveal: PendingChestReward | null = null;
+  /** 已完成 "Open" 动画的宝箱 id（幂等标记，避免重复触发弹窗）。 */
+  private chestOpenAnimDone = new Set<number>();
 
   // InstancedMeshes
   // Enemy rendering — individual cloned models (preserves full materials)
@@ -3681,6 +3685,8 @@ export class GameScene {
     this.pausePanel = null;
     this.shrinePanel?.remove();
     this.chestRewardPanel?.remove();
+    this.pendingChestRewardReveal = null;
+    this.chestOpenAnimDone.clear();
     this.shrineIndicator?.remove();
     if (this.majorNoticeTimer) {
       clearTimeout(this.majorNoticeTimer);
@@ -7073,13 +7079,39 @@ export class GameScene {
     const reward = state.pendingChestReward;
     if (state.phase === 'chest_reward' && reward) {
       const key = `${reward.chestId}:${reward.relicId}`;
-      if (!this.chestRewardPanel || this.chestRewardPanelKey !== key) {
-        this.hideChestRewardPanel();
-        this.showChestRewardPanel(reward);
-      }
+      if (this.chestRewardPanel && this.chestRewardPanelKey === key) return;
+      this.pendingChestRewardReveal = reward;
+      this.tryRevealChestRewardPanel();
       return;
     }
+    this.pendingChestRewardReveal = null;
     if (this.chestRewardPanel) this.hideChestRewardPanel();
+  }
+
+  /** 开箱 glTF 动画播完（或无可播动画）后再弹出遗物选择面板。 */
+  private tryRevealChestRewardPanel(): void {
+    const reward = this.pendingChestRewardReveal;
+    if (!reward) return;
+
+    const chestId = reward.chestId;
+    if (!this.chestOpenAnimDone.has(chestId)) {
+      const obj = this.chestObjects.get(chestId);
+      const openClip = chestAnimations.length > 0
+        ? THREE.AnimationClip.findByName(chestAnimations, 'Open')
+        : null;
+      if (obj && openClip && !this.chestMixers.has(chestId)) return;
+      if (obj && openClip) return;
+      this.chestOpenAnimDone.add(chestId);
+    }
+
+    const key = `${reward.chestId}:${reward.relicId}`;
+    if (this.chestRewardPanel && this.chestRewardPanelKey === key) {
+      this.pendingChestRewardReveal = null;
+      return;
+    }
+    this.hideChestRewardPanel();
+    this.showChestRewardPanel(reward);
+    this.pendingChestRewardReveal = null;
   }
 
   private showChestRewardPanel(reward: PendingChestReward): void {
@@ -7474,20 +7506,34 @@ export class GameScene {
     if (this.chestMixers.size > 0) {
       for (const mixer of this.chestMixers.values()) mixer.update(this.frameDt);
     }
+    this.tryRevealChestRewardPanel();
   }
 
   /** 对已开启宝箱播放一次 "Open" 动画（幂等：已有 mixer 则跳过）。 */
   private playChestOpenAnimation(chestId: number): void {
-    if (this.chestMixers.has(chestId)) return;
+    if (this.chestMixers.has(chestId) || this.chestOpenAnimDone.has(chestId)) return;
     const obj = this.chestObjects.get(chestId);
-    if (!obj || chestAnimations.length === 0) return;
+    if (!obj || chestAnimations.length === 0) {
+      this.chestOpenAnimDone.add(chestId);
+      this.tryRevealChestRewardPanel();
+      return;
+    }
     const clip = THREE.AnimationClip.findByName(chestAnimations, 'Open');
-    if (!clip) return;
+    if (!clip) {
+      this.chestOpenAnimDone.add(chestId);
+      this.tryRevealChestRewardPanel();
+      return;
+    }
     const mixer = new THREE.AnimationMixer(obj);
     const action = mixer.clipAction(clip);
     action.setLoop(THREE.LoopOnce, 1);
     action.clampWhenFinished = true; // 播完停在开盖姿态
     action.play();
+    mixer.addEventListener('finished', (event) => {
+      if (event.action !== action) return;
+      this.chestOpenAnimDone.add(chestId);
+      this.tryRevealChestRewardPanel();
+    });
     this.chestMixers.set(chestId, mixer);
   }
 
@@ -7503,6 +7549,7 @@ export class GameScene {
       mixer.stopAllAction();
       this.chestMixers.delete(chestId);
     }
+    this.chestOpenAnimDone.delete(chestId);
   }
 
   /**

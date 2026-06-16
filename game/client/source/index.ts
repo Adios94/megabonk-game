@@ -1692,7 +1692,7 @@ function createStylizedDebugPanel(opts: {
  *  - screenSpace：基于深度的屏幕空间描边，固定一道全屏 pass，开销与怪数无关。保留卡通黑轮廓。
  *    （替代旧的逐网格 OutlineEffect——后者放大翻面把不透明场景再画一遍，draw call 翻倍、
  *    开销随怪数线性增长，是手机掉帧元凶。已于本次性能优化移除。）
- *  - none：不描边（仅平涂着色，cel 来自材质本身，与描边无关）。dev 下按 O 在两态间切，供对比。
+ *  - none：不描边（仅平涂着色，cel 来自材质本身，与描边无关）。
  */
 type OutlineMode = 'screenSpace' | 'none';
 
@@ -3376,8 +3376,9 @@ export class GameScene {
   private wasOvertime = false;
   private xpFlashTimer = 0;
   private seenChestOpenEvents = new Set<string>();
-  /** 帧率 / Draw Call 调试 overlay */
+  /** 帧率 / Draw Call 调试 overlay（dev 下按 ` 与风格化调参面板同步开关） */
   private perfStatsEl: HTMLDivElement | null = null;
+  private perfStatsVisible = false;
   private perfFpsSampleTime = 0;
   private perfFpsFrameCount = 0;
   private perfFpsDisplay = 0;
@@ -3664,6 +3665,7 @@ export class GameScene {
     this.hudContainer?.remove();
     this.perfStatsEl?.remove();
     this.perfStatsEl = null;
+    this.perfStatsVisible = false;
     if (this.perfKeyHandler) {
       window.removeEventListener('keydown', this.perfKeyHandler);
       this.perfKeyHandler = null;
@@ -4737,7 +4739,7 @@ export class GameScene {
   /**
    * 左下角 FPS + Draw Call + 分类拆解诊断 overlay（EffectComposer 多 pass 需关闭 autoReset 后手动 reset）。
    * 仅 dev 构建启用（生产 `import.meta.env.DEV === false` 直接 return，不创建 DOM、不改 renderer.info、不挂键盘）。
-   * 保留它是为了后续做敌人模型合批时还能用 enemy draws / sig 验证。
+   * 默认隐藏，按 ` 与右上角风格化调参面板同步开关。保留它是为了后续做敌人模型合批时还能用 enemy draws / sig 验证。
    */
   private setupPerfStats(): void {
     if (!import.meta.env.DEV) return;
@@ -4746,7 +4748,7 @@ export class GameScene {
     const el = document.createElement('div');
     el.style.cssText = `
       position:fixed;left:max(8px,env(safe-area-inset-left));bottom:max(8px,env(safe-area-inset-bottom));
-      z-index:150;pointer-events:none;padding:4px 8px;border-radius:6px;
+      z-index:150;display:none;pointer-events:none;padding:4px 8px;border-radius:6px;
       background:rgba(0,0,0,0.55);color:#b8ffb8;font-family:monospace;
       font-size:11px;line-height:1.45;font-variant-numeric:tabular-nums;
       text-shadow:0 1px 2px rgba(0,0,0,0.9);white-space:pre;
@@ -4755,15 +4757,11 @@ export class GameScene {
     document.body.appendChild(el);
     this.perfStatsEl = el;
 
-    // dev 诊断：按 O 在描边两态（screenSpace → none）间切换，对比 render ms 与画面。
+    // dev 诊断：按 ` 开关本 overlay。
     this.perfKeyHandler = (e: KeyboardEvent) => {
-      if (e.key === 'o' || e.key === 'O') {
-        if (this.outlinePass) {
-          const modes: OutlineMode[] = ['screenSpace', 'none'];
-          const cur = modes.indexOf(this.outlinePass.mode);
-          this.outlinePass.mode = modes[(cur + 1) % modes.length];
-        }
-      }
+      if (e.code !== 'Backquote') return;
+      this.perfStatsVisible = !this.perfStatsVisible;
+      el.style.display = this.perfStatsVisible ? 'block' : 'none';
     };
     window.addEventListener('keydown', this.perfKeyHandler);
   }
@@ -4771,6 +4769,10 @@ export class GameScene {
 
   private updatePerfStats(dt: number): void {
     if (!this.perfStatsEl) return;
+    if (!this.perfStatsVisible) {
+      this.renderer.info.reset();
+      return;
+    }
     this.perfFpsFrameCount += 1;
     this.perfFpsSampleTime += dt;
     if (this.perfFpsSampleTime >= 0.25) {
@@ -4831,7 +4833,7 @@ export class GameScene {
       `  enemy ${b.enemy}  shadow ${b.shadow}\n` +
       `  level ${b.level}  other ${b.other}\n` +
       `  sum ${bSum} (+post ${Math.max(0, drawCalls - bSum)})\n` +
-      `outline: ${this.outlinePass?.mode ?? 'off'} (press O)\n` +
+      `outline: ${this.outlinePass?.mode ?? 'off'}\n` +
       `render: ${this.perfRenderMs.toFixed(1)}ms (submit)`;
     this.renderer.info.reset();
   }

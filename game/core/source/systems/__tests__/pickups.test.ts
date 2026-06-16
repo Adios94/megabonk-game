@@ -62,7 +62,7 @@ describe('processDeaths', () => {
       .filter(p => p.type === 'xp_green' || p.type === 'xp_blue' || p.type === 'xp_purple' || p.type === 'xp_orange')
       .map(p => p.value)
       .sort((a, b) => a - b);
-    expect(xpValues).toEqual([1, 3, 3, 5, 10, 10]);
+    expect(xpValues).toEqual([1, 5, 5, 10, 20, 20]);
   });
 
   it('高处死亡的敌人会在死亡高度生成 XP pickup', () => {

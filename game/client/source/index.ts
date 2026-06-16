@@ -3092,7 +3092,7 @@ async function loadObjItems(): Promise<void> {
 
   // Load chest model — Sci-Fi Essentials Prop_Chest (glTF + textures)
   try {
-    const gltf = await gltfLoader.loadAsync('/models/items/Prop_Chest.gltf');
+    const gltf = await gltfLoader.loadAsync('/models/items/Prop_Chest.glb');
     const chest = gltf.scene as unknown as THREE.Group;
     chest.name = 'ChestClosed';
     // glTF rig defaults to closed pose — leave as-is for the world prop.

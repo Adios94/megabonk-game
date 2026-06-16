@@ -20,6 +20,9 @@
   },
   "devDependencies": {
     "@gltf-transform/cli": "^4.4.0",
+    "@gltf-transform/core": "^4.4.0",
+    "@gltf-transform/extensions": "^4.4.0",
+    "@gltf-transform/functions": "^4.4.0",
     "@types/node": "20.11.0",
     "@types/three": "^0.170.0",
     "rollup-plugin-visualizer": "^5.14.0",

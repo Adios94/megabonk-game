@@ -2297,10 +2297,10 @@ async function loadSkinModels(): Promise<void> {
 
 async function loadModels(): Promise<void> {
   const modelPaths: [keyof LoadedModels, string][] = [
-    ['zombie_basic', '/models/zombie_basic.gltf'],
-    ['boss_2legs', '/models/enemy_2legs_gun.gltf'],
-    ['boss', '/models/enemy_large_gun.gltf'],
-    ['teleporter', '/models/turret_teleporter.gltf'],
+    ['zombie_basic', '/models/zombie_basic.glb'],
+    ['boss_2legs', '/models/enemy_2legs_gun.glb'],
+    ['boss', '/models/enemy_large_gun.glb'],
+    ['teleporter', '/models/turret_teleporter.glb'],
     // Quaternius Animated Monster Pack（带骨骼动画 GLB）：Bat 用作 gargoyle 渲染，
     // clip 名带前缀（Bat_Flying 等），加载完后会做归一化（见 normalizeEnemyClips）
     ['monster_bat', '/models/monsters/Bat.glb'],
@@ -3815,9 +3815,9 @@ export class GameScene {
 
     // Character → model mapping
     const CHARACTER_MODELS: Record<string, string> = {
-      megachad: '/models/player_george.gltf',
-      roberto: '/models/player_stan.gltf',
-      skateboard_skeleton: '/models/player_leela.gltf',
+      megachad: '/models/player_george.glb',
+      roberto: '/models/player_stan.glb',
+      skateboard_skeleton: '/models/player_leela.glb',
     };
     const modelPath = CHARACTER_MODELS[state.character] ?? CHARACTER_MODELS['megachad'];
 

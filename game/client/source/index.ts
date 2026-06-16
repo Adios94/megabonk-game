@@ -1520,6 +1520,7 @@ function createStylizedDebugPanel(opts: {
   bloom: UnrealBloomPass | null;
   renderer: THREE.WebGLRenderer;
   colorGrade: ColorGradePass | null;
+  onSkyModeChange?: (mode: 'photo' | 'color') => void;
 }): void {
   if (document.getElementById('stylized-debug-panel')) return; // 幂等
   const u = stylizedUniforms;
@@ -1539,6 +1540,45 @@ function createStylizedDebugPanel(opts: {
   };
 
   const sections: { title: string; ctls: Ctl[] }[] = [
+    {
+      title: '关卡视觉与阴影 Scenery', ctls: [
+        {
+          label: 'Scenery 场景材质(0Toon/1PBR)',
+          min: 0, max: 1, step: 1,
+          get: () => sceneryMode === 'pbr' ? 1 : 0,
+          set: (v) => {
+            sceneryMode = v === 1 ? 'pbr' : 'toon';
+            const levelRoot = opts.scene.getObjectByName('LevelRoot');
+            if (levelRoot) {
+              applySceneryMode(levelRoot, sceneryMode);
+            }
+          }
+        },
+        {
+          label: 'Sky 天空背景(0Color/1Photo)',
+          min: 0, max: 1, step: 1,
+          get: () => skyMode === 'photo' ? 1 : 0,
+          set: (v) => {
+            skyMode = v === 1 ? 'photo' : 'color';
+            if (opts.onSkyModeChange) {
+              opts.onSkyModeChange(skyMode);
+            }
+          }
+        },
+        {
+          label: 'Shadows 实时阴影(0Off/1On)',
+          min: 0, max: 1, step: 1,
+          get: () => realTimeShadowsEnabled ? 1 : 0,
+          set: (v) => {
+            realTimeShadowsEnabled = v === 1;
+            const dirLight = opts.scene.getObjectByName('DirectionalLight') as THREE.DirectionalLight;
+            if (dirLight) {
+              dirLight.castShadow = realTimeShadowsEnabled;
+            }
+          }
+        }
+      ]
+    },
     {
       title: '整体亮度 Exposure', ctls: [
         { label: 'Brightness', min: 0.3, max: 2.5, step: 0.01, get: () => renderer.toneMappingExposure, set: (v) => { renderer.toneMappingExposure = v; } },
@@ -1644,6 +1684,9 @@ function createStylizedDebugPanel(opts: {
   copyBtn.addEventListener('click', () => {
     const v3 = (v: THREE.Vector3) => `new THREE.Vector3(${v.x.toFixed(3)}, ${v.y.toFixed(3)}, ${v.z.toFixed(3)})`;
     const snippet = [
+      `// sceneryMode = '${sceneryMode}'`,
+      `// skyMode = '${skyMode}'`,
+      `// realTimeShadowsEnabled = ${realTimeShadowsEnabled}`,
       `// renderer.toneMappingExposure = ${renderer.toneMappingExposure.toFixed(3)}`,
       '// —— stylizedUniforms 初值 ——',
       `uSteps: { value: ${u.uSteps.value} },`,
@@ -1834,6 +1877,26 @@ class SceneOutlinePass extends Pass {
 const GRADE_SATURATION = 1.28; // 饱和度（>1 更艳）
 const GRADE_CONTRAST = 1.14;   // 对比度（绕中灰 0.5 拉伸）
 const GRADE_BRIGHTNESS = 1.05; // 整体亮度微提
+const WEATHER_DAY_EXPOSURE = 1.85;
+const WEATHER_NIGHT_EXPOSURE = 1.35;
+const WEATHER_NIGHT_GRADE_SATURATION = 1.04;
+const WEATHER_NIGHT_GRADE_CONTRAST = 1.22;
+const WEATHER_NIGHT_GRADE_BRIGHTNESS = 0.9;
+const WEATHER_DAY_FOG_NEAR = 80;
+const WEATHER_DAY_FOG_FAR = 200;
+const WEATHER_NIGHT_FOG_NEAR = 18;
+const WEATHER_NIGHT_FOG_FAR = 85;
+const WEATHER_TRANSITION_SECONDS = 14;
+const WEATHER_DAY_FOG_COLOR = new THREE.Color('#87CEEB');
+const WEATHER_NIGHT_FOG_COLOR = new THREE.Color('#17243b');
+const WEATHER_DAY_DIR_LIGHT_COLOR = new THREE.Color('#FFF5E0');
+const WEATHER_NIGHT_DIR_LIGHT_COLOR = new THREE.Color('#8ea2c6');
+const WEATHER_DAY_SKY_TOP = new THREE.Color('#8fd0ff');
+const WEATHER_DAY_SKY_MID = new THREE.Color('#b7e3ff');
+const WEATHER_DAY_SKY_BOTTOM = new THREE.Color('#dceeff');
+const WEATHER_NIGHT_SKY_TOP = new THREE.Color('#0f1628');
+const WEATHER_NIGHT_SKY_MID = new THREE.Color('#1a2945');
+const WEATHER_NIGHT_SKY_BOTTOM = new THREE.Color('#22385a');
 
 class ColorGradePass extends Pass {
   private readonly material: THREE.ShaderMaterial;
@@ -2439,9 +2502,13 @@ function normalizeEnemyClips(modelKey: string, clips: THREE.AnimationClip[]): TH
 //   - 缺 col       → boot 直接抛错（没有兜底，没有内置 arena）
 
 const DEFAULT_LEVEL_NAME = 'whitebox';
+const HARD_TEST_LEVEL_NAME = 'stage2';
+const COL_ONLY_LEVEL_NAMES = new Set<string>([HARD_TEST_LEVEL_NAME]);
 
 /** 已加载的关卡（数据 + 用于渲染的场景）。bootGameClient 成功后保证非 null。 */
 let loadedLevel: { data: LevelData; scene: THREE.Object3D } | null = null;
+let loadedLevelName: string | null = null;
+const loadedLevelsByName = new Map<string, { data: LevelData; scene: THREE.Object3D }>();
 
 const _box = new THREE.Box3();
 const _vec = new THREE.Vector3();
@@ -2677,6 +2744,37 @@ function parseLevelGltf(root: THREE.Object3D): LevelData {
   return data;
 }
 
+// 场景视觉模式与天空盒模式 (dev 调参面板可调，也作为主视角偏好)
+let sceneryMode: 'toon' | 'pbr' = 'toon'; // 默认 Toon 风格化材质，支持开启/关闭 PBR 标准材质
+let skyMode: 'photo' | 'color' = 'photo'; // 默认高质量真实天空（带白云）
+let realTimeShadowsEnabled = true; // 默认开启高质量实时阴影
+
+// 解决 Object3D.clone()/SkeletonUtils.clone() 丢失类实例（如 Material）的问题。
+// 使用在 JSON 序列化中能完美保留的 meshId 字符串在全局 Maps 中寻址。
+const levelOriginalMaterials = new Map<string, THREE.Material | THREE.Material[]>();
+const levelToonMaterials = new Map<string, THREE.Material | THREE.Material[]>();
+
+/**
+ * 遍历并将关卡几何体在 PBR 原始材质与 Toon 风格化材质之间进行切换。
+ */
+function applySceneryMode(root: THREE.Object3D, mode: 'toon' | 'pbr'): void {
+  root.traverse((child) => {
+    if ((child as THREE.Mesh).isMesh) {
+      const mesh = child as THREE.Mesh;
+      const meshId = mesh.userData.sceneryMeshId;
+      if (meshId) {
+        if (mode === 'pbr') {
+          const mat = levelOriginalMaterials.get(meshId);
+          if (mat) mesh.material = mat;
+        } else if (mode === 'toon') {
+          const mat = levelToonMaterials.get(meshId);
+          if (mat) mesh.material = mat;
+        }
+      }
+    }
+  });
+}
+
 /**
  * 加载唯一关卡 glb。强制双文件模式：
  *   - level_${name}.glb       视觉高模（缺则用 col 当视觉，纯灰盒）
@@ -2685,20 +2783,34 @@ function parseLevelGltf(root: THREE.Object3D): LevelData {
  * 碰撞文件缺失 = 致命错误，直接抛异常让 boot 挂掉。激进方案下不再有内置 arena 兜底。
  */
 async function tryLoadLevel(name: string = DEFAULT_LEVEL_NAME): Promise<void> {
+  if (loadedLevel && loadedLevelName === name) return;
+  const cached = loadedLevelsByName.get(name);
+  if (cached) {
+    loadedLevel = cached;
+    loadedLevelName = name;
+    return;
+  }
+
   const visualPath = `/models/levels/level_${name}.glb`;
   const colPath = `/models/levels/level_${name}_col.glb`;
+  const colOnly = COL_ONLY_LEVEL_NAMES.has(name);
 
   const [visualResult, colResult] = await Promise.allSettled([
-    gltfLoader.loadAsync(visualPath),
+    colOnly
+      ? Promise.resolve(null)
+      : gltfLoader.loadAsync(visualPath),
     gltfLoader.loadAsync(colPath),
   ]);
 
   const visualScene =
-    visualResult.status === 'fulfilled' ? visualResult.value.scene : null;
+    visualResult.status === 'fulfilled' && visualResult.value
+      ? visualResult.value.scene
+      : null;
   const colScene = colResult.status === 'fulfilled' ? colResult.value.scene : null;
 
   if (!colScene) {
     loadedLevel = null;
+    loadedLevelName = null;
     throw new Error(
       `[Level] Failed to load collision level ${colPath}. ` +
       `游戏没有内置 arena 兜底，请确认文件存在于 public/models/levels/。`,
@@ -2712,17 +2824,42 @@ async function tryLoadLevel(name: string = DEFAULT_LEVEL_NAME): Promise<void> {
   const colSource = colScene;
 
   renderScene.name = 'LoadedLevel';
+  
+  // 1. 缓存原始 PBR 材质到全局注册表中（使用 meshId 作为键，避免 clone() 丢失材质引用）
+  levelOriginalMaterials.clear();
+  levelToonMaterials.clear();
+  let idCounter = 0;
+
+  renderScene.traverse((child) => {
+    if ((child as THREE.Mesh).isMesh) {
+      const mesh = child as THREE.Mesh;
+      const meshId = `scenery_mesh_${idCounter++}`;
+      mesh.userData.sceneryMeshId = meshId; // 字符串在 clone() 中能被深拷贝完美保留
+      levelOriginalMaterials.set(meshId, mesh.material);
+    }
+  });
+
+  // 2. 生成 Toon 风格材质并缓存到全局注册表
   convertToToonMaterials(renderScene);
   renderScene.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) {
       const mesh = child as THREE.Mesh;
+      const meshId = mesh.userData.sceneryMeshId;
+      if (meshId) {
+        levelToonMaterials.set(meshId, mesh.material);
+      }
       mesh.castShadow = true;
       mesh.receiveShadow = true;
     }
   });
 
+  // 3. 应用当前的关卡视觉材质模式
+  applySceneryMode(renderScene, sceneryMode);
+
   const data = parseLevelGltf(colSource);
   loadedLevel = { data, scene: renderScene };
+  loadedLevelName = name;
+  loadedLevelsByName.set(name, loadedLevel);
 
   // 双文件模式下：col scene 解析完已无用，显式 dispose 释放 BufferGeometry / Material
   // 持有的 typed array，避免等 GC（renderer 还没碰过它，所以没有 GPU 端可释放的）。
@@ -2745,6 +2882,11 @@ async function tryLoadLevel(name: string = DEFAULT_LEVEL_NAME): Promise<void> {
       `${data.climbVolumes.length} climb, ${data.ramps.length} ramp, ${data.chestSpawns.length} chest, ` +
       `player=${data.spawnPoints.players?.length ?? 0} altar=${data.spawnPoints.altars?.length ?? 0} logic=collision`,
   );
+}
+
+function levelNameForTier(tier: DifficultyTier): string {
+  // 临时测试入口：Hard 难度直接绑定第二关白盒（col-only）。
+  return tier === 2 ? HARD_TEST_LEVEL_NAME : DEFAULT_LEVEL_NAME;
 }
 
 // OBJ geometry cache for pickups/projectiles
@@ -3158,7 +3300,12 @@ export class GameScene {
   private bossAnimState: string | null = null;
   /** Boss 上一帧 XZ + 静止时长（移动判定，逻辑同敌人）。 */
   private bossPrevPos: { x: number; z: number; stillTime: number } | null = null;
+  private ambientLight!: THREE.AmbientLight;
+  private hemiLight!: THREE.HemisphereLight;
   private playerSpotLight!: THREE.SpotLight;
+  private dirLight!: THREE.DirectionalLight;
+  private weatherBlend = 0;
+  private weatherTarget = 0;
   // 常驻共享闪电闪光灯：永远在场景里、待命强度 0。闪电复用它而非每道新建/移除 PointLight
   // —— 场景光源数恒定，避免每次触发引发全场材质 shader 重编译（掉帧主因）。
   private lightningFlashLight!: THREE.PointLight;
@@ -3498,11 +3645,12 @@ export class GameScene {
     this.renderer = new THREE.WebGLRenderer({
       antialias: false,
       powerPreference: 'high-performance',
+      alpha: true, // 允许透明背景，便于支持高质量天空盒/CSS天空背景
     });
-    // 关实时方向光阴影（每帧多渲一遍全场景，手机最贵的一项）——改用脚下 blob 圆阴影。
-    this.renderer.shadowMap.enabled = false;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; // 开启高质量实时阴影
     this.renderer.toneMapping = THREE.NeutralToneMapping; // 更亮、更保饱和（Q 版鲜艳调性，替代偏暗去饱和的 ACES）
-    this.renderer.toneMappingExposure = 1.85; // 曝光：调参面板调定的整体亮度（Q 版鲜亮调性）
+    this.renderer.toneMappingExposure = WEATHER_DAY_EXPOSURE; // 曝光：调参面板调定的整体亮度（Q 版鲜亮调性）
     this.renderer.outputColorSpace = THREE.SRGBColorSpace; // 显式 sRGB，保证饱和度正确还原
     this.renderer.domElement.style.display = 'block';
     this.container.appendChild(this.renderer.domElement);
@@ -3525,9 +3673,10 @@ export class GameScene {
     this.scene = new THREE.Scene();
     this.scene.name = 'MainScene';
     this.scene.background = new THREE.Color('#87CEEB');
+    this.applySkyMode(skyMode);
     // 线性雾：战斗范围(~30)内全清晰，远处地面/关卡边缘在 80~200 内柔和融入天色 → 有空气透视纵深，
     // 又不会遮挡可玩区域。雾色与天空背景一致(#87CEEB)，远端无缝过渡。不想要雾可设为 null。
-    this.scene.fog = new THREE.Fog('#87CEEB', 80, 200);
+    this.scene.fog = new THREE.Fog('#87CEEB', WEATHER_DAY_FOG_NEAR, WEATHER_DAY_FOG_FAR);
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 300);
@@ -3599,6 +3748,9 @@ export class GameScene {
         bloom: this.bloomPass,
         renderer: this.renderer,
         colorGrade: this.colorGradePass,
+        onSkyModeChange: (mode) => {
+          this.applySkyMode(mode);
+        },
       });
       this.setupGmWeaponDamagePanel();
     }
@@ -3719,19 +3871,32 @@ export class GameScene {
     const ambient = new THREE.AmbientLight('#eef4ff', 0.18);
     ambient.name = 'AmbientLight';
     this.scene.add(ambient);
+    this.ambientLight = ambient;
 
     // 暖色方向主光（被 gradientMap 阶梯化的那束）——降到不溢出区间：受光面到亮但不顶白，三档断层才看得见。
-    const dir = new THREE.DirectionalLight('#FFF5E0', 1.3);
+    const dir = new THREE.DirectionalLight('#FFF5E0', 1.35);
     dir.name = 'DirectionalLight';
-    dir.position.set(5, 10, 5);
-    // 不再投实时阴影（改用 blob 圆阴影）——省掉每帧的阴影贴图渲染。
-    dir.castShadow = false;
+    dir.position.set(15, 25, 15);
+    dir.castShadow = true;
+    dir.shadow.mapSize.width = 2048;
+    dir.shadow.mapSize.height = 2048;
+    dir.shadow.camera.near = 0.5;
+    dir.shadow.camera.far = 70;
+    const d = 30;
+    dir.shadow.camera.left = -d;
+    dir.shadow.camera.right = d;
+    dir.shadow.camera.top = d;
+    dir.shadow.camera.bottom = -d;
+    dir.shadow.bias = -0.0006;
+    dir.shadow.normalBias = 0.02; // 防止阴影产生锯齿或重叠伪影
     this.scene.add(dir);
+    this.dirLight = dir;
 
     // 半球补光：天蓝/地暖给暗部一点通透的环境色——同样压薄，避免再抬亮面冲淡阶梯。
     const hemi = new THREE.HemisphereLight('#bfe4ff', '#b8a888', 0.14);
     hemi.name = 'HemisphereLight';
     this.scene.add(hemi);
+    this.hemiLight = hemi;
 
     // Player spotlight (softer, warm tint)
     // 暂时关闭（intensity=0）：它跟随玩家形成一个"圈内亮/圈外暗"的径向光锥边界，
@@ -3747,6 +3912,74 @@ export class GameScene {
     this.lightningFlashLight.name = 'LightningFlashLight';
     this.lightningFlashLight.visible = true; // 必须始终可见，否则光源数变化仍会重编译
     this.scene.add(this.lightningFlashLight);
+  }
+
+  private applySkyMode(mode: 'photo' | 'color'): void {
+    if (mode === 'photo') {
+      this.scene.background = null;
+      if (this.container) {
+        // 纯 CSS 渐变天空（无外链依赖）；颜色由天气系统动态插值。
+        this.container.style.backgroundImage = this.buildSkyGradient(this.weatherBlend);
+        this.container.style.backgroundSize = '100% 100%';
+        this.container.style.backgroundPosition = 'center';
+        this.container.style.backgroundRepeat = 'no-repeat';
+      }
+    } else {
+      this.scene.background = WEATHER_DAY_FOG_COLOR.clone().lerp(WEATHER_NIGHT_FOG_COLOR, this.weatherBlend);
+      if (this.container) {
+        this.container.style.backgroundImage = 'none';
+        this.container.style.backgroundColor = '#87CEEB';
+      }
+    }
+  }
+
+  private buildSkyGradient(blend: number): string {
+    const t = THREE.MathUtils.clamp(blend, 0, 1);
+    const top = WEATHER_DAY_SKY_TOP.clone().lerp(WEATHER_NIGHT_SKY_TOP, t).getStyle();
+    const mid = WEATHER_DAY_SKY_MID.clone().lerp(WEATHER_NIGHT_SKY_MID, t).getStyle();
+    const bottom = WEATHER_DAY_SKY_BOTTOM.clone().lerp(WEATHER_NIGHT_SKY_BOTTOM, t).getStyle();
+    return `linear-gradient(180deg, ${top} 0%, ${mid} 44%, ${bottom} 100%)`;
+  }
+
+  private updateWeather(state: GameState, dt: number): void {
+    this.weatherTarget = (state.overtimeSeconds > 0 || state.finalSwarm) ? 1 : 0;
+    const alpha = 1 - Math.exp(-dt / WEATHER_TRANSITION_SECONDS);
+    this.weatherBlend = THREE.MathUtils.clamp(
+      this.weatherBlend + (this.weatherTarget - this.weatherBlend) * alpha,
+      0,
+      1,
+    );
+    this.applyWeatherVisuals();
+  }
+
+  private applyWeatherVisuals(): void {
+    const t = this.weatherBlend;
+
+    if (this.scene.fog instanceof THREE.Fog) {
+      this.scene.fog.near = THREE.MathUtils.lerp(WEATHER_DAY_FOG_NEAR, WEATHER_NIGHT_FOG_NEAR, t);
+      this.scene.fog.far = THREE.MathUtils.lerp(WEATHER_DAY_FOG_FAR, WEATHER_NIGHT_FOG_FAR, t);
+      this.scene.fog.color.copy(WEATHER_DAY_FOG_COLOR).lerp(WEATHER_NIGHT_FOG_COLOR, t);
+    }
+
+    if (this.dirLight) {
+      this.dirLight.intensity = THREE.MathUtils.lerp(1.35, 0.55, t);
+      this.dirLight.color.copy(WEATHER_DAY_DIR_LIGHT_COLOR).lerp(WEATHER_NIGHT_DIR_LIGHT_COLOR, t);
+    }
+    if (this.ambientLight) {
+      this.ambientLight.intensity = THREE.MathUtils.lerp(0.18, 0.1, t);
+    }
+    if (this.hemiLight) {
+      this.hemiLight.intensity = THREE.MathUtils.lerp(0.14, 0.07, t);
+    }
+
+    this.renderer.toneMappingExposure = THREE.MathUtils.lerp(WEATHER_DAY_EXPOSURE, WEATHER_NIGHT_EXPOSURE, t);
+    if (this.colorGradePass) {
+      this.colorGradePass.saturation = THREE.MathUtils.lerp(GRADE_SATURATION, WEATHER_NIGHT_GRADE_SATURATION, t);
+      this.colorGradePass.contrast = THREE.MathUtils.lerp(GRADE_CONTRAST, WEATHER_NIGHT_GRADE_CONTRAST, t);
+      this.colorGradePass.brightness = THREE.MathUtils.lerp(GRADE_BRIGHTNESS, WEATHER_NIGHT_GRADE_BRIGHTNESS, t);
+    }
+
+    this.applySkyMode(skyMode);
   }
 
   /**
@@ -3848,6 +4081,7 @@ export class GameScene {
     }
     const levelScene = cloneSkeleton(loadedLevel.scene) as THREE.Object3D;
     levelScene.name = 'LevelRoot';
+    applySceneryMode(levelScene, sceneryMode);
     this.scene.add(levelScene);
     this.cameraOccluders.push(levelScene);
 
@@ -5102,6 +5336,7 @@ export class GameScene {
     this.updateVFX(state, dt, eventsFresh);
     this.updateBillboardVfx(dt);
     this.updateCamera(state);
+    this.updateWeather(state, dt);
 
     // 游戏已结束（失败 / 胜利）后不再触发新的镜头晃动，避免"死后被打仍在晃"的违和感
     const isGameEnded = state.phase === 'defeat' || state.phase === 'victory';
@@ -5305,6 +5540,12 @@ export class GameScene {
     // === Spotlight follows player ===
     this.playerSpotLight.position.set(p.x, p.y + 12, p.z);
     this.playerSpotLight.target.position.set(p.x, p.y, p.z);
+
+    // === Directional light follows player (tracks shadow camera frustum) ===
+    if (this.dirLight) {
+      this.dirLight.position.set(p.x + 15, p.y + 25, p.z + 15);
+      this.dirLight.target.position.set(p.x, p.y, p.z);
+    }
 
     // Ring pulse when many pickups attracted
     const ringMat = this.playerRing.material as THREE.MeshBasicMaterial;
@@ -12578,6 +12819,18 @@ function startGame(character: CharacterType = 'megachad'): void {
     activeScene = null;
   }
 
+  const levelName = levelNameForTier(selectedTier);
+  const tierLevel = loadedLevelsByName.get(levelName);
+  const fallbackLevel = loadedLevelsByName.get(DEFAULT_LEVEL_NAME);
+  if (tierLevel) {
+    loadedLevel = tierLevel;
+    loadedLevelName = levelName;
+  } else if (fallbackLevel) {
+    loadedLevel = fallbackLevel;
+    loadedLevelName = DEFAULT_LEVEL_NAME;
+    console.warn(`[Level] Missing ${levelName}, fallback to ${DEFAULT_LEVEL_NAME}.`);
+  }
+
   const config: GameConfig = {
     ...DEFAULT_GAME_CONFIG,
     character,
@@ -12687,8 +12940,16 @@ async function main(): Promise<void> {
 
   try {
     await loadModels();
-    // 唯一关卡：whitebox。激进方案下 URL 参数全部废弃，加载失败直接抛错。
-    await tryLoadLevel();
+    // 默认关卡（whitebox）必须加载成功。
+    await tryLoadLevel(DEFAULT_LEVEL_NAME);
+    // Hard 测试关（stage2）尽力预加载；缺失时不阻塞启动。
+    try {
+      await tryLoadLevel(HARD_TEST_LEVEL_NAME);
+    } catch (error) {
+      console.warn(`[Level] Optional hard test level "${HARD_TEST_LEVEL_NAME}" preload failed:`, error);
+    }
+    // 菜单默认回到第一关关卡上下文。
+    await tryLoadLevel(DEFAULT_LEVEL_NAME);
   } finally {
     hideBootLoadingOverlay();
   }

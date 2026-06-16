@@ -60,6 +60,17 @@ export function uiPlainText(extraCss = ''): string {
 
 
 
+/** 小字号紧凑文案：省略 faux-bold stroke，避免 9–12px 字号糊边。 */
+export function uiPlainTextCrisp(extraCss = ''): string {
+
+  const base = `color:${UI_PLAIN_TEXT_COLOR};font-family:${UI_FONT_FAMILY};text-shadow:${UI_TEXT_OUTLINE_SHADOW};${UI_TEXT_OUTLINE_GUTTER}-webkit-font-smoothing:antialiased;`;
+
+  return extraCss ? `${base};${extraCss}` : base;
+
+}
+
+
+
 /** 保留语义色，叠加黑描边（伤害数字、稀有度等） */
 
 export function uiColoredText(color: string, extraShadow = ''): string {
@@ -71,6 +82,21 @@ export function uiColoredText(color: string, extraShadow = ''): string {
     : UI_TEXT_OUTLINE_SHADOW;
 
   return `color:${color};font-family:${UI_FONT_FAMILY};text-shadow:${shadow};${UI_TEXT_FAUX_BOLD}${UI_TEXT_OUTLINE_GUTTER}`;
+
+}
+
+
+
+/** 小字号紧凑语义色文案：省略 faux-bold stroke。 */
+export function uiColoredTextCrisp(color: string, extraShadow = ''): string {
+
+  const shadow = extraShadow
+
+    ? `${UI_TEXT_OUTLINE_SHADOW},${extraShadow}`
+
+    : UI_TEXT_OUTLINE_SHADOW;
+
+  return `color:${color};font-family:${UI_FONT_FAMILY};text-shadow:${shadow};${UI_TEXT_OUTLINE_GUTTER}-webkit-font-smoothing:antialiased;`;
 
 }
 

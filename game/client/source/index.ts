@@ -681,9 +681,9 @@ const CHARACTER_COLORS: Record<string, number> = {
 };
 
 const CHARACTER_AVATAR_PATHS: Record<CharacterType, string> = {
-  megachad: '/ui/characters/megachad_avatar.png',
-  roberto: '/ui/characters/roberto_avatar.png',
-  skateboard_skeleton: '/ui/characters/skateboard_skeleton_avatar.png',
+  megachad: '/ui/characters/megachad_avatar.webp',
+  roberto: '/ui/characters/roberto_avatar.webp',
+  skateboard_skeleton: '/ui/characters/skateboard_skeleton_avatar.webp',
 };
 
 const CHARACTER_AVATAR_FRAME_PATHS: Record<CharacterType, { normal: string; selected: string }> = {
@@ -702,9 +702,9 @@ const CHARACTER_AVATAR_FRAME_PATHS: Record<CharacterType, { normal: string; sele
 };
 
 const CHARACTER_FULL_PATHS: Record<CharacterType, string> = {
-  megachad: '/ui/characters/megachad_full.png',
-  roberto: '/ui/characters/roberto_full.png',
-  skateboard_skeleton: '/ui/characters/skateboard_skeleton_full.png',
+  megachad: '/ui/characters/megachad_full.webp',
+  roberto: '/ui/characters/roberto_full.webp',
+  skateboard_skeleton: '/ui/characters/skateboard_skeleton_full.webp',
 };
 
 // ZLabs Pixel 12px (EN/Latin) + ZLabs RoundPix 12px (ZH/CJK), split via unicode-range
@@ -712,7 +712,6 @@ const UI_FONT_FACE = '"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif
 
 const GAME_UI_FONT_FILES = {
   pixelEnWoff2: '/fonts/zlabs-pixel-hc.woff2',
-  pixelEnTtf: '/fonts/zlabs-pixel-hc.ttf',
   roundCnTtf: '/fonts/zlabs-roundpix-m-cn.ttf',
 } as const;
 
@@ -739,8 +738,7 @@ function installGameUIFonts(): void {
   style.textContent = `
 @font-face {
   font-family: 'MegaBonk UI';
-  src: url('${GAME_UI_FONT_FILES.pixelEnWoff2}') format('woff2'),
-       url('${GAME_UI_FONT_FILES.pixelEnTtf}') format('truetype');
+  src: url('${GAME_UI_FONT_FILES.pixelEnWoff2}') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -748,8 +746,7 @@ function installGameUIFonts(): void {
 }
 @font-face {
   font-family: 'MegaBonk UI';
-  src: url('${GAME_UI_FONT_FILES.pixelEnWoff2}') format('woff2'),
-       url('${GAME_UI_FONT_FILES.pixelEnTtf}') format('truetype');
+  src: url('${GAME_UI_FONT_FILES.pixelEnWoff2}') format('woff2');
   font-weight: 700;
   font-style: normal;
   font-display: swap;
@@ -1031,12 +1028,12 @@ const CHARACTER_STAT_BAR_MAX = {
 const CHARACTER_SELECT_PAGE_BG_IMAGE = '/ui/characters/select_bg.png';
 const CHARACTER_PREVIEW_STAGE_BG = 'transparent';
 
-const TITLE_IMAGE_PATH_ZH = '/ui/title/title_cn.png';
-const TITLE_IMAGE_PATH_EN = '/ui/title/title_en.png';
-const OVERTIME_NOTICE_IMAGE_ZH = '/ui/title/overtime_cn.png';
-const OVERTIME_NOTICE_IMAGE_EN = '/ui/title/overtime_en.png';
-const FINAL_SWARM_NOTICE_IMAGE_ZH = '/ui/title/final_swarm_cn.png';
-const FINAL_SWARM_NOTICE_IMAGE_EN = '/ui/title/final_swarm_en.png';
+const TITLE_IMAGE_PATH_ZH = '/ui/title/title_cn.webp';
+const TITLE_IMAGE_PATH_EN = '/ui/title/title_en.webp';
+const OVERTIME_NOTICE_IMAGE_ZH = '/ui/title/overtime_cn.webp';
+const OVERTIME_NOTICE_IMAGE_EN = '/ui/title/overtime_en.webp';
+const FINAL_SWARM_NOTICE_IMAGE_ZH = '/ui/title/final_swarm_cn.webp';
+const FINAL_SWARM_NOTICE_IMAGE_EN = '/ui/title/final_swarm_en.webp';
 
 function titleImagePath(): string {
   return getLocale() === 'zh' ? TITLE_IMAGE_PATH_ZH : TITLE_IMAGE_PATH_EN;
@@ -1056,8 +1053,8 @@ function titleImageWidthStyle(): string {
     : `min(78vw,${uiPx(400)}px)`;
   return `width:${width};height:auto;object-fit:contain;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.65));user-select:none;`;
 }
-const LOBBY_BG_PATH = '/ui/common/bg_lobby.png';
-const UI_COMMON_BG_PATH = '/ui/common/bg_ui_common.png';
+const LOBBY_BG_PATH = '/ui/common/bg_lobby.webp';
+const UI_COMMON_BG_PATH = '/ui/common/bg_ui_common.webp';
 const QUEST_LIST_PANEL_BG = '/ui/quests/task_panel_list.png';
 /** task_panel_list.png 原图 966×646，用于 aspect-ratio，避免拉伸 */
 const QUEST_LIST_PANEL_SIZE = { w: 966, h: 646 } as const;
@@ -2756,8 +2753,8 @@ let crystal3Geometry: THREE.BufferGeometry | null = null;
 let crystal4Geometry: THREE.BufferGeometry | null = null;
 let heartGeometry: THREE.BufferGeometry | null = null;
 let heartHalfGeometry: THREE.BufferGeometry | null = null;
-let coinGeometry: THREE.BufferGeometry | null = null;
 let boneGeometry: THREE.BufferGeometry | null = null;
+let silverCoinModel: THREE.Group | null = null;
 let axeModel: THREE.Group | null = null; // Full model with materials
 let swordModel: THREE.Group | null = null;
 let katanaModel: THREE.Group | null = null;
@@ -2842,11 +2839,10 @@ async function loadObjItems(): Promise<void> {
     }
   };
 
-  [crystalGeometry, heartGeometry, heartHalfGeometry, coinGeometry, boneGeometry, crystal2Geometry, crystal3Geometry, crystal4Geometry] = await Promise.all([
+  [crystalGeometry, heartGeometry, heartHalfGeometry, boneGeometry, crystal2Geometry, crystal3Geometry, crystal4Geometry] = await Promise.all([
     loadAndNormalize('/models/items/Crystal1.obj', 0.4),
     loadAndNormalize('/models/items/Heart.obj', 0.5),
     loadAndNormalize('/models/items/Heart_Half.obj', 0.42),
-    loadAndNormalize('/models/items/Coin.obj', 0.45),
     loadAndNormalize('/models/items/Bone.obj', 0.5),
     loadAndNormalize('/models/items/Crystal2.obj', 0.4),
     loadAndNormalize('/models/items/Crystal3.obj', 0.4),
@@ -3059,6 +3055,8 @@ async function loadObjItems(): Promise<void> {
   paralysisGunModel = pgun;
   scorchBootsModel = sboots;
 
+  silverCoinModel = await loadTexturedGlbWeaponModel('SilverCoinModel', '/models/items/coin.glb', 0.45);
+
   // Load chest model — Sci-Fi Essentials Prop_Chest (glTF + textures)
   try {
     const gltf = await gltfLoader.loadAsync('/models/items/Prop_Chest.gltf');
@@ -3245,6 +3243,7 @@ export class GameScene {
   private bossProjectileObjects: Map<number, THREE.Object3D> = new Map(); // boss（机器人）弹丸 → bullet.glb 克隆
   private areaEffectObjects: Map<number, THREE.Object3D> = new Map(); // area effect id → mesh (gas/ripple/scorch/beam)
   private pickupMeshes: Map<PickupType, THREE.InstancedMesh> = new Map();
+  private silverPickupObjects: Map<number, THREE.Object3D> = new Map();
   private consumableSprites: Map<number, THREE.Sprite> = new Map();
   private goldMoteTexture!: THREE.Texture;
   private goldMoteSprites: Map<number, THREE.Sprite> = new Map();
@@ -4141,15 +4140,15 @@ export class GameScene {
 
   private setupPickupMesh(): void {
     // 每种拾取物用各自的 geometry（一个 InstancedMesh / 类型），颜色仍走 instanceColor 染色。
-    // xp 四档共用 Crystal1（靠颜色区分阶级）；silver/health/health_small 用专属 OBJ 模型。
+    // xp 四档共用 Crystal1（靠颜色区分阶级）；health/health_small 用专属 OBJ 模型。
+    // 银币走 coin.glb 独立克隆渲染（见 renderSilverPickups）。
     const fallback = new THREE.OctahedronGeometry(0.35, 0);
     const xpGeo = crystalGeometry ?? fallback;
-    const geomFor: Record<PickupType, THREE.BufferGeometry> = {
+    const geomFor: Partial<Record<PickupType, THREE.BufferGeometry>> = {
       xp_green: crystalGeometry ?? fallback,
       xp_blue: crystal2Geometry ?? xpGeo,
       xp_purple: crystal3Geometry ?? xpGeo,
       xp_orange: crystal4Geometry ?? xpGeo,
-      silver: coinGeometry ?? xpGeo,
       health: heartGeometry ?? xpGeo,
       health_small: heartHalfGeometry ?? heartGeometry ?? xpGeo,
     };
@@ -4165,38 +4164,8 @@ export class GameScene {
   }
 
   private setupGoldMoteMesh(): void {
-    const canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 64;
-    const ctx = canvas.getContext('2d')!;
-    ctx.clearRect(0, 0, 64, 64);
-
-    const coin = ctx.createRadialGradient(24, 20, 4, 32, 32, 28);
-    coin.addColorStop(0.0, '#fff28a');
-    coin.addColorStop(0.34, '#ffd21a');
-    coin.addColorStop(0.72, '#e79800');
-    coin.addColorStop(1.0, '#9a5a00');
-    ctx.fillStyle = coin;
-    ctx.beginPath();
-    ctx.arc(32, 32, 25, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.lineWidth = 5;
-    ctx.strokeStyle = '#ffe066';
-    ctx.stroke();
-
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = '#a86400';
-    ctx.beginPath();
-    ctx.arc(32, 32, 15, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.fillStyle = 'rgba(255,255,210,0.85)';
-    ctx.beginPath();
-    ctx.ellipse(25, 22, 8, 4, -0.65, 0, Math.PI * 2);
-    ctx.fill();
-
-    this.goldMoteTexture = new THREE.CanvasTexture(canvas);
+    const loader = new THREE.TextureLoader();
+    this.goldMoteTexture = loader.load(GOLD_COIN_ICON_PATH);
     this.goldMoteTexture.colorSpace = THREE.SRGBColorSpace;
   }
 
@@ -5075,6 +5044,7 @@ export class GameScene {
     this.renderEnemies(state.enemies);
     this.renderProjectiles(state.projectiles);
     this.renderPickups(state.pickups);
+    this.renderSilverPickups(state.pickups);
     this.renderConsumablePickups(state.consumablePickups ?? []);
     this.renderGoldMotes(state.goldMotes ?? []);
     this.renderBoss(state.boss);
@@ -6407,6 +6377,7 @@ export class GameScene {
     for (const mesh of this.pickupMeshes.values()) counts.set(mesh, 0);
 
     for (const pickup of pickups) {
+      if (pickup.type === 'silver') continue;
       const mesh = this.pickupMeshes.get(pickup.type);
       if (!mesh) continue;
       let count = counts.get(mesh)!;
@@ -6436,6 +6407,42 @@ export class GameScene {
       mesh.count = count;
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+  }
+
+  private renderSilverPickups(pickups: PickupState[]): void {
+    const time = performance.now() * 0.004;
+    const active = new Set<number>();
+
+    for (const pickup of pickups) {
+      if (pickup.type !== 'silver') continue;
+      if (active.size >= MAX_PICKUPS) break;
+      active.add(pickup.id);
+
+      let obj = this.silverPickupObjects.get(pickup.id);
+      if (!obj) {
+        if (!silverCoinModel) continue;
+        obj = silverCoinModel.clone();
+        obj.name = `SilverPickup_${pickup.id}`;
+        this.scene.add(obj);
+        this.silverPickupObjects.set(pickup.id, obj);
+      }
+
+      const bob = Math.sin(time * 1.5 + pickup.id) * 0.3;
+      obj.position.set(pickup.x, pickup.y + 0.2 + bob, pickup.z);
+
+      const scaleVal = pickup.attracted
+        ? 0.7 + Math.sin(time * 6 + pickup.id) * 0.3
+        : 1.0;
+      const baseScale = silverCoinModel?.scale.x ?? obj.scale.x;
+      obj.scale.setScalar(baseScale * scaleVal);
+      obj.rotation.set(0, time * 2 + pickup.id, 0);
+    }
+
+    for (const [id, obj] of this.silverPickupObjects) {
+      if (active.has(id)) continue;
+      this.scene.remove(obj);
+      this.silverPickupObjects.delete(id);
     }
   }
 
@@ -9740,6 +9747,7 @@ export class GameScene {
     const isBond = option.kind === 'bond_activate' || option.kind === 'bond_upgrade';
     // 羁绊卡片用金色羁绊框，其余按稀有度取框
     const accentColor = isBond ? '#ffd633' : (RARITY_COLORS[option.rarity] ?? '#aaaaaa');
+    const statValueColor = option.rarity === 'common' ? '#ffffff' : accentColor;
     const frameRarity: ItemFrameRarity = isBond ? 'bond' : (option.rarity as ItemFrameRarity);
 
     // 升级卡：banner（物品名）+ icon + 描述 + 内嵌数值面板 + 等级行 + 底部 tab（稀有度）
@@ -9774,7 +9782,7 @@ export class GameScene {
     if (previewLines.length > 0) {
       for (const line of previewLines) {
         const key = line.labelKey.replace('upgrade.stat.', '');
-        statsBox.appendChild(upgradeStatRow(t(`upgrade.stat.${key}`), line.value, accentColor));
+        statsBox.appendChild(upgradeStatRow(t(`upgrade.stat.${key}`), line.value, statValueColor));
       }
     } else {
       // 无数值时给个占位，避免数值面板坍成空盒

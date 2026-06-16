@@ -22,6 +22,7 @@
     "@types/node": "20.11.0",
     "@types/three": "^0.170.0",
     "rollup-plugin-visualizer": "^5.14.0",
+    "sharp": "^0.35.1",
     "three": "^0.170.0",
     "tsx": "4.7.0",
     "typescript": "5.7.2",

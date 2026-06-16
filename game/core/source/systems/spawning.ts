@@ -59,7 +59,8 @@ export function tickSpawning(engine: Engine, dt: number): void {
   const isFinalSwarm = engine.state.gameTime >= 480 && engine.state.gameTime < REGULAR_GAME_DURATION;
   engine.state.finalSwarm = isFinalSwarm;
 
-  const overtimePressure = getOvertimePressure(engine.state.overtimeSeconds);
+  const shrineDifficulty = engine.state.player.difficultyMult ?? 1;
+  const overtimePressure = getOvertimePressure(engine.state.overtimeSeconds) * shrineDifficulty;
   const maxAlive = isFinalSwarm
     ? 150
     : Math.ceil(wave.maxAlive * overtimePressure);
@@ -92,6 +93,7 @@ export function tickSpawning(engine: Engine, dt: number): void {
   if (engine.state.overtimeSeconds > 0) {
     spawnInterval /= overtimePressure;
   }
+  if (shrineDifficulty > 1 && engine.state.overtimeSeconds <= 0) spawnInterval /= shrineDifficulty;
   engine.spawnTimer = spawnInterval;
 
   let groupSize = wave.groupSize[0] + Math.floor(Math.random() * (wave.groupSize[1] - wave.groupSize[0] + 1));

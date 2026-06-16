@@ -44,6 +44,7 @@ function defaultState(
     chestOpenEvents: [], pendingChestReward: null,
     stats: { killCount: 0, damageDealt: 0, damageTaken: 0, shieldAbsorbed: 0, silverEarned: 0 },
     weaponDamageStats: [],
+    bondDamageStats: [],
     waveIndex: 0, altars: [], shrines: [], activeShrineId: null, chests: [],
     character,
     finalSwarm: false,

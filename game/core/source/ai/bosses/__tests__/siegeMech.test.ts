@@ -49,6 +49,15 @@ describe('attack: heavy_slam', () => {
     SIEGE_MECH.attacks.heavy_slam!(siegeAt(1), ctx);
     expect(effects.damagePlayerSpy).toHaveBeenCalledWith(35);
   });
+
+  it('高度差超过 2.8 不伤害', () => {
+    const effects = makeAiEffects();
+    const ctx = makeAiContext({ player: makePlayer({ x: 4, y: 4, z: 0 }), effects });
+    const boss = siegeAt(1);
+    boss.y = 0;
+    SIEGE_MECH.attacks.heavy_slam!(boss, ctx);
+    expect(effects.damagePlayerSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('attack: cleave', () => {
@@ -58,6 +67,15 @@ describe('attack: cleave', () => {
     SIEGE_MECH.attacks.cleave!(siegeAt(1), ctx);
     expect(effects.damagePlayerSpy).toHaveBeenCalledWith(40);
   });
+
+  it('高度差超过 2.8 不伤害', () => {
+    const effects = makeAiEffects();
+    const ctx = makeAiContext({ player: makePlayer({ x: 5, y: 4, z: 0 }), effects });
+    const boss = siegeAt(1);
+    boss.y = 0;
+    SIEGE_MECH.attacks.cleave!(boss, ctx);
+    expect(effects.damagePlayerSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('attack: leap_slam', () => {
@@ -66,6 +84,15 @@ describe('attack: leap_slam', () => {
     const ctx = makeAiContext({ player: makePlayer({ x: 5, z: 0 }), effects });
     SIEGE_MECH.attacks.leap_slam!(siegeAt(3), ctx);
     expect(effects.damagePlayerSpy).toHaveBeenCalledWith(35);
+  });
+
+  it('高度差超过 2.8 不伤害', () => {
+    const effects = makeAiEffects();
+    const ctx = makeAiContext({ player: makePlayer({ x: 5, y: 4, z: 0 }), effects });
+    const boss = siegeAt(3);
+    boss.y = 0;
+    SIEGE_MECH.attacks.leap_slam!(boss, ctx);
+    expect(effects.damagePlayerSpy).not.toHaveBeenCalled();
   });
 });
 

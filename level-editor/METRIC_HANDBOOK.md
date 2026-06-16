@@ -242,11 +242,11 @@
 | 类型 | HP | 伤害 | 速度 | 行为 | XP 奖励 | 攻击冷却 | 精英? | 首次出现 | 权重 | 偏好距离 | 来源 |
 |-----|----|----|-----|-----|--------|--------|------|--------|-----|--------|------|
 | skeleton_soldier | 15 | 5 | 3.0 | chase | 1 | 1.5s | 否 | 0s | 40 | — | `config.ts` L104 |
-| zombie | 30 | 10 | 1.5 | chase | 3 | 2.5s | 否 | 60s | 25 | — | `config.ts` L105 |
-| skeleton_archer | 12 | 7 | 2.5 | ranged | 3 | 3.0s | 否 | 120s | 15 | 8 | `config.ts` L106 |
-| skeleton_knight | 120 | 20 | 3.5 | charge | 5 | 2.0s | 是 | 180s | 5 | — | `config.ts` L107 |
-| necromancer | 80 | 15 | 2.0 | ranged | 10 | 4.0s | 是 | 240s | 3 | 10 | `config.ts` L108 |
-| gargoyle | 200 | 25 | 4.0 | dive | 10 | 3.0s | 是 | 360s | 2 | — | `config.ts` L109 |
+| zombie | 30 | 10 | 1.5 | chase | 5 | 2.5s | 否 | 60s | 25 | — | `config.ts` L105 |
+| skeleton_archer | 12 | 7 | 2.5 | ranged | 5 | 3.0s | 否 | 120s | 15 | 8 | `config.ts` L106 |
+| skeleton_knight | 120 | 20 | 3.5 | charge | 10 | 2.0s | 是 | 180s | 5 | — | `config.ts` L107 |
+| necromancer | 80 | 15 | 2.0 | ranged | 20 | 4.0s | 是 | 240s | 3 | 10 | `config.ts` L108 |
+| gargoyle | 200 | 25 | 3.2 | dive | 20 | 3.0s | 是 | 360s | 2 | — | `config.ts` L109 |
 
 ### 6.2 敌人 AI 关键距离
 
@@ -257,12 +257,13 @@
 | Knight 冲锋时间 | 0.5 | 秒 | `GameInstance.ts` L735 | — |
 | Knight 冲锋速度倍率 | 3.0× | — | `GameInstance.ts` L751 | — |
 | Knight 冲锋后冷却 | 3.0 | 秒 | `GameInstance.ts` L761 | — |
-| Gargoyle 飞行高度 | 3 | 单位 | `GameInstance.ts` L784 | y = 3 |
+| Gargoyle 飞行高度 | 地形高度 + 1.8 | 单位 | `ai/behaviors/dive.ts` | 随坡面 / 高台抬升 |
 | Gargoyle 俯冲时间 | 0.4 | 秒 | `GameInstance.ts` L792 | — |
 | Gargoyle 俯冲速度倍率 | 3.0× | — | `GameInstance.ts` L805 | — |
 | Gargoyle 着陆 AOE 半径 | 3 | 单位 | `GameInstance.ts` L848 | `aoRadius = 3` |
 | Gargoyle 下降速度 | 8 | 单位/秒 | `GameInstance.ts` L813 | — |
 | Gargoyle 上升速度 | 6 | 单位/秒 | `GameInstance.ts` L835 | — |
+| Gargoyle 咬击高度差 | ≤2.8 | 单位 | `ai/behaviors/dive.ts` | 超过则不造成伤害 |
 | Necromancer 召唤数量 | 2-3 | — | `GameInstance.ts` L907 | `2 + floor(rand*2)` |
 | Necromancer 召唤冷却 | 8.0 | 秒 | `GameInstance.ts` L687 | — |
 | Necromancer 召唤半径 | 2-3.5 | 单位 | `GameInstance.ts` L914 | `2 + rand*1.5` |
@@ -270,7 +271,9 @@
 | 敌人投射物速度（巫师） | 6 | 单位/秒 | `GameInstance.ts` L883 | — |
 | 敌人投射物寿命 | 4.0 | 秒 | `GameInstance.ts` L897 | — |
 | 敌人投射物半径 | 0.4 | 单位 | `GameInstance.ts` L898 | — |
+| 投射物墙体阻挡 | wall_ 命中即销毁 | — | `systems/projectiles.ts` | 我方 / 敌方非环绕弹丸都不能穿 wall_ |
 | 远程敌人开火距离窗口 | 0.5×~1.5× preferredRange | — | `GameInstance.ts` L702 | 不近不远才开火 |
+| 远程敌人开火高度差 | ≤2.8 | 单位 | `ai/behaviors/ranged.ts` | 超过则不发射投射物 |
 | 充能/冲锋类移速倍率 | 2.0× | — | `GameInstance.ts` L995 | `behavior === 'charge'` |
 | 飞扑类移速倍率 | 1.5× | — | `GameInstance.ts` L996 | `behavior === 'dive'` |
 
@@ -301,6 +304,7 @@
 | Boss 阶段 2 近战伤害 | 30 | HP | `GameInstance.ts` L2555 |
 | Boss 阶段 3 近战伤害 | 40 | HP | `GameInstance.ts` L2556 |
 | Boss 近战范围 | 2.0 | 单位 | `GameInstance.ts` L1811 `dist < 2.0` |
+| Boss 直接伤害高度差 | ≤2.8 | 单位 | `ai/bosses/*Mech.ts` | 横扫 / 跳击 / 重砸 / 跳砸跨层不命中 |
 | Boss `melee_sweep` 范围 | 3.5 | 单位 | `GameInstance.ts` L2432 |
 | Boss `ground_slam` 范围 | 5.0 | 单位 | `GameInstance.ts` L2443 |
 | Boss `aoe_explosion` 范围 | 7.0 | 单位 | `GameInstance.ts` L2513 |
@@ -474,7 +478,7 @@
 | 经验增长 `XP_GROWTH` | 0.35 | `config.ts` L33 |
 | 升级回血量 | 当前 maxHp × 10% | `GameInstance.ts` L2070 |
 | Combo 经验加成上限 | 2× | `GameInstance.ts` L2047 (1 + min(combo*0.05, 1.0)) |
-| 普通怪基础 EXP | `enemy.xpReward` 直接写入 pickup.value：1 / 3 / 3 / 5 / 10 / 10 | `data/enemies.ts` |
+| 普通怪基础 EXP | `enemy.xpReward` 直接写入 pickup.value：1 / 5 / 5 / 10 / 20 / 20 | `data/enemies.ts` |
 | Boss 基础 EXP | 100，死亡时生成 `xp_orange` pickup | `systems/helpers.ts` |
 | XP 颜色分档（橙） | pickup.value ≥ 30 | `systems/pickups.ts` |
 | XP 颜色分档（紫） | ≥ 10 | `systems/pickups.ts` |

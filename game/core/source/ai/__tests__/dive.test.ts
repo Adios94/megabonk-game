@@ -18,6 +18,19 @@ describe('dive brain (gargoyle)', () => {
     expect(enemy.diveState).toBe('flying');
   });
 
+  it('flying 时飞行高度跟随当前地形', () => {
+    const player = makePlayer({ x: 10, z: 0 });
+    const enemy = makeEnemy(1, 'gargoyle', 0, 0, { speed: 3, attackCooldown: 2 });
+    const ctx = makeAiContext({
+      player,
+      dt: 1,
+      getTerrainHeight: (x) => x, // 模拟沿 +x 上坡
+    });
+    dive(enemy, ctx, 0);
+    expect(enemy.x).toBeCloseTo(4.5, 5); // speed 3 × dive speedMult 1.5 × dt 1
+    expect(enemy.y).toBeCloseTo(enemy.x + 1.8, 5);
+  });
+
   it('flying + cooldown<=0 → diving（锁定坐标 + timer=0.4）', () => {
     const player = makePlayer({ x: 5, z: 5 });
     const enemy = makeEnemy(1, 'gargoyle', 0, 0, { attackCooldown: 0 });
@@ -79,6 +92,24 @@ describe('dive brain (gargoyle)', () => {
       effects,
       dt: 0.05,
     });
+    dive(enemy, ctx, 0);
+    expect(enemy.diveState).toBe('rising');
+    expect(effects.damagePlayerSpy).not.toHaveBeenCalled();
+  });
+
+  it('diving 命中水平半径但高度差超过 2.8 → 不造成伤害', () => {
+    const effects = makeAiEffects();
+    const player = makePlayer({ x: 0, y: 4, z: 0 });
+    const enemy = makeEnemy(1, 'gargoyle', 1, 0, {
+      y: 1.0,
+      diveState: 'diving',
+      diveTimer: 0.4,
+      chargeTargetX: 1,
+      chargeTargetZ: 0,
+      damage: 25,
+      speed: 0,
+    });
+    const ctx = makeAiContext({ player, effects, dt: 0.05 });
     dive(enemy, ctx, 0);
     expect(enemy.diveState).toBe('rising');
     expect(effects.damagePlayerSpy).not.toHaveBeenCalled();

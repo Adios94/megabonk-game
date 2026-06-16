@@ -15,7 +15,7 @@
  * 定位：慢、肉、范围大，强迫玩家持续走位躲炮击与冲击波。
  */
 import { distanceBetween } from '../../physics.ts';
-import { AOE_MAX_Y_DELTA, MAX_ENEMIES } from '../../config.ts';
+import { MAX_ENEMIES } from '../../config.ts';
 import { ENEMIES } from '../../data/enemies.ts';
 import type { BossState } from '../../types.ts';
 import type { AiContext } from '../types.ts';
@@ -24,6 +24,11 @@ import type { BossScript, BossPhaseConfig } from './types.ts';
 const HEAVY_SLAM_RANGE = 5.0;
 const CLEAVE_RANGE = 7.0;
 const LEAP_SLAM_RANGE = 6.0;
+const BOSS_ATTACK_MAX_Y_DELTA = 2.8;
+
+function canHitPlayerByHeight(boss: BossState, ctx: AiContext): boolean {
+  return Math.abs(boss.y - ctx.player.y) <= BOSS_ATTACK_MAX_Y_DELTA;
+}
 
 /** 炮击：6 发投射物从天而降落到玩家附近，每发 15 dmg（每发消费 2 个 random：ox/oz）。 */
 function barrage(_boss: BossState, ctx: AiContext): void {
@@ -47,13 +52,13 @@ function barrage(_boss: BossState, ctx: AiContext): void {
 /** 近战重砸 35 dmg / 5.0 单位。 */
 function heavySlam(boss: BossState, ctx: AiContext): void {
   const dist = distanceBetween(boss.x, boss.z, ctx.player.x, ctx.player.z);
-  if (dist < HEAVY_SLAM_RANGE) ctx.effects.damagePlayer(35);
+  if (dist < HEAVY_SLAM_RANGE && canHitPlayerByHeight(boss, ctx)) ctx.effects.damagePlayer(35);
 }
 
 /** 横扫 AOE 40 dmg / 7.0 单位（含 Y 差限制，避免跨层命中）。 */
 function cleave(boss: BossState, ctx: AiContext): void {
   const dist = distanceBetween(boss.x, boss.z, ctx.player.x, ctx.player.z);
-  if (dist < CLEAVE_RANGE && Math.abs(boss.y - ctx.player.y) <= AOE_MAX_Y_DELTA) {
+  if (dist < CLEAVE_RANGE && canHitPlayerByHeight(boss, ctx)) {
     ctx.effects.damagePlayer(40);
   }
 }
@@ -61,7 +66,7 @@ function cleave(boss: BossState, ctx: AiContext): void {
 /** 跳砸：落地冲击波 35 dmg / 6.0 单位（Jump 动画）。 */
 function leapSlam(boss: BossState, ctx: AiContext): void {
   const dist = distanceBetween(boss.x, boss.z, ctx.player.x, ctx.player.z);
-  if (dist < LEAP_SLAM_RANGE) ctx.effects.damagePlayer(35);
+  if (dist < LEAP_SLAM_RANGE && canHitPlayerByHeight(boss, ctx)) ctx.effects.damagePlayer(35);
 }
 
 /** 冲撞 —— 仅设 boss.speed=12，下一帧移动逻辑高速冲玩家（phase 检查每帧复位 speed，故为单帧冲刺）。 */

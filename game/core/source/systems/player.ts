@@ -29,6 +29,8 @@ import {
   STEP_HEIGHT,
   FALL_RESPAWN_Y,
   CLIMB_SPEED,
+  SHIELD_REGEN_RATE,
+  SHIELD_REGEN_DELAY,
 } from '../config.ts';
 import { loadSave } from '../save.ts';
 import { getShopBonuses } from '../shop.ts';
@@ -40,6 +42,7 @@ import {
   getSupportHeightAt,
   findClimbAt,
 } from './collision.ts';
+import { addDamageEvent, checkPlayerDeath } from './helpers.ts';
 import { tryMoveHorizontally } from './horizontalMove.ts';
 import type { GameConfig, PlayerState } from '../types.ts';
 import type { Engine } from './types.ts';
@@ -51,6 +54,11 @@ let spawnZ = 0;
 
 /** 蹬墙跳离后短暂禁止自动再抓墙（秒），确保能离开 climb 范围再下落。 */
 let climbReleaseTimer = 0;
+
+const SAFE_FALL_HEIGHT = 5;
+const FALL_DAMAGE_START_PCT = 0.10;
+const FALL_DAMAGE_MAX_PCT = 0.50;
+const FALL_DAMAGE_PCT_PER_HEIGHT = 0.02;
 
 /** 设置玩家出生点（同时作为掉出虚空后的复活点）。 */
 export function setPlayerSpawn(x: number, y: number, z: number): void {
@@ -69,7 +77,7 @@ export function createInitialPlayer(config: GameConfig): PlayerState {
 
   const player: PlayerState = {
     x: 0, y: 0, z: 0, rotation: 0,
-    velocityY: 0, isGrounded: true, isJumping: false,
+    velocityY: 0, fallPeakY: undefined, isGrounded: true, isJumping: false,
     isSliding: false, slideTimer: 0, slideSpeedBoost: 0, bunnyHopTimer: 0,
     hp: charCfg.hp + (shopBonuses['maxHp'] ?? 0),
     maxHp: charCfg.hp + (shopBonuses['maxHp'] ?? 0),
@@ -160,12 +168,14 @@ export function tickPlayerMovement(engine: Engine, dt: number): void {
       // 离开攀爬体 → 松手下落
       player.isClimbing = false;
       player.isGrounded = false;
+      player.fallPeakY = player.y;
     } else if (jumpPressed) {
       // 爬一半跳下：蹬墙跳开。给离墙水平初速 + 短暂禁止再抓，确保跳+方向能离开 climb 范围下落。
       player.isClimbing = false;
       player.isGrounded = false;
       player.isJumping = true;
-      player.velocityY = JUMP_FORCE * 0.8;
+      player.velocityY = JUMP_FORCE * 0.8 * (player.jumpHeightMult ?? 1);
+      player.fallPeakY = player.y;
       climbReleaseTimer = 0.5;
       if (isMoving) player.currentSpeed = player.speed; // 朝输入方向蹬离墙面
     } else {
@@ -183,6 +193,7 @@ export function tickPlayerMovement(engine: Engine, dt: number): void {
         player.isGrounded = true;
         player.isJumping = false;
         player.y = c.topY;
+        player.fallPeakY = undefined;
         // 朝当前朝向往里挪一点，落到平台面上
         player.x += engine.facingX * 0.9;
         player.z += engine.facingZ * 0.9;
@@ -204,6 +215,7 @@ export function tickPlayerMovement(engine: Engine, dt: number): void {
       player.isClimbing = true;
       player.isJumping = false;
       player.velocityY = 0;
+      player.fallPeakY = undefined;
       player.isSliding = false;
       player.slideSpeedBoost = 0;
       player.x = clamp(player.x, c.cx - c.halfW, c.cx + c.halfW);
@@ -215,9 +227,10 @@ export function tickPlayerMovement(engine: Engine, dt: number): void {
   if (jumpPressed && player.isGrounded && !player.isSliding) {
     const isBunnyHop = player.bunnyHopTimer > 0;
     const jumpMultiplier = isBunnyHop ? BUNNY_HOP_BONUS : 1.0;
-    player.velocityY = JUMP_FORCE * jumpMultiplier;
+    player.velocityY = JUMP_FORCE * jumpMultiplier * (player.jumpHeightMult ?? 1);
     player.isGrounded = false;
     player.isJumping = true;
+    player.fallPeakY = player.y;
     player.bunnyHopTimer = 0;
   }
 
@@ -225,14 +238,17 @@ export function tickPlayerMovement(engine: Engine, dt: number): void {
   if (!player.isGrounded) {
     player.velocityY -= GRAVITY * dt;
     player.y += player.velocityY * dt;
+    player.fallPeakY = Math.max(player.fallPeakY ?? player.y, player.y);
 
     // 支撑面：只认脚够得着的面，下落阶段才着地。
     const support = getSupportHeightAt(engine.geo, player.x, player.z, player.y);
     if (player.velocityY <= 0 && Number.isFinite(support) && player.y <= support) {
+      applyFallDamage(engine, (player.fallPeakY ?? player.y) - support);
       player.y = support;
       player.velocityY = 0;
       player.isGrounded = true;
       player.isJumping = false;
+      player.fallPeakY = undefined;
       player.bunnyHopTimer = BUNNY_HOP_WINDOW;
 
       if (engine.input.slide && !player.isSliding) {
@@ -242,12 +258,14 @@ export function tickPlayerMovement(engine: Engine, dt: number): void {
       }
     } else if (player.y < FALL_RESPAWN_Y) {
       // 掉出关卡虚空 → 传送回出生点。
+      applyFallDamage(engine, (player.fallPeakY ?? spawnY) - player.y);
       player.x = spawnX;
       player.z = spawnZ;
       player.y = spawnY;
       player.velocityY = 0;
       player.isGrounded = true;
       player.isJumping = false;
+      player.fallPeakY = undefined;
     }
   }
 
@@ -303,6 +321,7 @@ export function tickPlayerMovement(engine: Engine, dt: number): void {
         } else {
           player.isGrounded = false;
           player.velocityY = 0;
+          player.fallPeakY = player.y;
         }
       }
     }
@@ -311,6 +330,22 @@ export function tickPlayerMovement(engine: Engine, dt: number): void {
 
 function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
+}
+
+function applyFallDamage(engine: Engine, fallDistance: number): void {
+  if (fallDistance <= SAFE_FALL_HEIGHT) return;
+  const player = engine.state.player;
+  if (!player.alive) return;
+  const pct = Math.min(
+    FALL_DAMAGE_MAX_PCT,
+    FALL_DAMAGE_START_PCT + (fallDistance - SAFE_FALL_HEIGHT) * FALL_DAMAGE_PCT_PER_HEIGHT,
+  );
+  const damage = Math.max(1, Math.round(player.maxHp * pct));
+  player.hp -= damage;
+  player.shieldRegenAccum = -SHIELD_REGEN_DELAY;
+  engine.state.stats.damageTaken += damage;
+  addDamageEvent(engine, player.x, player.y + 1.5, player.z, damage, false, true);
+  checkPlayerDeath(engine);
 }
 
 export function tickDash(engine: Engine, dt: number): void {
@@ -364,6 +399,17 @@ export function tickTimers(engine: Engine, dt: number): void {
       player.hp = Math.min(player.maxHp, player.hp + heal);
       player.hpRegenAccum -= heal;
     }
+  }
+
+  const maxShield = player.maxShield ?? 0;
+  if (maxShield > 0 && (player.shield ?? 0) < maxShield) {
+    player.shieldRegenAccum = (player.shieldRegenAccum ?? 0) + dt;
+    if (player.shieldRegenAccum >= 0) {
+      const restored = SHIELD_REGEN_RATE * dt;
+      player.shield = Math.min(maxShield, (player.shield ?? 0) + restored);
+    }
+  } else if (maxShield > 0) {
+    player.shieldRegenAccum = 0;
   }
 
   if (player.comboTimer > 0) {

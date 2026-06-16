@@ -12,6 +12,7 @@
   "characterSelect": {
     "confirm": "确认",
     "back": "返回",
+    "locked": "未解锁",
     "initialWeapon": "初始武器",
     "traitTitle": "天赋",
     "statLabel": {
@@ -52,24 +53,34 @@
   "consumable": {
     "wild_berry": "野莓",
     "wild_berry_desc": "回复 15% 最大生命",
+    "wild_berry_short": "回复生命",
     "hot_soup": "热汤",
     "hot_soup_desc": "每秒回复 2% 最大生命",
+    "hot_soup_short": "持续回血",
     "mint_candy": "薄荷糖",
     "mint_candy_desc": "移速 +15%",
+    "mint_candy_short": "移速提升",
     "hard_bread": "硬面包",
     "hard_bread_desc": "下一次受伤归零",
+    "hard_bread_short": "免疫下次伤害",
     "energy_bar": "能量棒",
     "energy_bar_desc": "攻速 +20%",
+    "energy_bar_short": "攻速提升",
     "magnet": "磁铁",
     "magnet_desc": "扩大经验宝石拾取范围",
+    "magnet_short": "经验吸附",
     "iron_meal": "铁甲餐",
     "iron_meal_desc": "护甲 +4",
+    "iron_meal_short": "护甲提升",
     "rage_potion": "狂怒药",
     "rage_potion_desc": "伤害 +18%，受伤 +10%",
+    "rage_potion_short": "伤害提升",
     "prophecy_book": "预言之书",
     "prophecy_book_desc": "下次升级至少 1 个稀有选项",
+    "prophecy_book_short": "下次升级更稀有",
     "craftsman_hammer": "匠神锤",
-    "craftsman_hammer_desc": "下次武器升级额外 +1 级",
+    "craftsman_hammer_desc": "下次武器或典籍升级额外 +1 级",
+    "craftsman_hammer_short": "下次武器/典籍 +2",
     "pending": "待触发",
     "timer": "{{seconds}}秒"
   },
@@ -92,6 +103,7 @@
   },
   "upgrade": {
     "title": "选择升级",
+    "doubleLevel": "连升 {{count}} 级",
     "weapon": {
       "sword": "大剑",
       "sword_desc": "近战横扫周围敌人",
@@ -229,7 +241,7 @@
     "arcane": {
       "name": "奥术",
       "t1": "奥术武器伤害 +4%；伤害倍率 +0.1。",
-      "t2": "奥术武器命中积攒奥秘（每秒上限 15）。满 100 对范围内血量最高的敌人爆发，周围受 50% 溅射。",
+      "t2": "奥术武器命中积攒奥秘。满 100 对范围内血量最高的敌人爆发，周围受 50% 溅射。",
       "t3": "奥秘阈值 100→60；爆发伤害 ×1.5。"
     },
     "zero_range": {
@@ -379,6 +391,12 @@
       "silver": "银币: {{value}}x"
     }
   },
+  "stage": {
+    "notice": {
+      "secondTitle": "666还有第二关",
+      "secondBody": "继续撑住！"
+    }
+  },
   "teleporter": {
     "found": "发现传送门！",
     "activating": "激活中...",
@@ -457,6 +475,10 @@
     "level": "达到等级: {{level}}",
     "silver": "获得银币: {{count}}",
     "quests": "完成任务: {{count}}",
+    "weaponStatsTitle": "本局武器统计",
+    "mvp": "MVP",
+    "weaponKills": "{{count}}杀",
+    "weaponDamage": "{{damage}}伤害",
     "retry": "再来一次",
     "menu": "返回菜单"
   },

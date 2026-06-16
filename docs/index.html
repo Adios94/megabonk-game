@@ -1244,11 +1244,11 @@ attackSpeedMult × (1 + traitAspd)</code></pre>
   <table style="max-width: 520px;">
     <tr><th>来源</th><th class="num">基础 EXP</th></tr>
     <tr><td><code>skeleton_soldier</code></td><td class="num">1</td></tr>
-    <tr><td><code>zombie</code></td><td class="num">3</td></tr>
-    <tr><td><code>skeleton_archer</code></td><td class="num">3</td></tr>
-    <tr><td><code>skeleton_knight</code></td><td class="num">5</td></tr>
-    <tr><td><code>necromancer</code></td><td class="num">10</td></tr>
-    <tr><td><code>gargoyle</code></td><td class="num">10</td></tr>
+    <tr><td><code>zombie</code></td><td class="num">5</td></tr>
+    <tr><td><code>skeleton_archer</code></td><td class="num">5</td></tr>
+    <tr><td><code>skeleton_knight</code></td><td class="num">10</td></tr>
+    <tr><td><code>necromancer</code></td><td class="num">20</td></tr>
+    <tr><td><code>gargoyle</code></td><td class="num">20</td></tr>
     <tr><td>Boss</td><td class="num">100</td></tr>
   </table>
 
@@ -1546,12 +1546,13 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
       <th>精英</th><th class="num">出现 (s)</th><th class="num">权重</th>
     </tr>
     <tr><td><code>skeleton_soldier</code></td><td>骷髅步兵</td><td class="num">15</td><td class="num">5</td><td class="num">3.0</td><td><span class="badge chase">chase</span></td><td class="num">1</td><td class="num">1.5</td><td>—</td><td class="num">0</td><td class="num">40</td></tr>
-    <tr><td><code>zombie</code></td><td>僵尸</td><td class="num">30</td><td class="num">10</td><td class="num">1.5</td><td><span class="badge chase">chase</span></td><td class="num">3</td><td class="num">2.5</td><td>—</td><td class="num">60</td><td class="num">25</td></tr>
-    <tr><td><code>skeleton_archer</code></td><td>骷髅弓手</td><td class="num">12</td><td class="num">7</td><td class="num">2.5</td><td><span class="badge ranged">ranged · 8</span></td><td class="num">3</td><td class="num">3.0</td><td>—</td><td class="num">120</td><td class="num">15</td></tr>
-    <tr><td><code>skeleton_knight</code></td><td>骷髅骑士</td><td class="num">120</td><td class="num">20</td><td class="num">3.5</td><td><span class="badge charge">charge</span></td><td class="num">5</td><td class="num">2.0</td><td><span class="badge elite">精英</span></td><td class="num">180</td><td class="num">5</td></tr>
-    <tr><td><code>necromancer</code></td><td>死灵法师</td><td class="num">80</td><td class="num">15</td><td class="num">2.0</td><td><span class="badge ranged">ranged · 10</span></td><td class="num">10</td><td class="num">4.0</td><td><span class="badge elite">精英</span></td><td class="num">240</td><td class="num">3</td></tr>
-    <tr><td><code>gargoyle</code></td><td>石像鬼</td><td class="num">200</td><td class="num">25</td><td class="num">4.0</td><td><span class="badge dive">dive</span></td><td class="num">10</td><td class="num">3.0</td><td><span class="badge elite">精英</span></td><td class="num">360</td><td class="num">2</td></tr>
+    <tr><td><code>zombie</code></td><td>僵尸</td><td class="num">30</td><td class="num">10</td><td class="num">1.5</td><td><span class="badge chase">chase</span></td><td class="num">5</td><td class="num">2.5</td><td>—</td><td class="num">60</td><td class="num">25</td></tr>
+    <tr><td><code>skeleton_archer</code></td><td>骷髅弓手</td><td class="num">12</td><td class="num">7</td><td class="num">2.5</td><td><span class="badge ranged">ranged · 8</span></td><td class="num">5</td><td class="num">3.0</td><td>—</td><td class="num">120</td><td class="num">15</td></tr>
+    <tr><td><code>skeleton_knight</code></td><td>骷髅骑士</td><td class="num">120</td><td class="num">20</td><td class="num">3.5</td><td><span class="badge charge">charge</span></td><td class="num">10</td><td class="num">2.0</td><td><span class="badge elite">精英</span></td><td class="num">180</td><td class="num">5</td></tr>
+    <tr><td><code>necromancer</code></td><td>死灵法师</td><td class="num">80</td><td class="num">15</td><td class="num">2.0</td><td><span class="badge ranged">ranged · 10</span></td><td class="num">20</td><td class="num">4.0</td><td><span class="badge elite">精英</span></td><td class="num">240</td><td class="num">3</td></tr>
+    <tr><td><code>gargoyle</code></td><td>石像鬼</td><td class="num">200</td><td class="num">25</td><td class="num">3.2</td><td><span class="badge dive">dive</span></td><td class="num">20</td><td class="num">3.0</td><td><span class="badge elite">精英</span></td><td class="num">360</td><td class="num">2</td></tr>
   </table>
+  <p class="note">远程敌人只有在水平距离处于 <code>0.5×~1.5× preferredRange</code>（且不超过 10）并且与玩家高度差 ≤ <code>2.8</code> 时才会开火；石像鬼俯冲咬击同样要求高度差 ≤ <code>2.8</code>。</p>
 
   <h3>精英 Buff（50% 概率随机滚一种）</h3>
   <div class="grid cols-3">
@@ -1576,6 +1577,7 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
 <section id="boss">
   <h2>Boss 战</h2>
   <p class="sub">触发：玩家走到祭坛旁按 <code>[E]</code> / 移动端按钮，1.0s 读条完成后进场（不再依赖 540s 时间触发）· 当前基础 HP <strong>2000</strong>，再乘 <code>tier.bossHpMultiplier</code> · 来源：<code>ai/bosses/skeletonKing.ts</code>（phase 表 + 7 attacks）+ <code>systems/bossAi.ts</code> 调度。Boss 死亡会掉落免费 Boss 宝箱；Stage I 额外打开传送门，Stage II 后祭坛进入冷却。详见 <a data-tab="teleporter">祭坛 / Boss / 超时</a>。</p>
+  <p class="note">Boss 直接伤害技能需要与玩家高度差 ≤ <code>2.8</code> 才会命中，避免上下层隔空受伤；天降/直线弹仍走投射物碰撞规则。</p>
 
   <div class="hpbar">
     <div class="seg p1">P1 · 100% – 60% HP</div>
@@ -2891,6 +2893,7 @@ gsapAnimations.screenFlash(color, duration);</code></pre>
       <li>新增 <code>systems/horizontalMove.ts</code> 的 <code>tryMoveHorizontally</code> helper，4-path fallback（直走 → 沿 X 滑 → 沿 Z 滑 → 原地）</li>
       <li>player.ts 重构 7 行 → 3 行调 helper，行为不变</li>
       <li>敌人 <code>_move.ts</code>、Boss <code>bossAi.ts</code> 接入 helper（gargoyle 提前 return 跳过阻挡）</li>
+      <li>投射物 <code>projectiles.ts</code> 沿移动路径检测 <code>wall_</code>：我方 / 敌方非环绕弹丸命中墙体后销毁，不再穿墙</li>
       <li>radius：玩家 0.45（默认）/ 敌人 0.4 / Boss 1.0（体型大）</li>
       <li>新增 <code>systems/__tests__/{collision,horizontalMove}.test.ts</code> + <code>ai/__tests__/_move.test.ts</code>，~30 用例</li>
     </ul>
@@ -2943,7 +2946,7 @@ projectiles: getTerrainHeightAt(engine.geo, ...) // 软虚空保底</code></pre>
     <tr><td>Enemy</td><td>每帧贴地（软虚空）</td><td>tryMoveHorizontally(0.4)</td><td>不会发生（软虚空保底）</td></tr>
     <tr><td>Boss</td><td>每帧贴地（软虚空）</td><td>tryMoveHorizontally(1.0)</td><td>同上</td></tr>
     <tr><td>Projectile</td><td>vy 重力 + clamp ≥ terrainY+0.1</td><td>无（穿过所有墙）</td><td>同上</td></tr>
-    <tr><td>Gargoyle</td><td>固定 y=3 飞行</td><td>无（飞越所有阻挡）</td><td>不适用</td></tr>
+    <tr><td>Gargoyle</td><td>地形高度 + 1.8 飞行</td><td>无（飞越所有阻挡）</td><td>不适用</td></tr>
   </table>
 
   <h3>关卡加载</h3>

@@ -518,11 +518,11 @@ attackSpeedMultiplier = 1.0 + attack_speed_tome.level × 0.1
 | ID | 中文 | HP | 伤害 | 速度 | 行为 | XP | 攻 CD | 精英 | 首次出现 (s) | 权重 |
 |---|---|---|---|---|---|---|---|---|---|---|
 | `skeleton_soldier` | 骷髅步兵 | 15 | 5 | 3.0 | chase | 1 | 1.5 | × | 0 | 40 |
-| `zombie` | 僵尸 | 30 | 10 | 1.5 | chase | 3 | 2.5 | × | 60 | 25 |
-| `skeleton_archer` | 骷髅弓手 | 12 | 7 | 2.5 | ranged（保持 8 距离） | 3 | 3.0 | × | 120 | 15 |
-| `skeleton_knight` | 骷髅骑士 | 120 | 20 | 3.5 | charge | 5 | 2.0 | ✓ | 180 | 5 |
-| `necromancer` | 死灵法师 | 80 | 15 | 2.0 | ranged（10 距离） | 10 | 4.0 | ✓ | 240 | 3 |
-| `gargoyle` | 石像鬼 | 200 | 25 | 4.0 | dive（飞行） | 10 | 3.0 | ✓ | 360 | 2 |
+| `zombie` | 僵尸 | 30 | 10 | 1.5 | chase | 5 | 2.5 | × | 60 | 25 |
+| `skeleton_archer` | 骷髅弓手 | 12 | 7 | 2.5 | ranged（保持 8 距离） | 5 | 3.0 | × | 120 | 15 |
+| `skeleton_knight` | 骷髅骑士 | 120 | 20 | 3.5 | charge | 10 | 2.0 | ✓ | 180 | 5 |
+| `necromancer` | 死灵法师 | 80 | 15 | 2.0 | ranged（10 距离） | 20 | 4.0 | ✓ | 240 | 3 |
+| `gargoyle` | 石像鬼 | 200 | 25 | 3.2 | dive（飞行） | 20 | 3.0 | ✓ | 360 | 2 |
 
 ### 2. AI 行为类型
 

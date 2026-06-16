@@ -150,6 +150,8 @@ export interface PlayerState {
   z: number;
   rotation: number;
   velocityY: number;
+  /** 空中阶段记录最高点，用于落地时计算坠落伤害。 */
+  fallPeakY?: number;
   isGrounded: boolean;
   isJumping: boolean;
   isSliding: boolean;
@@ -227,7 +229,7 @@ export interface PlayerState {
   // --- Bond runtime state（全部 optional；激活对应羁绊后由 systems/bonds 维护）---
   /** B2 奥术：累计「奥秘」点数。 */
   bondMystery?: number;
-  /** B2 奥术：本秒已获得的奥秘点数（每秒上限 15）。 */
+  /** B2 奥术：历史字段；奥秘获取不再按秒限流。 */
   bondMysterySecGain?: number;
   /** B2 奥术：本秒计时累积。 */
   bondMysterySecTimer?: number;
@@ -388,6 +390,8 @@ export interface EnemyState {
   slowFactor?: number;
   /** 最近一次造成伤害的玩家武器，用于 GM 统计击杀归因。 */
   lastHitWeaponType?: WeaponType;
+  /** 最近一次造成伤害的羁绊，用于 GM 统计羁绊击杀归因。 */
+  lastHitBondId?: BondId;
   // --- Bond marks（羁绊 T2/T3 机制；全部 optional）---
   /** B7 弧光导体：导体标记剩余秒数（被 void_ripple 命中后获得）。 */
   conductorMarkTimer?: number;
@@ -401,6 +405,8 @@ export interface EnemyState {
   neuroTimer?: number;
   /** B8 毒师：神经毒素周期触发计时器。 */
   neuroPulseTimer?: number;
+  /** B8 毒师：最近一次刷新神经毒素的武器，用于羁绊 DoT 归因。 */
+  neuroSourceWeaponType?: WeaponType;
   /** B9 猎标烙印：是否被烙印（不可解除，受羁绊内武器伤害 +16%、优先索敌）。 */
   hunterBranded?: boolean;
 }
@@ -717,6 +723,8 @@ export interface BossState {
   neuroTimer?: number;
   /** B8 毒师：神经毒素周期触发计时器。 */
   neuroPulseTimer?: number;
+  /** B8 毒师：最近一次刷新神经毒素的武器，用于羁绊 DoT 归因。 */
+  neuroSourceWeaponType?: WeaponType;
   /** B9 猎标烙印：是否被烙印（boss 免疫处决，但吃 +伤）。 */
   hunterBranded?: boolean;
 }
@@ -775,6 +783,13 @@ export interface WeaponDamageStats {
   dps: number;
 }
 
+export interface BondDamageStats {
+  bondId: BondId;
+  killCount: number;
+  totalDamage: number;
+  dps: number;
+}
+
 export interface GameState {
   tick: number;
   gameTime: number;
@@ -815,6 +830,8 @@ export interface GameState {
   stats: GameStats;
   /** GM tool: 本局每把玩家武器的击杀 / 5 秒滚动 DPS / 总伤。 */
   weaponDamageStats: WeaponDamageStats[];
+  /** GM tool: 本局羁绊机制额外伤害的击杀 / 5 秒滚动 DPS / 总伤。 */
+  bondDamageStats: BondDamageStats[];
   waveIndex: number;
   /**
    * 祭坛 / 传送门列表。Boss 召唤前是祭坛，Boss 死亡后变传送门，进入后被消费。
@@ -953,4 +970,5 @@ export interface GameResult {
   killCount: number;
   level: number;
   silverEarned: number;
+  weaponDamageStats: WeaponDamageStats[];
 }

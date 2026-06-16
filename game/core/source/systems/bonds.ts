@@ -18,6 +18,7 @@ import { loadSave, saveSave } from '../save.ts';
 import { distanceSqBetween } from '../physics.ts';
 import { AOE_MAX_Y_DELTA } from '../config.ts';
 import { bossDamageEventY, enemyDamageEventY } from '../combatHeight.ts';
+import { recordBondDamage } from './weaponDamageStats.ts';
 import type { Engine } from './types.ts';
 import type {
   PlayerState, EnemyState, BossState, WeaponType, BondId, BondTier, UpgradeOption, UpgradeRarity,
@@ -105,10 +106,16 @@ function activeTierFor(player: PlayerState, weaponType: WeaponType, bondId: Bond
 }
 
 /** 给一个目标（敌人或 boss）结算一次羁绊机制额外伤害（含飘字与统计）。 */
-function dealBondDamage(engine: Engine, target: BondTarget, dmg: number, weaponType: WeaponType): void {
+function dealBondDamage(
+  engine: Engine,
+  target: BondTarget,
+  dmg: number,
+  bondId: BondId,
+  weaponType: WeaponType,
+): void {
   target.hp -= dmg;
   target.hitFlashTimer = 0.12;
-  engine.effects.addDamageDealt(dmg);
+  recordBondDamage(engine, bondId, dmg, target, weaponType);
   engine.effects.addDamageEvent(target.x, targetDamageEventY(target), target.z, dmg, false, false, weaponType);
 }
 
@@ -139,12 +146,8 @@ export function onBondWeaponHit(
 
     switch (id) {
       case 'arcane': {
-        // 奥秘计数：每秒上限 rateCap
-        const secGain = player.bondMysterySecGain ?? 0;
-        if (secGain < p.rateCap) {
-          player.bondMystery = (player.bondMystery ?? 0) + 1;
-          player.bondMysterySecGain = secGain + 1;
-        }
+        player.bondMystery = (player.bondMystery ?? 0) + 1;
+        player.bondMysterySecGain = (player.bondMysterySecGain ?? 0) + 1;
         break;
       }
       case 'arc_conductor': {
@@ -168,7 +171,7 @@ export function onBondWeaponHit(
           for (const e of engine.state.enemies) {
             if (e === target || e.hp <= 0) continue;
             if ((e.conductorMarkTimer ?? 0) > 0 && sameCombatHeight(target, e)) {
-              dealBondDamage(engine, e, chainDmg, weaponType);
+              dealBondDamage(engine, e, chainDmg, 'arc_conductor', weaponType);
             }
           }
           const boss = engine.state.boss;
@@ -177,7 +180,7 @@ export function onBondWeaponHit(
             && (boss.conductorMarkTimer ?? 0) > 0
             && sameCombatHeight(target, boss)
           ) {
-            dealBondDamage(engine, boss, chainDmg, weaponType);
+            dealBondDamage(engine, boss, chainDmg, 'arc_conductor', weaponType);
           }
         }
         break;
@@ -203,6 +206,7 @@ export function onBondWeaponHit(
         target.neuroStacks = Math.min(maxStacks, (target.neuroStacks ?? 0) + 1);
         target.neuroTimer = dur;
         target.neuroPulseTimer ??= 0; // 首次施加立即触发一次（pulse=0 → tickBonds 处理）
+        target.neuroSourceWeaponType = weaponType;
         if (targetIsEnemy(target)) applyNeuroSlow(target, def, tier); // boss 不被减速
         break;
       }
@@ -211,7 +215,7 @@ export function onBondWeaponHit(
         const mult = tier >= 3 ? p.t3KnockbackMult : 1;
         if (targetIsEnemy(target)) engine.effects.applyKnockback(target, player.x, player.z);
         const bonus = Math.max(1, Math.round(p.knockbackDmgScale * mult));
-        dealBondDamage(engine, target, bonus, weaponType);
+        dealBondDamage(engine, target, bonus, 'zero_range', weaponType);
         break;
       }
       default:
@@ -240,7 +244,7 @@ function onBondKill(engine: Engine, weaponType: WeaponType, killed: BondTarget):
   for (const e of engine.state.enemies) {
     if (e === killed || e.hp <= 0) continue;
     if (distanceSqBetween(killed.x, killed.z, e.x, e.z) <= radiusSq && sameCombatHeight(killed, e)) {
-      dealBondDamage(engine, e, dmg, weaponType);
+      dealBondDamage(engine, e, dmg, 'ember_trail', weaponType);
     }
   }
   // 爆炸也波及 boss（若被击杀的不是 boss 本身）
@@ -250,7 +254,7 @@ function onBondKill(engine: Engine, weaponType: WeaponType, killed: BondTarget):
     && distanceSqBetween(killed.x, killed.z, boss.x, boss.z) <= radiusSq
     && sameCombatHeight(killed, boss)
   ) {
-    dealBondDamage(engine, boss, dmg, weaponType);
+    dealBondDamage(engine, boss, dmg, 'ember_trail', weaponType);
   }
 
   // T3：爆炸点留 3s 灼烧痕迹（复用 scorch_trail 区域特效）
@@ -365,7 +369,7 @@ function tickArcaneBurst(engine: Engine): void {
   // 主目标吃满额爆发，周围（含 boss）吃溅射
   target.hp -= burst;
   target.hitFlashTimer = 0.2;
-  engine.effects.addDamageDealt(burst);
+  recordBondDamage(engine, 'arcane', burst, target, 'void_ripple');
   engine.effects.addDamageEvent(target.x, targetDamageEventY(target), target.z, burst, true, false, 'void_ripple');
 
   for (const e of engine.state.enemies) {
@@ -373,7 +377,7 @@ function tickArcaneBurst(engine: Engine): void {
     if (distanceSqBetween(target.x, target.z, e.x, e.z) <= RADIUS_SQ && Math.abs(e.y - target.y) <= AOE_MAX_Y_DELTA) {
       e.hp -= splash;
       e.hitFlashTimer = 0.15;
-      engine.effects.addDamageDealt(splash);
+      recordBondDamage(engine, 'arcane', splash, e, 'void_ripple');
       engine.effects.addDamageEvent(e.x, enemyDamageEventY(e), e.z, splash, false, false, 'void_ripple');
     }
   }
@@ -384,7 +388,7 @@ function tickArcaneBurst(engine: Engine): void {
   ) {
     boss.hp -= splash;
     boss.hitFlashTimer = 0.15;
-    engine.effects.addDamageDealt(splash);
+    recordBondDamage(engine, 'arcane', splash, boss, 'void_ripple');
     engine.effects.addDamageEvent(boss.x, bossDamageEventY(boss), boss.z, splash, false, false, 'void_ripple');
   }
 }
@@ -415,7 +419,7 @@ function tickNeuro(engine: Engine, target: BondTarget, dt: number): void {
   if (dotPerSec > 0) {
     const dmg = dotPerSec * dt;
     target.hp -= dmg;
-    engine.effects.addDamageDealt(dmg);
+    recordBondDamage(engine, 'poison_master', dmg, target, target.neuroSourceWeaponType ?? 'poison_bomb');
   }
 
   // 周期触发强减速 + 攻击减慢（仅普通敌人；boss 不被减速）

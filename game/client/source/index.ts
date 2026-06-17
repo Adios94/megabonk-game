@@ -846,6 +846,8 @@ const CHARACTER_FULL_PATHS: Record<CharacterType, string> = {
   skateboard_skeleton: '/ui/characters/skateboard_skeleton_full.webp',
 };
 
+const CHARACTER_LOCKED_OVERLAY_PATH = '/ui/characters/locked_character.png';
+
 // ZLabs Pixel 12px (EN/Latin) + ZLabs RoundPix 12px (ZH/CJK), split via unicode-range
 const UI_FONT_FACE = '"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif';
 
@@ -1289,14 +1291,36 @@ function titleImageWidthStyle(): string {
 }
 const LOBBY_BG_PATH = '/ui/common/bg_lobby.webp';
 const UI_COMMON_BG_PATH = '/ui/common/bg_ui_common.webp';
-const QUEST_LIST_PANEL_BG = '/ui/quests/task_panel_list.png';
-/** task_panel_list.png 原图 966×646，用于 aspect-ratio，避免拉伸 */
-const QUEST_LIST_PANEL_SIZE = { w: 966, h: 646 } as const;
-const QUEST_ITEM_BG = '/ui/quests/task_item_bg.png';
-/** 滚动区相对 panel 图片内容区的内边距比例 */
-const QUEST_LIST_SCROLL_INSET = { top: 0.11, right: 0.09, bottom: 0.11, left: 0.09 } as const;
-/** 分类列表相对 panel 图片顶部的额外下移比例 */
-const QUEST_CATEGORY_SIDEBAR_OFFSET_RATIO = 0.05;
+/**
+ * 任务面板复用商店一套 SVG（与 SHOP_ITEM_LIST_PANEL_BG / SHOP_ITEM_PANEL_BG 同源），
+ * 让首页 / 商店 / 任务三处主蓝面板视觉统一。
+ *
+ * 外框 event-bg.svg viewBox 8346×4715，几何：
+ * - 外圈黑描边圆角矩形：(28, 24) 8290×4586, rx=179, stroke-width=48（外缘 ≈ x=4, y=0）
+ * - 内蓝深色板：(52, 48) 8242×4538, rx=155 —— 内容必须落在这块板里
+ *   · 横向 inset = 52/8346 ≈ 0.62%
+ *   · 顶部 inset = 48/4715 ≈ 1.02%
+ *   · 底部 inset = (4715-4586)/4715 ≈ 2.74%（底部比顶部厚，给阴影留位）
+ *
+ * scroll-area 在内蓝板基础上再加 ~3% 呼吸 padding；底部多留 1% 给 row 阴影下溢。
+ */
+const QUEST_LIST_PANEL_BG = '/ui/shop/event-bg.svg';
+const QUEST_LIST_PANEL_SIZE = { w: 8346, h: 4715 } as const;
+/**
+ * 任务行背景 Quest_item_bg.svg viewBox 5894×1301（landscape AR ≈ 4.53），几何：
+ * - 灰阴影底层 `y=87..1301`（向下偏移 +87 制造 drop shadow，约占总高 6.7%）
+ * - 蓝色主板    `(13.5,13.5)→5867×1241`, rx=105.5
+ * - 内描边      `(42,42)→5810×1184`, rx=77
+ * - 底部装饰浪 `y=1070..1241`（占 SVG 高 13.1%）—— row 内容 padding-bottom
+ *   至少要 13.1% × rowHeight + 安全余量，否则文字/进度条会压到深蓝浪上。
+ *
+ * SVG 已加 `preserveAspectRatio="none"`，row 容器走 background-size:100% 100%
+ * 时内容会真正拉伸贴合 row 形状（默认 meet 会被 letterbox 到 4.53:1 AR）。
+ */
+const QUEST_ITEM_BG = '/ui/Quest_item_bg.svg';
+const QUEST_LIST_SCROLL_INSET = { top: 0.04, right: 0.04, bottom: 0.06, left: 0.04 } as const;
+/** 分类列表相对 panel 图片顶部的下移比例（新外框无头部条，对齐 scroll-area 顶端即可） */
+const QUEST_CATEGORY_SIDEBAR_OFFSET_RATIO = 0.04;
 
 const MENU_BUTTON_FRAME = '/ui/button/button.svg';
 const MENU_START_BUTTON_FRAME = '/ui/button/button_orange.svg';
@@ -11620,7 +11644,6 @@ function mountCharacterSelectSlots(host: HTMLElement): void {
       position:relative;width:clamp(46px,12vw,56px);min-width:44px;min-height:44px;
       cursor:${isUnlocked ? 'pointer' : 'not-allowed'};flex-shrink:0;transition:transform 0.15s;
       touch-action:manipulation;user-select:none;
-      opacity:${isUnlocked ? '1' : '0.48'};filter:${isUnlocked ? 'none' : 'grayscale(1)'};
     `;
 
     const frameImg = document.createElement('img');
@@ -11632,14 +11655,15 @@ function mountCharacterSelectSlots(host: HTMLElement): void {
     slot.appendChild(frameImg);
 
     if (!isUnlocked) {
-      const lock = document.createElement('div');
-      lock.style.cssText = `
-        position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-        color:#fff;font-size:clamp(18px,5vw,24px);text-shadow:0 2px 5px #000;
-        pointer-events:none;
+      const lockOverlay = document.createElement('img');
+      lockOverlay.src = CHARACTER_LOCKED_OVERLAY_PATH;
+      lockOverlay.alt = '';
+      lockOverlay.draggable = false;
+      lockOverlay.style.cssText = `
+        position:absolute;inset:0;width:100%;height:100%;display:block;
+        pointer-events:none;object-fit:contain;
       `;
-      lock.textContent = '🔒';
-      slot.appendChild(lock);
+      slot.appendChild(lockOverlay);
       slot.title = t('characterSelect.locked');
     }
 
@@ -12956,27 +12980,16 @@ function hideShopOverlay(): void {
 
 type QuestCategory = 'all' | 'challenge' | 'growth' | 'wealth' | 'weapons';
 
-const QUEST_CATEGORY_ICONS: Record<QuestCategory, { normal: string; selected: string }> = {
-  all: {
-    normal: '/ui/quests/tab_task_all_normal.png',
-    selected: '/ui/quests/tab_task_all.png',
-  },
-  challenge: {
-    normal: '/ui/quests/tab_task_challenge_normal.png',
-    selected: '/ui/quests/tab_task_challenge.png',
-  },
-  growth: {
-    normal: '/ui/quests/tab_task_grow_normal.png',
-    selected: '/ui/quests/tab_task_grow.png',
-  },
-  wealth: {
-    normal: '/ui/quests/tab_task_wealth_normal.png',
-    selected: '/ui/quests/tab_task_wealth.png',
-  },
-  weapons: {
-    normal: '/ui/quests/tab_task_weapon_normal.png',
-    selected: '/ui/quests/tab_task_weapon.png',
-  },
+/**
+ * 任务分类标签图标。新美术统一为单一变体（黑色描边），不再区分 normal/selected。
+ * 按钮的选中态由外框（橙 vs 灰）单独承担。
+ */
+const QUEST_CATEGORY_ICONS: Record<QuestCategory, string> = {
+  all: '/ui/quests/tab_task_all.png',
+  challenge: '/ui/quests/tab_task_challenge_normal.png',
+  growth: '/ui/quests/tab_task_grow.png',
+  wealth: '/ui/quests/tab_task_wealth.png',
+  weapons: '/ui/quests/tab_task_weapon.png',
 };
 
 const QUEST_CATEGORIES: { id: QuestCategory; labelKey: string }[] = [
@@ -13163,15 +13176,17 @@ function createQuestRow(
   progress: QuestProgress,
   onRefresh?: () => void,
 ): HTMLDivElement {
+  // Quest_item_bg.svg 底部装饰浪占 SVG 高 13.1% + 灰阴影底 6.7%。
+  // padding-bottom 留 13% × rowHeight + 几像素呼吸，避免文字/进度条压在浪和阴影上。
   const rowMinHeight = progress.completed
-    ? 'clamp(48px,12vw,58px)'
-    : 'clamp(64px,15vw,80px)';
+    ? 'clamp(50px,12.5vw,60px)'
+    : 'clamp(68px,15.5vw,84px)';
 
   const row = document.createElement('div');
   row.style.cssText = `
     position:relative;box-sizing:border-box;width:100%;overflow:visible;
     min-height:${rowMinHeight};
-    padding:clamp(6px,1.5vw,8px) clamp(10px,3vw,14px) clamp(6px,1.5vw,8px) clamp(12px,3.2vw,16px);
+    padding:clamp(7px,1.8vw,10px) clamp(10px,3vw,14px) clamp(10px,3vw,14px) clamp(12px,3.2vw,16px);
     background:url(${QUEST_ITEM_BG}) center center/100% 100% no-repeat;
     display:flex;align-items:center;
     ${progress.claimed ? 'opacity:0.7;' : ''}
@@ -13261,7 +13276,7 @@ function createQuestRow(
 }
 
 function createQuestCategoryButton(
-  icons: { normal: string; selected: string },
+  iconSrc: string,
   label: string,
   selected: boolean,
   onClick: () => void,
@@ -13285,17 +13300,19 @@ function createQuestCategoryButton(
   frame.draggable = false;
   frame.style.cssText = 'display:block;width:100%;height:auto;pointer-events:none;';
 
+  // button_*.svg 顶面在 viewBox 内 y=66..570（占 9.8%..84.6%），视觉中心 ≈ 47%。
+  // 用 top:14%; bottom:20% 让 content 几何中心 = (14% + 80%) / 2 = 47%，
+  // 图标 + 文字才会和按钮顶面真正居中（老的 20%/8% 中心在 56%，偏下贴阴影）。
   const content = document.createElement('div');
   content.style.cssText = `
-    position:absolute;left:0;right:0;top:20%;bottom:8%;
+    position:absolute;left:0;right:0;top:14%;bottom:20%;
     display:flex;align-items:center;justify-content:center;
     gap:clamp(2px,0.6vw,4px);pointer-events:none;
     padding:0 clamp(3px,0.8vw,6px);box-sizing:border-box;max-width:100%;
   `;
 
   const icon = document.createElement('img');
-  icon.setAttribute('data-quest-cat-icon', 'true');
-  icon.src = selected ? icons.selected : icons.normal;
+  icon.src = iconSrc;
   icon.alt = '';
   icon.draggable = false;
   icon.style.cssText = 'display:block;width:clamp(14px,4vw,18px);height:clamp(14px,4vw,18px);object-fit:contain;flex-shrink:0;';
@@ -13320,16 +13337,11 @@ function createQuestCategoryButton(
 
 function updateQuestCategoryButtonStyle(
   btn: HTMLDivElement,
-  icons: { normal: string; selected: string },
   selected: boolean,
 ): void {
   const frame = btn.querySelector('img[data-quest-cat-frame]');
   if (frame instanceof HTMLImageElement) {
     frame.src = selected ? TIER_SELECT_BUTTON_NORMAL : QUEST_CATEGORY_BUTTON_NORMAL;
-  }
-  const icon = btn.querySelector('img[data-quest-cat-icon]');
-  if (icon instanceof HTMLImageElement) {
-    icon.src = selected ? icons.selected : icons.normal;
   }
   btn.setAttribute('aria-pressed', selected ? 'true' : 'false');
 }
@@ -13477,7 +13489,7 @@ function showQuestsOverlay(): void {
   const selectCategory = (category: QuestCategory): void => {
     selectedCategory = category;
     for (const [id, btn] of categoryButtons) {
-      updateQuestCategoryButtonStyle(btn, QUEST_CATEGORY_ICONS[id], id === category);
+      updateQuestCategoryButtonStyle(btn, id === category);
     }
     renderQuestList(category);
   };

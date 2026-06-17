@@ -28,8 +28,6 @@ interface PlayerPos {
 const PITCH_LIMIT = (Math.PI / 180) * 75;
 const MOUSE_SENS_DRAG = 0.005;
 const TOUCH_SENS = 0.005;
-const CAM_DISTANCE = 7;
-const CAM_HEIGHT_BASE = 5;
 const LOOK_AT_HEIGHT = 1.5;
 const LOOK_AT_LEAD = 2;
 const FOLLOW_RATE = 14;
@@ -40,6 +38,8 @@ const CAM_SHRINK_RATE = 30;        // 拉近：快（避免穿墙 / 角色被挡
 const CAM_GROW_RATE = 3.5;         // 恢复：慢（去顿挫）
 
 export class CameraOrbit {
+  public camDistance = 7;
+  public camHeightBase = 5;
   private yaw = 0;
   private pitch = 0;
   private ghostX = 0;
@@ -153,9 +153,9 @@ export class CameraOrbit {
 
     // 期望（无碰撞）镜头位 + 以角色上身为枢轴
     this._fullCam.set(
-      this.ghostX - sy * cp * CAM_DISTANCE,
-      this.ghostY + CAM_HEIGHT_BASE + sp * CAM_DISTANCE,
-      this.ghostZ - cy * cp * CAM_DISTANCE,
+      this.ghostX - sy * cp * this.camDistance,
+      this.ghostY + this.camHeightBase + sp * this.camDistance,
+      this.ghostZ - cy * cp * this.camDistance,
     );
     this._pivot.set(this.ghostX, this.ghostY + LOOK_AT_HEIGHT, this.ghostZ);
 

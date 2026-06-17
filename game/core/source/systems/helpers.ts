@@ -11,6 +11,7 @@ import { distanceSqBetween, normalizeDirection } from '../physics.ts';
 import { getTomePower } from '../tomeProgression.ts';
 import { AOE_MAX_Y_DELTA, MAX_PICKUPS, PICKUP_LIFETIME } from '../config.ts';
 import { targetHitCenterY } from '../combatHeight.ts';
+import { recordBossDefeated } from '../save.ts';
 import type { EnemyState, WeaponType } from '../types.ts';
 import type { Engine } from './types.ts';
 import { onBossDefeated } from './altars.ts';
@@ -47,13 +48,14 @@ export function findNearestEnemyExcluding(
   z: number,
   excludeIds: readonly number[],
   sourceY?: number,
+  maxYDelta: number = AOE_MAX_Y_DELTA,
 ): EnemyState | null {
   let nearest: EnemyState | null = null;
   let nearestDistSq = 20 * 20;
   for (const enemy of engine.state.enemies) {
     if (enemy.hp <= 0) continue;
     if (excludeIds.includes(enemy.id)) continue;
-    if (sourceY !== undefined && Math.abs(sourceY - targetHitCenterY(enemy)) > AOE_MAX_Y_DELTA) continue;
+    if (sourceY !== undefined && Math.abs(sourceY - targetHitCenterY(enemy)) > maxYDelta) continue;
     const distSq = distanceSqBetween(x, z, enemy.x, enemy.z);
     if (distSq < nearestDistSq) {
       nearestDistSq = distSq;
@@ -98,7 +100,8 @@ export function applyKnockback(
   const knockbackTome = engine.state.player.tomes.find(t => t.type === 'knockback_tome');
   const baseForce = 1.5;
   const tomeMultiplier = 1 + getTomePower(knockbackTome) * 0.3;
-  const force = baseForce * tomeMultiplier * strengthMult;
+  const shrineMultiplier = engine.state.player.knockbackMult ?? 1;
+  const force = baseForce * tomeMultiplier * shrineMultiplier * strengthMult;
 
   const dir = normalizeDirection(enemy.x - fromX, enemy.z - fromZ);
   const halfMap = (engine.config.mapSize + 10) * 0.5;
@@ -134,6 +137,7 @@ export function checkGameOver(engine: Engine): void {
     spawnBossXpPickup(engine, defeatedBoss);
     engine.state.boss = null;
     engine.state.stats.silverEarned += 50;
+    recordBossDefeated();
     onBossDefeated(engine);
     if (engine.state.phase === 'boss_fight' || engine.state.phase === 'boss_intro') {
       engine.state.phase = (engine.state.stage ?? 1) === 1 ? 'portal_open' : 'playing';

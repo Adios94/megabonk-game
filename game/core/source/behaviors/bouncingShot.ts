@@ -11,8 +11,7 @@
  */
 import { normalizeDirection } from '../physics.ts';
 import { computeWeaponDamage } from '../stats/index.ts';
-import { AOE_MAX_Y_DELTA } from '../config.ts';
-import { playerProjectileY } from '../combatHeight.ts';
+import { BONE_BOUNCER_MAX_Y_DELTA, playerProjectileY } from '../combatHeight.ts';
 import { findNearestEnemy } from './queries.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
@@ -22,7 +21,7 @@ export function bouncingShot(_world: GameWorld, ctx: BehaviorContext): void {
   const count = stats.projectileCount;
 
   for (let i = 0; i < count; i++) {
-    const target = findNearestEnemy(player.x, player.z, enemies, Infinity, player.y, AOE_MAX_Y_DELTA);
+    const target = findNearestEnemy(player.x, player.z, enemies, Infinity, player.y, BONE_BOUNCER_MAX_Y_DELTA);
     let vx: number, vz: number;
     if (target) {
       const dir = normalizeDirection(target.x - player.x, target.z - player.z);

@@ -52,6 +52,8 @@ export interface LevelGeometry {
   readonly ramps: readonly RampVolume[];
   /** 实体盒子（col_ + wall_ 合并），横向阻挡。 */
   readonly solidBoxes: readonly SolidBox[];
+  /** 只阻挡投射物的墙体盒子（wall_）。 */
+  readonly projectileBoxes: readonly SolidBox[];
   /** 圆形可站立平台（colcyl_）：可站立顶面 + 横向阻挡。 */
   readonly discs: readonly Disc[];
   /** 攀爬体（climb_），走不穿、可攀爬。 */
@@ -228,6 +230,7 @@ export const NEON_CRUCIBLE_GEOMETRY: LevelGeometry = {
   rects: NEON_CRUCIBLE,
   ramps: [],
   solidBoxes: [],
+  projectileBoxes: [],
   discs: [],
   climbs: [],
   wysiwyg: false,
@@ -257,6 +260,12 @@ export function makeLevelGeometry(level?: LevelData): LevelGeometry {
       bottomY: w.bottomY, topY: w.topY,
     })),
   ];
+  const projectileBoxes: SolidBox[] = (level.walls ?? [])
+    .filter((w) => w.blockProjectile !== false)
+    .map((w) => ({
+      cx: w.cx, cz: w.cz, halfW: w.halfW, halfD: w.halfD,
+      bottomY: w.bottomY, topY: w.topY,
+    }));
   const discs: Disc[] = (level.collisionDiscs ?? []).map((d) => ({
     cx: d.cx, cz: d.cz, radius: d.radius,
     bottomY: d.baseY ?? Number.NEGATIVE_INFINITY,
@@ -268,6 +277,7 @@ export function makeLevelGeometry(level?: LevelData): LevelGeometry {
     rects,
     ramps,
     solidBoxes,
+    projectileBoxes,
     discs,
     climbs,
     wysiwyg: true,
@@ -487,6 +497,33 @@ export function isBlockedHorizontallyAt(
         if (c.bottomY >= feetY + PLAYER_BODY_HEIGHT) continue;
         return true;
       }
+    }
+  }
+  return false;
+}
+
+/**
+ * 投射物是否撞到 wall_ 体积。
+ *
+ * 与 mover 的 isBlockedHorizontallyAt 不同：投射物不使用"迈步/头顶穿过"规则，
+ * 只要弹体高度落在 wall_ 竖直区间内且水平 footprint 相交，就视为撞墙。
+ */
+export function isProjectileBlockedAt(
+  geo: LevelGeometry,
+  x: number,
+  y: number,
+  z: number,
+  radius: number,
+): boolean {
+  const r = Math.max(0, radius);
+  for (const b of geo.projectileBoxes) {
+    if (
+      Math.abs(x - b.cx) <= b.halfW + r &&
+      Math.abs(z - b.cz) <= b.halfD + r &&
+      y >= b.bottomY - r &&
+      y <= b.topY + r
+    ) {
+      return true;
     }
   }
   return false;

@@ -96,6 +96,22 @@ describe('player projectile vs boss', () => {
 });
 
 describe('bone_bouncer 弹跳', () => {
+  it('命中判定使用更宽松的骨头专属垂直窗口', () => {
+    const engine = makeEngine();
+    const enemy = makeEnemy(1, 'skeleton_soldier', 0.2, 0, { hp: 100, y: 2.5 });
+    engine.state.enemies = [enemy];
+    engine.state.projectiles.push(makeProj({
+      weaponType: 'bone_bouncer',
+      damage: 10,
+      x: 0,
+      y: 1,
+      z: 0,
+    }));
+    processCollisions(engine);
+    expect(enemy.hp).toBe(90);
+    expect(engine.state.projectiles).toHaveLength(0);
+  });
+
   it('击中后找下一个最近 enemy 改变 v 方向, hit list 累加', () => {
     const engine = makeEngine();
     const e1 = makeEnemy(1, 'skeleton_soldier', 0, 0, { hp: 100 });
@@ -114,6 +130,24 @@ describe('bone_bouncer 弹跳', () => {
     expect(proj.hitEnemyIds).toContain(1);
     expect(engine.state.projectiles).toHaveLength(1);  // 重定向, 不消耗
     // v 方向应朝 e2 (+x)
+    expect(proj.vx).toBeGreaterThan(0);
+  });
+
+  it('弹跳索敌也使用更宽松的骨头专属垂直窗口', () => {
+    const engine = makeEngine();
+    const e1 = makeEnemy(1, 'skeleton_soldier', 0, 0, { hp: 100 });
+    const e2 = makeEnemy(2, 'skeleton_soldier', 5, 0, { hp: 100, y: 2.5 });
+    engine.state.enemies = [e1, e2];
+    const proj = makeProj({
+      weaponType: 'bone_bouncer',
+      bouncesLeft: 1,
+      damage: 5,
+      vx: 1, vz: 0,
+    });
+    engine.state.projectiles.push(proj);
+    processCollisions(engine);
+    expect(e1.hp).toBe(95);
+    expect(engine.state.projectiles).toHaveLength(1);
     expect(proj.vx).toBeGreaterThan(0);
   });
 

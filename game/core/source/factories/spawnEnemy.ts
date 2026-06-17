@@ -75,6 +75,7 @@ export function spawnEnemy(
   const overtimeHpFactor = 1 + OVERTIME_HP_PER_STEP * overtimeSteps;
   const overtimeDamageFactor = 1 + OVERTIME_DAMAGE_PER_STEP * overtimeSteps;
   const overtimeSpeedFactor = 1 + OVERTIME_SPEED_PER_STEP * overtimeSteps;
+  const shrineDifficulty = ctx.player.difficultyMult ?? 1;
   const levelScale = computeEnemyLevelScale(ctx.player.level);
 
   switch (mode) {
@@ -85,9 +86,9 @@ export function spawnEnemy(
         hpScale *= (1 + (ctx.gameTime - 180) / 60 * 0.1);
       }
       const tierCfg = TIER_CONFIGS[ctx.tier];
-      hp = Math.round(def.hp * hpScale * tierCfg.enemyHpMultiplier * levelScale.hp * overtimeHpFactor);
-      damage = Math.round(def.damage * tierCfg.enemyDamageMultiplier * levelScale.damage * overtimeDamageFactor);
-      speed = def.speed * tierCfg.enemySpeedMultiplier * levelScale.speed * overtimeSpeedFactor;
+      hp = Math.round(def.hp * hpScale * tierCfg.enemyHpMultiplier * levelScale.hp * overtimeHpFactor * shrineDifficulty);
+      damage = Math.round(def.damage * tierCfg.enemyDamageMultiplier * levelScale.damage * overtimeDamageFactor * shrineDifficulty);
+      speed = def.speed * tierCfg.enemySpeedMultiplier * levelScale.speed * overtimeSpeedFactor * Math.sqrt(shrineDifficulty);
 
       if (isElite && (opts.applyEliteRoll ?? true) && Math.random() < 0.5) {
         const buff = Math.floor(Math.random() * 3);
@@ -103,9 +104,9 @@ export function spawnEnemy(
     case 'miniBoss': {
       const timeScale = 1 + ctx.gameTime / 600;
       const tierCfg = TIER_CONFIGS[ctx.tier];
-      hp = Math.round(def.hp * timeScale * 3 * tierCfg.enemyHpMultiplier * levelScale.hp * overtimeHpFactor);
-      damage = Math.round(def.damage * 2 * tierCfg.enemyDamageMultiplier * levelScale.damage * overtimeDamageFactor);
-      speed = def.speed * tierCfg.enemySpeedMultiplier * levelScale.speed * overtimeSpeedFactor;
+      hp = Math.round(def.hp * timeScale * 3 * tierCfg.enemyHpMultiplier * levelScale.hp * overtimeHpFactor * shrineDifficulty);
+      damage = Math.round(def.damage * 2 * tierCfg.enemyDamageMultiplier * levelScale.damage * overtimeDamageFactor * shrineDifficulty);
+      speed = def.speed * tierCfg.enemySpeedMultiplier * levelScale.speed * overtimeSpeedFactor * Math.sqrt(shrineDifficulty);
       isElite = true;
       isMiniBoss = true;
       summonCooldown = 8;

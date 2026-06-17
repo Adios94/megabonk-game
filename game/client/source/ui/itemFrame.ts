@@ -9,7 +9,7 @@
  * 框用 background-size:100% 100% 拉伸贴满卡片，所有内部分区用百分比高度，
  * 因此无论卡片被 flex 拉高还是按 aspect-ratio 自适应，标题条与内容区分界都自动对齐。
  */
-import { uiColoredText, uiPlainText } from './textStyle.ts';
+import { uiColoredText, uiColoredTextCrisp, uiPlainText, uiPlainTextCrisp } from './textStyle.ts';
 
 /** 框图原图尺寸（与 SVG viewBox 一致，用于 aspect-ratio）。 */
 export const ITEM_FRAME_SIZE = { w: 149, h: 170 } as const;
@@ -136,19 +136,19 @@ export function itemFrameAccentLine(text: string, color: string, extraCss = ''):
 // ============================================================================
 // 升级卡片专用框（局内 level-up 面板）
 // ----------------------------------------------------------------------------
-// 视觉来源：public/ui/panel/svg/frame_upgrade_<rarity>.svg（170×220）
+// 视觉来源：public/ui/panel/svg/frame_upgrade_<rarity>.svg（viewBox 1925×2565）
 // 与 frame_item_*.svg 不同的地方：
-//   - 顶部 banner 是独立圆角条，向上凸出于卡身（更"卡牌"）
+//   - 顶部 banner 是独立色块带，下沿有黑色 divider
 //   - 底部多了一个稀有度 tab，向下凸出于卡身
-//   - 中部预留区域更高，能放下 icon + 描述 + 内嵌数值面板 + 等级行
-// 三个区段的高度按 SVG 锚点对齐：
-//   banner 区 0-13.6%（y=0~30，banner 视觉占 0~30）
-//   主体区 13.6%-85.5%（y=30~188，body 视觉 14~200）
-//   稀有度 tab 区 85.5%-100%（y=188~220，tab 视觉 190~216）
+//   - 中部预留区域里 SVG 自带一个内嵌槽（y=1232~1996），用于放数值面板
+// 三个区段按 SVG 锚点对齐（百分比对应 viewBox 的 y 坐标）：
+//   banner 区 0%~16.34%   （SVG y 0~419，含 divider；色带可视 y 73~394）
+//   主体区 16.34%~86.24%  （SVG y 419~2212，内嵌槽位于其中 y 1232~1996）
+//   稀有度 tab 区 86.24%~100%（SVG y 2212~2565，tab 外层 2212~2508）
 // ============================================================================
 
 /** 升级卡 SVG viewBox 尺寸（用于 aspect-ratio）。 */
-export const UPGRADE_FRAME_SIZE = { w: 170, h: 220 } as const;
+export const UPGRADE_FRAME_SIZE = { w: 1925, h: 2565 } as const;
 
 const UPGRADE_FRAME_SRC: Record<ItemFrameRarity, string> = {
   common: '/ui/panel/svg/frame_upgrade_common.svg',
@@ -158,8 +158,8 @@ const UPGRADE_FRAME_SRC: Record<ItemFrameRarity, string> = {
   bond: '/ui/panel/svg/frame_upgrade_bond.svg',
 };
 
-const UPGRADE_TITLE_BAR_PCT = `${(30 / UPGRADE_FRAME_SIZE.h) * 100}%`; // 13.6% — banner 区
-const UPGRADE_RARITY_BAR_PCT = `${((220 - 188) / UPGRADE_FRAME_SIZE.h) * 100}%`; // 14.5% — tab 区
+const UPGRADE_TITLE_BAR_PCT = `${(419 / UPGRADE_FRAME_SIZE.h) * 100}%`; // 16.34% — banner 区（含 divider）
+const UPGRADE_RARITY_BAR_PCT = `${((2565 - 2212) / UPGRADE_FRAME_SIZE.h) * 100}%`; // 13.76% — tab 区
 
 export interface UpgradeFrameOptions {
   rarity: ItemFrameRarity;
@@ -171,13 +171,13 @@ export interface UpgradeFrameOptions {
   width?: string;
   interactive?: boolean;
   /**
-   * 标题在 banner 内的垂直偏移（增大→标题更靠下，避开 banner 上沿圆角）。
-   * 默认 '15px'（升级卡视觉），充能神殿等场景可用更小的值。
+   * 标题在 banner 内的垂直偏移（增大→标题更靠下）。
+   * 默认 '4px'：新 SVG banner 容器与可视色带几乎居中对齐，只需微调。
    */
   titlePaddingTop?: string;
   /**
-   * 稀有度文字在 tab 内的垂直偏移（增大→文字更靠上，避开 tab 下沿圆角）。
-   * 默认 '15px'（升级卡视觉）。
+   * 稀有度文字在 tab 内的垂直偏移（增大→文字更靠上）。
+   * 默认 '4px'：新 SVG tab 中心略高于容器中心，向上推一点点。
    */
   rarityPaddingBottom?: string;
   /**
@@ -210,8 +210,8 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
     title,
     width = 'min(180px,90vw)',
     interactive = false,
-    titlePaddingTop = '15px',
-    rarityPaddingBottom = '15px',
+    titlePaddingTop = '4px',
+    rarityPaddingBottom = '4px',
     levelMarginTop = '-2px',
   } = opts;
 
@@ -225,14 +225,14 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
   `;
 
   // === 顶部 banner（物品名）===
-  // banner 视觉中心在 y=15，但 SVG 的圆角让上沿视觉偏厚，标题用 padding-top 往下偏一点更居中
+  // banner 容器覆盖 SVG y 0~419（含黑色 divider），可视色带为 y 73~394，中心 y≈234
   const titleBar = document.createElement('div');
   titleBar.style.cssText = `
     flex:0 0 ${UPGRADE_TITLE_BAR_PCT};min-height:0;display:flex;align-items:center;justify-content:center;
     padding:${titlePaddingTop} 12% 0;box-sizing:border-box;overflow:hidden;
   `;
   const titleEl = document.createElement('div');
-  titleEl.style.cssText = uiPlainText(
+  titleEl.style.cssText = uiPlainTextCrisp(
     'font-size:clamp(11px,3.2vw,14px);font-weight:bold;line-height:1.05;text-align:center;width:100%;',
   );
   titleEl.textContent = title;
@@ -252,15 +252,15 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
   `;
 
   const descEl = document.createElement('div');
-  descEl.style.cssText = uiPlainText(
+  descEl.style.cssText = uiPlainTextCrisp(
     'font-size:clamp(10px,2.7vw,11px);line-height:1.3;text-align:center;width:100%;',
   );
 
+  // 数值面板：SVG 自带内嵌槽（y=1232~1996，已有描边和浅色填充），CSS 这层只做内部布局，
+  // 不再叠加自己的 background 和 border，避免与 SVG 内嵌槽出现"框中框"。
   const statsBox = document.createElement('div');
   statsBox.style.cssText = `
-    width:100%;background:rgba(255,255,255,0.55);
-    border:2px solid ${accentColor};border-radius:8px;
-    padding:4px 7px;box-sizing:border-box;
+    width:100%;padding:4px 7px;box-sizing:border-box;
     display:flex;flex-direction:column;gap:1px;
   `;
 
@@ -268,7 +268,7 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
   grow.style.cssText = 'flex:1 1 auto;min-height:0;';
 
   const levelEl = document.createElement('div');
-  levelEl.style.cssText = uiPlainText(
+  levelEl.style.cssText = uiPlainTextCrisp(
     `font-size:clamp(10px,2.7vw,12px);font-weight:bold;line-height:1.2;text-align:center;width:100%;margin-top:${levelMarginTop};`,
   );
 
@@ -279,15 +279,15 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
   mid.appendChild(levelEl);
 
   // === 底部 tab（稀有度）===
-  // tab 视觉位于 SVG y=190~216，rarityBar 容器覆盖 y=188~220（14.5%）
-  // 加大 padding-bottom 把文字往上推，避开 tab 视觉底部圆角
+  // tab 容器覆盖 SVG y 2212~2565（13.76%），tab 可视范围 y 2212~2508，中心 y≈2371
+  // 容器中心 y≈2388，略低于 tab 中心，用 padding-bottom 往上推少量
   const rarityBar = document.createElement('div');
   rarityBar.style.cssText = `
     flex:0 0 ${UPGRADE_RARITY_BAR_PCT};min-height:0;display:flex;align-items:center;justify-content:center;
     padding:0 25% ${rarityPaddingBottom};box-sizing:border-box;overflow:hidden;
   `;
   const rarityEl = document.createElement('div');
-  rarityEl.style.cssText = uiPlainText(
+  rarityEl.style.cssText = uiPlainTextCrisp(
     'font-size:clamp(10px,2.6vw,12px);font-weight:bold;letter-spacing:0.5px;line-height:1;text-align:center;width:100%;',
   );
   rarityBar.appendChild(rarityEl);
@@ -309,10 +309,10 @@ export function upgradeStatRow(label: string, value: string, accentColor: string
   const row = document.createElement('div');
   row.style.cssText = 'display:flex;justify-content:space-between;gap:6px;line-height:1.45;';
   const lab = document.createElement('span');
-  lab.style.cssText = uiPlainText('font-size:clamp(9px,2.6vw,11px);line-height:1.45;');
+  lab.style.cssText = uiPlainTextCrisp('font-size:clamp(9px,2.6vw,11px);line-height:1.45;');
   lab.textContent = label;
   const val = document.createElement('span');
-  val.style.cssText = uiColoredText(accentColor, '') + 'font-size:clamp(9px,2.6vw,11px);font-weight:bold;line-height:1.45;';
+  val.style.cssText = uiColoredTextCrisp(accentColor, '') + 'font-size:clamp(9px,2.6vw,11px);font-weight:bold;line-height:1.45;';
   val.textContent = value;
   row.appendChild(lab);
   row.appendChild(val);

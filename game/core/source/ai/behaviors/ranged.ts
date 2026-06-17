@@ -3,7 +3,7 @@
  *
  * 等价于原 `computeEnemyTarget` 的 'ranged' case + ranged attack 检查 + `moveEnemy`：
  * - 错峰重算 target：dist < range → 后撤 4m, dist > range×1.5 → 追, 中间 → 站定
- * - 每帧检查 attack cooldown：在 [range×0.5, range×1.5] 之间且冷却到时, 推一个敌方投射物
+ * - 每帧检查 attack cooldown：在 [range×0.5, range×1.5] 之间、垂直差不超过阈值且冷却到时, 推一个敌方投射物
  */
 import { distanceSqBetween, normalizeDirection } from '../../physics.ts';
 import { ENEMIES } from '../../data/enemies.ts';
@@ -11,6 +11,7 @@ import type { EnemyBehaviorFn } from '../types.ts';
 import { applyMovement } from './_move.ts';
 
 const MAX_RANGED_ATTACK_DISTANCE = 10;
+const ENEMY_RANGED_MAX_Y_DELTA = 2.8;
 
 export const ranged: EnemyBehaviorFn = (enemy, ctx, i) => {
   const def = ENEMIES[enemy.type];
@@ -39,6 +40,7 @@ export const ranged: EnemyBehaviorFn = (enemy, ctx, i) => {
     enemy.attackCooldown <= 0
     && distSq <= maxAttackRange * maxAttackRange
     && distSq >= (preferredRange * 0.5) * (preferredRange * 0.5)
+    && Math.abs(enemy.y - ctx.player.y) <= ENEMY_RANGED_MAX_Y_DELTA
   ) {
     const dir = normalizeDirection(ctx.player.x - enemy.x, ctx.player.z - enemy.z);
     const projSpeed = enemy.type === 'necromancer' ? 6 : 8;

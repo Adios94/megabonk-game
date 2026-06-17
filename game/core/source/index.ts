@@ -45,6 +45,7 @@ export type {
   PendingChestReward,
   GamePhase,
   GameStats,
+  BondDamageStats,
   GameState,
   GameConfig,
   GameResult,
@@ -124,7 +125,7 @@ export type { UpgradePreviewLine } from './upgradePreview.ts';
 export { GameInstance } from './GameInstance.ts';
 
 // Progression systems
-export { loadSave, saveSave, getDefaultSave, addSilver, spendSilver, updateRunStats, recordWeaponsUsed } from './save.ts';
+export { loadSave, saveSave, getDefaultSave, addSilver, spendSilver, updateRunStats, recordWeaponsUsed, recordBossDefeated } from './save.ts';
 export type { SaveData } from './save.ts';
 export { SHOP_UPGRADES, getUpgradeCost, canAfford, purchaseUpgrade, getShopBonuses } from './shop.ts';
 export type { ShopUpgrade } from './shop.ts';

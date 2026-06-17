@@ -83,7 +83,9 @@ function rollRarity(luckLevel: number = 0): UpgradeRarity {
  */
 function buildAvailableOptions(player: PlayerState): UpgradeOption[] {
   const options: UpgradeOption[] = [];
-  const luckLevel = getTomePower(player.tomes.find(t => t.type === 'luck_tome'));
+  const luckLevel = getTomePower(player.tomes.find(t => t.type === 'luck_tome'))
+    + Math.floor((player.luckBonus ?? 0) * 100);
+  const upgradeBonus = Math.max(0, player.nextWeaponUpgradeBonus ?? 0);
 
   // Weapon upgrades for existing weapons (level up)
   for (const weapon of player.weapons) {
@@ -94,7 +96,7 @@ function buildAvailableOptions(player: PlayerState): UpgradeOption[] {
         rarity: rollRarity(luckLevel),
         weaponType: weapon.type,
         currentLevel: weapon.level,
-        newLevel: weapon.level + 1,
+        newLevel: Math.min(WEAPON_MAX_LEVEL, weapon.level + 1 + upgradeBonus),
       });
     }
   }
@@ -131,7 +133,7 @@ function buildAvailableOptions(player: PlayerState): UpgradeOption[] {
         tomeType,
         passiveType: tomeType, // Legacy compatibility
         currentLevel,
-        newLevel: currentLevel + 1,
+        newLevel: Math.min(maxLevel, currentLevel + 1 + upgradeBonus),
       });
     }
   }
@@ -179,7 +181,8 @@ function rollProphecyRarity(luckLevel: number, requireRare: boolean, slotIndex: 
 }
 
 function buildProphecyOptions(player: PlayerState, count: number): UpgradeOption[] {
-  const luckLevel = getTomePower(player.tomes.find(t => t.type === 'luck_tome'));
+  const luckLevel = getTomePower(player.tomes.find(t => t.type === 'luck_tome'))
+    + Math.floor((player.luckBonus ?? 0) * 100);
   const allOptions = buildAvailableOptions(player);
   if (allOptions.length === 0) return [];
 

@@ -36,6 +36,7 @@ import {
   type ConsumableId,
   getChestGoldCost,
   loadSave,
+  saveSave,
   purchaseUpgrade,
   getUpgradeCost,
   canAfford,
@@ -681,9 +682,9 @@ const CHARACTER_COLORS: Record<string, number> = {
 };
 
 const CHARACTER_AVATAR_PATHS: Record<CharacterType, string> = {
-  megachad: '/ui/characters/megachad_avatar.png',
-  roberto: '/ui/characters/roberto_avatar.png',
-  skateboard_skeleton: '/ui/characters/skateboard_skeleton_avatar.png',
+  megachad: '/ui/characters/megachad_avatar.webp',
+  roberto: '/ui/characters/roberto_avatar.webp',
+  skateboard_skeleton: '/ui/characters/skateboard_skeleton_avatar.webp',
 };
 
 const CHARACTER_AVATAR_FRAME_PATHS: Record<CharacterType, { normal: string; selected: string }> = {
@@ -702,9 +703,9 @@ const CHARACTER_AVATAR_FRAME_PATHS: Record<CharacterType, { normal: string; sele
 };
 
 const CHARACTER_FULL_PATHS: Record<CharacterType, string> = {
-  megachad: '/ui/characters/megachad_full.png',
-  roberto: '/ui/characters/roberto_full.png',
-  skateboard_skeleton: '/ui/characters/skateboard_skeleton_full.png',
+  megachad: '/ui/characters/megachad_full.webp',
+  roberto: '/ui/characters/roberto_full.webp',
+  skateboard_skeleton: '/ui/characters/skateboard_skeleton_full.webp',
 };
 
 // ZLabs Pixel 12px (EN/Latin) + ZLabs RoundPix 12px (ZH/CJK), split via unicode-range
@@ -712,7 +713,6 @@ const UI_FONT_FACE = '"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif
 
 const GAME_UI_FONT_FILES = {
   pixelEnWoff2: '/fonts/zlabs-pixel-hc.woff2',
-  pixelEnTtf: '/fonts/zlabs-pixel-hc.ttf',
   roundCnTtf: '/fonts/zlabs-roundpix-m-cn.ttf',
 } as const;
 
@@ -739,8 +739,7 @@ function installGameUIFonts(): void {
   style.textContent = `
 @font-face {
   font-family: 'MegaBonk UI';
-  src: url('${GAME_UI_FONT_FILES.pixelEnWoff2}') format('woff2'),
-       url('${GAME_UI_FONT_FILES.pixelEnTtf}') format('truetype');
+  src: url('${GAME_UI_FONT_FILES.pixelEnWoff2}') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -748,8 +747,7 @@ function installGameUIFonts(): void {
 }
 @font-face {
   font-family: 'MegaBonk UI';
-  src: url('${GAME_UI_FONT_FILES.pixelEnWoff2}') format('woff2'),
-       url('${GAME_UI_FONT_FILES.pixelEnTtf}') format('truetype');
+  src: url('${GAME_UI_FONT_FILES.pixelEnWoff2}') format('woff2');
   font-weight: 700;
   font-style: normal;
   font-display: swap;
@@ -1031,12 +1029,12 @@ const CHARACTER_STAT_BAR_MAX = {
 const CHARACTER_SELECT_PAGE_BG_IMAGE = '/ui/characters/select_bg.png';
 const CHARACTER_PREVIEW_STAGE_BG = 'transparent';
 
-const TITLE_IMAGE_PATH_ZH = '/ui/title/title_cn.png';
-const TITLE_IMAGE_PATH_EN = '/ui/title/title_en.png';
-const OVERTIME_NOTICE_IMAGE_ZH = '/ui/title/overtime_cn.png';
-const OVERTIME_NOTICE_IMAGE_EN = '/ui/title/overtime_en.png';
-const FINAL_SWARM_NOTICE_IMAGE_ZH = '/ui/title/final_swarm_cn.png';
-const FINAL_SWARM_NOTICE_IMAGE_EN = '/ui/title/final_swarm_en.png';
+const TITLE_IMAGE_PATH_ZH = '/ui/title/title_cn.webp';
+const TITLE_IMAGE_PATH_EN = '/ui/title/title_en.webp';
+const OVERTIME_NOTICE_IMAGE_ZH = '/ui/title/overtime_cn.webp';
+const OVERTIME_NOTICE_IMAGE_EN = '/ui/title/overtime_en.webp';
+const FINAL_SWARM_NOTICE_IMAGE_ZH = '/ui/title/final_swarm_cn.webp';
+const FINAL_SWARM_NOTICE_IMAGE_EN = '/ui/title/final_swarm_en.webp';
 
 function titleImagePath(): string {
   return getLocale() === 'zh' ? TITLE_IMAGE_PATH_ZH : TITLE_IMAGE_PATH_EN;
@@ -1056,8 +1054,8 @@ function titleImageWidthStyle(): string {
     : `min(78vw,${uiPx(400)}px)`;
   return `width:${width};height:auto;object-fit:contain;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.65));user-select:none;`;
 }
-const LOBBY_BG_PATH = '/ui/common/bg_lobby.png';
-const UI_COMMON_BG_PATH = '/ui/common/bg_ui_common.png';
+const LOBBY_BG_PATH = '/ui/common/bg_lobby.webp';
+const UI_COMMON_BG_PATH = '/ui/common/bg_ui_common.webp';
 const QUEST_LIST_PANEL_BG = '/ui/quests/task_panel_list.png';
 /** task_panel_list.png 原图 966×646，用于 aspect-ratio，避免拉伸 */
 const QUEST_LIST_PANEL_SIZE = { w: 966, h: 646 } as const;
@@ -1737,7 +1735,7 @@ function createStylizedDebugPanel(opts: {
  *  - screenSpace：基于深度的屏幕空间描边，固定一道全屏 pass，开销与怪数无关。保留卡通黑轮廓。
  *    （替代旧的逐网格 OutlineEffect——后者放大翻面把不透明场景再画一遍，draw call 翻倍、
  *    开销随怪数线性增长，是手机掉帧元凶。已于本次性能优化移除。）
- *  - none：不描边（仅平涂着色，cel 来自材质本身，与描边无关）。dev 下按 O 在两态间切，供对比。
+ *  - none：不描边（仅平涂着色，cel 来自材质本身，与描边无关）。
  */
 type OutlineMode = 'screenSpace' | 'none';
 
@@ -2363,10 +2361,10 @@ async function loadSkinModels(): Promise<void> {
 
 async function loadModels(): Promise<void> {
   const modelPaths: [keyof LoadedModels, string][] = [
-    ['zombie_basic', '/models/zombie_basic.gltf'],
-    ['boss_2legs', '/models/enemy_2legs_gun.gltf'],
-    ['boss', '/models/enemy_large_gun.gltf'],
-    ['teleporter', '/models/turret_teleporter.gltf'],
+    ['zombie_basic', '/models/zombie_basic.glb'],
+    ['boss_2legs', '/models/enemy_2legs_gun.glb'],
+    ['boss', '/models/enemy_large_gun.glb'],
+    ['teleporter', '/models/turret_teleporter.glb'],
     // Quaternius Animated Monster Pack（带骨骼动画 GLB）：Bat 用作 gargoyle 渲染，
     // clip 名带前缀（Bat_Flying 等），加载完后会做归一化（见 normalizeEnemyClips）
     ['monster_bat', '/models/monsters/Bat.glb'],
@@ -2898,8 +2896,8 @@ let crystal3Geometry: THREE.BufferGeometry | null = null;
 let crystal4Geometry: THREE.BufferGeometry | null = null;
 let heartGeometry: THREE.BufferGeometry | null = null;
 let heartHalfGeometry: THREE.BufferGeometry | null = null;
-let coinGeometry: THREE.BufferGeometry | null = null;
 let boneGeometry: THREE.BufferGeometry | null = null;
+let silverCoinModel: THREE.Group | null = null;
 let axeModel: THREE.Group | null = null; // Full model with materials
 let swordModel: THREE.Group | null = null;
 let katanaModel: THREE.Group | null = null;
@@ -2984,15 +2982,47 @@ async function loadObjItems(): Promise<void> {
     }
   };
 
-  [crystalGeometry, heartGeometry, heartHalfGeometry, coinGeometry, boneGeometry, crystal2Geometry, crystal3Geometry, crystal4Geometry] = await Promise.all([
-    loadAndNormalize('/models/items/Crystal1.obj', 0.4),
+  // 同 loadAndNormalize，但从 GLB 取几何体。GLB 的 mesh 常带 node 变换（导出工具的 scale/rotation），
+  // 必须先把 matrixWorld 烘焙进 geometry，否则 InstancedMesh 用裸 geometry 会丢变换、错位/错尺寸。
+  const loadAndNormalizeGlb = async (path: string, targetSize: number): Promise<THREE.BufferGeometry> => {
+    try {
+      const gltf = await gltfLoader.loadAsync(path);
+      gltf.scene.updateMatrixWorld(true);
+      let foundGeo: THREE.BufferGeometry | null = null;
+      let foundMatrix: THREE.Matrix4 | null = null;
+      gltf.scene.traverse((child: THREE.Object3D) => {
+        if (!foundGeo && (child as THREE.Mesh).isMesh) {
+          foundGeo = (child as THREE.Mesh).geometry.clone();
+          foundMatrix = (child as THREE.Mesh).matrixWorld.clone();
+        }
+      });
+      if (!foundGeo) return new THREE.OctahedronGeometry(targetSize, 0);
+      const geo: THREE.BufferGeometry = foundGeo;
+      geo.applyMatrix4(foundMatrix!); // 烘焙 node 变换，与 obj（无 node）行为对齐
+      geo.computeBoundingBox();
+      const size = geo.boundingBox!.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z, 0.01);
+      const scale = targetSize / maxDim;
+      geo.scale(scale, scale, scale);
+      geo.computeBoundingBox();
+      const center = geo.boundingBox!.getCenter(new THREE.Vector3());
+      geo.translate(-center.x, -center.y, -center.z);
+      console.log(`[GLB] Loaded geometry: ${path} (${(geo.getAttribute('position') as THREE.BufferAttribute).count} verts)`);
+      return geo;
+    } catch (err) {
+      console.warn(`[GLB] Failed geometry: ${path}`, err);
+      return new THREE.OctahedronGeometry(targetSize, 0);
+    }
+  };
+
+  [crystalGeometry, heartGeometry, heartHalfGeometry, boneGeometry, crystal2Geometry, crystal3Geometry, crystal4Geometry] = await Promise.all([
+    loadAndNormalizeGlb('/models/items/Crystal1.glb', 0.4),
     loadAndNormalize('/models/items/Heart.obj', 0.5),
     loadAndNormalize('/models/items/Heart_Half.obj', 0.42),
-    loadAndNormalize('/models/items/Coin.obj', 0.45),
-    loadAndNormalize('/models/items/Bone.obj', 0.5),
-    loadAndNormalize('/models/items/Crystal2.obj', 0.4),
-    loadAndNormalize('/models/items/Crystal3.obj', 0.4),
-    loadAndNormalize('/models/items/Crystal4.obj', 0.4),
+    loadAndNormalizeGlb('/models/items/Bone.glb', 0.5),
+    loadAndNormalizeGlb('/models/items/Crystal2.glb', 0.4),
+    loadAndNormalizeGlb('/models/items/Crystal3.glb', 0.4),
+    loadAndNormalizeGlb('/models/items/Crystal4.glb', 0.4),
   ]);
 
   // Helper: load full model with materials (MTL + OBJ)
@@ -3150,7 +3180,7 @@ async function loadObjItems(): Promise<void> {
 
   // Load all weapon models in parallel — pass brighten=true for weapons only
   const [ax, sw, kat, pistol, dag, ham, dar, darG, bul, lstaff, fring, pbomb, vbook, rgun, sgun, pgun, sboots] = await Promise.all([
-    loadFullModel('AxeModel', '/models/items/Axe_small.mtl', '/models/items/Axe_small.obj', 0.6, true),
+    loadGlbWeaponModel('AxeModel', '/models/items/Axe_small.glb', 0.6, true),
     loadFullModel('SwordModel', '/models/items/greatsword.mtl', '/models/items/greatsword.obj', 0.8, true),
     loadFullModel('KatanaModel', '/models/items/Sword_big.mtl', '/models/items/Sword_big.obj', 0.9, true),
     // pistol 武器自身的悬浮模型（自导出 GLB + 贴图）
@@ -3163,9 +3193,9 @@ async function loadObjItems(): Promise<void> {
     loadGlbWeaponModel('BulletModel', '/models/items/bullet.glb', 0.5, true),
     // Magic weapon floater models (previously VFX-only)
     loadTexturedGlbWeaponModel('LightningStaffModel', '/models/items/lightning_staff.glb', 1.0),
-    loadFullModel('FlameRingModel', '/models/items/Ring3.mtl', '/models/items/Ring3.obj', 0.45, true),
+    loadGlbWeaponModel('FlameRingModel', '/models/items/Ring3.glb', 0.45, true),
     loadTexturedGlbWeaponModel('PoisonBombModel', '/models/items/poison_bomb.glb', 0.5),
-    loadFullModel('VoidRippleModel', '/models/items/Book4_Closed.mtl', '/models/items/Book4_Closed.obj', 0.5, true),
+    loadGlbWeaponModel('VoidRippleModel', '/models/items/Book4_Closed.glb', 0.5, true),
     loadGlbWeaponModel('RayGunModel', '/models/items/ray_gun.glb', 0.7, true),
     loadPaletteObjWeaponModel('ShotgunModel', '/models/items/shotgun_2.obj', '/models/items/uv_palette.png', 0.8),
     loadPaletteObjWeaponModel('ParalysisGunModel', '/models/items/pistol_6.obj', '/models/items/uv_palette.png', 0.6),
@@ -3201,9 +3231,11 @@ async function loadObjItems(): Promise<void> {
   paralysisGunModel = pgun;
   scorchBootsModel = sboots;
 
+  silverCoinModel = await loadTexturedGlbWeaponModel('SilverCoinModel', '/models/items/coin.glb', 0.45);
+
   // Load chest model — Sci-Fi Essentials Prop_Chest (glTF + textures)
   try {
-    const gltf = await gltfLoader.loadAsync('/models/items/Prop_Chest.gltf');
+    const gltf = await gltfLoader.loadAsync('/models/items/Prop_Chest.glb');
     const chest = gltf.scene as unknown as THREE.Group;
     chest.name = 'ChestClosed';
     // glTF rig defaults to closed pose — leave as-is for the world prop.
@@ -3360,6 +3392,10 @@ export class GameScene {
   private chestMixers: Map<number, THREE.AnimationMixer> = new Map();
   private chestRewardPanel: HTMLDivElement | null = null;
   private chestRewardPanelKey: string | null = null;
+  /** chest_reward 阶段已就绪、待开箱动画播完后再展示的奖励。 */
+  private pendingChestRewardReveal: PendingChestReward | null = null;
+  /** 已完成 "Open" 动画的宝箱 id（幂等标记，避免重复触发弹窗）。 */
+  private chestOpenAnimDone = new Set<number>();
 
   // InstancedMeshes
   // Enemy rendering — individual cloned models (preserves full materials)
@@ -3392,6 +3428,7 @@ export class GameScene {
   private bossProjectileObjects: Map<number, THREE.Object3D> = new Map(); // boss（机器人）弹丸 → bullet.glb 克隆
   private areaEffectObjects: Map<number, THREE.Object3D> = new Map(); // area effect id → mesh (gas/ripple/scorch/beam)
   private pickupMeshes: Map<PickupType, THREE.InstancedMesh> = new Map();
+  private silverPickupObjects: Map<number, THREE.Object3D> = new Map();
   private consumableSprites: Map<number, THREE.Sprite> = new Map();
   private goldMoteTexture!: THREE.Texture;
   private goldMoteSprites: Map<number, THREE.Sprite> = new Map();
@@ -3474,6 +3511,7 @@ export class GameScene {
   private finalSwarmNoticeImg!: HTMLImageElement;
   private majorNoticeEl: HTMLDivElement | null = null;
   private majorNoticeTimer: ReturnType<typeof setTimeout> | null = null;
+  private lowHealthOverlay: HTMLDivElement | null = null;
   private pauseBtn!: HTMLDivElement;
   private pauseBtnIcon!: HTMLImageElement;
   private upgradePanel: HTMLDivElement | null = null;
@@ -3485,11 +3523,13 @@ export class GameScene {
   private finalSwarmBorder: HTMLDivElement | null = null;
   private wasFinalSwarm = false;
   private lastNoticeTier: DifficultyTier | null = null;
+  private lastNoticeStage: GameState['stage'] | null = null;
   private wasOvertime = false;
   private xpFlashTimer = 0;
   private seenChestOpenEvents = new Set<string>();
-  /** 帧率 / Draw Call 调试 overlay */
+  /** 帧率 / Draw Call 调试 overlay（dev 下按 ` 与风格化调参面板同步开关） */
   private perfStatsEl: HTMLDivElement | null = null;
+  private perfStatsVisible = false;
   private perfFpsSampleTime = 0;
   private perfFpsFrameCount = 0;
   private perfFpsDisplay = 0;
@@ -3781,6 +3821,7 @@ export class GameScene {
     this.hudContainer?.remove();
     this.perfStatsEl?.remove();
     this.perfStatsEl = null;
+    this.perfStatsVisible = false;
     if (this.perfKeyHandler) {
       window.removeEventListener('keydown', this.perfKeyHandler);
       this.perfKeyHandler = null;
@@ -3796,6 +3837,8 @@ export class GameScene {
     this.pausePanel = null;
     this.shrinePanel?.remove();
     this.chestRewardPanel?.remove();
+    this.pendingChestRewardReveal = null;
+    this.chestOpenAnimDone.clear();
     this.shrineIndicator?.remove();
     if (this.majorNoticeTimer) {
       clearTimeout(this.majorNoticeTimer);
@@ -3803,6 +3846,8 @@ export class GameScene {
     }
     this.majorNoticeEl?.remove();
     this.majorNoticeEl = null;
+    this.lowHealthOverlay?.remove();
+    this.lowHealthOverlay = null;
     this.finalSwarmBorder?.remove();
     gsapAnimations.cancelOvertimeNotice(this.overtimeNoticeEl);
     this.overtimeNoticeEl?.remove();
@@ -4050,9 +4095,9 @@ export class GameScene {
 
     // Character → model mapping
     const CHARACTER_MODELS: Record<string, string> = {
-      megachad: '/models/player_george.gltf',
-      roberto: '/models/player_stan.gltf',
-      skateboard_skeleton: '/models/player_leela.gltf',
+      megachad: '/models/player_george.glb',
+      roberto: '/models/player_stan.glb',
+      skateboard_skeleton: '/models/player_leela.glb',
     };
     const modelPath = CHARACTER_MODELS[state.character] ?? CHARACTER_MODELS['megachad'];
 
@@ -4375,15 +4420,15 @@ export class GameScene {
 
   private setupPickupMesh(): void {
     // 每种拾取物用各自的 geometry（一个 InstancedMesh / 类型），颜色仍走 instanceColor 染色。
-    // xp 四档共用 Crystal1（靠颜色区分阶级）；silver/health/health_small 用专属 OBJ 模型。
+    // xp 四档共用 Crystal1（靠颜色区分阶级）；health/health_small 用专属 OBJ 模型。
+    // 银币走 coin.glb 独立克隆渲染（见 renderSilverPickups）。
     const fallback = new THREE.OctahedronGeometry(0.35, 0);
     const xpGeo = crystalGeometry ?? fallback;
-    const geomFor: Record<PickupType, THREE.BufferGeometry> = {
+    const geomFor: Partial<Record<PickupType, THREE.BufferGeometry>> = {
       xp_green: crystalGeometry ?? fallback,
       xp_blue: crystal2Geometry ?? xpGeo,
       xp_purple: crystal3Geometry ?? xpGeo,
       xp_orange: crystal4Geometry ?? xpGeo,
-      silver: coinGeometry ?? xpGeo,
       health: heartGeometry ?? xpGeo,
       health_small: heartHalfGeometry ?? heartGeometry ?? xpGeo,
     };
@@ -4399,38 +4444,8 @@ export class GameScene {
   }
 
   private setupGoldMoteMesh(): void {
-    const canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 64;
-    const ctx = canvas.getContext('2d')!;
-    ctx.clearRect(0, 0, 64, 64);
-
-    const coin = ctx.createRadialGradient(24, 20, 4, 32, 32, 28);
-    coin.addColorStop(0.0, '#fff28a');
-    coin.addColorStop(0.34, '#ffd21a');
-    coin.addColorStop(0.72, '#e79800');
-    coin.addColorStop(1.0, '#9a5a00');
-    ctx.fillStyle = coin;
-    ctx.beginPath();
-    ctx.arc(32, 32, 25, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.lineWidth = 5;
-    ctx.strokeStyle = '#ffe066';
-    ctx.stroke();
-
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = '#a86400';
-    ctx.beginPath();
-    ctx.arc(32, 32, 15, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.fillStyle = 'rgba(255,255,210,0.85)';
-    ctx.beginPath();
-    ctx.ellipse(25, 22, 8, 4, -0.65, 0, Math.PI * 2);
-    ctx.fill();
-
-    this.goldMoteTexture = new THREE.CanvasTexture(canvas);
+    const loader = new THREE.TextureLoader();
+    this.goldMoteTexture = loader.load(GOLD_COIN_ICON_PATH);
     this.goldMoteTexture.colorSpace = THREE.SRGBColorSpace;
   }
 
@@ -4964,7 +4979,7 @@ export class GameScene {
   /**
    * 左下角 FPS + Draw Call + 分类拆解诊断 overlay（EffectComposer 多 pass 需关闭 autoReset 后手动 reset）。
    * 仅 dev 构建启用（生产 `import.meta.env.DEV === false` 直接 return，不创建 DOM、不改 renderer.info、不挂键盘）。
-   * 保留它是为了后续做敌人模型合批时还能用 enemy draws / sig 验证。
+   * 默认隐藏，按 ` 与右上角风格化调参面板同步开关。保留它是为了后续做敌人模型合批时还能用 enemy draws / sig 验证。
    */
   private setupPerfStats(): void {
     if (!import.meta.env.DEV) return;
@@ -4973,7 +4988,7 @@ export class GameScene {
     const el = document.createElement('div');
     el.style.cssText = `
       position:fixed;left:max(8px,env(safe-area-inset-left));bottom:max(8px,env(safe-area-inset-bottom));
-      z-index:150;pointer-events:none;padding:4px 8px;border-radius:6px;
+      z-index:150;display:none;pointer-events:none;padding:4px 8px;border-radius:6px;
       background:rgba(0,0,0,0.55);color:#b8ffb8;font-family:monospace;
       font-size:11px;line-height:1.45;font-variant-numeric:tabular-nums;
       text-shadow:0 1px 2px rgba(0,0,0,0.9);white-space:pre;
@@ -4982,15 +4997,11 @@ export class GameScene {
     document.body.appendChild(el);
     this.perfStatsEl = el;
 
-    // dev 诊断：按 O 在描边两态（screenSpace → none）间切换，对比 render ms 与画面。
+    // dev 诊断：按 ` 开关本 overlay。
     this.perfKeyHandler = (e: KeyboardEvent) => {
-      if (e.key === 'o' || e.key === 'O') {
-        if (this.outlinePass) {
-          const modes: OutlineMode[] = ['screenSpace', 'none'];
-          const cur = modes.indexOf(this.outlinePass.mode);
-          this.outlinePass.mode = modes[(cur + 1) % modes.length];
-        }
-      }
+      if (e.code !== 'Backquote') return;
+      this.perfStatsVisible = !this.perfStatsVisible;
+      el.style.display = this.perfStatsVisible ? 'block' : 'none';
     };
     window.addEventListener('keydown', this.perfKeyHandler);
   }
@@ -4998,6 +5009,10 @@ export class GameScene {
 
   private updatePerfStats(dt: number): void {
     if (!this.perfStatsEl) return;
+    if (!this.perfStatsVisible) {
+      this.renderer.info.reset();
+      return;
+    }
     this.perfFpsFrameCount += 1;
     this.perfFpsSampleTime += dt;
     if (this.perfFpsSampleTime >= 0.25) {
@@ -5058,7 +5073,7 @@ export class GameScene {
       `  enemy ${b.enemy}  shadow ${b.shadow}\n` +
       `  level ${b.level}  other ${b.other}\n` +
       `  sum ${bSum} (+post ${Math.max(0, drawCalls - bSum)})\n` +
-      `outline: ${this.outlinePass?.mode ?? 'off'} (press O)\n` +
+      `outline: ${this.outlinePass?.mode ?? 'off'}\n` +
       `render: ${this.perfRenderMs.toFixed(1)}ms (submit)`;
     this.renderer.info.reset();
   }
@@ -5309,6 +5324,7 @@ export class GameScene {
     this.renderEnemies(state.enemies);
     this.renderProjectiles(state.projectiles);
     this.renderPickups(state.pickups);
+    this.renderSilverPickups(state.pickups);
     this.renderConsumablePickups(state.consumablePickups ?? []);
     this.renderGoldMotes(state.goldMotes ?? []);
     this.renderBoss(state.boss);
@@ -6648,6 +6664,7 @@ export class GameScene {
     for (const mesh of this.pickupMeshes.values()) counts.set(mesh, 0);
 
     for (const pickup of pickups) {
+      if (pickup.type === 'silver') continue;
       const mesh = this.pickupMeshes.get(pickup.type);
       if (!mesh) continue;
       let count = counts.get(mesh)!;
@@ -6677,6 +6694,42 @@ export class GameScene {
       mesh.count = count;
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+  }
+
+  private renderSilverPickups(pickups: PickupState[]): void {
+    const time = performance.now() * 0.004;
+    const active = new Set<number>();
+
+    for (const pickup of pickups) {
+      if (pickup.type !== 'silver') continue;
+      if (active.size >= MAX_PICKUPS) break;
+      active.add(pickup.id);
+
+      let obj = this.silverPickupObjects.get(pickup.id);
+      if (!obj) {
+        if (!silverCoinModel) continue;
+        obj = silverCoinModel.clone();
+        obj.name = `SilverPickup_${pickup.id}`;
+        this.scene.add(obj);
+        this.silverPickupObjects.set(pickup.id, obj);
+      }
+
+      const bob = Math.sin(time * 1.5 + pickup.id) * 0.3;
+      obj.position.set(pickup.x, pickup.y + 0.2 + bob, pickup.z);
+
+      const scaleVal = pickup.attracted
+        ? 0.7 + Math.sin(time * 6 + pickup.id) * 0.3
+        : 1.0;
+      const baseScale = silverCoinModel?.scale.x ?? obj.scale.x;
+      obj.scale.setScalar(baseScale * scaleVal);
+      obj.rotation.set(0, time * 2 + pickup.id, 0);
+    }
+
+    for (const [id, obj] of this.silverPickupObjects) {
+      if (active.has(id)) continue;
+      this.scene.remove(obj);
+      this.silverPickupObjects.delete(id);
     }
   }
 
@@ -7267,13 +7320,39 @@ export class GameScene {
     const reward = state.pendingChestReward;
     if (state.phase === 'chest_reward' && reward) {
       const key = `${reward.chestId}:${reward.relicId}`;
-      if (!this.chestRewardPanel || this.chestRewardPanelKey !== key) {
-        this.hideChestRewardPanel();
-        this.showChestRewardPanel(reward);
-      }
+      if (this.chestRewardPanel && this.chestRewardPanelKey === key) return;
+      this.pendingChestRewardReveal = reward;
+      this.tryRevealChestRewardPanel();
       return;
     }
+    this.pendingChestRewardReveal = null;
     if (this.chestRewardPanel) this.hideChestRewardPanel();
+  }
+
+  /** 开箱 glTF 动画播完（或无可播动画）后再弹出遗物选择面板。 */
+  private tryRevealChestRewardPanel(): void {
+    const reward = this.pendingChestRewardReveal;
+    if (!reward) return;
+
+    const chestId = reward.chestId;
+    if (!this.chestOpenAnimDone.has(chestId)) {
+      const obj = this.chestObjects.get(chestId);
+      const openClip = chestAnimations.length > 0
+        ? THREE.AnimationClip.findByName(chestAnimations, 'Open')
+        : null;
+      if (obj && openClip && !this.chestMixers.has(chestId)) return;
+      if (obj && openClip) return;
+      this.chestOpenAnimDone.add(chestId);
+    }
+
+    const key = `${reward.chestId}:${reward.relicId}`;
+    if (this.chestRewardPanel && this.chestRewardPanelKey === key) {
+      this.pendingChestRewardReveal = null;
+      return;
+    }
+    this.hideChestRewardPanel();
+    this.showChestRewardPanel(reward);
+    this.pendingChestRewardReveal = null;
   }
 
   private showChestRewardPanel(reward: PendingChestReward): void {
@@ -7668,20 +7747,34 @@ export class GameScene {
     if (this.chestMixers.size > 0) {
       for (const mixer of this.chestMixers.values()) mixer.update(this.frameDt);
     }
+    this.tryRevealChestRewardPanel();
   }
 
   /** 对已开启宝箱播放一次 "Open" 动画（幂等：已有 mixer 则跳过）。 */
   private playChestOpenAnimation(chestId: number): void {
-    if (this.chestMixers.has(chestId)) return;
+    if (this.chestMixers.has(chestId) || this.chestOpenAnimDone.has(chestId)) return;
     const obj = this.chestObjects.get(chestId);
-    if (!obj || chestAnimations.length === 0) return;
+    if (!obj || chestAnimations.length === 0) {
+      this.chestOpenAnimDone.add(chestId);
+      this.tryRevealChestRewardPanel();
+      return;
+    }
     const clip = THREE.AnimationClip.findByName(chestAnimations, 'Open');
-    if (!clip) return;
+    if (!clip) {
+      this.chestOpenAnimDone.add(chestId);
+      this.tryRevealChestRewardPanel();
+      return;
+    }
     const mixer = new THREE.AnimationMixer(obj);
     const action = mixer.clipAction(clip);
     action.setLoop(THREE.LoopOnce, 1);
     action.clampWhenFinished = true; // 播完停在开盖姿态
     action.play();
+    mixer.addEventListener('finished', (event) => {
+      if (event.action !== action) return;
+      this.chestOpenAnimDone.add(chestId);
+      this.tryRevealChestRewardPanel();
+    });
     this.chestMixers.set(chestId, mixer);
   }
 
@@ -7697,6 +7790,7 @@ export class GameScene {
       mixer.stopAllAction();
       this.chestMixers.delete(chestId);
     }
+    this.chestOpenAnimDone.delete(chestId);
   }
 
   /**
@@ -8738,6 +8832,7 @@ export class GameScene {
       this.lastHpPercent = hpPercent;
     }
     this.hpText.textContent = `${Math.max(0, Math.ceil(p.hp))} / ${Math.ceil(p.maxHp)}`;
+    this.updateLowHealthFx(p);
 
     // Shield bar (only shown when player has shield capacity)
     const maxShield = p.maxShield ?? 0;
@@ -9122,6 +9217,32 @@ export class GameScene {
     }
   }
 
+  private updateLowHealthFx(p: GameState['player']): void {
+    const hpRatio = p.maxHp > 0 ? p.hp / p.maxHp : 1;
+    if (hpRatio >= 0.15 || !p.alive) {
+      if (this.lowHealthOverlay) {
+        this.lowHealthOverlay.remove();
+        this.lowHealthOverlay = null;
+      }
+      return;
+    }
+
+    if (!this.lowHealthOverlay) {
+      const overlay = document.createElement('div');
+      overlay.style.cssText = `
+        position:fixed;inset:0;pointer-events:none;z-index:88;opacity:0;
+        background:rgba(0,0,0,0.18);
+        box-shadow:inset 0 0 72px rgba(255,0,0,0.62),inset 0 0 22px rgba(255,40,40,0.44);
+        transition:opacity 160ms ease;
+      `;
+      document.body.appendChild(overlay);
+      this.lowHealthOverlay = overlay;
+    }
+
+    const severity = Math.max(0, Math.min(1, (0.15 - hpRatio) / 0.15));
+    this.lowHealthOverlay.style.opacity = String(0.42 + severity * 0.28);
+  }
+
   private getWeaponCooldownInfo(weapon: { type: string; cooldownTimer: number; level: number }): { cooldownPercent: number } {
     // Show cooldown as proportion — use a reasonable max cooldown for visual display
     const maxCd = 4.0;
@@ -9233,16 +9354,38 @@ export class GameScene {
     if (!this.gmWeaponDamageBody) return;
 
     const statsByWeapon = new Map((state.weaponDamageStats ?? []).map(s => [s.weaponType, s]));
-    const orderedStats = state.player.weapons.map((weapon) => (
-      statsByWeapon.get(weapon.type) ?? {
+    const weaponRows = state.player.weapons.map((weapon) => {
+      const stat = statsByWeapon.get(weapon.type) ?? {
         weaponType: weapon.type,
         killCount: 0,
         totalDamage: 0,
         dps: 0,
-      }
-    ));
+      };
+      return {
+        id: `weapon:${weapon.type}`,
+        label: `${WEAPON_ICONS[weapon.type] ?? '?'} ${t(`upgrade.weapon.${weapon.type}`)}`,
+        killCount: stat.killCount,
+        totalDamage: stat.totalDamage,
+        dps: stat.dps,
+        isBond: false,
+      };
+    });
+    const bondRows = (state.bondDamageStats ?? [])
+      .filter(stat => stat.totalDamage > 0 || stat.killCount > 0)
+      .map(stat => {
+        const bond = BONDS[stat.bondId];
+        return {
+          id: `bond:${stat.bondId}`,
+          label: `${bond?.icon ?? '🔗'} ${bond ? t(bond.nameKey) : stat.bondId}`,
+          killCount: stat.killCount,
+          totalDamage: stat.totalDamage,
+          dps: stat.dps,
+          isBond: true,
+        };
+      });
+    const orderedStats = [...weaponRows, ...bondRows];
 
-    const sig = orderedStats.map(s => s.weaponType).join('|');
+    const sig = orderedStats.map(s => s.id).join('|');
     if (sig !== this.gmWeaponDamageSig) {
       this.gmWeaponDamageSig = sig;
       this.gmWeaponDamageRows.clear();
@@ -9259,12 +9402,12 @@ export class GameScene {
       this.gmWeaponDamageBody.appendChild(header);
 
       for (const stat of orderedStats) {
-        this.createGmWeaponDamageRow(stat.weaponType);
+        this.createGmWeaponDamageRow(stat.id, stat.label, stat.isBond);
       }
     }
 
     for (const stat of orderedStats) {
-      const row = this.gmWeaponDamageRows.get(stat.weaponType);
+      const row = this.gmWeaponDamageRows.get(stat.id);
       if (!row) continue;
       row.kills.textContent = String(stat.killCount);
       row.dps.textContent = this.formatGmDamageNumber(stat.dps, 1);
@@ -9272,13 +9415,13 @@ export class GameScene {
     }
   }
 
-  private createGmWeaponDamageRow(weaponType: string): void {
+  private createGmWeaponDamageRow(rowId: string, label: string, isBond: boolean): void {
     const row = document.createElement('div');
     row.style.cssText = 'display:grid;grid-template-columns:minmax(92px,1fr) 38px 54px 58px;gap:6px;align-items:center;min-height:18px;border-top:1px solid rgba(255,255,255,0.06);padding-top:3px;';
 
     const name = document.createElement('span');
-    name.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#ffffff;font-weight:700;';
-    name.textContent = `${WEAPON_ICONS[weaponType] ?? '?'} ${t(`upgrade.weapon.${weaponType}`)}`;
+    name.style.cssText = `overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${isBond ? '#ffd966' : '#ffffff'};font-weight:700;`;
+    name.textContent = label;
     row.appendChild(name);
 
     const kills = this.createGmWeaponDamageValue();
@@ -9289,7 +9432,7 @@ export class GameScene {
     row.appendChild(total);
 
     this.gmWeaponDamageBody?.appendChild(row);
-    this.gmWeaponDamageRows.set(weaponType, { kills, dps, total });
+    this.gmWeaponDamageRows.set(rowId, { kills, dps, total });
   }
 
   private createGmWeaponDamageValue(): HTMLSpanElement {
@@ -9324,13 +9467,27 @@ export class GameScene {
 
     this.consumableBuffsContainer.innerHTML = '';
     const slot = document.createElement('div');
-    slot.style.cssText = 'width:clamp(38px,10vw,44px);height:clamp(38px,10vw,44px);background:rgba(20,12,34,0.82);border:1px solid rgba(180,120,255,0.5);border-radius:8px;position:relative;overflow:visible;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 0 10px rgba(160,90,255,0.25);';
+    slot.style.cssText = 'min-width:clamp(92px,22vw,126px);height:clamp(38px,10vw,44px);background:rgba(20,12,34,0.86);border:1px solid rgba(180,120,255,0.5);border-radius:8px;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:flex-start;gap:6px;padding:3px 7px;box-sizing:border-box;flex-shrink:0;box-shadow:0 0 10px rgba(160,90,255,0.25);';
     this.setItemTooltip(slot, this.createConsumableTooltipHtml(active.id, active.remaining));
 
     const icon = document.createElement('span');
-    icon.style.cssText = 'font-size:clamp(18px,5vw,22px);line-height:1;';
+    icon.style.cssText = 'font-size:clamp(18px,5vw,22px);line-height:1;position:relative;z-index:1;flex:0 0 auto;';
     setIconImage(icon, consumableIconSrc(active.id), CONSUMABLE_EMOJI[active.id] ?? '✨');
     slot.appendChild(icon);
+
+    const textCol = document.createElement('div');
+    textCol.style.cssText = 'position:relative;z-index:1;min-width:0;display:flex;flex-direction:column;gap:1px;line-height:1.05;';
+    const effect = document.createElement('div');
+    effect.style.cssText = uiPlainText('font-size:clamp(8px,2.1vw,10px);font-weight:bold;color:#f3e9ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;');
+    effect.textContent = t(`consumable.${active.id}_short`);
+    textCol.appendChild(effect);
+    const timerLine = document.createElement('div');
+    timerLine.style.cssText = uiPlainText('font-size:clamp(7px,1.8vw,9px);font-weight:bold;color:#cdb7ff;white-space:nowrap;');
+    timerLine.textContent = active.remaining < 0
+      ? t('consumable.pending')
+      : t('consumable.timer', { seconds: String(Math.ceil(active.remaining)) });
+    textCol.appendChild(timerLine);
+    slot.appendChild(textCol);
 
     // 限时 buff：顶部向下降的阴影（剩余越少阴影越高）
     if (active.remaining > 0 && this.consumableMaxRemaining > 0) {
@@ -9339,7 +9496,7 @@ export class GameScene {
       shade.style.cssText = `position:absolute;top:0;left:0;right:0;height:${Math.round((1 - ratio) * 100)}%;background:rgba(0,0,0,0.62);pointer-events:none;border-radius:8px 8px 0 0;overflow:hidden;`;
       slot.appendChild(shade);
       const secs = document.createElement('span');
-      secs.style.cssText = uiPlainText('position:absolute;bottom:-1px;left:0;right:0;text-align:center;font-size:8px;font-weight:bold;');
+      secs.style.cssText = uiPlainText('position:absolute;right:4px;bottom:1px;text-align:right;font-size:8px;font-weight:bold;z-index:2;');
       secs.textContent = `${Math.ceil(active.remaining)}s`;
       slot.appendChild(secs);
     }
@@ -9883,6 +10040,19 @@ export class GameScene {
       );
     }
 
+    if (this.lastNoticeStage === null) {
+      this.lastNoticeStage = state.stage;
+    } else if (state.stage !== this.lastNoticeStage) {
+      this.lastNoticeStage = state.stage;
+      if (state.stage === 2) {
+        this.showMajorNotice(
+          t('stage.notice.secondTitle'),
+          t('stage.notice.secondBody'),
+          '#ffcc00',
+        );
+      }
+    }
+
     const isOvertime = state.overtimeSeconds > 0;
     if (isOvertime && !this.wasOvertime) {
       this.overtimeNoticeImg.src = overtimeNoticeImagePath();
@@ -9981,6 +10151,7 @@ export class GameScene {
     const isBond = option.kind === 'bond_activate' || option.kind === 'bond_upgrade';
     // 羁绊卡片用金色羁绊框，其余按稀有度取框
     const accentColor = isBond ? '#ffd633' : (RARITY_COLORS[option.rarity] ?? '#aaaaaa');
+    const statValueColor = option.rarity === 'common' ? '#ffffff' : accentColor;
     const frameRarity: ItemFrameRarity = isBond ? 'bond' : (option.rarity as ItemFrameRarity);
 
     // 升级卡：banner（物品名）+ icon + 描述 + 内嵌数值面板 + 等级行 + 底部 tab（稀有度）
@@ -10009,13 +10180,17 @@ export class GameScene {
 
     // Description
     descEl.textContent = this.getUpgradeDesc(option);
+    const upgradeSteps = option.newLevel - option.currentLevel;
+    if (!isBond && upgradeSteps > 1) {
+      descEl.textContent = `${descEl.textContent} · ${t('upgrade.doubleLevel', { count: String(upgradeSteps) })}`;
+    }
 
     // 数值预览（基础步进 × 稀有度 / 典籍每级增益）
     const previewLines = getUpgradePreviewLines(option, player);
     if (previewLines.length > 0) {
       for (const line of previewLines) {
         const key = line.labelKey.replace('upgrade.stat.', '');
-        statsBox.appendChild(upgradeStatRow(t(`upgrade.stat.${key}`), line.value, accentColor));
+        statsBox.appendChild(upgradeStatRow(t(`upgrade.stat.${key}`), line.value, statValueColor));
       }
     } else {
       // 无数值时给个占位，避免数值面板坍成空盒
@@ -10119,6 +10294,48 @@ export class GameScene {
     silverRow.style.cssText = 'display:flex;justify-content:center;margin-top:2px;';
     silverRow.appendChild(createSilverBadge(result.silverEarned));
     statsContainer.appendChild(silverRow);
+
+    const weaponStats = [...(result.weaponDamageStats ?? [])];
+    if (weaponStats.length > 0) {
+      weaponStats.sort((a, b) => (b.killCount - a.killCount) || (b.totalDamage - a.totalDamage));
+      const mvp = weaponStats[0];
+      const weaponStatsBox = document.createElement('div');
+      weaponStatsBox.style.cssText = `
+        width:min(92vw,420px);margin-top:8px;padding:8px 10px;border-radius:10px;
+        background:rgba(12,12,24,0.72);border:1px solid rgba(255,255,255,0.16);
+        display:flex;flex-direction:column;gap:4px;box-sizing:border-box;
+      `;
+      const header = document.createElement('div');
+      header.style.cssText = uiPlainText('font-size:13px;font-weight:bold;color:#ffcc66;text-align:left;margin-bottom:2px;');
+      header.textContent = t('result.weaponStatsTitle');
+      weaponStatsBox.appendChild(header);
+
+      for (const stat of weaponStats) {
+        const isMvp = stat.weaponType === mvp.weaponType;
+        const row = document.createElement('div');
+        row.style.cssText = `
+          display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;
+          padding:3px 4px;border-radius:6px;font-size:12px;
+          color:${isMvp ? '#ffd700' : '#f3f3ff'};
+          background:${isMvp ? 'rgba(255,200,40,0.13)' : 'transparent'};
+          border:${isMvp ? '1px solid rgba(255,215,0,0.38)' : '1px solid transparent'};
+        `;
+        const name = document.createElement('span');
+        name.style.cssText = 'min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:bold;text-align:left;';
+        name.innerHTML = `${iconImgHtml(weaponIconSrc(stat.weaponType), 16)} ${escapeTooltipText(t(`upgrade.weapon.${stat.weaponType}`))}${isMvp ? ` <span style="color:#ffd700;">${escapeTooltipText(t('result.mvp'))}</span>` : ''}`;
+        const kills = document.createElement('span');
+        kills.style.cssText = 'font-variant-numeric:tabular-nums;text-align:right;';
+        kills.textContent = t('result.weaponKills', { count: String(stat.killCount) });
+        const damage = document.createElement('span');
+        damage.style.cssText = 'font-variant-numeric:tabular-nums;text-align:right;';
+        damage.textContent = t('result.weaponDamage', { damage: this.formatGmDamageNumber(stat.totalDamage, 0) });
+        row.appendChild(name);
+        row.appendChild(kills);
+        row.appendChild(damage);
+        weaponStatsBox.appendChild(row);
+      }
+      statsContainer.appendChild(weaponStatsBox);
+    }
 
     if (newQuests.length > 0) {
       const questHeader = document.createElement('div');
@@ -10511,8 +10728,11 @@ export class GameScene {
     this.resetQuestHudTrack();
     this.cameraOrbit.setEnabled(true);
     this.lastNoticeTier = null;
+    this.lastNoticeStage = null;
     this.wasOvertime = false;
     this.wasFinalSwarm = false;
+    this.lowHealthOverlay?.remove();
+    this.lowHealthOverlay = null;
     gsapAnimations.cancelOvertimeNotice(this.overtimeNoticeEl);
     gsapAnimations.cancelFinalSwarmNotice(this.finalSwarmNoticeEl);
     this.session.restart();
@@ -10576,6 +10796,20 @@ let selectedCharacter: CharacterType = 'megachad';
 let selectedTier: DifficultyTier = 1;
 
 const CHARACTER_ORDER: CharacterType[] = ['megachad', 'roberto', 'skateboard_skeleton'];
+
+function getUnlockedCharacters(): Set<CharacterType> {
+  return new Set(loadSave().charactersUnlocked as CharacterType[]);
+}
+
+function isCharacterUnlocked(char: CharacterType): boolean {
+  return getUnlockedCharacters().has(char);
+}
+
+function ensureSelectableCharacter(): void {
+  if (!isCharacterUnlocked(selectedCharacter)) {
+    selectedCharacter = 'megachad';
+  }
+}
 
 const PREP_SCREEN_STYLE = `
   position:fixed;top:0;left:0;width:100%;height:100%;box-sizing:border-box;
@@ -10792,16 +11026,19 @@ function scheduleCharacterSelectDetailLayout(): void {
 
 function mountCharacterSelectSlots(host: HTMLElement): void {
   host.replaceChildren();
+  const unlocked = getUnlockedCharacters();
 
   for (const char of CHARACTER_ORDER) {
+    const isUnlocked = unlocked.has(char);
     const isSelected = char === selectedCharacter;
     const frames = CHARACTER_AVATAR_FRAME_PATHS[char];
 
     const slot = document.createElement('div');
     slot.style.cssText = `
       position:relative;width:clamp(46px,12vw,56px);min-width:44px;min-height:44px;
-      cursor:pointer;flex-shrink:0;transition:transform 0.15s;
+      cursor:${isUnlocked ? 'pointer' : 'not-allowed'};flex-shrink:0;transition:transform 0.15s;
       touch-action:manipulation;user-select:none;
+      opacity:${isUnlocked ? '1' : '0.48'};filter:${isUnlocked ? 'none' : 'grayscale(1)'};
     `;
 
     const frameImg = document.createElement('img');
@@ -10812,12 +11049,25 @@ function mountCharacterSelectSlots(host: HTMLElement): void {
 
     slot.appendChild(frameImg);
 
+    if (!isUnlocked) {
+      const lock = document.createElement('div');
+      lock.style.cssText = `
+        position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+        color:#fff;font-size:clamp(18px,5vw,24px);text-shadow:0 2px 5px #000;
+        pointer-events:none;
+      `;
+      lock.textContent = '🔒';
+      slot.appendChild(lock);
+      slot.title = t('characterSelect.locked');
+    }
+
     slot.addEventListener('click', () => {
+      if (!isUnlocked) return;
       selectedCharacter = char;
       mountCharacterSelectSlots(host);
       refreshCharacterSelectUI();
     });
-    slot.addEventListener('mouseenter', () => { slot.style.transform = 'scale(1.05)'; });
+    slot.addEventListener('mouseenter', () => { if (isUnlocked) slot.style.transform = 'scale(1.05)'; });
     slot.addEventListener('mouseleave', () => { slot.style.transform = 'scale(1)'; });
 
     host.appendChild(slot);
@@ -11109,8 +11359,10 @@ function formatWeaponStatLines(weaponType: string): string[] {
 
 function refreshCharacterSelectDetail(): void {
   if (!characterSelectDetailHost) return;
+  ensureSelectableCharacter();
 
   const id = selectedCharacter;
+  const unlocked = isCharacterUnlocked(id);
   const cfg = CHARACTER_CONFIGS[id];
   const weapon = cfg.startingWeapon;
   const detailFont = (size: string, extra = '') =>
@@ -11291,10 +11543,17 @@ function refreshCharacterSelectDetail(): void {
     flex:0 0 auto;width:100%;display:flex;align-items:center;justify-content:center;
     box-sizing:border-box;margin-top:${weaponConfirmGap};
   `;
-  confirmSection.appendChild(createCharacterConfirmButton(t('characterSelect.confirm'), () => {
+  const confirmBtn = createCharacterConfirmButton(unlocked ? t('characterSelect.confirm') : t('characterSelect.locked'), () => {
+    if (!isCharacterUnlocked(selectedCharacter)) return;
     destroyCharacterSelectScreen();
     showTierSelectScreen();
-  }));
+  });
+  if (!unlocked) {
+    confirmBtn.style.filter = 'grayscale(1)';
+    confirmBtn.style.opacity = '0.55';
+    confirmBtn.style.cursor = 'not-allowed';
+  }
+  confirmSection.appendChild(confirmBtn);
   bodyArea.appendChild(confirmSection);
   card.appendChild(bodyArea);
 
@@ -11352,6 +11611,7 @@ let tierSelectEl: HTMLDivElement | null = null;
 
 function showCharacterSelectScreen(): void {
   if (characterSelectEl) return;
+  ensureSelectableCharacter();
 
   characterSelectEl = document.createElement('div');
   characterSelectEl.id = 'character-select-root';
@@ -11492,6 +11752,11 @@ function showTierSelectScreen(): void {
   const startWrap = document.createElement('div');
   startWrap.style.cssText = 'margin-top:16px;width:100%;display:flex;justify-content:center;box-sizing:border-box;';
   startWrap.appendChild(createMainMenuButton(MENU_BUTTON_ICONS.start, t('menu.start'), () => {
+    if (!isCharacterUnlocked(selectedCharacter)) {
+      destroyTierSelectScreen();
+      showCharacterSelectScreen();
+      return;
+    }
     destroyTierSelectScreen();
     startGame(selectedCharacter);
   }));
@@ -12725,6 +12990,7 @@ function setupGMTool(): void {
     skipTo(minutes: number) { gmSkipTime(minutes); },
     giveWeapon(type: string, level: number = 1) { gmGiveWeapon(type, level); },
     giveAllWeapons() { gmGiveAllWeapons(); },
+    unlockAllCharacters() { gmUnlockAllCharacters(); },
     listWeapons() { console.log('[GM] 可选武器:\n' + ALL_WEAPON_TYPES.map((t) => `  ${t.padEnd(16)} ${GM_WEAPON_LABELS[t]}`).join('\n')); },
     testLightning() { gmTestLightning(); },
     showCollision() { gmToggleCollisionViz(); },
@@ -12744,6 +13010,8 @@ GM Commands (window.__gm):
                       — 加指定武器（type 见 .listWeapons()，槽位不足自动扩容）
   .listWeapons()      — 列出全部 12 把可选武器（id + 中文名）
   .giveAllWeapons()   — 一键塞满全部武器
+  .unlockAllCharacters()
+                    — 解锁全部角色
   .testLightning()    — 在玩家头顶劈一道电（VFX 测试）
   .showCollision()    — 切换碰撞盒可视化（绿 col_ / 红 wall_ /
                         蓝 climb_ / 黄 ramp_ / 品红 spawn_*）
@@ -12881,6 +13149,15 @@ function gmGiveAllWeapons(): void {
   console.log(`[GM] All weapons granted (${player.weapons.length}/${player.maxWeaponSlots})`);
 }
 
+function gmUnlockAllCharacters(): void {
+  const save = loadSave();
+  save.charactersUnlocked = [...CHARACTER_ORDER];
+  saveSave(save);
+  if (characterSelectSlotsHost) mountCharacterSelectSlots(characterSelectSlotsHost);
+  refreshCharacterSelectUI();
+  console.log('[GM] All characters unlocked');
+}
+
 function gmTestLightning(): void {
   if (!gmSession || !activeScene) {
     console.warn('[GM] No active scene');
@@ -12932,6 +13209,7 @@ function toggleGMPanel(): void {
     ['+剑 (Lv5)', () => gmGiveWeapon('sword', 5)],
     ['+火焰环 (Lv5)', () => gmGiveWeapon('flame_ring', 5)],
     ['给我所有武器', gmGiveAllWeapons],
+    ['解锁全部角色', gmUnlockAllCharacters],
     ['⚡测试闪电特效⚡', gmTestLightning],
     ['🟩 切换碰撞盒可视化', gmToggleCollisionViz],
   ];

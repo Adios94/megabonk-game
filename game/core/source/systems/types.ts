@@ -6,7 +6,7 @@
  *
  * 这样 GameInstance 缩成 thin facade：构造 → start → 每帧 dispatch → 公开 API。
  */
-import type { GameConfig, GameState, InputState, WeaponType } from '../types.ts';
+import type { BondId, GameConfig, GameState, InputState, WeaponType } from '../types.ts';
 import type { GameWorld } from '../world.ts';
 import type { AiEffects } from '../ai/types.ts';
 import type { SpatialHash } from '../spatial-hash.ts';
@@ -52,6 +52,6 @@ export interface Engine {
   /** 玩家朝向 (停步时保留, 射击 / dash 沿用) */
   facingX: number;
   facingZ: number;
-  /** GM weapon DPS 滚动窗口数据，不暴露给 client。 */
-  weaponDamageWindows: Partial<Record<WeaponType, Array<{ time: number; damage: number }>>>;
+  /** GM damage DPS 滚动窗口数据，不暴露给 client。 */
+  weaponDamageWindows: Partial<Record<WeaponType | `bond:${BondId}`, Array<{ time: number; damage: number }>>>;
 }

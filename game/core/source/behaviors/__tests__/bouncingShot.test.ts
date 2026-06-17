@@ -37,6 +37,17 @@ describe('bouncingShot', () => {
     expect(ctx.effects.projectiles[0].vz).toBeCloseTo(Math.cos(0) * 12, 4);
   });
 
+  it('uses a relaxed vertical target window for nearby elevated enemies', () => {
+    const player = makePlayer({ rotation: Math.PI, y: 0 });
+    const enemy = makeEnemy(1, 0, 5);
+    enemy.y = 2.5;
+    const ctx = makeCtx(player, [enemy], null, makeStats({ damage: 8, projectileCount: 1, bounces: 2, speed: 12 }), 'bone_bouncer', 'bouncingShot', ['bone_bouncer']);
+    bouncingShot(createWorld(), ctx);
+    expect(ctx.effects.projectiles).toHaveLength(1);
+    expect(ctx.effects.projectiles[0].vx).toBeCloseTo(0, 4);
+    expect(ctx.effects.projectiles[0].vz).toBeCloseTo(12, 4);
+  });
+
   it('count=3 → 3 projectiles 旋转 spread (0.25 rad)', () => {
     const player = makePlayer();
     const enemy = makeEnemy(1, 0, 5);

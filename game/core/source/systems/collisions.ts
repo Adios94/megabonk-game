@@ -24,7 +24,7 @@ import { applyPoison, applySlow } from './statusEffects.ts';
 import { onBondWeaponHit } from './bonds.ts';
 import { recordWeaponDamage } from './weaponDamageStats.ts';
 import { bondConditionalDamageInc } from '../data/bonds.ts';
-import { bossDamageEventY, enemyDamageEventY, targetHitCenterY } from '../combatHeight.ts';
+import { BONE_BOUNCER_MAX_Y_DELTA, bossDamageEventY, enemyDamageEventY, targetHitCenterY } from '../combatHeight.ts';
 import type { Engine } from './types.ts';
 
 // 垂直命中窗口（防止上下层穿模伤害）：
@@ -36,8 +36,14 @@ const PLAYER_HIT_CENTER_OFFSET_Y = 0.8;
 const PROJECTILE_HIT_MAX_Y_DELTA = 1.5;
 const PLAYER_PROJECTILE_HIT_MAX_Y_DELTA = 1.5;
 
-function projectileCanHitTarget(projectileY: number, targetY: number): boolean {
-  return Math.abs(projectileY - targetY) <= PLAYER_PROJECTILE_HIT_MAX_Y_DELTA;
+function projectileCanHitTarget(projectileY: number, targetY: number, maxYDelta: number): boolean {
+  return Math.abs(projectileY - targetY) <= maxYDelta;
+}
+
+function playerProjectileHitMaxYDelta(weaponType: string): number {
+  return weaponType === 'bone_bouncer'
+    ? BONE_BOUNCER_MAX_Y_DELTA
+    : PLAYER_PROJECTILE_HIT_MAX_Y_DELTA;
 }
 
 // 复用的 id→enemy 索引：随 spatial hash 每帧重建，
@@ -66,7 +72,7 @@ export function processCollisions(engine: Engine): void {
       // boss 命中
       if (id === -1 && engine.state.boss && engine.state.boss.hp > 0) {
         const boss = engine.state.boss;
-        if (!projectileCanHitTarget(proj.y, targetHitCenterY(boss))) continue;
+        if (!projectileCanHitTarget(proj.y, targetHitCenterY(boss), playerProjectileHitMaxYDelta(proj.weaponType))) continue;
         // 投射物 spawn 时已折算无条件加成；此处补「目标相关」的羁绊条件/机制增伤（贴身 / 易伤 / 烙印…）
         const condInc = bondConditionalDamageInc(player, proj.weaponType, boss);
         const dmg = condInc !== 0 ? Math.round(proj.damage * (1 + condInc)) : proj.damage;
@@ -92,7 +98,7 @@ export function processCollisions(engine: Engine): void {
       // enemy 命中
       const enemy = enemyByIdScratch.get(id);
       if (!enemy || enemy.hp <= 0) continue;
-      if (!projectileCanHitTarget(proj.y, targetHitCenterY(enemy))) continue;
+      if (!projectileCanHitTarget(proj.y, targetHitCenterY(enemy), playerProjectileHitMaxYDelta(proj.weaponType))) continue;
 
       // 投射物伤害在 spawn 时已折算无条件加成；此处补上「目标相关」的羁绊条件/机制增伤
       // （贴身、高血量、易伤、烙印…），因为投射物 spawn 时无目标上下文。
@@ -124,7 +130,7 @@ export function processCollisions(engine: Engine): void {
       // bone_bouncer 弹跳 — 找下一个最近敌人
       if (proj.weaponType === 'bone_bouncer' && proj.bouncesLeft > 0) {
         proj.bouncesLeft--;
-        const nextTarget = findNearestEnemyExcluding(engine, proj.x, proj.z, proj.hitEnemyIds, proj.y);
+        const nextTarget = findNearestEnemyExcluding(engine, proj.x, proj.z, proj.hitEnemyIds, proj.y, BONE_BOUNCER_MAX_Y_DELTA);
         if (nextTarget) {
           const dir = normalizeDirection(nextTarget.x - proj.x, nextTarget.z - proj.z);
           const speed = Math.sqrt(proj.vx * proj.vx + proj.vz * proj.vz);

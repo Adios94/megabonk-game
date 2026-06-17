@@ -24,7 +24,7 @@ import { getShopBonuses } from '../shop.ts';
 import { getTomePower } from '../tomeProgression.ts';
 import { applyRelicKillEffects, getRelicBonusGoldOnKill, rollGoldForEnemy } from './relics.ts';
 import { getXpPickupRadius, isXpPickupType, spawnConsumablesFromEnemy } from './consumables.ts';
-import { recordWeaponKill } from './weaponDamageStats.ts';
+import { recordBondKill, recordWeaponKill } from './weaponDamageStats.ts';
 import type { EnemyState, PickupState, PickupType } from '../types.ts';
 import type { Engine } from './types.ts';
 
@@ -43,6 +43,9 @@ export function processDeaths(engine: Engine): void {
       engine.state.stats.killCount++;
       if (enemy.lastHitWeaponType) {
         recordWeaponKill(engine, enemy.lastHitWeaponType);
+      }
+      if (enemy.lastHitBondId) {
+        recordBondKill(engine, enemy.lastHitBondId);
       }
       engine.state.player.comboCount++;
       engine.state.player.comboTimer = 2.0;

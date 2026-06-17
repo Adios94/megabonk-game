@@ -12,6 +12,7 @@
   "characterSelect": {
     "confirm": "Confirm",
     "back": "Back",
+    "locked": "Locked",
     "initialWeapon": "Starting Weapon",
     "traitTitle": "Trait",
     "statLabel": {
@@ -52,24 +53,34 @@
   "consumable": {
     "wild_berry": "Wild Berry",
     "wild_berry_desc": "Restore 15% max HP",
+    "wild_berry_short": "Heal",
     "hot_soup": "Hot Soup",
     "hot_soup_desc": "Regen 2% max HP/s",
+    "hot_soup_short": "HP regen",
     "mint_candy": "Mint Candy",
     "mint_candy_desc": "Move speed +15%",
+    "mint_candy_short": "Move speed up",
     "hard_bread": "Hard Bread",
     "hard_bread_desc": "Next hit deals no damage",
+    "hard_bread_short": "Block next hit",
     "energy_bar": "Energy Bar",
     "energy_bar_desc": "Attack speed +20%",
+    "energy_bar_short": "Attack speed up",
     "magnet": "Magnet",
     "magnet_desc": "Wider XP gem pickup range",
+    "magnet_short": "XP magnet",
     "iron_meal": "Iron Meal",
     "iron_meal_desc": "Armor +4",
+    "iron_meal_short": "Armor up",
     "rage_potion": "Rage Potion",
     "rage_potion_desc": "Damage +18%, damage taken +10%",
+    "rage_potion_short": "Damage up",
     "prophecy_book": "Prophecy Book",
     "prophecy_book_desc": "Next level-up: ≥1 rare option",
+    "prophecy_book_short": "Better next level-up",
     "craftsman_hammer": "Craftsman Hammer",
-    "craftsman_hammer_desc": "Next weapon upgrade: +1 extra level",
+    "craftsman_hammer_desc": "Next weapon or tome upgrade: +1 extra level",
+    "craftsman_hammer_short": "Next weapon/tome +2",
     "pending": "Ready",
     "timer": "{{seconds}}s"
   },
@@ -92,6 +103,7 @@
   },
   "upgrade": {
     "title": "Choose Upgrade",
+    "doubleLevel": "+{{count}} levels",
     "weapon": {
       "sword": "Greatsword",
       "sword_desc": "Melee swipe around player",
@@ -229,7 +241,7 @@
     "arcane": {
       "name": "Arcane",
       "t1": "+4% damage with arcane weapons; +0.1 damage multiplier.",
-      "t2": "Arcane hits build Mystery (max 15/s). At 100, blast the highest-HP enemy nearby; surrounding foes take 50% splash.",
+      "t2": "Arcane hits build Mystery. At 100, blast the highest-HP enemy nearby; surrounding foes take 50% splash.",
       "t3": "Mystery threshold 100 → 60; burst damage ×1.5."
     },
     "zero_range": {
@@ -379,6 +391,12 @@
       "silver": "Silver: {{value}}x"
     }
   },
+  "stage": {
+    "notice": {
+      "secondTitle": "666, there is a second stage",
+      "secondBody": "Keep going!"
+    }
+  },
   "teleporter": {
     "found": "Teleporter Found!",
     "activating": "Activating...",
@@ -457,6 +475,10 @@
     "level": "Level reached: {{level}}",
     "silver": "Silver earned: {{count}}",
     "quests": "Quests completed: {{count}}",
+    "weaponStatsTitle": "Run Weapon Stats",
+    "mvp": "MVP",
+    "weaponKills": "{{count}} kills",
+    "weaponDamage": "{{damage}} damage",
     "retry": "Try Again",
     "menu": "Main Menu"
   },

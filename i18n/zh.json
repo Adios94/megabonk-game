@@ -16,7 +16,7 @@
     "initialWeapon": "初始武器",
     "traitTitle": "天赋",
     "statLabel": {
-      "hp": "血量",
+      "hp": "生命",
       "speed": "速度",
       "damage": "伤害倍率",
       "armor": "护甲",

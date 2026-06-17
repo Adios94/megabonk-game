@@ -93,7 +93,7 @@ import {
   upgradeStatRow,
   type ItemFrameRarity,
 } from './ui/itemFrame.ts';
-import { mountSvgBar, mountSvgBarSliced, setSvgBarPercent, BAR_ASSETS } from './ui/progressBar.ts';
+import { mountSvgBar, mountSvgBarSliced, mountSvgBarTiled, setSvgBarPercent, BAR_ASSETS } from './ui/progressBar.ts';
 import { createTempleChargeIndicator, SHRINE_INTERACT_RADIUS, applyShrineChargeHudLayout, type TempleChargeIndicator } from './ui/circularProgress.ts';
 import { uiPx } from './ui/scale.ts';
 import { applyPlatformJoystickSkin } from './ui/joystickSkin.ts';
@@ -930,24 +930,61 @@ const CHARACTER_SELECT_BACK_ICON = '/ui/button/back.png';
 const LANG_BUTTON_CN = '/ui/button/btn_lang_cn.png';
 const LANG_BUTTON_EN = '/ui/button/btn_lang_en.png';
 const CHARACTER_DETAIL_PANEL_BG = '/ui/panel/svg/character_detail.svg';
-/** character_detail.svg 原图 326×415；浅色顶栏 + 深色内容区 */
-const CHARACTER_DETAIL_PANEL_SIZE = { w: 326, h: 415 } as const;
-/** 浅色顶栏（角色名） */
-const CHARACTER_DETAIL_TITLE_BAR = { top: 0, height: 41 } as const;
-/** 深色内容区（描述 / 属性 / 武器 / 确认） */
-const CHARACTER_DETAIL_BODY = { top: 41 } as const;
+/**
+ * character_detail.svg 原图 3465×4897（AR 0.708，竖卡）。
+ * 顶部浅蓝色 title bar 占 y 0~625（12.76%），下方深蓝色 body 占 y 625~4817。
+ * 注：所有下方布局常量都按新画布的"像素"度量；helper 把它们除以 SIZE 转成 %。
+ */
+const CHARACTER_DETAIL_PANEL_SIZE = { w: 3465, h: 4897 } as const;
+/** 浅色顶栏（角色名）；新 SVG 顶栏到 y=625。 */
+const CHARACTER_DETAIL_TITLE_BAR = { top: 0, height: 625 } as const;
+/** 深色内容区（描述 / 属性 / 武器 / 确认）从 y=625 开始。 */
+const CHARACTER_DETAIL_BODY = { top: 625 } as const;
 const CHARACTER_WEAPON_DETAIL_PANEL_BG = '/ui/panel/character_weapon_detail.png';
-/** character_weapon_detail.png 原图 1435×621 */
+/** character_weapon_detail.png 原图 1435×621（未变） */
 const CHARACTER_WEAPON_DETAIL_PANEL_SIZE = { w: 1435, h: 621 } as const;
+/**
+ * 内部布局。
+ * - `bodyPad` 数值相对 3465×4897 的 character_detail 画布（×10.63/×11.80 由老 326×415 等比放大）。
+ * - `weaponPad` 数值相对 1435×621 的 character_weapon_detail.png（**该图未放大**，
+ *   所以必须沿用老的小数值；之前误把 weaponPad 当成"也跟着 character_detail 放大 10 倍"，
+ *   导致 left+right 吃掉 81% 横向空间、武器文字栏被压成一字宽看似竖排）。
+ */
 const CHARACTER_DETAIL_LAYOUT = {
-  /** 深色内容区内边距（x 取相对 326 设计宽的内缩，避免文字/属性条压到面板左右边框） */
-  bodyPad: { top: 8, x: 26, bottom: 10 },
+  /**
+   * 深色内容区内边距（值相对新 3465×4897 设计）。
+   * - top/bottom 沿用 SVG 几何（描述/确认按钮跟 SVG 内嵌槽对齐）。
+   * - x = 45：对齐 SVG **body 深色面板**的内描边（path d=M30 576... stroke-width 30，
+   *   描边内缘在 x=45），= 1.30% inset。内容（描述/属性条/天赋）**紧贴**深色
+   *   面板的可视边界，既不溢出 card，也不留多余空白。
+   *
+   *   武器嵌入槽自带更大的 inset（rect x=108.5，3.13%），所以 stats 行会显得比
+   *   武器槽略宽——这是目标视觉。
+   *
+   * 注意：bodyArea 的 cssText 仍兼容**负值**——负数会切换成 negative left/right
+   *   + padding=0 的等价实现，让以后想"贴边外溢"时改这里即可。
+   */
+  bodyPad: { top: 94, x: 108.5, bottom: 118 },
   sectionGap: 'clamp(6px,1.2vw,10px)',
+  /** 武器子面板内边距，值相对 1435×621（未放大的 character_weapon_detail.png） */
   weaponPad: { top: 12, left: 62, right: 48, bottom: 12 },
   /** 武器子面板相对内容区宽度（嵌套在 character_detail 内，不可超出） */
   weaponPanelWidth: '100%',
   /** 武器框与确认按钮之间的间距（武器框相对确认按钮定位） */
   weaponConfirmGap: 'clamp(6px,1.5vw,10px)',
+} as const;
+/** title bar 左右 padding 值（原 326 设计的 20px，按新画布等比放大）。 */
+const CHARACTER_DETAIL_TITLE_BAR_PAD_X = 213;
+/**
+ * 底图自带的蓝色圆角嵌入槽（rect x=108.5 y=2863.5 w=3248 h=1206 / 画布 3465×4897）。
+ * 武器卡直接 absolute 锚到这里，**不走** bodyArea 的 flex 流，所以它能跨过 bodyPad
+ * 横向延伸到比内容区更宽（蓝框两侧 inset 只有 3.13%，而 bodyPad.x 是 7.97%）。
+ */
+const CHARACTER_DETAIL_WEAPON_SLOT = {
+  leftPct: (108.5 / 3465) * 100,
+  rightPct: (108.5 / 3465) * 100,
+  topPct: (2863.5 / 4897) * 100,
+  heightPct: (1206 / 4897) * 100,
 } as const;
 
 const CHARACTER_CONFIRM_BUTTON_WIDTH = '96px';
@@ -974,29 +1011,64 @@ const TIER_PANEL_BGS: Record<DifficultyTier, string> = {
   3: '/ui/panel/svg/difficulty_nightmare.svg',
 };
 
-/** 各难度面板 SVG 原图尺寸（用于 aspect-ratio，避免拉伸） */
-const TIER_PANEL_SIZE = { w: 189, h: 171 } as const;
+/** 难度角徽（叠在卡片左上角，与居中的难度名文字共存） */
+const TIER_PANEL_ICONS: Record<DifficultyTier, string> = {
+  1: '/ui/difficulty_normal.png',
+  2: '/ui/difficulty_hard.png',
+  3: '/ui/difficulty_nightmare.png',
+};
 
-/** 难度面板顶部标题栏（深色顶栏区域） */
-const TIER_TITLE_BAR_LAYOUT = { top: 2.5, height: 18.2 } as const;
+/**
+ * 左上角图标位置（相对卡片）—— **按 tier 分别配**。
+ *
+ * 三张 PNG 都是 500×500，但内容包围盒差异巨大：
+ *   - normal     (1)：骷髅集中在画布左下，约 x=100~330 / y=240~475，右上一大片是透明
+ *   - hard       (2)：火焰骷髅居中略偏下，约 x=120~400 / y=140~450，四周有中等缓冲
+ *   - nightmare  (3)：火焰骷髅几乎填满整张画布，约 x=50~470 / y=30~470，顶/左几乎无缓冲
+ *
+ * 如果用同一组负偏移，nightmare 因为没有透明缓冲，火焰顶部会真的被推到卡外，
+ * 在手机上又被 PREP_STAGE_STYLE 的 overflow:auto 裁掉，表现为"图标缺了一角"。
+ * 这里按各自包围盒"吃掉透明空隙"的目标反推 left/top，让三张图的**可视内容**
+ * 在卡片左上角呈现接近的"探出"效果。配套要求：卡片 div 必须 `overflow:visible`。
+ */
+const TIER_PANEL_ICON_LAYOUT: Record<DifficultyTier, { leftPct: number; topPct: number; widthPct: number }> = {
+  1: { leftPct: -10, topPct: -14, widthPct: 42 },
+  2: { leftPct: -6, topPct: -9, widthPct: 38 },
+  3: { leftPct: -2, topPct: -4, widthPct: 32 },
+};
 
-/** 难度面板内三行属性框（敌人血量 / 敌人伤害 / 银币） */
+/**
+ * 难度面板 anatomy（三张 SVG 完全统一）。
+ *
+ * 新版 difficulty_{normal,hard,nightmare}.svg 都是 2485×2997，主面板矩形 (30,26)→(2455,2936)
+ * 几乎占满画布；内部 3 个 stat 行槽位的 y 坐标也完全相同：
+ *   stat 行：x=219 y=822/1324/1826 w=2047 h=395（绝对 SVG 像素）
+ *   3 个难度图标（leaf/star/coin）分别叠在 3 个 stat 行的左侧
+ *   stat 行 3 下方 y=2221~2936 是空白区，用于浮放「选择」按钮
+ *
+ * 把所有数值换算成百分比，统一作用于所有 tier。
+ */
+const TIER_PANEL_SIZE = { w: 2485, h: 2997 } as const;
+
+/** 难度名文字浮在 stat 行 1 之上（y=26~822 ≈ 0.87%~27.43% 是空白头部）。 */
+const TIER_TITLE_BAR_LAYOUT = { topPct: 3.5, heightPct: 21.5 } as const;
+
+/** 3 个 stat 行：y = 822/1324/1826, h = 395, 画布 h = 2997 */
 const TIER_STAT_ROW_LAYOUT = [
-  { top: 26.5, height: 14.2 },
-  { top: 44.3, height: 14.2 },
-  { top: 62.1, height: 14.2 },
+  { topPct: 27.428, heightPct: 13.180 },
+  { topPct: 44.177, heightPct: 13.180 },
+  { topPct: 60.927, heightPct: 13.180 },
 ] as const;
 
-/** 难度面板底部「选择」按钮（相对面板原图 189×171） */
-const TIER_SELECT_BUTTON_LAYOUT = { bottom: 10, width: 72 } as const;
+/** 「选择」按钮锚在 stat 行 3 下方的空白区（bottomPct=4，离底边留点呼吸）。 */
+const TIER_SELECT_BUTTON_LAYOUT = { bottomPct: 4, widthPct: 50 } as const;
 
-function tierPanelInsetPct(value: number, axis: 'w' | 'h'): string {
-  const base = axis === 'w' ? TIER_PANEL_SIZE.w : TIER_PANEL_SIZE.h;
-  return `${((value / base) * 100).toFixed(3)}%`;
+function tierInsetXPct(valueSvgPx: number): string {
+  return `${((valueSvgPx / TIER_PANEL_SIZE.w) * 100).toFixed(3)}%`;
 }
 
-const SHOP_ITEM_LIST_PANEL_BG = '/ui/shop/event-bg.png';
-/** event-bg.png 原图 2856×1380 */
+const SHOP_ITEM_LIST_PANEL_BG = '/ui/shop/event-bg.svg';
+/** event-bg.svg 原图 8346×4715 */
 /** 商店商品卡与 event-bg 整体显示倍率（相对基准尺寸） */
 const SHOP_DISPLAY_SCALE = 1.3;
 /** shop_item_bg 内文字/图标/按钮等内容相对网格字号的缩放 */
@@ -1068,11 +1140,23 @@ function syncShopPanelLayout(
   grid.style.fontSize = `${Math.max(Math.round(10 * SHOP_DISPLAY_SCALE), Math.min(Math.round(14 * SHOP_DISPLAY_SCALE), Math.round(Math.min(fromW, fromH))))}px`;
 }
 
-const SHOP_ITEM_PANEL_BG = '/ui/shop/shop_item_bg.png';
-/** shop_item_bg.png 原图 452×428 */
-const SHOP_ITEM_PANEL_SIZE = { w: 452, h: 428 } as const;
-const SHOP_BUY_BUTTON_FRAME = '/ui/button/button_green.png';
-const SHOP_BUY_BUTTON_PRESSED_FRAME = '/ui/button/button_green_pressed.png';
+const SHOP_ITEM_PANEL_BG = '/ui/shop/shop_item_bg.svg';
+/**
+ * shop_item_bg.svg 原图 1896×2054（portrait，aspect ≈ 0.923）。
+ *
+ * 注意：老版本 PNG 是 452×428 的 landscape，所以这里**必须用新尺寸**，
+ * 否则 card div 会按 landscape 撑开，而 background 走 contain 会把 SVG 缩到中间留出
+ * 左右黑边，cardInner 用 `inset 5% 4%` 算的内容区就完全落在 SVG 可视卡之外，
+ * 出现"标题/图标/按钮全部错位到背景外"的视觉问题。
+ *
+ * SVG 内部 anatomy（用于参考 cardInner 内边距）：
+ * - 外描边圆角矩形：(17.5, 13.5)→1861×1977，约 1.6% 横向 / 1.3% 纵向 inset
+ * - 实心填充矩形：  (31, 27)→1834×1950，约 1.6% 横向 / 1.3% 纵向 inset
+ * - 底部装饰波浪：  y=1702 起，到 1885，仅装饰；正文区到 ~y=1702 (≈83%) 收尾较安全
+ */
+const SHOP_ITEM_PANEL_SIZE = { w: 1896, h: 2054 } as const;
+const SHOP_BUY_BUTTON_FRAME = '/ui/button/button_green.svg';
+const SHOP_BUY_BUTTON_PRESSED_FRAME = '/ui/button/button_green_pressed.svg';
 
 const SHOP_ITEM_ICONS: Record<string, string> = {
   max_hp: '/ui/shop/shop_item_hp.png',
@@ -1085,25 +1169,36 @@ const SHOP_ITEM_ICONS: Record<string, string> = {
   starting_level: '/ui/shop/shop_item_lv.png',
 };
 
-const SHOP_LEVEL_SEGMENT_COMPLETE = '/ui/shop/svg/Status=Completed.svg';
-const SHOP_LEVEL_SEGMENT_INCOMPLETE = '/ui/shop/svg/Status=Incompleted.svg';
-
+/**
+ * 商店升级进度条。
+ *
+ * 段数 = `maxLevel`（3 / 5 / 10），**不再固定 10 段**。每段是一个独立 `<img>`：
+ *   - 未点亮 → `stat_track_single.svg`（暗色胶囊）
+ *   - 已点亮 → `stat_fill.svg`（亮蓝胶囊）
+ *
+ * 之所以不复用角色面板的"10 段轨道 + 平铺填充"美术：商店每个升级的真实
+ * `maxLevel` 不同，10 段固定轨道在 maxLevel=3/5 上会出现"满级了但还有空段"
+ * 的视觉错位（升满 → 100% 也只点亮 5 段、剩下 5 段是空的）。按 maxLevel
+ * 实际拼段才能让"满级 = 全部点亮"。
+ *
+ * 与 `mountSvgBarTiled` 的差别：那个走"满宽填充 + clip-path 裁剪"路线，
+ * 段数只在视觉上由填充背景平铺产生；这里要的是"真实 N 段独立元素"。
+ */
 function createShopLevelSegments(currentLevel: number, maxLevel: number): HTMLDivElement {
   const container = document.createElement('div');
   container.style.cssText = `
-    display:flex;align-items:center;gap:0.1em;flex-shrink:0;
-    width:5em;max-width:55%;height:0.68em;
+    display:flex;align-items:center;gap:clamp(1px,0.15em,3px);
+    flex:1 1 0;min-width:0;height:0.8em;align-self:center;
   `;
+  const litCount = Math.max(0, Math.min(maxLevel, currentLevel));
   for (let i = 0; i < maxLevel; i++) {
-    const src = i < currentLevel ? SHOP_LEVEL_SEGMENT_COMPLETE : SHOP_LEVEL_SEGMENT_INCOMPLETE;
-    const seg = document.createElement('div');
-    // 9-slice：左右端帽固定、中段拉伸；格子数不同也只改宽度，圆角与比例不畸变。
-    seg.style.cssText = `
-      flex:1 1 0;min-width:0;height:100%;box-sizing:border-box;
-      border-style:solid;border-color:transparent;border-width:0 2px;
-      border-image-source:url("${src}");border-image-slice:0 2 fill;
-      border-image-width:0 2px;border-image-repeat:stretch;
-    `;
+    const seg = document.createElement('img');
+    seg.src = i < litCount ? BAR_ASSETS.stat.fill : BAR_ASSETS.stat.trackSingle;
+    seg.alt = '';
+    seg.draggable = false;
+    // 每段宽度均分；`stat_track_single.svg` / `stat_fill.svg` 都带
+    // `preserveAspectRatio="none"`，会按容器宽高自由拉伸，所以不会 letterbox。
+    seg.style.cssText = 'flex:1 1 0;min-width:0;height:100%;display:block;';
     container.appendChild(seg);
   }
   return container;
@@ -1203,25 +1298,25 @@ const QUEST_LIST_SCROLL_INSET = { top: 0.11, right: 0.09, bottom: 0.11, left: 0.
 /** 分类列表相对 panel 图片顶部的额外下移比例 */
 const QUEST_CATEGORY_SIDEBAR_OFFSET_RATIO = 0.05;
 
-const MENU_BUTTON_FRAME = '/ui/button/button.png';
-const MENU_START_BUTTON_FRAME = '/ui/button/button_orange.png';
-const MENU_START_BUTTON_PRESSED = '/ui/button/button_orange_pressed.png';
-const CHARACTER_CONFIRM_BUTTON_FRAME = '/ui/button/button_orange.png';
-const TIER_SELECT_BUTTON_NORMAL = '/ui/button/button_orange.png';
-const TIER_SELECT_BUTTON_PRESSED = '/ui/button/button_orange_pressed.png';
-const QUEST_CATEGORY_BUTTON_NORMAL = '/ui/button/button_gray.png';
-const QUEST_ACTION_BUTTON_ORANGE = '/ui/button/button_orange.png';
-const QUEST_ACTION_BUTTON_ORANGE_PRESSED = '/ui/button/button_orange_pressed.png';
-const QUEST_ACTION_BUTTON_GREEN = '/ui/button/button_green.png';
-const QUEST_ACTION_BUTTON_GREEN_PRESSED = '/ui/button/button_green_pressed.png';
-const QUEST_ACTION_BUTTON_GRAY = '/ui/button/button_gray.png';
-const QUEST_ACTION_BUTTON_GRAY_PRESSED = '/ui/button/button_gray_pressed.png';
-const PAUSE_MENU_BUTTON_GREEN = '/ui/button/button_green.png';
-const PAUSE_MENU_BUTTON_GREEN_PRESSED = '/ui/button/button_green_pressed.png';
-const PAUSE_MENU_BUTTON_GRAY = '/ui/button/button_gray.png';
-const PAUSE_MENU_BUTTON_GRAY_PRESSED = '/ui/button/button_gray_pressed.png';
-const PAUSE_MENU_BUTTON_RED = '/ui/button/button_red.png';
-const PAUSE_MENU_BUTTON_RED_PRESSED = '/ui/button/button_red_pressed.png';
+const MENU_BUTTON_FRAME = '/ui/button/button.svg';
+const MENU_START_BUTTON_FRAME = '/ui/button/button_orange.svg';
+const MENU_START_BUTTON_PRESSED = '/ui/button/button_orange_pressed.svg';
+const CHARACTER_CONFIRM_BUTTON_FRAME = '/ui/button/button_orange.svg';
+const TIER_SELECT_BUTTON_NORMAL = '/ui/button/button_orange.svg';
+const TIER_SELECT_BUTTON_PRESSED = '/ui/button/button_orange_pressed.svg';
+const QUEST_CATEGORY_BUTTON_NORMAL = '/ui/button/button_gray.svg';
+const QUEST_ACTION_BUTTON_ORANGE = '/ui/button/button_orange.svg';
+const QUEST_ACTION_BUTTON_ORANGE_PRESSED = '/ui/button/button_orange_pressed.svg';
+const QUEST_ACTION_BUTTON_GREEN = '/ui/button/button_green.svg';
+const QUEST_ACTION_BUTTON_GREEN_PRESSED = '/ui/button/button_green_pressed.svg';
+const QUEST_ACTION_BUTTON_GRAY = '/ui/button/button_gray.svg';
+const QUEST_ACTION_BUTTON_GRAY_PRESSED = '/ui/button/button_gray_pressed.svg';
+const PAUSE_MENU_BUTTON_GREEN = '/ui/button/button_green.svg';
+const PAUSE_MENU_BUTTON_GREEN_PRESSED = '/ui/button/button_green_pressed.svg';
+const PAUSE_MENU_BUTTON_GRAY = '/ui/button/button_gray.svg';
+const PAUSE_MENU_BUTTON_GRAY_PRESSED = '/ui/button/button_gray_pressed.svg';
+const PAUSE_MENU_BUTTON_RED = '/ui/button/button_red.svg';
+const PAUSE_MENU_BUTTON_RED_PRESSED = '/ui/button/button_red_pressed.svg';
 const POPUP_CONFIRM_PANEL_BG = '/ui/panel/popup_confirm.png';
 const POPUP_CONFIRM_PANEL_SIZE = { w: 1076, h: 536 } as const;
 const BTN_CLOSE_ICON = '/ui/button/btn_close.png';
@@ -11279,7 +11374,7 @@ const PREP_SCREEN_STYLE = `
 
 const PREP_SCREEN_HEADER_STYLE = `
   display:flex;align-items:center;justify-content:space-between;width:100%;flex-shrink:0;
-  padding:10px 14px 10px 16px;box-sizing:border-box;z-index:2;
+  padding:4px 12px 4px 14px;box-sizing:border-box;z-index:2;
 `;
 
 /** 预备界面（英雄/难度选择）的固定设计尺寸：横屏锚定，不随屏幕放大、不换行重排 */
@@ -11299,7 +11394,7 @@ function createPrepBackButton(onClick: () => void): HTMLButtonElement {
   backBtn.type = 'button';
   backBtn.setAttribute('aria-label', t('characterSelect.back'));
   backBtn.style.cssText = `
-    min-width:44px;min-height:44px;padding:0;border:none;background:transparent;cursor:pointer;
+    min-width:36px;min-height:36px;padding:0;border:none;background:transparent;cursor:pointer;
     touch-action:manipulation;display:flex;align-items:center;justify-content:center;flex-shrink:0;
     transition:transform 0.15s;
   `;
@@ -11307,7 +11402,7 @@ function createPrepBackButton(onClick: () => void): HTMLButtonElement {
   backImg.src = CHARACTER_SELECT_BACK_ICON;
   backImg.alt = '';
   backImg.draggable = false;
-  backImg.style.cssText = 'width:44px;height:44px;object-fit:contain;pointer-events:none;';
+  backImg.style.cssText = 'width:36px;height:36px;object-fit:contain;pointer-events:none;';
   backBtn.appendChild(backImg);
   backBtn.addEventListener('mouseenter', () => { backBtn.style.transform = 'scale(1.05)'; });
   backBtn.addEventListener('mouseleave', () => { backBtn.style.transform = 'scale(1)'; });
@@ -11316,7 +11411,7 @@ function createPrepBackButton(onClick: () => void): HTMLButtonElement {
 }
 
 const PREP_SCREEN_TITLE_STYLE = uiPlainText(
-  'font-size:clamp(18px,5vw,24px);font-weight:bold;white-space:nowrap;',
+  'font-size:clamp(15px,4vw,20px);font-weight:bold;white-space:nowrap;',
 );
 
 function createPrepScreenHeader(
@@ -11387,28 +11482,50 @@ function syncCharacterSelectDetailLayout(): void {
   const stageHeight = stage.getBoundingClientRect().height;
   if (stageHeight <= 0) return;
 
-  host.style.height = `${Math.round(stageHeight)}px`;
-  host.style.overflow = 'hidden';
+  // **布局策略**（按 target 视觉调）：
+  // - card 始终撑满 host 宽度（filling），高度按 SVG AR 反推，使 card 在 detail
+  //   面板里"顶天立地"；不再被 preview 立绘的高度卡住。
+  // - 若反推高度 > stage 视觉高度，**让 detail 面板自己长高**（host.height 跟着
+  //   card.height 走），stage 的 overflow-y:auto 会处理滚动兜底。
+  //
+  // 之前的 contain 逻辑（card 高度 = stageHeight，宽度 = stageHeight × AR）会在
+  // 横屏窄高比设备上把 card 缩成 ~280×400，detail 容器明明有 400px 宽却空出两侧。
+  const hostWidth = host.clientWidth;
+  if (hostWidth <= 0) return;
+  const cardAR = CHARACTER_DETAIL_PANEL_SIZE.w / CHARACTER_DETAIL_PANEL_SIZE.h;
 
-  card.style.height = `${Math.round(stageHeight)}px`;
-  card.style.width = '100%';
+  // card 高度 = host 宽 / AR；但不能高到完全脱出视口，cap 在 viewport - header 余量内，
+  // 否则横屏窄高比设备上"确认"按钮要滚很远才能看到。被 cap 后宽度按 AR 反向缩。
+  const maxCardH = Math.max(stageHeight, window.innerHeight - 80);
+  let cardW = hostWidth;
+  let cardH = hostWidth / cardAR;
+  if (cardH > maxCardH) {
+    cardH = maxCardH;
+    cardW = maxCardH * cardAR;
+  }
+
+  host.style.height = `${Math.round(Math.max(cardH, stageHeight))}px`;
+  host.style.overflow = 'hidden';
+  host.style.alignItems = 'center';
+  host.style.justifyContent = 'flex-start';
+
+  card.style.width = `${Math.round(cardW)}px`;
+  card.style.height = `${Math.round(cardH)}px`;
+  card.style.maxWidth = '100%';
+  card.style.maxHeight = 'none';
+  card.style.flex = '0 0 auto';
 
   contentWrap.style.transform = 'none';
   contentWrap.style.width = '100%';
   contentWrap.style.maxWidth = '100%';
 
-  const bodyStyles = getComputedStyle(bodyArea);
-  const padT = parseFloat(bodyStyles.paddingTop) || 0;
-  const padB = parseFloat(bodyStyles.paddingBottom) || 0;
-  const confirmStyles = getComputedStyle(confirmSection);
-  const confirmBlock =
-    confirmSection.offsetHeight
-    + (parseFloat(confirmStyles.marginTop) || 0)
-    + (parseFloat(confirmStyles.marginBottom) || 0);
-  const available = bodyArea.clientHeight - padT - padB - confirmBlock;
+  // 新布局下 scaleOuter 是 bodyArea 里固定百分比的"顶段"，必须按它的真实高度
+  // 来算溢出缩放——不能再用 (bodyArea − confirmSection) 当 available（那会把
+  // weaponSpacer 的空间也算进去，导致内容溢出到武器槽上）。
+  const available = scaleOuter.clientHeight;
   const contentHeight = contentWrap.scrollHeight;
 
-  if (contentHeight > available + 0.5) {
+  if (available > 0 && contentHeight > available + 0.5) {
     const scale = available / contentHeight;
     contentWrap.style.transformOrigin = 'top center';
     contentWrap.style.transform = `scale(${scale})`;
@@ -11429,7 +11546,12 @@ function syncCharacterSelectBodyLayout(): void {
   body.style.alignItems = 'stretch';
   body.style.gap = useRow ? '8px' : '12px';
   if (useRow) {
-    body.style.width = `min(${PREP_STAGE_WIDTH}px,100%)`;
+    // body 横向放开（不再被 860 上限卡住），detail 才能拿到更大的 flex 份额；
+    // 高度仍按 PREP_STAGE_HEIGHT 限定，让 preview 立绘的 height:100% 有具体值。
+    // detail 通过 align-self:flex-start + 自身 content 高度突破 body 高度限制
+    // （card 高度 = host 宽 / SVG AR，可显著大于 body 高），stage 的 overflow-y:auto
+    // 兜底滚动。
+    body.style.width = '100%';
     body.style.height = `min(${PREP_STAGE_HEIGHT}px,100%)`;
     body.style.maxHeight = '100%';
   } else {
@@ -11456,9 +11578,13 @@ function syncCharacterSelectBodyLayout(): void {
   const detail = body.querySelector('[data-region="detail"]') as HTMLElement | null;
   if (detail) {
     detail.style.minWidth = useRow ? '240px' : '0';
-    detail.style.maxWidth = useRow ? '400px' : '100%';
+    detail.style.maxWidth = useRow ? '460px' : '100%';
     detail.style.flex = useRow ? '1 1 44%' : '1 1 auto';
     detail.style.width = useRow ? 'auto' : '100%';
+    // 关键：横屏排版下 detail **不**被 body 的 align-items:stretch 拉成 body 高度。
+    // 让 detail 自然取 detailInner 的内容高（card 按 host 宽度 / SVG AR 算出来的高
+    // 可能超过 stage），这样 card 才能撑满 detail 宽度而不是被高度反向卡瘦。
+    detail.style.alignSelf = useRow ? 'flex-start' : 'stretch';
   }
 
   const stage = characterSelectEl?.querySelector('[data-region="stage"]') as HTMLElement | null;
@@ -11468,8 +11594,8 @@ function syncCharacterSelectBodyLayout(): void {
     stage.style.justifyContent = 'center';
     stage.style.paddingTop = useRow ? 'clamp(4px,1vh,12px)' : 'clamp(6px,1.5vh,16px)';
     stage.style.overflowX = 'hidden';
-    // 竖屏堆叠或横屏矮屏：内容可能略高于一屏，允许纵向滚动兜底，确保确认按钮始终可达。
-    stage.style.overflowY = (narrow || isUiShort()) ? 'auto' : 'hidden';
+    // detail 现在可能超过 body 高（让 card 撑满 detail 宽），所以横屏也要允许纵向滚动兜底。
+    stage.style.overflowY = 'auto';
   }
 }
 
@@ -11756,24 +11882,88 @@ function createCharacterConfirmButton(label: string, onClick: () => void): HTMLD
   return btn;
 }
 
-function createCharacterStatBar(label: string, valueText: string, ratio: number): HTMLElement {
+/**
+ * 角色面板 5 个属性行前置的小圆徽章 icon。
+ *
+ * 项目里没有这套"小圆 + 白图形"的现成资源（`public/ui/icon/Shrine_Reward/*.png`
+ * 都是大尺寸插画），所以这里用**内联 SVG** 拼出来：圆背景上叠一个白色 path，
+ * 颜色按目标视觉（参考 Brawl Stars 风格）选定，整体只占一行字高度。
+ *
+ * 未来若有正式 icon 资源，把这里换成 `<img src=...>` 即可。
+ */
+type CharacterStatKey = 'hp' | 'speed' | 'damage' | 'armor' | 'crit';
+
+const STAT_ICON_BG: Record<CharacterStatKey, string> = {
+  hp: '#3FA34D',      // 绿
+  speed: '#D9534F',   // 红
+  damage: '#3F9DA8',  // 青
+  armor: '#4A89D8',   // 蓝
+  crit: '#1F2C4E',    // 深蓝
+};
+
+const STAT_ICON_GLYPH: Record<CharacterStatKey, string> = {
+  hp: '<path d="M12 19c-3-1.8-7-4.6-7-9 0-2 1.6-3.6 3.6-3.6 1.4 0 2.6.8 3.4 2 .8-1.2 2-2 3.4-2 2 0 3.6 1.6 3.6 3.6 0 4.4-4 7.2-7 9z" fill="white"/>',
+  speed: '<path d="M13 4 L7 13 H10 L8.5 20 L17 11 H14 L15.5 4 Z" fill="white"/>',
+  damage:
+    '<circle cx="12" cy="12" r="5.5" fill="none" stroke="white" stroke-width="1.6"/>'
+    + '<circle cx="12" cy="12" r="2.4" fill="white"/>'
+    + '<line x1="12" y1="3.5" x2="12" y2="6.5" stroke="white" stroke-width="1.6" stroke-linecap="round"/>'
+    + '<line x1="12" y1="17.5" x2="12" y2="20.5" stroke="white" stroke-width="1.6" stroke-linecap="round"/>'
+    + '<line x1="3.5" y1="12" x2="6.5" y2="12" stroke="white" stroke-width="1.6" stroke-linecap="round"/>'
+    + '<line x1="17.5" y1="12" x2="20.5" y2="12" stroke="white" stroke-width="1.6" stroke-linecap="round"/>',
+  armor:
+    '<path d="M12 4 L18 6.2 V12 C18 16 15.2 19 12 20.2 C8.8 19 6 16 6 12 V6.2 Z" fill="white"/>'
+    + '<path d="M12 8.2 V16.2" stroke="' + '#4A89D8' + '" stroke-width="1.2" stroke-linecap="round"/>'
+    + '<path d="M9 11 H15" stroke="' + '#4A89D8' + '" stroke-width="1.2" stroke-linecap="round"/>',
+  crit:
+    '<path d="M12 5C8.7 5 6 7.7 6 11 c0 1.7 0.7 3 1.6 4 v2.4 c0 0.5 0.4 0.9 0.9 0.9 h1 v1 c0 0.4 0.3 0.7 0.7 0.7 h3.6 c0.4 0 0.7-0.3 0.7-0.7 v-1 h1 c0.5 0 0.9-0.4 0.9-0.9 V15 c0.9-1 1.6-2.3 1.6-4 0-3.3-2.7-6-6-6Z" fill="white"/>'
+    + '<circle cx="10" cy="11.5" r="1.2" fill="' + '#1F2C4E' + '"/>'
+    + '<circle cx="14" cy="11.5" r="1.2" fill="' + '#1F2C4E' + '"/>'
+    + '<path d="M10.5 16 L11 17 M12 16 L12 17 M13.5 16 L13 17" stroke="' + '#1F2C4E' + '" stroke-width="0.9" stroke-linecap="round"/>',
+};
+
+function createStatIcon(key: CharacterStatKey): HTMLElement {
+  const wrap = document.createElement('span');
+  wrap.style.cssText = `
+    flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;
+    width:clamp(16px,3.4vw,20px);height:clamp(16px,3.4vw,20px);
+  `;
+  wrap.innerHTML =
+    `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" `
+    + `style="width:100%;height:100%;display:block;">`
+    + `<circle cx="12" cy="12" r="11" fill="${STAT_ICON_BG[key]}" `
+    + `stroke="rgba(0,0,0,0.45)" stroke-width="1.4"/>`
+    + STAT_ICON_GLYPH[key]
+    + `</svg>`;
+  return wrap;
+}
+
+function createCharacterStatBar(
+  statKey: CharacterStatKey,
+  label: string,
+  valueText: string,
+  ratio: number,
+  fillSrc: string = BAR_ASSETS.stat.fill,
+): HTMLElement {
   const pct = Math.min(100, Math.max(0, ratio * 100));
 
   const row = document.createElement('div');
   row.style.cssText = `
-    display:flex;align-items:center;gap:10px;
+    display:flex;align-items:center;gap:8px;
     font-size:clamp(10px,2.2vw,12px);margin:3px 0;width:100%;
   `;
 
+  row.appendChild(createStatIcon(statKey));
+
   const labelEl = document.createElement('span');
   labelEl.textContent = label;
-  labelEl.style.cssText = uiPlainText('flex:0 0 72px;font-weight:600;flex-shrink:0;padding-inline:2px;');
+  labelEl.style.cssText = uiPlainText('flex:0 0 60px;font-weight:600;flex-shrink:0;padding-inline:2px;');
 
   const track = document.createElement('div');
   track.style.cssText = `
     flex:1;position:relative;height:clamp(9px,2.4vw,12px);min-width:0;overflow:visible;
   `;
-  mountSvgBar(track, BAR_ASSETS.stat.track, BAR_ASSETS.stat.fill).set(pct);
+  mountSvgBarTiled(track, BAR_ASSETS.stat.track, fillSrc, BAR_ASSETS.stat.tiles).set(pct);
 
   const valEl = document.createElement('span');
   valEl.textContent = valueText;
@@ -11824,12 +12014,23 @@ function refreshCharacterSelectDetail(): void {
   const detailFont = (size: string, extra = '') =>
     uiPlainText(`margin:0;font-size:${size};line-height:1.45;${extra}`);
 
-  const { bodyPad, sectionGap, weaponPad, weaponPanelWidth, weaponConfirmGap } = CHARACTER_DETAIL_LAYOUT;
+  const { bodyPad, sectionGap, weaponPanelWidth } = CHARACTER_DETAIL_LAYOUT;
 
   const card = document.createElement('div');
   card.dataset.region = 'detail-card';
+  // **必须**保持 SVG 原始竖卡比例（3465×4897 ≈ 0.708）。否则手机窄屏 / 横屏短屏下
+  // detailInner 容器形状千差万别，底图被 `100% 100% no-repeat` 拉成怪形状，所有
+  // absolute 定位的 title / 武器槽都跟着歪、立绘也变形。
+  //
+  // 用 `width:100% + height:auto + aspect-ratio` 让 card 高度由宽度按 AR 反推；
+  // `max-height:100%` 兜底——若反推高度超过 detailInner（横屏宽容器场景），
+  // 浏览器会按 aspect-ratio 反向把宽度也缩回去，等价于 object-fit:contain。
   card.style.cssText = `
-    position:relative;width:100%;max-width:100%;height:100%;box-sizing:border-box;
+    position:relative;box-sizing:border-box;
+    width:100%;height:auto;
+    max-width:100%;max-height:100%;
+    aspect-ratio:${CHARACTER_DETAIL_PANEL_SIZE.w}/${CHARACTER_DETAIL_PANEL_SIZE.h};
+    margin:auto;align-self:center;
     overflow:hidden;
     background:url(${CHARACTER_DETAIL_PANEL_BG}) center center/100% 100% no-repeat;
     filter:drop-shadow(0 4px 16px rgba(0,40,80,0.15));
@@ -11842,7 +12043,7 @@ function refreshCharacterSelectDetail(): void {
     top:${characterDetailInsetYPct(CHARACTER_DETAIL_TITLE_BAR.top)};
     height:${characterDetailInsetYPct(CHARACTER_DETAIL_TITLE_BAR.height)};
     display:flex;align-items:center;justify-content:center;
-    padding:0 ${characterDetailInsetXPct(20)};
+    padding:0 ${characterDetailInsetXPct(CHARACTER_DETAIL_TITLE_BAR_PAD_X)};
   `;
   const nameEl = document.createElement('h2');
   nameEl.style.cssText = detailFont(
@@ -11855,26 +12056,65 @@ function refreshCharacterSelectDetail(): void {
 
   const bodyArea = document.createElement('div');
   bodyArea.dataset.region = 'detail-body';
+  // CSS 不接受 `padding:负值`，所以当 `bodyPad.x` 为负数时，等价改写为：
+  //   bodyArea 的 left/right **negative inset**（让 bodyArea 比 card 还宽），
+  //   horizontal padding = 0。这样视觉上等同于"负的水平 padding"——子元素
+  //   能扩展到 card 边缘以外，但被 card 自身的 overflow:hidden 裁掉，
+  //   净效果是子元素恰好占满 card 的可视水平空间（甚至跨过描边内侧）。
+  const bodyPadXPctNum = (bodyPad.x / CHARACTER_DETAIL_PANEL_SIZE.w) * 100;
+  const bodyAreaSideOffset = bodyPadXPctNum < 0 ? `${bodyPadXPctNum.toFixed(3)}%` : '0';
+  const bodyHorizontalPadding = bodyPadXPctNum < 0 ? '0' : characterDetailInsetXPct(bodyPad.x);
   bodyArea.style.cssText = `
-    position:absolute;left:0;right:0;bottom:0;box-sizing:border-box;
+    position:absolute;left:${bodyAreaSideOffset};right:${bodyAreaSideOffset};bottom:0;box-sizing:border-box;
     top:${characterDetailInsetYPct(CHARACTER_DETAIL_BODY.top)};
     display:flex;flex-direction:column;align-items:stretch;overflow:hidden;
-    padding:${characterDetailInsetYPct(bodyPad.top)} ${characterDetailInsetXPct(bodyPad.x)}
-      ${characterDetailInsetYPct(bodyPad.bottom)} ${characterDetailInsetXPct(bodyPad.x)};
+    padding:${characterDetailInsetYPct(bodyPad.top)} ${bodyHorizontalPadding}
+      ${characterDetailInsetYPct(bodyPad.bottom)} ${bodyHorizontalPadding};
   `;
+
+  // ------------------------------------------------------------------
+  // bodyArea 的 3 段高度必须**严格匹配** SVG 的 3 段几何：
+  //   [scaleOuter]     描述 / 属性 / 天赋  → SVG 顶（带 padding）~ 武器槽顶
+  //   [weaponSpacer]   武器槽（实际武器卡走 absolute，spacer 只占位）
+  //   [confirmSection] 武器槽底 ~ SVG 底（含 bodyPad.bottom）
+  //
+  // 旧实现 scaleOuter 用 `flex:1 1 auto` 贪婪填充，会把天赋段下沉到 weapon
+  // 槽位上方甚至重叠，导致大剑 icon / "近战横扫…" 字段盖到 trait 上。
+  // 现在 3 段全用显式百分比，按 bodyArea **内容区**（去掉 padding）算。
+  const cardH = CHARACTER_DETAIL_PANEL_SIZE.h;
+  const bodyContentTopInCardPct =
+    (CHARACTER_DETAIL_BODY.top + bodyPad.top) / cardH * 100;
+  const bodyContentBottomInCardPct =
+    100 - (bodyPad.bottom / cardH) * 100;
+  const bodyContentHeightInCardPct =
+    bodyContentBottomInCardPct - bodyContentTopInCardPct;
+  const weaponTopInCardPct = CHARACTER_DETAIL_WEAPON_SLOT.topPct;
+  const weaponBotInCardPct =
+    CHARACTER_DETAIL_WEAPON_SLOT.topPct + CHARACTER_DETAIL_WEAPON_SLOT.heightPct;
+  const scaleOuterFlexPct =
+    ((weaponTopInCardPct - bodyContentTopInCardPct) / bodyContentHeightInCardPct) * 100;
+  const weaponSpacerFlexPct =
+    (CHARACTER_DETAIL_WEAPON_SLOT.heightPct / bodyContentHeightInCardPct) * 100;
+  const confirmFlexPct =
+    ((bodyContentBottomInCardPct - weaponBotInCardPct) / bodyContentHeightInCardPct) * 100;
 
   const scaleOuter = document.createElement('div');
   scaleOuter.dataset.region = 'detail-scale';
   scaleOuter.style.cssText = `
-    width:100%;flex:1 1 auto;min-height:0;box-sizing:border-box;
+    width:100%;flex:0 0 ${scaleOuterFlexPct.toFixed(3)}%;min-height:0;box-sizing:border-box;
     display:flex;justify-content:center;align-items:flex-start;overflow:hidden;
   `;
 
   const contentWrap = document.createElement('div');
   contentWrap.dataset.region = 'detail-content';
+  // `flex-shrink:0` 防止 scaleOuter 把 contentWrap 强行压回 100% ——
+  // syncCharacterSelectDetailLayout 在内容超高时会把 contentWrap 设成
+  // `width:131%` + `transform:scale(0.76)`，等价于"缩放但保持视觉宽 100%"；
+  // 没有 `flex-shrink:0` 的话 flex 容器会把 width 131% 直接 shrink 回 100%，
+  // 导致 scale 后视觉只剩 76%，两边各空 12%（≈ 屏蔽截图里的左右白边）。
   contentWrap.style.cssText = `
     display:flex;flex-direction:column;align-items:stretch;
-    gap:${sectionGap};width:100%;max-width:100%;box-sizing:border-box;
+    gap:${sectionGap};width:100%;max-width:100%;flex-shrink:0;box-sizing:border-box;
   `;
 
   const descEl = document.createElement('p');
@@ -11892,18 +12132,23 @@ function refreshCharacterSelectDetail(): void {
     { key: 'crit', value: cfg.critChance, text: `${Math.round(cfg.critChance * 100)}%` },
   ];
   for (const stat of characterStatRows) {
+    const fillSrc = stat.key === 'hp' ? BAR_ASSETS.stat.fillGreen : BAR_ASSETS.stat.fill;
     statsEl.appendChild(createCharacterStatBar(
+      stat.key,
       t(`characterSelect.statLabel.${stat.key}`),
       stat.text,
       stat.value / CHARACTER_STAT_BAR_MAX[stat.key],
+      fillSrc,
     ));
   }
   contentWrap.appendChild(statsEl);
 
   const traitEl = document.createElement('p');
+  // 不覆盖 uiPlainText 默认的 8 向黑描边阴影——之前给了 `text-shadow:0 1px 2px ...`
+  // 把描边阴影替换成一层柔阴影，肉眼看不见描边。这里只调字重 / 颜色，保留描边默认。
   traitEl.style.cssText = detailFont(
     'clamp(10px,2.2vw,12px)',
-    'font-weight:bold;flex:0 0 auto;',
+    'font-weight:bold;flex:0 0 auto;color:#FFFFFF;',
   );
   traitEl.textContent = `${t('characterSelect.traitTitle')}：${t(`character.${id}_trait`)}`;
   contentWrap.appendChild(traitEl);
@@ -11911,18 +12156,19 @@ function refreshCharacterSelectDetail(): void {
   const weaponSection = document.createElement('div');
   weaponSection.dataset.region = 'detail-weapon';
   weaponSection.style.cssText = `
-    flex:0 0 auto;width:100%;max-width:100%;box-sizing:border-box;
-    display:flex;justify-content:center;overflow:hidden;
+    position:absolute;box-sizing:border-box;
+    left:${CHARACTER_DETAIL_WEAPON_SLOT.leftPct.toFixed(3)}%;
+    right:${CHARACTER_DETAIL_WEAPON_SLOT.rightPct.toFixed(3)}%;
+    top:${CHARACTER_DETAIL_WEAPON_SLOT.topPct.toFixed(3)}%;
+    height:${CHARACTER_DETAIL_WEAPON_SLOT.heightPct.toFixed(3)}%;
+    display:flex;align-items:center;justify-content:center;overflow:hidden;
   `;
 
   const weaponPanel = document.createElement('div');
   weaponPanel.style.cssText = `
-    box-sizing:border-box;width:${weaponPanelWidth};max-width:100%;
-    aspect-ratio:${CHARACTER_WEAPON_DETAIL_PANEL_SIZE.w}/${CHARACTER_WEAPON_DETAIL_PANEL_SIZE.h};
-    background:url(${CHARACTER_WEAPON_DETAIL_PANEL_BG}) center center/100% 100% no-repeat;
+    box-sizing:border-box;width:${weaponPanelWidth};max-width:100%;height:100%;
     display:flex;align-items:center;
-    padding:${weaponDetailInsetYPct(weaponPad.top)} ${weaponDetailInsetXPct(weaponPad.right)}
-      ${weaponDetailInsetYPct(weaponPad.bottom)} ${weaponDetailInsetXPct(weaponPad.left)};
+    padding:clamp(6px,1.5vw,12px) clamp(10px,2.4vw,20px);
   `;
 
   const weaponRow = document.createElement('div');
@@ -11988,16 +12234,25 @@ function refreshCharacterSelectDetail(): void {
   weaponRow.appendChild(weaponTextCol);
   weaponPanel.appendChild(weaponRow);
   weaponSection.appendChild(weaponPanel);
-  contentWrap.appendChild(weaponSection);
 
   scaleOuter.appendChild(contentWrap);
   bodyArea.appendChild(scaleOuter);
 
+  // weaponSection 直接锚在 card 的蓝色嵌入槽上，不走 bodyArea 的 flex 流；
+  // weaponSpacer 与之同高，作为 flex 占位，把 confirmSection 推到 weapon 槽下方。
+  const weaponSpacer = document.createElement('div');
+  weaponSpacer.dataset.region = 'detail-weapon-spacer';
+  weaponSpacer.style.cssText = `flex:0 0 ${weaponSpacerFlexPct.toFixed(3)}%;min-height:0;`;
+  bodyArea.appendChild(weaponSpacer);
+
   const confirmSection = document.createElement('div');
   confirmSection.dataset.region = 'detail-confirm';
+  // 高度也走 SVG 几何（weapon 槽底 ~ bodyPad.bottom）。按钮 align-items:center
+  // 让它在这块区域内垂直居中；不再加 margin-top（间距已经由 weaponSpacer 提供）。
   confirmSection.style.cssText = `
-    flex:0 0 auto;width:100%;display:flex;align-items:center;justify-content:center;
-    box-sizing:border-box;margin-top:${weaponConfirmGap};
+    flex:0 0 ${confirmFlexPct.toFixed(3)}%;width:100%;
+    display:flex;align-items:center;justify-content:center;
+    box-sizing:border-box;min-height:0;
   `;
   const confirmBtn = createCharacterConfirmButton(unlocked ? t('characterSelect.confirm') : t('characterSelect.locked'), () => {
     if (!isCharacterUnlocked(selectedCharacter)) return;
@@ -12012,6 +12267,9 @@ function refreshCharacterSelectDetail(): void {
   confirmSection.appendChild(confirmBtn);
   bodyArea.appendChild(confirmSection);
   card.appendChild(bodyArea);
+  // 武器卡（absolute）必须**后于** bodyArea 加到 card，才能盖在嵌入槽上面；
+  // 同时由于它是 absolute / position 是相对 card 的，所以挂在 card 而不是 bodyArea。
+  card.appendChild(weaponSection);
 
   characterSelectDetailHost.replaceChildren(card);
   scheduleCharacterSelectDetailLayout();
@@ -12232,15 +12490,30 @@ function destroyTierSelectScreen(): void {
 // Tier Selection
 // =============================================================================
 
+function appendTierPanelIcon(card: HTMLElement, tier: DifficultyTier): void {
+  const layout = TIER_PANEL_ICON_LAYOUT[tier];
+  const icon = document.createElement('img');
+  icon.src = TIER_PANEL_ICONS[tier];
+  icon.alt = '';
+  icon.draggable = false;
+  icon.style.cssText = `
+    position:absolute;pointer-events:none;user-select:none;
+    left:${layout.leftPct}%;top:${layout.topPct}%;
+    width:${layout.widthPct}%;height:auto;
+    display:block;
+  `;
+  card.appendChild(icon);
+}
+
 function appendTierPanelTitle(card: HTMLElement, tier: DifficultyTier): void {
   const titleEl = document.createElement('div');
   titleEl.textContent = t(`tier.${tier}`);
   titleEl.style.cssText = uiPlainText(`
     position:absolute;box-sizing:border-box;
-    left:${tierPanelInsetPct(8, 'w')};right:${tierPanelInsetPct(8, 'w')};
-    top:${TIER_TITLE_BAR_LAYOUT.top}%;height:${TIER_TITLE_BAR_LAYOUT.height}%;
+    left:${tierInsetXPct(200)};right:${tierInsetXPct(200)};
+    top:${TIER_TITLE_BAR_LAYOUT.topPct}%;height:${TIER_TITLE_BAR_LAYOUT.heightPct}%;
     display:flex;align-items:center;justify-content:center;
-    font-size:clamp(16px,4.8vw,20px);font-weight:bold;line-height:1.1;
+    font-size:clamp(22px,6.4vw,30px);font-weight:bold;line-height:1.1;
     text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   `);
   card.appendChild(titleEl);
@@ -12258,8 +12531,8 @@ function appendTierPanelStatRows(card: HTMLElement, cfg: (typeof TIER_CONFIGS)[D
     statEl.textContent = statText;
     statEl.style.cssText = uiPlainText(`
       position:absolute;box-sizing:border-box;
-      left:${tierPanelInsetPct(50, 'w')};right:${tierPanelInsetPct(8, 'w')};
-      top:${row.top}%;height:${row.height}%;
+      left:30%;right:${tierInsetXPct(300)};
+      top:${row.topPct.toFixed(3)}%;height:${row.heightPct.toFixed(3)}%;
       display:flex;align-items:center;justify-content:flex-start;
       font-size:clamp(9px,2.4vw,11px);line-height:1.2;font-weight:600;
       padding-left:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
@@ -12308,10 +12581,10 @@ function appendTierPanelSelectButton(
 ): void {
   const wrap = document.createElement('div');
   wrap.style.cssText = `
-    position:absolute;left:50%;bottom:${tierPanelInsetPct(TIER_SELECT_BUTTON_LAYOUT.bottom, 'h')};
+    position:absolute;left:50%;bottom:${TIER_SELECT_BUTTON_LAYOUT.bottomPct}%;
     transform:translateX(-50%);
-    width:${tierPanelInsetPct(TIER_SELECT_BUTTON_LAYOUT.width, 'w')};
-    min-width:44px;max-width:38%;box-sizing:border-box;
+    width:${TIER_SELECT_BUTTON_LAYOUT.widthPct}%;
+    min-width:44px;max-width:60%;box-sizing:border-box;
   `;
   wrap.appendChild(createTierPanelSelectButton(isSelected, onClick));
   card.appendChild(wrap);
@@ -12346,8 +12619,9 @@ function showTierSelect(onSelect: (tier: DifficultyTier) => void): HTMLDivElemen
       aspect-ratio:${TIER_PANEL_SIZE.w}/${TIER_PANEL_SIZE.h};height:auto;
       box-sizing:border-box;
       background:url(${TIER_PANEL_BGS[tier]}) center center/contain no-repeat;
-      border:none;overflow:hidden;
+      border:none;overflow:visible;
     `;
+    appendTierPanelIcon(card, tier);
     appendTierPanelTitle(card, tier);
     appendTierPanelStatRows(card, cfg);
     appendTierPanelSelectButton(card, isSelected, () => {
@@ -13121,8 +13395,7 @@ function showQuestsOverlay(): void {
   content.style.cssText = `
     flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;
     padding:8px clamp(8px,3vw,14px) max(20px,env(safe-area-inset-bottom,0px));
-    box-sizing:border-box;width:min(96vw,840px);margin:0 auto;overflow:hidden;
-  `;
+    box-sizing:border-box;width:min(96vw,840px);margin:0 auto;overflow:hidden;  `;
 
   const panelRow = document.createElement('div');
   panelRow.style.cssText = `

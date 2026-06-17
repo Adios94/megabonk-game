@@ -136,19 +136,19 @@ export function itemFrameAccentLine(text: string, color: string, extraCss = ''):
 // ============================================================================
 // 升级卡片专用框（局内 level-up 面板）
 // ----------------------------------------------------------------------------
-// 视觉来源：public/ui/panel/svg/frame_upgrade_<rarity>.svg（viewBox 1925×2565）
+// 视觉来源：public/ui/panel/svg/frame_upgrade_<rarity>.svg（viewBox 1897×2642）
 // 与 frame_item_*.svg 不同的地方：
 //   - 顶部 banner 是独立色块带，下沿有黑色 divider
 //   - 底部多了一个稀有度 tab，向下凸出于卡身
-//   - 中部预留区域里 SVG 自带一个内嵌槽（y=1232~1996），用于放数值面板
+//   - 中部预留区域里 SVG 自带一个内嵌槽（y=1309~2073），用于放数值面板
 // 三个区段按 SVG 锚点对齐（百分比对应 viewBox 的 y 坐标）：
-//   banner 区 0%~16.34%   （SVG y 0~419，含 divider；色带可视 y 73~394）
-//   主体区 16.34%~86.24%  （SVG y 419~2212，内嵌槽位于其中 y 1232~1996）
-//   稀有度 tab 区 86.24%~100%（SVG y 2212~2565，tab 外层 2212~2508）
+//   banner 区 0%~14.04%   （SVG y 0~371，含 divider；色带可视 y 25~346）
+//   主体区 14.04%~86.64%  （SVG y 371~2289，内嵌槽位于其中 y 1309~2073）
+//   稀有度 tab 区 86.64%~100%（SVG y 2289~2642，tab 外层 2289~2585）
 // ============================================================================
 
 /** 升级卡 SVG viewBox 尺寸（用于 aspect-ratio）。 */
-export const UPGRADE_FRAME_SIZE = { w: 1925, h: 2565 } as const;
+export const UPGRADE_FRAME_SIZE = { w: 1897, h: 2642 } as const;
 
 const UPGRADE_FRAME_SRC: Record<ItemFrameRarity, string> = {
   common: '/ui/panel/svg/frame_upgrade_common.svg',
@@ -158,8 +158,8 @@ const UPGRADE_FRAME_SRC: Record<ItemFrameRarity, string> = {
   bond: '/ui/panel/svg/frame_upgrade_bond.svg',
 };
 
-const UPGRADE_TITLE_BAR_PCT = `${(419 / UPGRADE_FRAME_SIZE.h) * 100}%`; // 16.34% — banner 区（含 divider）
-const UPGRADE_RARITY_BAR_PCT = `${((2565 - 2212) / UPGRADE_FRAME_SIZE.h) * 100}%`; // 13.76% — tab 区
+const UPGRADE_TITLE_BAR_PCT = `${(371 / UPGRADE_FRAME_SIZE.h) * 100}%`; // 14.04% — banner 区（含 divider）
+const UPGRADE_RARITY_BAR_PCT = `${((2642 - 2289) / UPGRADE_FRAME_SIZE.h) * 100}%`; // 13.36% — tab 区
 
 export interface UpgradeFrameOptions {
   rarity: ItemFrameRarity;
@@ -225,7 +225,7 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
   `;
 
   // === 顶部 banner（物品名）===
-  // banner 容器覆盖 SVG y 0~419（含黑色 divider），可视色带为 y 73~394，中心 y≈234
+  // banner 容器覆盖 SVG y 0~371（含黑色 divider），可视色带为 y 25~346，中心 y≈186
   const titleBar = document.createElement('div');
   titleBar.style.cssText = `
     flex:0 0 ${UPGRADE_TITLE_BAR_PCT};min-height:0;display:flex;align-items:center;justify-content:center;
@@ -256,7 +256,7 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
     'font-size:clamp(10px,2.7vw,11px);line-height:1.3;text-align:center;width:100%;',
   );
 
-  // 数值面板：SVG 自带内嵌槽（y=1232~1996，已有描边和浅色填充），CSS 这层只做内部布局，
+  // 数值面板：SVG 自带内嵌槽（y=1309~2073，已有描边和浅色填充），CSS 这层只做内部布局，
   // 不再叠加自己的 background 和 border，避免与 SVG 内嵌槽出现"框中框"。
   const statsBox = document.createElement('div');
   statsBox.style.cssText = `
@@ -279,8 +279,8 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
   mid.appendChild(levelEl);
 
   // === 底部 tab（稀有度）===
-  // tab 容器覆盖 SVG y 2212~2565（13.76%），tab 可视范围 y 2212~2508，中心 y≈2371
-  // 容器中心 y≈2388，略低于 tab 中心，用 padding-bottom 往上推少量
+  // tab 容器覆盖 SVG y 2289~2642（13.36%），tab 可视范围 y 2289~2585，中心 y≈2437
+  // 容器中心 y≈2465，略低于 tab 中心，用 padding-bottom 往上推少量
   const rarityBar = document.createElement('div');
   rarityBar.style.cssText = `
     flex:0 0 ${UPGRADE_RARITY_BAR_PCT};min-height:0;display:flex;align-items:center;justify-content:center;

@@ -73,6 +73,54 @@ export function mountSvgBar(
   };
 }
 
+/** 分段进度条控制句柄。 */
+export interface SegmentedBarController {
+  /** 设置进度（0–100），内部自动吸附到 1/tiles 步长。 */
+  set(percent: number): void;
+}
+
+/**
+ * 分段（segmented）进度条：轨道 SVG 由 N 个独立色块组成，填充 SVG 只画一个色块，
+ * 通过 `background-repeat:repeat-x + background-size:(100/N)% 100%` 把单段填充水平平铺 N 份；
+ * 进度依旧用 `clip-path: inset(...)` 从右侧裁掉未点亮部分，并按 `1/N` 步长**吸附**到整段，
+ * 避免出现"半截胶囊被竖直切断"的视觉断裂。
+ *
+ * 配套 SVG 需要 `preserveAspectRatio="none"`，否则单段在被拉伸到细长容器时会 letterbox。
+ */
+export function mountSvgBarTiled(
+  container: HTMLElement,
+  trackSrc: string,
+  fillSrc: string,
+  tiles: number,
+): SegmentedBarController {
+  const safeTiles = Math.max(1, Math.floor(tiles));
+  const tilePct = 100 / safeTiles;
+
+  const track = document.createElement('img');
+  track.src = trackSrc;
+  track.alt = '';
+  track.draggable = false;
+  track.style.cssText = LAYER_STYLE;
+
+  const fill = document.createElement('div');
+  fill.style.cssText =
+    `${LAYER_STYLE}transition:clip-path 0.25s ease-out;will-change:clip-path;` +
+    `background-image:url(${fillSrc});background-repeat:repeat-x;` +
+    `background-size:${tilePct}% 100%;background-position:left center;`;
+  fill.style.clipPath = clipForPercent(0);
+
+  container.appendChild(track);
+  container.appendChild(fill);
+
+  return {
+    set: (percent: number): void => {
+      const clamped = Math.max(0, Math.min(100, percent));
+      const lit = Math.round((clamped / 100) * safeTiles);
+      setSvgBarPercent(fill, (lit / safeTiles) * 100);
+    },
+  };
+}
+
 export interface SlicedBarOptions {
   /**
    * border-image-slice 值，单位是源图像素。
@@ -122,5 +170,23 @@ export const BAR_ASSETS = {
   xp: { track: '/ui/bar/xp_track.svg', fill: '/ui/bar/xp_fill.svg' },
   boss: { track: '/ui/bar/boss_track.svg', fill: '/ui/bar/boss_fill.svg' },
   quest: { track: '/ui/bar/quest_track.svg', fill: '/ui/bar/quest_fill.svg', flag: '/ui/bar/quest_flag.svg' },
-  stat: { track: '/ui/bar/stat_track.svg', fill: '/ui/bar/stat_fill.svg' },
+  /**
+   * 属性条 / 升级进度条共用资源。
+   *
+   * - `track` 是 10 段拼接的"成品"轨道，用于角色面板的属性条（属性按 0–1
+   *   比例归一化，固定显示 10 段视觉），通过 `mountSvgBarTiled` 把单段
+   *   `fill` 平铺 10 份做填充层。
+   * - `trackSingle` 是**单段**的暗色胶囊轨道，用于商店升级条这种"段数 ==
+   *   maxLevel"的场景：调用方按 `maxLevel` 自己拼 N 个 `<img>`，
+   *   每段独立切换 `src` 在 `trackSingle ↔ fill` 之间，因此 3/5/10 段都可。
+   * - `fill` / `fillGreen` 是单段亮色填充。
+   * - `tiles` 仅给"成品 10 段轨道 + 平铺单段填充"的场景做步长吸附用。
+   */
+  stat: {
+    track: '/ui/bar/Stat.svg',
+    trackSingle: '/ui/bar/stat_track_single.svg',
+    fill: '/ui/bar/stat_fill.svg',
+    fillGreen: '/ui/bar/stat_fill_green.svg',
+    tiles: 10,
+  },
 } as const;

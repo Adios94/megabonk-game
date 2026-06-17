@@ -1,0 +1,45 @@
+<svg width="1896" height="2054" viewBox="0 0 1896 2054" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g clip-path="url(#clip0_17_200)">
+<g filter="url(#filter0_d_17_200)">
+<rect x="31" y="27" width="1834" height="1950" rx="92" fill="url(#paint0_linear_17_200)"/>
+<rect x="31" y="27" width="1834" height="1950" rx="92" fill="url(#pattern0_17_200)" fill-opacity="0.2"/>
+<rect x="17.5" y="13.5" width="1861" height="1977" rx="105.5" stroke="black" stroke-width="27"/>
+</g>
+<path d="M31 1702C31 1702 745.155 1975.73 1208 1913.5C1517 1871.96 1865 1702 1865 1702V1885C1865 1935.81 1823.81 1977 1773 1977H123C72.1898 1977 31 1935.81 31 1885V1702Z" fill="#44A1F4"/>
+<rect x="46" y="42" width="1804" height="1920" rx="77" stroke="url(#paint2_linear_17_200)" stroke-width="30"/>
+</g>
+<defs>
+<filter id="filter0_d_17_200" x="0" y="0" width="1896" height="2054" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="46"/>
+<feGaussianBlur stdDeviation="2"/>
+<feComposite in2="hardAlpha" operator="out"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.6 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_17_200"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_17_200" result="shape"/>
+</filter>
+<linearGradient id="paint0_linear_17_200" x1="948" y1="27" x2="948" y2="1977" gradientUnits="userSpaceOnUse">
+<stop stop-color="#2983FE"/>
+<stop offset="1" stop-color="#57B6FC"/>
+</linearGradient>
+<linearGradient id="paint2_linear_17_200" x1="948" y1="27" x2="948" y2="1977" gradientUnits="userSpaceOnUse">
+<stop stop-color="#89C3FC"/>
+<stop offset="1" stop-color="#5CA5FA"/>
+</linearGradient>
+<clipPath id="clip0_17_200">
+<rect width="1896" height="2054" fill="white"/>
+</clipPath>
+<pattern id="pattern0_17_200" patternUnits="userSpaceOnUse" patternTransform="matrix(804.582 0 0 1613.58 769.384 881.353)" preserveAspectRatio="none" viewBox="63.2093 145.721 1133.21 2272.65" width="1" height="1">
+<use xlink:href="#pattern0_17_200_inner" transform="translate(-1133.21 0)"/>
+<g id="pattern0_17_200_inner">
+<path d="M245.184 571.557L414.115 392.8L477.325 452.536L475.365 145.721L168.933 161.091L232.141 220.825L63.2089 399.582L245.184 571.557Z" fill="url(#paint1_linear_17_200)"/>
+</g>
+<use xlink:href="#pattern0_17_200_inner" transform="translate(-566.607 1136.33)"/>
+<use xlink:href="#pattern0_17_200_inner" transform="translate(566.607 1136.33)"/>
+</pattern><linearGradient id="paint1_linear_17_200" x1="475.811" y1="146.142" x2="136.591" y2="505.091" gradientUnits="userSpaceOnUse">
+<stop stop-color="white"/>
+<stop offset="1" stop-color="white" stop-opacity="0.3"/>
+</linearGradient>
+</defs>
+</svg>

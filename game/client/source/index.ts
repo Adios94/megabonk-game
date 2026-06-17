@@ -3748,6 +3748,7 @@ export class GameScene {
   // Edge-detect weapon firing for one-shot VFX
   private lastWeaponCooldown: Map<string, number> = new Map();
   private levelScene: THREE.Object3D | null = null;
+  private backgroundMeshes: THREE.Object3D[] = [];
 
   // Animation state
   private deathAnimTimer = 0;
@@ -4493,6 +4494,14 @@ export class GameScene {
     this.scene.add(levelScene);
     this.levelScene = levelScene;
     this.cameraOccluders.push(levelScene);
+
+    // 一次性收集背景 mesh，避免每帧 traverse 整棵关卡场景树
+    this.backgroundMeshes = [];
+    levelScene.traverse((child) => {
+      if (child.userData && child.userData.isBackground) {
+        this.backgroundMeshes.push(child);
+      }
+    });
 
     // 把收集到的静态遮挡物交给镜头做碰撞推镜
     this.cameraOrbit.setOccluders(this.cameraOccluders);
@@ -9216,16 +9225,15 @@ export class GameScene {
     curvedWorldUniforms.uWarpCenter.value.set(p.x, p.y, p.z);
 
     // 让背景/天空网格完美跟随机载玩家，避免镜头拉远/跑远时产生严重的相机剪裁与贴图拉伸变形
-    if (this.levelScene) {
-      this.levelScene.traverse((child) => {
-        if (child.userData && child.userData.isBackground) {
-          if (child.userData.originalLocalPos === undefined) {
-            child.userData.originalLocalPos = child.position.clone();
-          }
-          // 位移累加：保持背景相对玩家/镜头绝对静止
-          child.position.copy(child.userData.originalLocalPos).add(this._tempVec.set(p.x, p.y, p.z));
+    // 使用 backgroundMeshes 缓存数组而非每帧 traverse 整棵关卡，关卡里背景 mesh 数量远小于总 mesh 数。
+    if (this.backgroundMeshes.length > 0) {
+      const offset = this._tempVec.set(p.x, p.y, p.z);
+      for (const bg of this.backgroundMeshes) {
+        if (bg.userData.originalLocalPos === undefined) {
+          bg.userData.originalLocalPos = bg.position.clone();
         }
-      });
+        bg.position.copy(bg.userData.originalLocalPos).add(offset);
+      }
     }
 
     // 镜头位置 + lookAt + 平滑跟随 全部委托给 CameraOrbit（用 frameDt 做 dt-based 平滑）。

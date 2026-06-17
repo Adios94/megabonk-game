@@ -337,7 +337,7 @@ function tickArcaneBurst(engine: Engine): void {
   player.bondMystery = (player.bondMystery ?? 0) - threshold;
 
   // 选索敌范围内当前生命值最高的目标（含 boss —— boss 血量通常最高，理应优先被爆发）
-  const RANGE = 14;
+  const RANGE = p.targetRange ?? 14;
   const RANGE_SQ = RANGE * RANGE;
   let target: BondTarget | null = null;
   for (const e of engine.state.enemies) {
@@ -360,7 +360,7 @@ function tickArcaneBurst(engine: Engine): void {
   const avgLevel = k > 0 ? owned.reduce((s, w) => s + w.level, 0) / k : 1;
   const burst = Math.max(1, Math.round(avgLevel * p.burstPerLevel * (tier >= 3 ? p.burstT3Mult : 1)));
   const splash = Math.max(1, Math.round(burst * p.splash));
-  const RADIUS = 3.0;
+  const RADIUS = p.splashRadius ?? 3.0;
   const RADIUS_SQ = RADIUS * RADIUS;
 
   // 蓝紫光球 VFX：从玩家头顶飞向目标，命中处生成蓝紫烟雾

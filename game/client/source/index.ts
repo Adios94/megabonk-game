@@ -12701,19 +12701,21 @@ function createMainMenuButton(
   icon.src = iconSrc;
   icon.alt = '';
   icon.draggable = false;
+  // translateY(-55%) 让 icon 比几何中心略向上偏 5%——按钮 SVG 顶面视觉中心
+  // 高于几何中心，icon 上移 5% 补偿 → 与按钮顶面真正居中对齐。
   icon.style.cssText = `
-    position:absolute;left:${uiPx(10)}px;top:50%;transform:translateY(-50%);
-    width:${uiPx(20)}px;height:${uiPx(20)}px;object-fit:contain;
+    position:absolute;left:${uiPx(10)}px;top:50%;transform:translateY(-55%);
+    width:${uiPx(32)}px;height:${uiPx(32)}px;object-fit:contain;
   `;
 
   const labelEl = document.createElement('span');
   labelEl.textContent = label;
   // label 区域 = [icon 右沿 + gap, 按钮右沿 - 内 padding]
-  // left = icon.left(10) + icon.width(20) + gap(8) = 38；右侧留 12 与 icon 视觉对称。
+  // left = icon.left(10) + icon.width(27) + gap(8) = 45；右侧留 12 与 icon 视觉对称。
   // text-align:center → 短标签（"商店"/"任务"）也在右侧矩形里居中，不会贴 icon 也不会贴右边框。
   labelEl.style.cssText = uiPlainText(`
-    position:absolute;left:${uiPx(38)}px;right:${uiPx(12)}px;top:50%;transform:translateY(-50%);
-    font-size:${uiPx(12)}px;font-weight:bold;line-height:1.2;white-space:nowrap;
+    position:absolute;left:${uiPx(45)}px;right:${uiPx(12)}px;top:50%;transform:translateY(-50%);
+    font-size:${uiPx(15)}px;font-weight:bold;line-height:1.2;white-space:nowrap;
     text-align:center;text-overflow:ellipsis;overflow:hidden;
   `);
 

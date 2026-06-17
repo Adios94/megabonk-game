@@ -127,6 +127,144 @@ import zhLocale from '../../../i18n/zh.json';
 import enLocale from '../../../i18n/en.json';
 
 // =============================================================================
+// GPU Curved World (Rolling Horizon) System
+// =============================================================================
+
+export const curvedWorldUniforms = {
+  uWarpCenter: { value: new THREE.Vector3(0, 0, 0) },
+  uWarpStrength: { value: 0.015 } // adjustable! Default to 1/66.6 radius
+};
+
+// Global patch on THREE.Material to inject GPU curved world warp on all meshes and sprites!
+const originalOnBeforeCompile = THREE.Material.prototype.onBeforeCompile;
+THREE.Material.prototype.onBeforeCompile = function (shader, renderer) {
+  if (originalOnBeforeCompile) {
+    originalOnBeforeCompile.call(this, shader, renderer);
+  }
+
+  const allowedTypes = [
+    'MeshBasicMaterial',
+    'MeshToonMaterial',
+    'MeshStandardMaterial',
+    'MeshPhysicalMaterial',
+    'SpriteMaterial',
+    'MeshPhongMaterial',
+    'MeshLambertMaterial'
+  ];
+
+  if (this.isMaterial && (allowedTypes.includes(this.type) || (this as any).isMeshStandardMaterial || (this as any).isMeshBasicMaterial || (this as any).isSpriteMaterial || (this as any).isMeshToonMaterial)) {
+    if (!this.userData) this.userData = {};
+    if (!this.userData.uIsBackground) {
+      this.userData.uIsBackground = { value: this.userData.isBackground ? 1.0 : 0.0 };
+    }
+
+    shader.uniforms['uWarpCenter'] = curvedWorldUniforms.uWarpCenter;
+    shader.uniforms['uWarpStrength'] = curvedWorldUniforms.uWarpStrength;
+    shader.uniforms['uIsBackground'] = this.userData.uIsBackground;
+
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        'void main() {',
+        `uniform vec3 uWarpCenter;\nuniform float uWarpStrength;\nuniform float uIsBackground;\nvoid main() {`
+      );
+
+    if (this.type === 'SpriteMaterial') {
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <project_vertex>',
+        `
+        vec4 mvPosition = modelViewMatrix * vec4( 0.0, 0.0, 0.0, 1.0 );
+        #ifdef USE_INSTANCING
+          mvPosition = instanceMatrix * mvPosition;
+        #endif
+
+        vec4 gpWorldPos = modelMatrix * vec4( 0.0, 0.0, 0.0, 1.0 );
+        vec3 diff = gpWorldPos.xyz - uWarpCenter;
+        float d = length(diff.xz);
+
+        if (d > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
+            float theta = d * uWarpStrength;
+            float sinTheta = sin(theta);
+            float cosTheta = cos(theta);
+            vec2 dir = diff.xz / d;
+
+            vec3 normal = vec3(sinTheta * dir.x, cosTheta, sinTheta * dir.y);
+            float r = (1.0 / uWarpStrength) + diff.y;
+            vec3 warpedPos = r * normal;
+            warpedPos.y -= (1.0 / uWarpStrength);
+
+            gpWorldPos.xyz = uWarpCenter + warpedPos;
+            mvPosition = viewMatrix * gpWorldPos;
+        }
+
+        vec2 scale = vec2( length( modelMatrix[ 0 ].xyz ), length( modelMatrix[ 1 ].xyz ) );
+        #ifndef USE_SIZEATTENUATION
+          bool isPerspective = isPerspectiveMatrix( projectionMatrix );
+          if ( isPerspective ) scale *= - mvPosition.z;
+        #endif
+
+        mvPosition.xy += position.xy * scale;
+        gl_Position = projectionMatrix * mvPosition;
+        `
+      );
+    } else {
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <project_vertex>',
+        `
+        vec4 localPos = vec4( transformed, 1.0 );
+        #ifdef USE_INSTANCING
+          localPos = instanceMatrix * localPos;
+        #endif
+        vec4 gpWorldPos = modelMatrix * localPos;
+
+        vec3 diff = gpWorldPos.xyz - uWarpCenter;
+        float d = length(diff.xz);
+
+        if (d > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
+            float theta = d * uWarpStrength;
+            float sinTheta = sin(theta);
+            float cosTheta = cos(theta);
+            vec2 dir = diff.xz / d;
+
+            vec3 normal = vec3(sinTheta * dir.x, cosTheta, sinTheta * dir.y);
+            float r = (1.0 / uWarpStrength) + diff.y;
+            vec3 warpedPos = r * normal;
+            warpedPos.y -= (1.0 / uWarpStrength);
+
+            gpWorldPos.xyz = uWarpCenter + warpedPos;
+        }
+
+        vec4 mvPosition = viewMatrix * gpWorldPos;
+        gl_Position = projectionMatrix * mvPosition;
+        `
+      );
+
+      // Normal rotation for non-basic lighted materials to align with spherical curvature
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <defaultnormal_vertex>',
+        `
+        #include <defaultnormal_vertex>
+
+        vec3 gpWorldPosForNormal = (modelMatrix * vec4(position, 1.0)).xyz;
+        vec3 diffForNormal = gpWorldPosForNormal - uWarpCenter;
+        float dForNormal = length(diffForNormal.xz);
+
+        if (dForNormal > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
+            float theta = dForNormal * uWarpStrength;
+            vec2 dir = diffForNormal.xz / dForNormal;
+            vec3 viewAxis = normalize( mat3(viewMatrix) * vec3( -dir.y, 0.0, dir.x ) );
+            
+            float cosA = cos(theta);
+            float sinA = sin(theta);
+            transformedNormal = transformedNormal * cosA + cross(viewAxis, transformedNormal) * sinA + viewAxis * dot(viewAxis, transformedNormal) * (1.0 - cosA);
+            transformedNormal = normalize(transformedNormal);
+        }
+        `
+      );
+    }
+  }
+};
+
+// =============================================================================
 // Runtime Event Types
 // =============================================================================
 
@@ -1501,6 +1639,76 @@ function applyStylizedToonShading(mat: THREE.MeshToonMaterial, specStrength = 0,
     shader.uniforms['uLightDirWorld'] = stylizedUniforms.uLightDirWorld;
     shader.uniforms['uHalftoneCutLow'] = stylizedUniforms.uHalftoneCutLow;
     shader.uniforms['uHalftoneCutHigh'] = stylizedUniforms.uHalftoneCutHigh;
+
+    if (!mat.userData.uIsBackground) {
+      mat.userData.uIsBackground = { value: mat.userData.isBackground ? 1.0 : 0.0 };
+    }
+
+    shader.uniforms['uWarpCenter'] = curvedWorldUniforms.uWarpCenter;
+    shader.uniforms['uWarpStrength'] = curvedWorldUniforms.uWarpStrength;
+    shader.uniforms['uIsBackground'] = mat.userData.uIsBackground;
+
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        'void main() {',
+        `uniform vec3 uWarpCenter;\nuniform float uWarpStrength;\nuniform float uIsBackground;\nvoid main() {`
+      )
+      .replace(
+        '#include <project_vertex>',
+        `
+        vec4 localPos = vec4( transformed, 1.0 );
+        #ifdef USE_INSTANCING
+          localPos = instanceMatrix * localPos;
+        #endif
+        vec4 gpWorldPos = modelMatrix * localPos;
+
+        vec3 diff = gpWorldPos.xyz - uWarpCenter;
+        float d = length(diff.xz);
+
+        if (d > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
+            float theta = d * uWarpStrength;
+            float sinTheta = sin(theta);
+            float cosTheta = cos(theta);
+            vec2 dir = diff.xz / d;
+
+            vec3 normal = vec3(sinTheta * dir.x, cosTheta, sinTheta * dir.y);
+            float r = (1.0 / uWarpStrength) + diff.y;
+            vec3 warpedPos = r * normal;
+            warpedPos.y -= (1.0 / uWarpStrength);
+
+            gpWorldPos.xyz = uWarpCenter + warpedPos;
+        }
+
+        vec4 mvPosition = viewMatrix * gpWorldPos;
+        gl_Position = projectionMatrix * mvPosition;
+        vViewPosition = - mvPosition.xyz;
+        #ifdef USE_FOG
+          vFogDepth = - mvPosition.z;
+        #endif
+        `
+      )
+      .replace(
+        '#include <defaultnormal_vertex>',
+        `
+        #include <defaultnormal_vertex>
+
+        vec3 gpWorldPosForNormal = (modelMatrix * vec4(position, 1.0)).xyz;
+        vec3 diffForNormal = gpWorldPosForNormal - uWarpCenter;
+        float dForNormal = length(diffForNormal.xz);
+
+        if (dForNormal > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
+            float theta = dForNormal * uWarpStrength;
+            vec2 dir = diffForNormal.xz / dForNormal;
+            vec3 viewAxis = normalize( mat3(viewMatrix) * vec3( -dir.y, 0.0, dir.x ) );
+            
+            float cosA = cos(theta);
+            float sinA = sin(theta);
+            transformedNormal = transformedNormal * cosA + cross(viewAxis, transformedNormal) * sinA + viewAxis * dot(viewAxis, transformedNormal) * (1.0 - cosA);
+            transformedNormal = normalize(transformedNormal);
+        }
+        `
+      );
+
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', `${STYLIZED_UNIFORM_DECL}\nvoid main() {`)
       .replace(
@@ -1520,6 +1728,7 @@ function createStylizedDebugPanel(opts: {
   bloom: UnrealBloomPass | null;
   renderer: THREE.WebGLRenderer;
   colorGrade: ColorGradePass | null;
+  cameraOrbit?: CameraOrbit | null;
   onSkyModeChange?: (mode: 'photo' | 'color') => void;
 }): void {
   if (document.getElementById('stylized-debug-panel')) return; // 幂等
@@ -1528,6 +1737,7 @@ function createStylizedDebugPanel(opts: {
   const bloom = opts.bloom;
   const renderer = opts.renderer;
   const colorGrade = opts.colorGrade;
+  const cameraOrbit = opts.cameraOrbit;
 
   type Ctl = { label: string; min: number; max: number; step: number; get: () => number; set: (v: number) => void };
   const vec3ctls = (v: THREE.Vector3, min: number, max: number, prefix = ''): Ctl[] => {
@@ -1563,6 +1773,14 @@ function createStylizedDebugPanel(opts: {
             if (opts.onSkyModeChange) {
               opts.onSkyModeChange(skyMode);
             }
+          }
+        },
+        {
+          label: 'Curved World 空间弯曲弯度',
+          min: 0.0, max: 0.04, step: 0.0005,
+          get: () => curvedWorldUniforms.uWarpStrength.value,
+          set: (v) => {
+            curvedWorldUniforms.uWarpStrength.value = v;
           }
         },
         {
@@ -1603,6 +1821,14 @@ function createStylizedDebugPanel(opts: {
     { title: '阴影色 ShadowTint (×albedo)', ctls: vec3ctls(u.uShadowTint.value, 0, 1.5) },
     { title: '受光色 LightTint (×albedo)', ctls: vec3ctls(u.uLightTint.value, 0, 1.5) },
   ];
+  if (cameraOrbit) {
+    sections.push({
+      title: '极度视角 Camera', ctls: [
+        { label: 'Cam Dist 镜头距离', min: 1.5, max: 12, step: 0.1, get: () => cameraOrbit.camDistance, set: (v) => { cameraOrbit.camDistance = v; } },
+        { label: 'Cam Height 镜头高度', min: 0.5, max: 8, step: 0.1, get: () => cameraOrbit.camHeightBase, set: (v) => { cameraOrbit.camHeightBase = v; } },
+      ],
+    });
+  }
   if (colorGrade) {
     sections.push({
       title: '美漫调色 ColorGrade', ctls: [
@@ -1971,6 +2197,10 @@ function convertToToonMaterials(root: THREE.Object3D, halftone = true): void {
         tuneToonTexture(mat.map);
         tuneToonTexture(mat.emissiveMap);
         if (mat.color) capMaterialLightness(mat.color, 0.55); // 已是 toon 也封顶：贴图×color，压暗白模
+        
+        if (mesh.userData.isBackground) {
+          mat.userData.isBackground = true;
+        }
         applyStylizedToonShading(mat, 0, halftone); // 已是 toon：补挂风格化叠加
         return mat;
       }
@@ -1992,8 +2222,15 @@ function convertToToonMaterials(root: THREE.Object3D, halftone = true): void {
         side: oldMat.side ?? THREE.FrontSide,
         transparent: oldMat.transparent ?? false,
         opacity: oldMat.opacity ?? 1,
+        vertexColors: oldMat.vertexColors, // 100% 继承并保留原始网格的顶点颜色（Vertex Colors）支持
       });
       toon.name = oldMat.name || 'ToonMat';
+      
+      // 传递背景标记到新创建的 Toon 材质
+      if (mesh.userData.isBackground || (oldMat.userData && oldMat.userData.isBackground)) {
+        toon.userData.isBackground = true;
+      }
+      
       applyStylizedToonShading(toon, 0, halftone); // rim + toon spec + 染色阴影
       return toon;
     });
@@ -2755,6 +2992,139 @@ const levelOriginalMaterials = new Map<string, THREE.Material | THREE.Material[]
 const levelToonMaterials = new Map<string, THREE.Material | THREE.Material[]>();
 
 /**
+ * CPU 端对任意 BufferGeometry 进行自适应三角剖分细分（Tessellation）。
+ * 用于给关卡视觉场景中的低模、超大平面进行自适应细分，确保在 GPU 空间弯曲时顶点密度足够，
+ * 能够平滑弯曲而不产生边缘撕裂和断裂缝隙。
+ */
+function tessellateGeometry(geometry: THREE.BufferGeometry, maxEdgeLength = 3.0): THREE.BufferGeometry {
+  const nonIndexed = geometry.index ? geometry.toNonIndexed() : geometry;
+  const posAttr = nonIndexed.attributes.position;
+  if (!posAttr) return geometry;
+
+  const normAttr = nonIndexed.attributes.normal;
+  const uvAttr = nonIndexed.attributes.uv;
+  const colorAttr = nonIndexed.attributes.color;
+  const colorSize = colorAttr ? colorAttr.itemSize : 0;
+
+  const count = posAttr.count;
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const colors: number[] = [];
+
+  const pA = new THREE.Vector3();
+  const pB = new THREE.Vector3();
+  const pC = new THREE.Vector3();
+  const nA = new THREE.Vector3();
+  const nB = new THREE.Vector3();
+  const nC = new THREE.Vector3();
+  const uvA = new THREE.Vector2();
+  const uvB = new THREE.Vector2();
+  const uvC = new THREE.Vector2();
+  const colA = new THREE.Vector4();
+  const colB = new THREE.Vector4();
+  const colC = new THREE.Vector4();
+
+  function pushVertex(p: THREE.Vector3, n?: THREE.Vector3, uv?: THREE.Vector2, col?: THREE.Vector4) {
+    positions.push(p.x, p.y, p.z);
+    if (normAttr && n) normals.push(n.x, n.y, n.z);
+    if (uvAttr && uv) uvs.push(uv.x, uv.y);
+    if (colorAttr && col) {
+      if (colorSize === 3) {
+        colors.push(col.x, col.y, col.z);
+      } else if (colorSize === 4) {
+        colors.push(col.x, col.y, col.z, col.w);
+      }
+    }
+  }
+
+  function subdivide(
+    a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3,
+    na: THREE.Vector3, nb: THREE.Vector3, nc: THREE.Vector3,
+    uva: THREE.Vector2, uvb: THREE.Vector2, uvc: THREE.Vector2,
+    cola: THREE.Vector4, colb: THREE.Vector4, colc: THREE.Vector4
+  ) {
+    const lenAB = a.distanceTo(b);
+    const lenBC = b.distanceTo(c);
+    const lenCA = c.distanceTo(a);
+
+    const maxLen = Math.max(lenAB, lenBC, lenCA);
+
+    if (maxLen > maxEdgeLength) {
+      if (lenAB === maxLen) {
+        const m = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
+        const nm = normAttr ? new THREE.Vector3().addVectors(na, nb).normalize() : new THREE.Vector3();
+        const uvm = uvAttr ? new THREE.Vector2().addVectors(uva, uvb).multiplyScalar(0.5) : new THREE.Vector2();
+        const colm = colorAttr ? new THREE.Vector4().addVectors(cola, colb).multiplyScalar(0.5) : new THREE.Vector4();
+
+        subdivide(a, m, c, na, nm, nc, uva, uvm, uvc, cola, colm, colc);
+        subdivide(m, b, c, nm, nb, nc, uvm, uvb, uvc, colm, colb, colc);
+      } else if (lenBC === maxLen) {
+        const m = new THREE.Vector3().addVectors(b, c).multiplyScalar(0.5);
+        const nm = normAttr ? new THREE.Vector3().addVectors(nb, nc).normalize() : new THREE.Vector3();
+        const uvm = uvAttr ? new THREE.Vector2().addVectors(uvb, uvc).multiplyScalar(0.5) : new THREE.Vector2();
+        const colm = colorAttr ? new THREE.Vector4().addVectors(colb, colc).multiplyScalar(0.5) : new THREE.Vector4();
+
+        subdivide(a, b, m, na, nb, nm, uva, uvb, uvm, cola, colb, colm);
+        subdivide(a, m, c, na, nm, nc, uva, uvm, uvc, cola, colm, colc);
+      } else {
+        const m = new THREE.Vector3().addVectors(c, a).multiplyScalar(0.5);
+        const nm = normAttr ? new THREE.Vector3().addVectors(nc, na).normalize() : new THREE.Vector3();
+        const uvm = uvAttr ? new THREE.Vector2().addVectors(uvc, uva).multiplyScalar(0.5) : new THREE.Vector2();
+        const colm = colorAttr ? new THREE.Vector4().addVectors(colc, cola).multiplyScalar(0.5) : new THREE.Vector4();
+
+        subdivide(a, b, m, na, nb, nm, uva, uvb, uvm, cola, colb, colm);
+        subdivide(m, b, c, nm, nb, nc, uvm, uvb, uvc, colm, colb, colc);
+      }
+    } else {
+      pushVertex(a, na, uva, cola);
+      pushVertex(b, nb, uvb, colb);
+      pushVertex(c, nc, uvc, colc);
+    }
+  }
+
+  for (let i = 0; i < count; i += 3) {
+    pA.fromBufferAttribute(posAttr as any, i);
+    pB.fromBufferAttribute(posAttr as any, i + 1);
+    pC.fromBufferAttribute(posAttr as any, i + 2);
+
+    if (normAttr) {
+      nA.fromBufferAttribute(normAttr as any, i);
+      nB.fromBufferAttribute(normAttr as any, i + 1);
+      nC.fromBufferAttribute(normAttr as any, i + 2);
+    }
+    if (uvAttr) {
+      uvA.fromBufferAttribute(uvAttr as any, i);
+      uvB.fromBufferAttribute(uvAttr as any, i + 1);
+      uvC.fromBufferAttribute(uvAttr as any, i + 2);
+    }
+    if (colorAttr) {
+      if (colorSize === 3) {
+        colA.set(colorAttr.getX(i), colorAttr.getY(i), colorAttr.getZ(i), 1.0);
+        colB.set(colorAttr.getX(i + 1), colorAttr.getY(i + 1), colorAttr.getZ(i + 1), 1.0);
+        colC.set(colorAttr.getX(i + 2), colorAttr.getY(i + 2), colorAttr.getZ(i + 2), 1.0);
+      } else if (colorSize === 4) {
+        colA.set(colorAttr.getX(i), colorAttr.getY(i), colorAttr.getZ(i), colorAttr.getW(i));
+        colB.set(colorAttr.getX(i + 1), colorAttr.getY(i + 1), colorAttr.getZ(i + 1), colorAttr.getW(i + 1));
+        colC.set(colorAttr.getX(i + 2), colorAttr.getY(i + 2), colorAttr.getZ(i + 2), colorAttr.getW(i + 2));
+      }
+    }
+
+    subdivide(pA, pB, pC, nA, nB, nC, uvA, uvB, uvC, colA, colB, colC);
+  }
+
+  const result = new THREE.BufferGeometry();
+  result.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  if (normAttr) result.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  if (uvAttr) result.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  if (colorAttr) {
+    result.setAttribute('color', new THREE.Float32BufferAttribute(colors, colorSize));
+  }
+
+  return result;
+}
+
+/**
  * 遍历并将关卡几何体在 PBR 原始材质与 Toon 风格化材质之间进行切换。
  */
 function applySceneryMode(root: THREE.Object3D, mode: 'toon' | 'pbr'): void {
@@ -2833,6 +3203,39 @@ async function tryLoadLevel(name: string = DEFAULT_LEVEL_NAME): Promise<void> {
   renderScene.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) {
       const mesh = child as THREE.Mesh;
+
+      // 100% 自动侦测远景/天际背景物体，防止弯曲投影
+      const nameLower = mesh.name.toLowerCase();
+      const isBg = nameLower.includes('sky') || 
+                   nameLower.includes('dome') || 
+                   nameLower.includes('planet') || 
+                   nameLower.includes('space') || 
+                   nameLower.includes('background') || 
+                   nameLower.includes('bg') ||
+                   nameLower.includes('cloud') ||
+                   nameLower.includes('star') ||
+                   nameLower.includes('sun') ||
+                   nameLower.includes('moon') ||
+                   nameLower.includes('galaxy') ||
+                   nameLower.includes('nebula');
+
+      if (isBg) {
+        mesh.userData.isBackground = true;
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
+        // 背景元素打上 material 标记
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        mats.forEach((m) => {
+          if (m) m.userData.isBackground = true;
+        });
+      }
+
+      // 自动对非背景网格几何体进行自适应三角剖分细分，提升顶点密度。
+      // 阀值设为 1.8 米：只细分大平板/长斜坡，既保证弯曲边缘完美咬合不撕裂，又把面数增加压到最低！
+      if (!isBg && mesh.geometry) {
+        mesh.geometry = tessellateGeometry(mesh.geometry, 1.8);
+      }
+
       const meshId = `scenery_mesh_${idCounter++}`;
       mesh.userData.sceneryMeshId = meshId; // 字符串在 clone() 中能被深拷贝完美保留
       levelOriginalMaterials.set(meshId, mesh.material);
@@ -3344,6 +3747,8 @@ export class GameScene {
   private flameRingTime = 0;
   // Edge-detect weapon firing for one-shot VFX
   private lastWeaponCooldown: Map<string, number> = new Map();
+  private levelScene: THREE.Object3D | null = null;
+  private backgroundMeshes: THREE.Object3D[] = [];
 
   // Animation state
   private deathAnimTimer = 0;
@@ -3748,6 +4153,7 @@ export class GameScene {
         bloom: this.bloomPass,
         renderer: this.renderer,
         colorGrade: this.colorGradePass,
+        cameraOrbit: this.cameraOrbit,
         onSkyModeChange: (mode) => {
           this.applySkyMode(mode);
         },
@@ -4065,9 +4471,12 @@ export class GameScene {
     // =========================================================================
     const baseGeo = new THREE.PlaneGeometry(400, 400);
     baseGeo.rotateX(-Math.PI / 2);
+    // 关键修复：手动生成的底板也必须进行高密度三角剖分细分，确保它在 GPU 空间弯曲时完美贴合球面，
+    // 绝对不会因为低顶点密度而形成平直的大平板穿透并遮挡视野！
+    const tessellatedGeo = tessellateGeometry(baseGeo, 1.8);
     const baseMat = new THREE.MeshToonMaterial({ color: '#4A7FB5', gradientMap: toonGradientMap });
     applyStylizedToonShading(baseMat, 0, true); // 地面底板也加风格化 + 网点
-    this.groundMesh = new THREE.Mesh(baseGeo, baseMat);
+    this.groundMesh = new THREE.Mesh(tessellatedGeo, baseMat);
     this.groundMesh.name = 'Ground_Base';
     this.groundMesh.receiveShadow = true;
     this.groundMesh.position.y = -0.5;
@@ -4083,7 +4492,16 @@ export class GameScene {
     levelScene.name = 'LevelRoot';
     applySceneryMode(levelScene, sceneryMode);
     this.scene.add(levelScene);
+    this.levelScene = levelScene;
     this.cameraOccluders.push(levelScene);
+
+    // 一次性收集背景 mesh，避免每帧 traverse 整棵关卡场景树
+    this.backgroundMeshes = [];
+    levelScene.traverse((child) => {
+      if (child.userData && child.userData.isBackground) {
+        this.backgroundMeshes.push(child);
+      }
+    });
 
     // 把收集到的静态遮挡物交给镜头做碰撞推镜
     this.cameraOrbit.setOccluders(this.cameraOccluders);
@@ -4483,8 +4901,13 @@ export class GameScene {
     this.vfxMaterial = new THREE.ShaderMaterial({
       uniforms: {
         uTexture: { value: this.vfxTexture },
+        uWarpCenter: curvedWorldUniforms.uWarpCenter,
+        uWarpStrength: curvedWorldUniforms.uWarpStrength,
       },
       vertexShader: `
+        uniform vec3 uWarpCenter;
+        uniform float uWarpStrength;
+
         attribute float aSize;
         attribute float aLife;
         attribute vec3 aColor;
@@ -4495,7 +4918,25 @@ export class GameScene {
         void main() {
           vLife = aLife;
           vColor = aColor;
-          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+
+          vec3 worldPos = position;
+          vec3 diff = worldPos - uWarpCenter;
+          float d = length(diff.xz);
+          if (d > 1e-5 && uWarpStrength > 0.0) {
+              float theta = d * uWarpStrength;
+              float sinTheta = sin(theta);
+              float cosTheta = cos(theta);
+              vec2 dir = diff.xz / d;
+
+              vec3 normal = vec3(sinTheta * dir.x, cosTheta, sinTheta * dir.y);
+              float r = (1.0 / uWarpStrength) + diff.y;
+              vec3 warpedPos = r * normal;
+              warpedPos.y -= (1.0 / uWarpStrength);
+
+              worldPos = uWarpCenter + warpedPos;
+          }
+
+          vec4 mvPosition = viewMatrix * vec4(worldPos, 1.0);
           gl_PointSize = aSize * (400.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
         }
@@ -8779,6 +9220,21 @@ export class GameScene {
 
   private updateCamera(state: GameState): void {
     const p = state.player;
+
+    // Update GPU Curved World center uniform
+    curvedWorldUniforms.uWarpCenter.value.set(p.x, p.y, p.z);
+
+    // 让背景/天空网格完美跟随机载玩家，避免镜头拉远/跑远时产生严重的相机剪裁与贴图拉伸变形
+    // 使用 backgroundMeshes 缓存数组而非每帧 traverse 整棵关卡，关卡里背景 mesh 数量远小于总 mesh 数。
+    if (this.backgroundMeshes.length > 0) {
+      const offset = this._tempVec.set(p.x, p.y, p.z);
+      for (const bg of this.backgroundMeshes) {
+        if (bg.userData.originalLocalPos === undefined) {
+          bg.userData.originalLocalPos = bg.position.clone();
+        }
+        bg.position.copy(bg.userData.originalLocalPos).add(offset);
+      }
+    }
 
     // 镜头位置 + lookAt + 平滑跟随 全部委托给 CameraOrbit（用 frameDt 做 dt-based 平滑）。
     // 这里只保留游戏特有的 FOV 自适应 + 屏震叠加（与玩法挂钩，不属于镜头通用逻辑）。

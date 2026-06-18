@@ -39,11 +39,11 @@ describe('chooseAttack', () => {
 });
 
 describe('getBossMeleeDamage', () => {
-  it('phase 1 = 20, phase 2 = 30, phase 3 = 40', () => {
+  it('phase 1 = 24, phase 2 = 36, phase 3 = 48', () => {
     const b = makeBoss();
-    b.phase = 1; expect(getBossMeleeDamage(b)).toBe(20);
-    b.phase = 2; expect(getBossMeleeDamage(b)).toBe(30);
-    b.phase = 3; expect(getBossMeleeDamage(b)).toBe(40);
+    b.phase = 1; expect(getBossMeleeDamage(b)).toBe(24);
+    b.phase = 2; expect(getBossMeleeDamage(b)).toBe(36);
+    b.phase = 3; expect(getBossMeleeDamage(b)).toBe(48);
   });
 });
 
@@ -56,7 +56,7 @@ describe('fireBolt / aimAngle', () => {
     fireBolt(boss, ctx, aimAngle(boss, ctx), 12, 12);
     expect(effects.spawnProjectileSpy).toHaveBeenCalledTimes(1);
     const arg = effects.spawnProjectileSpy.mock.calls[0][0];
-    expect(arg.damage).toBe(12);
+    expect(arg.damage).toBe(14);
     expect(arg.fromPlayer).toBe(false);
     const speed = Math.sqrt(arg.vx ** 2 + arg.vz ** 2);
     expect(speed).toBeCloseTo(12, 5);

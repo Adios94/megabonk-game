@@ -16,7 +16,7 @@ import { distanceBetween } from '../../physics.ts';
 import type { BossState } from '../../types.ts';
 import type { AiContext } from '../types.ts';
 import type { BossScript, BossPhaseConfig } from './types.ts';
-import { fireBolt, aimAngle } from './common.ts';
+import { fireBolt, aimAngle, scaleBossDamage } from './common.ts';
 
 const MELEE_RANGE = 3.5;
 const LEAP_RANGE = 4.0;
@@ -45,13 +45,13 @@ function suppressFire(boss: BossState, ctx: AiContext): void {
 /** 近战横扫 25 dmg / 3.5 单位。 */
 function meleeSwipe(boss: BossState, ctx: AiContext): void {
   const dist = distanceBetween(boss.x, boss.z, ctx.player.x, ctx.player.z);
-  if (dist < MELEE_RANGE && canHitPlayerByHeight(boss, ctx)) ctx.effects.damagePlayer(25);
+  if (dist < MELEE_RANGE && canHitPlayerByHeight(boss, ctx)) ctx.effects.damagePlayer(scaleBossDamage(25));
 }
 
 /** 跳击：落地小范围 AOE 20 dmg / 4.0 单位（Jump 动画演出换位）。 */
 function leapStrike(boss: BossState, ctx: AiContext): void {
   const dist = distanceBetween(boss.x, boss.z, ctx.player.x, ctx.player.z);
-  if (dist < LEAP_RANGE && canHitPlayerByHeight(boss, ctx)) ctx.effects.damagePlayer(20);
+  if (dist < LEAP_RANGE && canHitPlayerByHeight(boss, ctx)) ctx.effects.damagePlayer(scaleBossDamage(20));
 }
 
 export const GUNNER_MECH_PHASES: readonly BossPhaseConfig[] = [

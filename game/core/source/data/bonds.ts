@@ -64,7 +64,7 @@ export const BONDS: Record<BondId, BondDef> = {
     id: 'arcane', nameKey: 'bond.arcane.name', icon: ic.arcane,
     weapons: ['lightning_staff', 'flame_ring', 'void_ripple', 'scorch_boots'], mechanicId: 'arcane_mystery',
     t1: { damageInc: 0.04, damageMult: 0.1 },
-    params: { threshold: 100, thresholdT3: 60, rateCap: 15, splash: 0.5, burstPerLevel: 8, burstT3Mult: 1.5 },
+    params: { threshold: 60, thresholdT3: 30, rateCap: 15, closeThreatRange: 6, targetRange: 28, splashRadius: 6, splash: 0.5, burstPerLevel: 28, burstT3Mult: 1.5 },
   },
   zero_range: {
     id: 'zero_range', nameKey: 'bond.zero_range.name', icon: ic.zero,

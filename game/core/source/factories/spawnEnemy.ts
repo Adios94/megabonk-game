@@ -5,7 +5,7 @@
  * necromancer summon / boss summon_wave）都走这里。
  *
  * 不同 spawn 模式的 scaling 规则：
- * - 'wave':              full 进度缩放 (timeScale × tier × 等级 × 时间增长 × elite buff 50%)
+ * - 'wave':              full 进度缩放 (timeScale × tier × 等级 × Final Swarm × overtime × elite buff 50%)
  * - 'miniBoss':          3× hp, 2× damage, isMiniBoss, summonCooldown=8, 带等级缩放
  * - 'necromancerSummon': 仅 cfg.hp × timeScale, 无 tier 无其它
  * - 'bossSummon':        raw cfg, 无任何缩放
@@ -13,6 +13,11 @@
 import type { EnemyState, EnemyType, PlayerState, EnemyBehavior, DifficultyTier } from '../types.ts';
 import {
   TIER_CONFIGS,
+  REGULAR_GAME_DURATION,
+  FINAL_SWARM_START_TIME,
+  FINAL_SWARM_HP_GROWTH,
+  FINAL_SWARM_DAMAGE_GROWTH,
+  FINAL_SWARM_OVERTIME_GROWTH_RATIO,
   OVERTIME_STEP_SECONDS,
   OVERTIME_HP_PER_STEP,
   OVERTIME_DAMAGE_PER_STEP,
@@ -34,6 +39,23 @@ function computeEnemyLevelScale(playerLevel: number): { hp: number; damage: numb
     hp: 1 + levels * ENEMY_HP_PER_LEVEL + levels * levels * ENEMY_HP_QUADRATIC,
     damage: 1 + levels * ENEMY_DAMAGE_PER_LEVEL + levels * levels * ENEMY_DAMAGE_QUADRATIC,
     speed: Math.min(ENEMY_SPEED_CAP, 1 + levels * ENEMY_SPEED_PER_LEVEL),
+  };
+}
+
+function computeFinalSwarmScale(gameTime: number): { hp: number; damage: number } {
+  if (gameTime < FINAL_SWARM_START_TIME) {
+    return { hp: 1, damage: 1 };
+  }
+
+  const duration = REGULAR_GAME_DURATION - FINAL_SWARM_START_TIME;
+  const progress = gameTime < REGULAR_GAME_DURATION
+    ? (duration > 0 ? (gameTime - FINAL_SWARM_START_TIME) / duration : 1)
+    : FINAL_SWARM_OVERTIME_GROWTH_RATIO +
+      (duration > 0 ? (gameTime - REGULAR_GAME_DURATION) / duration * FINAL_SWARM_OVERTIME_GROWTH_RATIO : 0);
+  const clamped = Math.max(0, progress);
+  return {
+    hp: 1 + FINAL_SWARM_HP_GROWTH * clamped,
+    damage: 1 + FINAL_SWARM_DAMAGE_GROWTH * clamped,
   };
 }
 
@@ -70,13 +92,14 @@ export function spawnEnemy(
   let orbitAngle = 0;
 
   // Overtime 系数（仅对 wave / miniBoss 应用；necromancer/boss summon 保持原始数值）。
-  // 使用连续曲线，避免每 30 秒突跳，同时让超时压迫感从第一秒就开始增强。
+  // 使用连续曲线，避免按档位突跳，同时让超时压迫感从第一秒就开始增强。
   const overtimeSteps = Math.max(0, (ctx.overtimeSeconds ?? 0) / OVERTIME_STEP_SECONDS);
   const overtimeHpFactor = 1 + OVERTIME_HP_PER_STEP * overtimeSteps;
   const overtimeDamageFactor = 1 + OVERTIME_DAMAGE_PER_STEP * overtimeSteps;
   const overtimeSpeedFactor = 1 + OVERTIME_SPEED_PER_STEP * overtimeSteps;
   const shrineDifficulty = ctx.player.difficultyMult ?? 1;
   const levelScale = computeEnemyLevelScale(ctx.player.level);
+  const finalSwarmScale = computeFinalSwarmScale(ctx.gameTime);
 
   switch (mode) {
     case 'wave': {
@@ -86,8 +109,8 @@ export function spawnEnemy(
         hpScale *= (1 + (ctx.gameTime - 180) / 60 * 0.1);
       }
       const tierCfg = TIER_CONFIGS[ctx.tier];
-      hp = Math.round(def.hp * hpScale * tierCfg.enemyHpMultiplier * levelScale.hp * overtimeHpFactor * shrineDifficulty);
-      damage = Math.round(def.damage * tierCfg.enemyDamageMultiplier * levelScale.damage * overtimeDamageFactor * shrineDifficulty);
+      hp = Math.round(def.hp * hpScale * tierCfg.enemyHpMultiplier * levelScale.hp * finalSwarmScale.hp * overtimeHpFactor * shrineDifficulty);
+      damage = Math.round(def.damage * tierCfg.enemyDamageMultiplier * levelScale.damage * finalSwarmScale.damage * overtimeDamageFactor * shrineDifficulty);
       speed = def.speed * tierCfg.enemySpeedMultiplier * levelScale.speed * overtimeSpeedFactor * Math.sqrt(shrineDifficulty);
 
       if (isElite && (opts.applyEliteRoll ?? true) && Math.random() < 0.5) {

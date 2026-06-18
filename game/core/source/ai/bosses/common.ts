@@ -7,6 +7,12 @@ import type { BossState, BossAttack } from '../../types.ts';
 import type { AiContext } from '../types.ts';
 import type { BossPhaseConfig } from './types.ts';
 
+export const BOSS_DAMAGE_MULTIPLIER = 1.2;
+
+export function scaleBossDamage(damage: number, boss?: Pick<BossState, 'damageMultiplier'>): number {
+  return Math.max(1, Math.round(damage * BOSS_DAMAGE_MULTIPLIER * (boss?.damageMultiplier ?? 1)));
+}
+
 /** 根据 hp/maxHp 比例在给定 phases 表里查找当前 phase 配置。 */
 export function resolvePhase(boss: BossState, phases: readonly BossPhaseConfig[]): BossPhaseConfig {
   const ratio = boss.hp / boss.maxHp;
@@ -28,12 +34,14 @@ export function chooseAttack(cfg: BossPhaseConfig): BossAttack {
  * 由 processCollisions 调用（不在 attack switch 里），两套机甲共用。
  */
 export function getBossMeleeDamage(boss: BossState): number {
+  let damage: number;
   switch (boss.phase) {
-    case 1: return 20;
-    case 2: return 30;
-    case 3: return 40;
-    default: return 20;
+    case 1: damage = 20; break;
+    case 2: damage = 30; break;
+    case 3: damage = 40; break;
+    default: damage = 20; break;
   }
+  return scaleBossDamage(damage, boss);
 }
 
 /**
@@ -57,7 +65,7 @@ export function fireBolt(
     vx: Math.sin(angle) * speed,
     vy: 0,
     vz: Math.cos(angle) * speed,
-    damage,
+    damage: scaleBossDamage(damage, boss),
     bouncesLeft: 0,
     pierceLeft: 0,
     lifetime: 4.0,

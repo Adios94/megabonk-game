@@ -58,6 +58,7 @@ export function tickTierTransition(engine: Engine): void {
   // engine 内部计时器复位
   engine.spawnTimer = 1.0;
   engine.miniBossTimer = 0;
+  engine.stageTwoBossSummonCount = 0;
   engine.aiGroup = 0;
 
   // phase 回到游玩态

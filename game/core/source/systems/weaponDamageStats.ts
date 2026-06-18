@@ -67,6 +67,10 @@ export function recordWeaponDamage(
   engine.weaponDamageWindows[weaponType] = window;
   refreshWeaponDps(engine, weaponType);
 
+  if (target) {
+    target.hitFlashWeaponType = weaponType;
+    target.hitFlashColor = undefined;
+  }
   if (target && 'type' in target) {
     target.lastHitWeaponType = weaponType;
   }
@@ -96,6 +100,10 @@ export function recordBondDamage(
   engine.weaponDamageWindows[key] = window;
   refreshBondDps(engine, bondId);
 
+  if (target && creditWeaponType) {
+    target.hitFlashWeaponType = creditWeaponType;
+    target.hitFlashColor = undefined;
+  }
   if (target && 'type' in target) {
     target.lastHitBondId = bondId;
     if (creditWeaponType) target.lastHitWeaponType = creditWeaponType;

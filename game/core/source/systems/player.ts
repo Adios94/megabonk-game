@@ -421,12 +421,22 @@ export function tickTimers(engine: Engine, dt: number): void {
   }
 
   for (const enemy of engine.state.enemies) {
-    if (enemy.hitFlashTimer > 0) enemy.hitFlashTimer = Math.max(0, enemy.hitFlashTimer - dt);
+    if (enemy.hitFlashTimer > 0) {
+      enemy.hitFlashTimer = Math.max(0, enemy.hitFlashTimer - dt);
+      if (enemy.hitFlashTimer <= 0) {
+        enemy.hitFlashWeaponType = undefined;
+        enemy.hitFlashColor = undefined;
+      }
+    }
     if (enemy.attackCooldown > 0) enemy.attackCooldown = Math.max(0, enemy.attackCooldown - dt);
   }
 
   if (engine.state.boss && engine.state.boss.hitFlashTimer > 0) {
     engine.state.boss.hitFlashTimer = Math.max(0, engine.state.boss.hitFlashTimer - dt);
+    if (engine.state.boss.hitFlashTimer <= 0) {
+      engine.state.boss.hitFlashWeaponType = undefined;
+      engine.state.boss.hitFlashColor = undefined;
+    }
   }
 }
 

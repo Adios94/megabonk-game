@@ -22,6 +22,8 @@ export interface BehaviorEffects {
     isCrit: boolean,
     isPlayerDamage: boolean,
     weaponType?: WeaponType,
+    isShield?: boolean,
+    hitFlashColor?: number,
   ): void;
   /** 给 enemy 施加击退（同 GameInstance.applyKnockback 签名）。
    *  `strengthMult` 可选，给特定来源额外击退倍率（默认 1）。 */

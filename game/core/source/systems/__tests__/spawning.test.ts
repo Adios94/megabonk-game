@@ -10,7 +10,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { tickSpawning, checkBossSpawn } from '../spawning.ts';
 import { makeEngine, makePlayer, makeEnemy } from './_fixtures.ts';
-import { ALTAR_SUMMON_DURATION, REGULAR_GAME_DURATION } from '../../config.ts';
+import { ALTAR_SUMMON_DURATION, BOSS_HP, REGULAR_GAME_DURATION } from '../../config.ts';
 
 describe('tickSpawning', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -236,6 +236,41 @@ describe('checkBossSpawn', () => {
     // Boss 出场点应该贴近触发祭坛
     expect(engine.state.boss!.x).toBeCloseTo(5);
     expect(engine.state.boss!.z).toBeCloseTo(7);
+    expect(engine.state.boss!.maxHp).toBe(BOSS_HP);
+  });
+
+  it('第二关重复召唤 boss 会递增血量 / 伤害 / 宝箱概率', () => {
+    const engine = makeEngine();
+    engine.state.stage = 2;
+    engine.state.altars = [{
+      x: 5, z: 7, phase: 'boss_active', summonTimer: ALTAR_SUMMON_DURATION, summonDuration: ALTAR_SUMMON_DURATION,
+    }];
+
+    checkBossSpawn(engine);
+    expect(engine.state.boss).toMatchObject({
+      bossType: 'siege_mech',
+      maxHp: BOSS_HP,
+      damageMultiplier: 1,
+      chestDropChance: 1,
+    });
+
+    engine.state.boss = null;
+    engine.state.phase = 'playing';
+    checkBossSpawn(engine);
+    expect(engine.state.boss).toMatchObject({
+      maxHp: Math.round(BOSS_HP * 1.3),
+      damageMultiplier: 1.2,
+      chestDropChance: 1.4,
+    });
+
+    engine.state.boss = null;
+    engine.state.phase = 'playing';
+    checkBossSpawn(engine);
+    expect(engine.state.boss).toMatchObject({
+      maxHp: Math.round(BOSS_HP * 1.3 ** 2),
+      damageMultiplier: 1.2 ** 2,
+      chestDropChance: 1.8,
+    });
   });
 
   it('Boss 绑定触发祭坛，忽略旧 spawn_boss 标记', () => {

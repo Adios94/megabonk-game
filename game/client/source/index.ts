@@ -359,6 +359,40 @@ interface BillboardSpawnOpts {
   blending?: 'additive' | 'normal';
 }
 
+type HitFlashMaterial = THREE.Material & {
+  color?: THREE.Color;
+  emissive?: THREE.Color;
+};
+
+const HIT_FLASH_BASE_COLOR_KEY = '__hitFlashBaseColor';
+const HIT_FLASH_BASE_EMISSIVE_KEY = '__hitFlashBaseEmissive';
+const HIT_FLASH_TINT_INTENSITY = 0.88;
+const HIT_FLASH_EMISSIVE_STRENGTH = 0.2;
+const PLAYER_SHIELD_HIT_FLASH_COLOR = 0x9edcff;
+const PLAYER_HP_HIT_FLASH_COLOR = 0xff3333;
+const PLAYER_HIT_FLASH_DURATION = 0.18;
+
+const START_INTRO_FADE_TO_BLACK_SECONDS = 0.28;
+const START_INTRO_WALK_SECONDS = 1.55;
+const START_INTRO_IDLE_SECONDS = 0.65;
+const START_INTRO_IDLE_SETTLE_SECONDS = 0.25;
+const START_INTRO_REVEAL_SECONDS = 0.75;
+const START_INTRO_WALK_DISTANCE = 10.5;
+const START_INTRO_TOP_CAMERA_HEIGHT = 13;
+
+interface StartIntroState {
+  elapsed: number;
+  spawnX: number;
+  spawnY: number;
+  spawnZ: number;
+  overlay: HTMLDivElement;
+  worldRevealed: boolean;
+  revealAlpha: number;
+  idleFlavorStarted: boolean;
+  idleFlavorDuration: number;
+  onComplete: () => void;
+}
+
 // =============================================================================
 // LocalGameSession
 // =============================================================================
@@ -372,9 +406,15 @@ export class LocalGameSession {
     this.game = new GameInstance(config);
   }
 
-  start(): void {
+  start(options: { startTickLoop?: boolean } = {}): void {
     this.game.start();
     this.events.emit('game_init', { state: this.game.getState() });
+    if (options.startTickLoop ?? true) {
+      this.startTickLoop();
+    }
+  }
+
+  startTicks(): void {
     this.startTickLoop();
   }
 
@@ -3796,6 +3836,7 @@ export class GameScene {
   private readonly _dummy = new THREE.Object3D();
   private readonly _tempVec = new THREE.Vector3();
   private readonly _tempColor = new THREE.Color();
+  private readonly _hitFlashColor = new THREE.Color();
   // 敌人弹幕火焰 billboard 朝向计算的临时量（避免每帧每弹分配）
   private readonly _camWorldPos = new THREE.Vector3();
   private readonly _vfxNormal = new THREE.Vector3();
@@ -3809,6 +3850,8 @@ export class GameScene {
   private playerMesh!: THREE.Mesh;
   private playerRing!: THREE.Mesh;
   private groundMesh!: THREE.Mesh;
+  private playerHitFlashTimer = 0;
+  private playerHitFlashTint: number | null = null;
   private bossMesh: THREE.Mesh | null = null;
   /** bossMesh 当前是用哪一关的模型构建的（关卡切换时需重建）。 */
   private bossMeshStage: 1 | 2 | null = null;
@@ -3822,6 +3865,7 @@ export class GameScene {
   private bossAnimState: string | null = null;
   /** Boss 上一帧 XZ + 静止时长（移动判定，逻辑同敌人）。 */
   private bossPrevPos: { x: number; z: number; stillTime: number } | null = null;
+  private bossHitFlashTint: string | null = null;
   private ambientLight!: THREE.AmbientLight;
   private hemiLight!: THREE.HemisphereLight;
   private playerSpotLight!: THREE.SpotLight;
@@ -3868,6 +3912,8 @@ export class GameScene {
   private lastWeaponCooldown: Map<string, number> = new Map();
   private levelScene: THREE.Object3D | null = null;
   private backgroundMeshes: THREE.Object3D[] = [];
+  private startIntroWorldMaterials: THREE.Material[] = [];
+  private startIntroCameraHandoffTimer = 0;
 
   // Animation state
   private deathAnimTimer = 0;
@@ -3876,6 +3922,7 @@ export class GameScene {
   private wasAlive = true;
   private wasGrounded = true; // Track grounded state for jump animation trigger
   private lastPhase: GamePhase = 'playing';
+  private startIntro: StartIntroState | null = null;
 
   // GSAP animation state
   private lastHpPercent = 100;
@@ -3937,6 +3984,7 @@ export class GameScene {
   // modelKey → 把该模型几何高度归一化到 1 单位高的系数（= 1 / 实际包围盒高度）。
   // 用于让来源尺寸各异的敌人模型统一缩放到目标高度（参考玩家），首次用到时按 loadedModels 实测缓存。
   private enemyModelNormHeight: Map<string, number> = new Map();
+  private enemyHitFlashTints: Map<number, string | null> = new Map(); // id → current material tint weapon
   private paralysisTriangleSprites: Map<number, THREE.Sprite[]> = new Map(); // enemy id → paralysis marker sprites
   private neuroMarkerSprites: Map<number, THREE.Sprite> = new Map(); // 毒师神经毒素 墨绿倒三角
   private hunterMarkerSprites: Map<number, THREE.Sprite> = new Map(); // 猎标烙印 红色瞄准圈
@@ -4308,6 +4356,42 @@ export class GameScene {
     this.animate();
   }
 
+  playStartIntro(onComplete: () => void): void {
+    const state = this.session.getRenderState();
+    const p = state.player;
+    const overlay = document.createElement('div');
+    overlay.style.cssText = [
+      'position:fixed',
+      'inset:0',
+      'z-index:700',
+      'background:#000',
+      'opacity:0',
+      'pointer-events:none',
+      'transition:none',
+    ].join(';');
+    document.body.appendChild(overlay);
+
+    this.startIntro?.overlay.remove();
+    this.startIntro = {
+      elapsed: 0,
+      spawnX: p.x,
+      spawnY: p.y,
+      spawnZ: p.z,
+      overlay,
+      worldRevealed: false,
+      revealAlpha: 0,
+      idleFlavorStarted: false,
+      idleFlavorDuration: START_INTRO_IDLE_SECONDS,
+      onComplete,
+    };
+
+    this.cameraOrbit.setEnabled(false);
+    this.setStartIntroWorldVisible(false);
+    this.setStartIntroHudVisible(false);
+    this.setStartIntroBlackWorld();
+    this.lastEventGameTime = state.gameTime;
+  }
+
   destroy(): void {
     if (this.animationId !== null) {
       cancelAnimationFrame(this.animationId);
@@ -4331,6 +4415,13 @@ export class GameScene {
     this.onContextRestored = undefined;
     this.contextLostOverlay?.remove();
     this.contextLostOverlay = undefined;
+    if (this.startIntroWorldMaterials.length > 0) {
+      this.setStartIntroWorldAlpha(1);
+      this.startIntroWorldMaterials = [];
+    }
+    this.startIntroCameraHandoffTimer = 0;
+    this.startIntro?.overlay.remove();
+    this.startIntro = null;
     this.cameraOrbit?.dispose();
     removeMobileActionCluster();
     this.platformInput.dispose();
@@ -4466,6 +4557,282 @@ export class GameScene {
     return `linear-gradient(180deg, ${top} 0%, ${mid} 44%, ${bottom} 100%)`;
   }
 
+  private setStartIntroWorldVisible(visible: boolean): void {
+    if (this.groundMesh) this.groundMesh.visible = visible;
+    if (this.levelScene) this.levelScene.visible = visible;
+    this.cameraOrbit.setOccluders(visible ? this.cameraOccluders : []);
+  }
+
+  private collectStartIntroWorldMaterials(): THREE.Material[] {
+    const mats = new Set<THREE.Material>();
+    const addObject = (obj: THREE.Object3D | null) => {
+      obj?.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.material) return;
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const mat of materials) mats.add(mat);
+      });
+    };
+    addObject(this.groundMesh);
+    addObject(this.levelScene);
+    return [...mats];
+  }
+
+  private setStartIntroWorldAlpha(alpha: number): void {
+    const a = THREE.MathUtils.clamp(alpha, 0, 1);
+    for (const mat of this.startIntroWorldMaterials) {
+      if (mat.userData.startIntroOpacity === undefined) {
+        mat.userData.startIntroOpacity = mat.opacity;
+        mat.userData.startIntroTransparent = mat.transparent;
+        mat.userData.startIntroDepthWrite = mat.depthWrite;
+      }
+      const baseOpacity = Number(mat.userData.startIntroOpacity ?? 1);
+      mat.opacity = baseOpacity * a;
+      mat.transparent = a < 0.999 ? true : Boolean(mat.userData.startIntroTransparent);
+      mat.depthWrite = a < 0.999 ? false : Boolean(mat.userData.startIntroDepthWrite);
+      mat.needsUpdate = true;
+    }
+  }
+
+  private setStartIntroBackgroundAlpha(alpha: number): void {
+    const a = THREE.MathUtils.clamp(alpha, 0, 1);
+    const darkness = 1 - a;
+
+    if (skyMode === 'photo') {
+      this.scene.background = null;
+      this.container.style.backgroundImage =
+        `linear-gradient(rgba(0,0,0,${darkness.toFixed(3)}), rgba(0,0,0,${darkness.toFixed(3)})), ${this.buildSkyGradient(this.weatherBlend)}`;
+      this.container.style.backgroundSize = '100% 100%';
+      this.container.style.backgroundPosition = 'center';
+      this.container.style.backgroundRepeat = 'no-repeat';
+      this.container.style.backgroundColor = '#000';
+      return;
+    }
+
+    const target = WEATHER_DAY_FOG_COLOR.clone().lerp(WEATHER_NIGHT_FOG_COLOR, this.weatherBlend);
+    const bgColor = new THREE.Color(0x000000).lerp(target, a);
+    this.scene.background = bgColor;
+    this.container.style.backgroundImage = 'none';
+    this.container.style.backgroundColor = bgColor.getStyle();
+  }
+
+  private setStartIntroHudVisible(visible: boolean): void {
+    if (!this.hudContainer) return;
+    this.hudContainer.style.opacity = visible ? '1' : '0';
+    this.hudContainer.style.pointerEvents = 'none';
+  }
+
+  private setStartIntroBlackWorld(): void {
+    this.scene.background = new THREE.Color(0x000000);
+    this.scene.fog = null;
+    this.container.style.backgroundImage = 'none';
+    this.container.style.backgroundColor = '#000';
+  }
+
+  private setStartIntroOverlayOpacity(opacity: number): void {
+    const intro = this.startIntro;
+    if (!intro) return;
+    const alpha = THREE.MathUtils.clamp(opacity, 0, 1);
+    intro.overlay.style.display = alpha <= 0.001 ? 'none' : 'block';
+    intro.overlay.style.opacity = alpha.toFixed(3);
+  }
+
+  private updateStartIntro(dt: number): 'none' | 'introOnly' | 'fullWorld' | 'completeFullWorld' {
+    const intro = this.startIntro;
+    if (!intro) return 'none';
+
+    intro.elapsed += dt;
+    const fadeEnd = START_INTRO_FADE_TO_BLACK_SECONDS;
+    const walkEnd = fadeEnd + START_INTRO_WALK_SECONDS;
+    const idleEnd = walkEnd + Math.max(START_INTRO_IDLE_SECONDS, intro.idleFlavorDuration) + START_INTRO_IDLE_SETTLE_SECONDS;
+    const revealEnd = idleEnd + START_INTRO_REVEAL_SECONDS;
+
+    if (intro.elapsed < fadeEnd) {
+      this.setStartIntroBlackWorld();
+      this.setStartIntroOverlayOpacity(smoothstep01(0, 1, intro.elapsed / fadeEnd));
+      return 'introOnly';
+    }
+
+    if (intro.elapsed < walkEnd) {
+      this.setStartIntroOverlayOpacity(0);
+      this.setStartIntroBlackWorld();
+      return 'introOnly';
+    }
+
+    if (intro.elapsed < idleEnd) {
+      this.setStartIntroOverlayOpacity(0);
+      this.setStartIntroBlackWorld();
+      return 'introOnly';
+    }
+
+    if (!intro.worldRevealed) {
+      intro.worldRevealed = true;
+      this.setStartIntroWorldVisible(true);
+      this.startIntroWorldMaterials = this.collectStartIntroWorldMaterials();
+      this.setStartIntroWorldAlpha(0);
+      this.scene.fog = new THREE.Fog('#87CEEB', WEATHER_DAY_FOG_NEAR, WEATHER_DAY_FOG_FAR);
+      this.applyWeatherVisuals();
+      intro.revealAlpha = 0;
+      this.setStartIntroBackgroundAlpha(0);
+      this.camera.up.set(0, 1, 0);
+    }
+
+    if (intro.elapsed < revealEnd) {
+      const revealT = (intro.elapsed - idleEnd) / START_INTRO_REVEAL_SECONDS;
+      const alpha = smoothstep01(0, 1, revealT);
+      intro.revealAlpha = alpha;
+      this.setStartIntroOverlayOpacity(0);
+      this.setStartIntroWorldAlpha(alpha);
+      this.setStartIntroBackgroundAlpha(alpha);
+      return 'fullWorld';
+    }
+
+    this.setStartIntroOverlayOpacity(0);
+    intro.revealAlpha = 1;
+    this.setStartIntroWorldAlpha(1);
+    this.setStartIntroBackgroundAlpha(1);
+    this.startIntroWorldMaterials = [];
+    intro.overlay.remove();
+    this.startIntro = null;
+    this.setStartIntroWorldVisible(true);
+    this.cameraOrbit.setOccluders([]);
+    this.cameraOrbit.update(this.camera, { x: intro.spawnX, y: intro.spawnY, z: intro.spawnZ }, 1 / 60);
+    this.startIntroCameraHandoffTimer = 0.45;
+    this.setStartIntroHudVisible(true);
+    this.cameraOrbit.setEnabled(true);
+    intro.onComplete();
+    return 'completeFullWorld';
+  }
+
+  private getStartIntroWalkT(): number {
+    const intro = this.startIntro;
+    if (!intro) return 1;
+    const walkElapsed = intro.elapsed - START_INTRO_FADE_TO_BLACK_SECONDS;
+    return THREE.MathUtils.clamp(walkElapsed / START_INTRO_WALK_SECONDS, 0, 1);
+  }
+
+  private getStartIntroPlayerPosition(target: THREE.Vector3): THREE.Vector3 {
+    const intro = this.startIntro;
+    const p = this.session.getRenderState().player;
+    if (!intro) return target.set(p.x, p.y, p.z);
+
+    const t = smoothstep01(0, 1, this.getStartIntroWalkT());
+    target.set(
+      intro.spawnX,
+      intro.spawnY,
+      intro.spawnZ - START_INTRO_WALK_DISTANCE * (1 - t),
+    );
+    return target;
+  }
+
+  private renderStartIntroFrame(state: GameState): void {
+    if (!this.blobShadows) this.blobShadows = new BlobShadowPool(this.scene);
+    this.blobShadows.begin();
+    this.renderStartIntroPlayer(state);
+    this.blobShadows.end();
+    this.updateStartIntroCamera(state);
+  }
+
+  private renderStartIntroPlayer(state: GameState): void {
+    const p = state.player;
+    const visualPos = this.getStartIntroPlayerPosition(this._tempVec);
+    const isGltfModel = this.playerMesh.name === 'Player' && this.playerMesh.children.length > 0;
+    const modelY = isGltfModel ? 0 : 1.0;
+
+    if (this.playerMixer) {
+      this.playerMixer.update(this.frameDt);
+    }
+
+    const walkT = this.getStartIntroWalkT();
+    if (walkT < 0.985) {
+      this.playPlayerAnim('Walk', 1.05);
+    } else {
+      const intro = this.startIntro;
+      const idleElapsed = intro
+        ? intro.elapsed - START_INTRO_FADE_TO_BLACK_SECONDS - START_INTRO_WALK_SECONDS
+        : 0;
+      if (intro && intro.idleFlavorStarted && idleElapsed >= intro.idleFlavorDuration) {
+        this.playPlayerAnim('Idle');
+      } else {
+        this.playStartIntroIdleFlavor();
+      }
+    }
+
+    this.playerMesh.position.set(visualPos.x, visualPos.y + modelY, visualPos.z);
+    this.playerMesh.rotation.y = 0;
+    this.playerMesh.visible = true;
+    this.playerFx.update(this.playerMesh, 0, performance.now() * 0.001);
+
+    if (this.playerRing) this.playerRing.visible = false;
+    for (const obj of this.weaponFloaters.values()) obj.visible = false;
+
+    this.blobShadows?.place(visualPos.x, p.y, visualPos.z, 0.55);
+    this.playerSpotLight.position.set(visualPos.x, p.y + 12, visualPos.z);
+    this.playerSpotLight.target.position.set(visualPos.x, p.y, visualPos.z);
+    if (this.dirLight) {
+      this.dirLight.position.set(visualPos.x + 15, p.y + 25, visualPos.z + 15);
+      this.dirLight.target.position.set(visualPos.x, p.y, visualPos.z);
+    }
+  }
+
+  private playStartIntroIdleFlavor(): void {
+    const intro = this.startIntro;
+    if (!intro) {
+      this.playPlayerAnim('Idle');
+      return;
+    }
+
+    if (intro.idleFlavorStarted) return;
+
+    const flavor = this.playerAnimations.has('Dance') ? 'Dance'
+      : this.playerAnimations.has('Hello') ? 'Hello'
+        : null;
+    if (!flavor) {
+      intro.idleFlavorStarted = true;
+      intro.idleFlavorDuration = START_INTRO_IDLE_SECONDS;
+      this.playPlayerAnim('Idle');
+      return;
+    }
+
+    const action = this.playerAnimations.get(flavor);
+    const loops = flavor === 'Dance' ? 2 : 1;
+    intro.idleFlavorStarted = true;
+    intro.idleFlavorDuration = Math.max(
+      START_INTRO_IDLE_SECONDS,
+      (action?.getClip().duration ?? START_INTRO_IDLE_SECONDS) * loops,
+    );
+    this.playPlayerAnim(flavor, 1.0, loops);
+  }
+
+  private updateStartIntroCamera(state: GameState): void {
+    const intro = this.startIntro;
+    if (!intro) return;
+
+    const camT = smoothstep01(0, 1, this.getStartIntroWalkT());
+
+    const topCam = new THREE.Vector3(
+      intro.spawnX,
+      intro.spawnY + START_INTRO_TOP_CAMERA_HEIGHT,
+      intro.spawnZ,
+    );
+    const topTarget = new THREE.Vector3(intro.spawnX, intro.spawnY, intro.spawnZ);
+    const defaultCam = new THREE.Vector3(
+      intro.spawnX,
+      intro.spawnY + 5,
+      intro.spawnZ - this.cameraOrbit.camDistance,
+    );
+    const defaultTarget = new THREE.Vector3(intro.spawnX, intro.spawnY + 1.5, intro.spawnZ + 2);
+
+    this.camera.up.copy(new THREE.Vector3(0, 0, 1).lerp(new THREE.Vector3(0, 1, 0), camT).normalize());
+    this.camera.position.copy(topCam.lerp(defaultCam, camT));
+    this.camera.lookAt(topTarget.lerp(defaultTarget, camT));
+    this.camera.fov = 60;
+    this.currentFOV = 60;
+    this.targetFOV = 60;
+    this.camera.updateProjectionMatrix();
+    curvedWorldUniforms.uWarpCenter.value.set(state.player.x, state.player.y, state.player.z);
+  }
+
   private updateWeather(state: GameState, dt: number): void {
     this.weatherTarget = (state.overtimeSeconds > 0 || state.finalSwarm) ? 1 : 0;
     const alpha = 1 - Math.exp(-dt / WEATHER_TRANSITION_SECONDS);
@@ -4475,6 +4842,9 @@ export class GameScene {
       1,
     );
     this.applyWeatherVisuals();
+    if (this.startIntro?.worldRevealed) {
+      this.setStartIntroBackgroundAlpha(this.startIntro.revealAlpha);
+    }
   }
 
   private applyWeatherVisuals(): void {
@@ -4645,6 +5015,7 @@ export class GameScene {
     this.playerMesh = new THREE.Mesh(bodyGeo, bodyMat);
     this.playerMesh.name = 'Player';
     this.playerMesh.position.y = 1.0;
+    this.cacheHitFlashMaterialBases(this.playerMesh);
     this.scene.add(this.playerMesh);
 
     // Attempt to load and replace with GLTF model
@@ -4678,6 +5049,7 @@ export class GameScene {
         });
         mesh.material = toonMats.length === 1 ? toonMats[0] : toonMats;
       });
+      this.cacheHitFlashMaterialBases(model);
       // Calculate proper scale based on actual bounding box
       const box = new THREE.Box3().setFromObject(model);
       const size = box.getSize(new THREE.Vector3());
@@ -4690,7 +5062,10 @@ export class GameScene {
 
       // Replace the fallback mesh
       this.scene.remove(this.playerMesh);
+      const activePlayerTint = this.playerHitFlashTint;
+      this.setPlayerHitFlashTint(undefined);
       this.playerMesh = model as unknown as THREE.Mesh;
+      if (activePlayerTint !== null) this.setPlayerHitFlashTint(activePlayerTint);
       this.scene.add(this.playerMesh);
 
       // Setup animation mixer
@@ -5864,6 +6239,21 @@ export class GameScene {
     }
 
     const state = this.session.getRenderState();
+    const introRenderMode = this.updateStartIntro(dt);
+    if (introRenderMode === 'introOnly') {
+      this.renderStartIntroFrame(state);
+      this.renderFrame();
+      this.updatePerfStats(dt);
+      return;
+    }
+    const introFullWorld = introRenderMode === 'fullWorld';
+    const introJustCompleted = introRenderMode === 'completeFullWorld';
+    if (this.startIntroCameraHandoffTimer > 0) {
+      this.startIntroCameraHandoffTimer = Math.max(0, this.startIntroCameraHandoffTimer - dt);
+      if (this.startIntroCameraHandoffTimer <= 0) {
+        this.cameraOrbit.setOccluders(this.cameraOccluders);
+      }
+    }
 
     // 本帧 damageEvents / bondVfxEvents 是否属于"尚未消费过的新 tick"。
     // 高刷屏下多个 rAF 帧会读到同一 tick 的事件，靠它去重避免 VFX/震动翻倍。
@@ -5872,7 +6262,7 @@ export class GameScene {
 
     // 玩家在 playing / boss_fight / portal_open 阶段都能控制角色：
     // - portal_open 是 Boss 击败后、玩家可选进传送门或留下打 overtime 的中间态
-    if (state.phase === 'playing' || state.phase === 'boss_fight' || state.phase === 'portal_open') {
+    if (!this.startIntro && (state.phase === 'playing' || state.phase === 'boss_fight' || state.phase === 'portal_open')) {
       this.handleInput();
     }
 
@@ -5880,8 +6270,12 @@ export class GameScene {
     if (!this.blobShadows) this.blobShadows = new BlobShadowPool(this.scene);
     this.blobShadows.begin();
 
-    this.renderPlayer(state);
-    this.renderEnemies(state.enemies);
+    if (introFullWorld) {
+      this.renderStartIntroPlayer(state);
+    } else {
+      this.renderPlayer(state);
+    }
+    this.renderEnemies(state.enemies, state.damageEvents);
     this.renderProjectiles(state.projectiles);
     this.renderPickups(state.pickups);
     this.renderSilverPickups(state.pickups);
@@ -5895,7 +6289,11 @@ export class GameScene {
     this.renderShrines(state.shrines, state.player.x, state.player.z);
     this.updateVFX(state, dt, eventsFresh);
     this.updateBillboardVfx(dt);
-    this.updateCamera(state);
+    if (introFullWorld) {
+      this.updateStartIntroCamera(state);
+    } else if (!introJustCompleted) {
+      this.updateCamera(state);
+    }
     this.updateWeather(state, dt);
 
     // 游戏已结束（失败 / 胜利）后不再触发新的镜头晃动，避免"死后被打仍在晃"的违和感
@@ -5903,8 +6301,16 @@ export class GameScene {
 
     // Process damage events for camera effects（仅消费未处理过的新 tick，避免高刷屏重复震动）
     if (!isGameEnded && eventsFresh) {
+      let playerHitFlashColor: number | undefined;
       for (const evt of state.damageEvents) {
         if (evt.isPlayerDamage) {
+          if (evt.damage > 0) {
+            if (evt.isShield) {
+              playerHitFlashColor ??= PLAYER_SHIELD_HIT_FLASH_COLOR;
+            } else {
+              playerHitFlashColor = PLAYER_HP_HIT_FLASH_COLOR;
+            }
+          }
           // Player took damage: only meaningful shake event
           this.triggerCameraShake(0.12, 12, 10);
           // 受击动画：仅在玩家站立/低速且在地面时触发，避免打断 Run/Walk 的连续移动
@@ -5925,6 +6331,9 @@ export class GameScene {
           }
         }
         // Crits and normal hits: no shake (too frequent with multiple projectiles)
+      }
+      if (playerHitFlashColor !== undefined) {
+        this.triggerPlayerHitFlash(playerHitFlashColor);
       }
 
       // Boss attack shake — only on heavy impacts（攻城机甲重砸 / 跳砸）
@@ -6011,6 +6420,11 @@ export class GameScene {
     }
     // 死亡后保持 mesh 可见，让 Death 动画播完并把尸体定格在地上
     this.playerMesh.visible = true;
+
+    if (this.playerHitFlashTimer > 0) {
+      this.playerHitFlashTimer = Math.max(0, this.playerHitFlashTimer - this.frameDt);
+      if (this.playerHitFlashTimer <= 0) this.setPlayerHitFlashTint(undefined);
+    }
 
     // === Death Animation ===
     if (!p.alive && this.wasAlive) {
@@ -6520,7 +6934,138 @@ export class GameScene {
     gsapAnimations.screenFlash(color, duration);
   }
 
-  private renderEnemies(enemies: EnemyState[]): void {
+  private cloneHitFlashMaterial(mat: THREE.Material): THREE.Material {
+    const cloned = mat.clone();
+
+    // material.clone() copies userData, but not every custom shader callback reliably.
+    // Re-apply the stylized toon patch to cloned enemy materials so per-enemy tinting
+    // does not mutate shared source materials.
+    if (cloned instanceof THREE.MeshToonMaterial) {
+      delete cloned.userData['__stylized'];
+      applyStylizedToonShading(cloned, cloned.name.startsWith('Weapon') ? 0.35 : 0, true);
+      cloned.needsUpdate = true;
+    }
+
+    const tintable = cloned as HitFlashMaterial;
+    if (tintable.color) {
+      cloned.userData[HIT_FLASH_BASE_COLOR_KEY] = tintable.color.clone();
+    }
+    if (tintable.emissive) {
+      cloned.userData[HIT_FLASH_BASE_EMISSIVE_KEY] = tintable.emissive.clone();
+    }
+    return cloned;
+  }
+
+  private prepareHitFlashMaterials(root: THREE.Object3D): void {
+    root.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.material) return;
+      if (Array.isArray(mesh.material)) {
+        mesh.material = mesh.material.map((mat) => this.cloneHitFlashMaterial(mat));
+      } else {
+        mesh.material = this.cloneHitFlashMaterial(mesh.material);
+      }
+    });
+  }
+
+  private cacheHitFlashMaterialBases(root: THREE.Object3D): void {
+    root.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.material) return;
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const mat of materials) {
+        const tintable = mat as HitFlashMaterial;
+        if (tintable.color && !mat.userData[HIT_FLASH_BASE_COLOR_KEY]) {
+          mat.userData[HIT_FLASH_BASE_COLOR_KEY] = tintable.color.clone();
+        }
+        if (tintable.emissive && !mat.userData[HIT_FLASH_BASE_EMISSIVE_KEY]) {
+          mat.userData[HIT_FLASH_BASE_EMISSIVE_KEY] = tintable.emissive.clone();
+        }
+      }
+    });
+  }
+
+  private applyObjectHitFlashTint(root: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
+    const vfxColor = hitFlashColor !== undefined
+      ? this._hitFlashColor.setHex(hitFlashColor)
+      : weaponType
+        ? GameScene.WEAPON_VFX_COLORS[weaponType]
+        : undefined;
+    if (Array.isArray(vfxColor)) this._hitFlashColor.setRGB(vfxColor[0], vfxColor[1], vfxColor[2]);
+
+    root.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.material) return;
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const mat of materials) {
+        const tintable = mat as HitFlashMaterial;
+        const baseColor = mat.userData[HIT_FLASH_BASE_COLOR_KEY] as THREE.Color | undefined;
+        if (tintable.color && baseColor) {
+          if (vfxColor) {
+            tintable.color.copy(baseColor).lerp(this._hitFlashColor, HIT_FLASH_TINT_INTENSITY);
+          } else {
+            tintable.color.copy(baseColor);
+          }
+        }
+
+        const baseEmissive = mat.userData[HIT_FLASH_BASE_EMISSIVE_KEY] as THREE.Color | undefined;
+        if (tintable.emissive && baseEmissive) {
+          if (vfxColor) {
+            tintable.emissive.copy(this._hitFlashColor).multiplyScalar(HIT_FLASH_EMISSIVE_STRENGTH);
+          } else {
+            tintable.emissive.copy(baseEmissive);
+          }
+        }
+      }
+    });
+  }
+
+  private setEnemyHitFlashTint(enemyId: number, obj: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
+    const next = hitFlashColor !== undefined ? `color:${hitFlashColor}` : (weaponType ?? null);
+    if ((this.enemyHitFlashTints.get(enemyId) ?? null) === next) return;
+    this.enemyHitFlashTints.set(enemyId, next);
+    this.applyObjectHitFlashTint(obj, weaponType, hitFlashColor);
+  }
+
+  private setBossHitFlashTint(obj: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
+    const next = hitFlashColor !== undefined ? `color:${hitFlashColor}` : (weaponType ?? null);
+    if (this.bossHitFlashTint === next) return;
+    this.bossHitFlashTint = next;
+    this.applyObjectHitFlashTint(obj, weaponType, hitFlashColor);
+  }
+
+  private triggerPlayerHitFlash(color: number): void {
+    this.playerHitFlashTimer = PLAYER_HIT_FLASH_DURATION;
+    this.setPlayerHitFlashTint(color);
+  }
+
+  private setPlayerHitFlashTint(color?: number): void {
+    const next = color ?? null;
+    if (this.playerHitFlashTint === next) return;
+    this.playerHitFlashTint = next;
+    this.applyObjectHitFlashTint(this.playerMesh, undefined, color);
+  }
+
+  private findDeathHitFlashTint(obj: THREE.Object3D, damageEvents: readonly DamageEvent[]): { weaponType?: string; hitFlashColor?: number } {
+    let bestTint: { weaponType?: string; hitFlashColor?: number } = {};
+    let bestDistSq = 2.25; // tolerate a little knockback / render-tick drift
+
+    for (let i = damageEvents.length - 1; i >= 0; i--) {
+      const evt = damageEvents[i];
+      if (evt.isPlayerDamage || (!evt.weaponType && evt.hitFlashColor === undefined)) continue;
+      const dx = evt.x - obj.position.x;
+      const dz = evt.z - obj.position.z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq <= bestDistSq) {
+        bestDistSq = distSq;
+        bestTint = { weaponType: evt.weaponType, hitFlashColor: evt.hitFlashColor };
+      }
+    }
+
+    return bestTint;
+  }
+
+  private renderEnemies(enemies: EnemyState[], damageEvents: readonly DamageEvent[]): void {
     // 动画 LOD：每帧重建一次视锥（点剔除）+ 缓存相机位置，循环内据此对 mixer 降频。
     this.cullMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
     this.cullFrustum.setFromProjectionMatrix(this.cullMatrix);
@@ -6541,6 +7086,9 @@ export class GameScene {
     for (const [id, obj] of this.enemyObjects) {
       if (!aliveIds.has(id) && !this.dyingEnemies.has(id)) {
         // Start death animation
+        const deathTint = this.findDeathHitFlashTint(obj, damageEvents);
+        this.setEnemyHitFlashTint(id, obj, deathTint.weaponType, deathTint.hitFlashColor);
+        this.enemyHitFlashTints.delete(id);
         this.playEnemyAnim(id, 'Death');
         this.dyingEnemies.set(id, { obj, timer: 0.6, type: obj.userData['enemyType'] as string });
         this.enemyObjects.delete(id);
@@ -6569,6 +7117,8 @@ export class GameScene {
         this.enemyAnimActions.delete(id);
         this.enemyAnimAccum.delete(id);
         this.enemyPrevPos.delete(id);
+        this.applyObjectHitFlashTint(dying.obj, undefined);
+        this.enemyHitFlashTints.delete(id);
         // Return to pool
         const pool = this.enemyPool.get(dying.type) ?? [];
         pool.push(dying.obj);
@@ -6599,6 +7149,7 @@ export class GameScene {
         const pool = this.enemyPool.get(enemy.type);
         if (pool && pool.length > 0) {
           obj = pool.pop()!;
+          this.applyObjectHitFlashTint(obj, undefined);
           // Reset animation state for recycled object — create new mixer
           const modelKey = enemyModelMap[enemy.type];
           const clips = modelKey ? loadedAnimClips.get(modelKey) : undefined;
@@ -6628,6 +7179,7 @@ export class GameScene {
             obj = cloneSkeleton(model) as THREE.Object3D;
             // KayKit 角色：把手持武器挂到 handslot 骨（其它皮肤无此骨，自动跳过）
             this.attachEnemyWeapons(obj, enemy.type);
+            this.prepareHitFlashMaterials(obj);
             // Setup animation mixer for cloned model
             const clips = modelKey ? loadedAnimClips.get(modelKey) : undefined;
             if (clips && clips.length > 0) {
@@ -6652,6 +7204,7 @@ export class GameScene {
             const geo = new THREE.BoxGeometry(0.9, 1.2, 0.9);
             const mat = new THREE.MeshToonMaterial({ color: ENEMY_COLORS[enemy.type] ?? 0x888888, gradientMap: toonGradientMap });
             obj = new THREE.Mesh(geo, mat);
+            this.prepareHitFlashMaterials(obj);
           }
           obj.name = `Enemy_${enemy.type}_${enemy.id}`;
           obj.userData['enemyType'] = enemy.type;
@@ -6712,11 +7265,14 @@ export class GameScene {
         prevPos.z = enemy.z;
       }
       const isMoving = prevPos.stillTime < 0.2;
+      const hitFlashWeaponType = enemy.hitFlashTimer > 0 ? enemy.hitFlashWeaponType : undefined;
+      const hitFlashColor = enemy.hitFlashTimer > 0 ? enemy.hitFlashColor : undefined;
+      this.setEnemyHitFlashTint(enemy.id, obj, hitFlashWeaponType, hitFlashColor);
 
       // Choose enemy animation based on state
       if (enemy.hitFlashTimer > 0) {
         this.playEnemyAnim(enemy.id, 'HitReact');
-        obj.visible = Math.sin(performance.now() * 0.03) > 0;
+        obj.visible = hitFlashWeaponType || hitFlashColor !== undefined ? true : Math.sin(performance.now() * 0.03) > 0;
       } else if (enemy.chargeState === 'charging') {
         this.playEnemyAnim(enemy.id, 'Run_Attack');
         obj.visible = true;
@@ -7330,12 +7886,14 @@ export class GameScene {
   private renderBoss(boss: BossState | null): void {
     if (!boss || boss.hp <= 0) {
       if (this.bossMesh) {
+        this.setBossHitFlashTint(this.bossMesh, undefined);
         this.bossMesh.visible = false;
       }
       if (!boss) {
         // Boss 离场：重置动画状态，下一个 boss 干净起播
         this.bossAnimState = null;
         this.bossPrevPos = null;
+        this.bossHitFlashTint = null;
       }
       return;
     }
@@ -7343,6 +7901,7 @@ export class GameScene {
     // 第一关用 enemy_2legs_gun（游侠机甲），第二关用 enemy_large_gun（攻城机甲）；关卡切换时重建网格。
     const stage = (this.session.getRenderState().stage ?? 1) as 1 | 2;
     if (this.bossMesh && this.bossMeshStage !== stage) {
+      this.setBossHitFlashTint(this.bossMesh, undefined);
       this.scene.remove(this.bossMesh);
       this.bossMesh = null;
       this.bossMeshStage = null;
@@ -7350,6 +7909,7 @@ export class GameScene {
       this.bossAnimActions.clear();
       this.bossAnimState = null;
       this.bossPrevPos = null;
+      this.bossHitFlashTint = null;
     }
 
     if (!this.bossMesh) {
@@ -7358,6 +7918,7 @@ export class GameScene {
       if (bossModel) {
         this.bossMesh = cloneSkeleton(bossModel) as unknown as THREE.Mesh;
         this.bossMesh.name = 'Boss';
+        this.prepareHitFlashMaterials(this.bossMesh);
         // 按 bounding box 自动缩放到目标高度（两关 boss 模型尺寸不同，统一到 7m）。
         const box = new THREE.Box3().setFromObject(this.bossMesh);
         const size = box.getSize(new THREE.Vector3());
@@ -7396,6 +7957,7 @@ export class GameScene {
         const mat = new THREE.MeshToonMaterial({ color: 0x9933cc, gradientMap: toonGradientMap });
         this.bossMesh = new THREE.Mesh(geo, mat);
         this.bossMesh.name = 'Boss';
+        this.prepareHitFlashMaterials(this.bossMesh);
         this.bossBaseScale = 1.0;
         this.bossMeshStage = stage;
         this.bossMixer = null;
@@ -7406,6 +7968,9 @@ export class GameScene {
 
     this.bossMesh.visible = true;
     this.bossMesh.position.set(boss.x, boss.y || 0, boss.z);
+    const bossHitFlashWeaponType = boss.hitFlashTimer > 0 ? boss.hitFlashWeaponType : undefined;
+    const bossHitFlashColor = boss.hitFlashTimer > 0 ? boss.hitFlashColor : undefined;
+    this.setBossHitFlashTint(this.bossMesh, bossHitFlashWeaponType, bossHitFlashColor);
 
     // Boss 大号 blob 阴影
     this.blobShadows?.place(boss.x, boss.y || 0, boss.z, 1.8);
@@ -7443,7 +8008,7 @@ export class GameScene {
     }
 
     // Hit flash / enrage color (only works on fallback geometry)
-    if (!loadedModels.boss) {
+    if (!(stage === 2 ? loadedModels.boss : loadedModels.boss_2legs) && !bossHitFlashWeaponType && bossHitFlashColor === undefined) {
       const mat = this.bossMesh.material as THREE.MeshToonMaterial;
       if (boss.hitFlashTimer > 0) {
         mat.color.setHex(0xffffff);
@@ -7646,7 +8211,7 @@ export class GameScene {
   // ===========================================================================
 
   private static readonly WEAPON_VFX_COLORS: Record<string, [number, number, number]> = {
-    sword: [1.0, 1.0, 1.0],
+    sword: [0.56, 0.85, 1.0],
     bone_bouncer: [0.95, 0.9, 0.8],
     axe: [1.0, 0.6, 0.1],
     pistol: [0.8, 1.0, 0.3],
@@ -12495,8 +13060,23 @@ function showTierSelectScreen(): void {
       showCharacterSelectScreen();
       return;
     }
-    destroyTierSelectScreen();
-    startGame(selectedCharacter);
+    const screen = tierSelectEl;
+    if (!screen) {
+      startGame(selectedCharacter);
+      return;
+    }
+    screen.style.pointerEvents = 'none';
+    screen.style.transition = 'opacity 0.25s ease-out, filter 0.25s ease-out';
+    screen.style.backgroundColor = '#000';
+    document.body.style.backgroundColor = '#000';
+    requestAnimationFrame(() => {
+      screen.style.opacity = '0';
+      screen.style.filter = 'brightness(0)';
+    });
+    window.setTimeout(() => {
+      destroyTierSelectScreen();
+      startGame(selectedCharacter);
+    }, 260);
   }));
   body.appendChild(startWrap);
 
@@ -13586,7 +14166,8 @@ function startGame(character: CharacterType = 'megachad'): void {
   activeScene = scene;
   setGMSession(session);
   scene.start();
-  session.start();
+  session.start({ startTickLoop: false });
+  scene.playStartIntro(() => session.startTicks());
 
   // Set tier badge text after start
   scene.setTierBadge(selectedTier);

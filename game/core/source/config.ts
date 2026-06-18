@@ -52,7 +52,7 @@ export const XP_BASE = 10;
 export const XP_GROWTH = 0.35;
 
 export const BOSS_SPAWN_TIME = 540;
-export const BOSS_HP = 2000;
+export const BOSS_HP = 60000;
 export const BOSS_INTRO_DURATION = 2.0;
 /**
  * 常规生存期（秒）。超过这个时间且玩家未进传送门 → 进入 overtime。
@@ -60,6 +60,16 @@ export const BOSS_INTRO_DURATION = 2.0;
  * 现在已不再用作 Boss 触发条件，仅供测试 / 兼容引用。
  */
 export const REGULAR_GAME_DURATION = 540;
+/** 最终狂潮开始时间：Boss/超时前的最后 60 秒。 */
+export const FINAL_SWARM_START_TIME = 480;
+/** 最终狂潮结束前，wave 敌人额外获得的 HP 成长上限。 */
+export const FINAL_SWARM_HP_GROWTH = 0.5;
+/** 最终狂潮结束前，wave 敌人额外获得的伤害成长上限。 */
+export const FINAL_SWARM_DAMAGE_GROWTH = 0.25;
+/** 最终狂潮期间敌人移动速度倍率（原 +20%，提高 50% 后为 +30%）。 */
+export const FINAL_SWARM_SPEED_MULTIPLIER = 1.3;
+/** 进入 overtime 后，继承并延续的最终狂潮成长比例。 */
+export const FINAL_SWARM_OVERTIME_GROWTH_RATIO = 0.5;
 
 export const PICKUP_LIFETIME = 30;
 export const PICKUP_ATTRACT_SPEED = 12;
@@ -433,10 +443,10 @@ export const TIER_CONFIGS: Record<DifficultyTier, TierConfig> = {
 
 // === Overtime 难度系数 ===
 /** Overtime 系数每多少秒升一档。 */
-export const OVERTIME_STEP_SECONDS = 30;
+export const OVERTIME_STEP_SECONDS = 10;
 /** Overtime 每档给敌人 HP 的增量（连续线性）。 */
-export const OVERTIME_HP_PER_STEP = 0.5;
+export const OVERTIME_HP_PER_STEP = 0.2;
 /** Overtime 每档给敌人伤害的增量（连续线性）。 */
-export const OVERTIME_DAMAGE_PER_STEP = 0.5;
+export const OVERTIME_DAMAGE_PER_STEP = 0.1;
 /** Overtime 每档给敌人速度的增量（连续线性）。 */
-export const OVERTIME_SPEED_PER_STEP = 0.16;
+export const OVERTIME_SPEED_PER_STEP = 0.05;

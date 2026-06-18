@@ -27,7 +27,7 @@ describe('SIEGE_MECH_PHASES', () => {
 });
 
 describe('attack: barrage', () => {
-  it('在玩家附近落 6 颗投射物 (15 dmg, vy=-12)', () => {
+  it('在玩家附近落 6 颗投射物 (18 dmg, vy=-12)', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const effects = makeAiEffects();
     const player = makePlayer({ x: 10, z: 20 });
@@ -35,7 +35,7 @@ describe('attack: barrage', () => {
     SIEGE_MECH.attacks.barrage!(siegeAt(1), ctx);
     expect(effects.spawnProjectileSpy).toHaveBeenCalledTimes(6);
     const arg = effects.spawnProjectileSpy.mock.calls[0][0];
-    expect(arg.damage).toBe(15);
+    expect(arg.damage).toBe(18);
     expect(arg.vy).toBe(-12);
     expect(arg.y).toBe(10);
     vi.restoreAllMocks();
@@ -43,11 +43,11 @@ describe('attack: barrage', () => {
 });
 
 describe('attack: heavy_slam', () => {
-  it('dist < 5.0 给 35 伤害', () => {
+  it('dist < 5.0 给 42 伤害', () => {
     const effects = makeAiEffects();
     const ctx = makeAiContext({ player: makePlayer({ x: 4, z: 0 }), effects });
     SIEGE_MECH.attacks.heavy_slam!(siegeAt(1), ctx);
-    expect(effects.damagePlayerSpy).toHaveBeenCalledWith(35);
+    expect(effects.damagePlayerSpy).toHaveBeenCalledWith(42);
   });
 
   it('高度差超过 2.8 不伤害', () => {
@@ -61,11 +61,11 @@ describe('attack: heavy_slam', () => {
 });
 
 describe('attack: cleave', () => {
-  it('dist < 7.0 给 40 伤害', () => {
+  it('dist < 7.0 给 48 伤害', () => {
     const effects = makeAiEffects();
     const ctx = makeAiContext({ player: makePlayer({ x: 5, z: 0 }), effects });
     SIEGE_MECH.attacks.cleave!(siegeAt(1), ctx);
-    expect(effects.damagePlayerSpy).toHaveBeenCalledWith(40);
+    expect(effects.damagePlayerSpy).toHaveBeenCalledWith(48);
   });
 
   it('高度差超过 2.8 不伤害', () => {
@@ -79,11 +79,11 @@ describe('attack: cleave', () => {
 });
 
 describe('attack: leap_slam', () => {
-  it('dist < 6.0 给 35 伤害', () => {
+  it('dist < 6.0 给 42 伤害', () => {
     const effects = makeAiEffects();
     const ctx = makeAiContext({ player: makePlayer({ x: 5, z: 0 }), effects });
     SIEGE_MECH.attacks.leap_slam!(siegeAt(3), ctx);
-    expect(effects.damagePlayerSpy).toHaveBeenCalledWith(35);
+    expect(effects.damagePlayerSpy).toHaveBeenCalledWith(42);
   });
 
   it('高度差超过 2.8 不伤害', () => {

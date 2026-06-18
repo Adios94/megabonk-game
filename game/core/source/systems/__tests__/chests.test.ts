@@ -2,7 +2,7 @@
  * chests.{tickChests, generateChests} 单元测试.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { tickChests, generateChests, spawnBossChest } from '../chests.ts';
+import { tickChests, generateChests, spawnBossChest, spawnBossChests } from '../chests.ts';
 import { makeEngine, makeBoss } from './_fixtures.ts';
 import { CHEST_COUNT, CHEST_INTERACT_RADIUS, CHEST_INTERACT_MAX_Y_DELTA, CHEST_MAX_ACTIVE } from '../../config.ts';
 import { getChestGoldCost } from '../relics.ts';
@@ -231,6 +231,32 @@ describe('tickChests', () => {
     spawnBossChest(engine, makeBoss(0, 0, 100));
     expect(engine.state.chests.filter(c => !c.opened && !c.bossDrop)).toHaveLength(CHEST_MAX_ACTIVE);
     expect(engine.state.chests.some(c => c.bossDrop)).toBe(true);
+  });
+
+  it('Boss 宝箱概率超过 100% 时整数部分保底，余数部分 roll 额外宝箱', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.39);
+    const engine = makeEngine();
+    engine.state.chests = [];
+    const boss = makeBoss(0, 0, 100);
+    boss.chestDropChance = 3.4;
+
+    const chests = spawnBossChests(engine, boss);
+
+    expect(chests).toHaveLength(4);
+    expect(chests.every(c => c.bossDrop)).toBe(true);
+    expect(new Set(chests.map(c => c.id)).size).toBe(4);
+    vi.restoreAllMocks();
+  });
+
+  it('Boss 宝箱最多掉落 5 个', () => {
+    const engine = makeEngine();
+    engine.state.chests = [];
+    const boss = makeBoss(0, 0, 100);
+    boss.chestDropChance = 9.4;
+
+    const chests = spawnBossChests(engine, boss);
+
+    expect(chests).toHaveLength(5);
   });
 
   it('已 opened 不重复 roll', () => {

@@ -49,6 +49,7 @@ describe('tickTierTransition', () => {
     const engine = makeEngine();
     engine.state.gameTime = 600;
     engine.state.overtimeSeconds = 60;
+    engine.stageTwoBossSummonCount = 3;
     engine.state.waveIndex = 5;
     engine.state.finalSwarm = true;
     engine.state.enemies = [{} as any, {} as any];
@@ -63,6 +64,7 @@ describe('tickTierTransition', () => {
     expect(engine.state.finalSwarm).toBe(false);
     expect(engine.state.enemies).toHaveLength(0);
     expect(engine.state.projectiles).toHaveLength(0);
+    expect(engine.stageTwoBossSummonCount).toBe(0);
   });
 
   it('portal_used → 玩家进度（hp/level/silver/武器）保留', () => {

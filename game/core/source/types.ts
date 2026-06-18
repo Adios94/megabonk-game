@@ -360,6 +360,10 @@ export interface EnemyState {
   isElite: boolean;
   isMiniBoss: boolean;
   hitFlashTimer: number;
+  /** 本次受击闪光使用的玩家武器颜色；非伤害类闪光（如冲锋蓄力）不设置。 */
+  hitFlashWeaponType?: WeaponType;
+  /** 覆盖武器颜色的受击闪光色（如羁绊奥术奥秘）。 */
+  hitFlashColor?: number;
   attackCooldown: number;
   attackCooldownMax: number;
   targetX: number;
@@ -708,8 +712,16 @@ export interface BossState {
   attackAnimTimer: number;
   attackCooldown: number;
   hitFlashTimer: number;
+  /** 本次受击闪光使用的玩家武器颜色。 */
+  hitFlashWeaponType?: WeaponType;
+  /** 覆盖武器颜色的受击闪光色（如羁绊奥术奥秘）。 */
+  hitFlashColor?: number;
   speed: number;
   enraged: boolean;
+  /** 本次召唤的额外伤害倍率。第二关重复召唤会递增；缺省为 1。 */
+  damageMultiplier?: number;
+  /** Boss 死亡时的宝箱掉落概率，1 = 100%；超过 1 的整数部分为保底额外宝箱。 */
+  chestDropChance?: number;
   // --- Bond marks（羁绊 T2/T3 机制；boss 同样可被标记/施加，全部 optional）---
   /** B7 弧光导体：导体标记剩余秒数。 */
   conductorMarkTimer?: number;
@@ -749,6 +761,8 @@ export interface DamageEvent {
   isPlayerDamage: boolean;
   /** Optional source weapon — used by client to drive weapon-specific VFX. */
   weaponType?: WeaponType;
+  /** Optional model hit flash override, independent from weapon attribution. */
+  hitFlashColor?: number;
   /** Shield absorption feedback uses a separate visual style from HP damage. */
   isShield?: boolean;
 }

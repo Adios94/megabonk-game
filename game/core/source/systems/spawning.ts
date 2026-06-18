@@ -16,6 +16,7 @@ import {
   BOSS_HP,
   BOSS_INTRO_DURATION,
   REGULAR_GAME_DURATION,
+  FINAL_SWARM_START_TIME,
   STEP_HEIGHT,
 } from '../config.ts';
 import { ENEMIES } from '../data/enemies.ts';
@@ -32,6 +33,9 @@ const SPAWN_ATTEMPTS = 24;
 const ENEMY_SPAWN_RADIUS = 0.4;
 const EDGE_CHECK_RING = ENEMY_SPAWN_RADIUS + 0.15;
 const EDGE_MAX_HEIGHT_DELTA = STEP_HEIGHT + 0.25;
+const STAGE_TWO_BOSS_HP_MULTIPLIER_PER_SUMMON = 1.3;
+const STAGE_TWO_BOSS_DAMAGE_MULTIPLIER_PER_SUMMON = 1.2;
+const STAGE_TWO_BOSS_CHEST_DROP_CHANCE_PER_SUMMON = 0.4;
 const OVERTIME_ELITE_CHANCE_PER_SECOND = 1 / 300;
 const OVERTIME_ELITE_CHANCE_CAP = 0.65;
 /** 刷怪面**高于**玩家的上限：基本不许在玩家头顶之上的台面刷（=空中刷出）。 */
@@ -55,8 +59,8 @@ export function tickSpawning(engine: Engine, dt: number): void {
   }
 
   // Final Swarm 阶段（gameTime 480-540, 即 boss 来之前的 1 分钟）
-  // 注：保留作为常规生存期收尾的怪潮提示；overtime 后由 overtime 系数接管，不再延续 finalSwarm。
-  const isFinalSwarm = engine.state.gameTime >= 480 && engine.state.gameTime < REGULAR_GAME_DURATION;
+  // 注：finalSwarm 作为刷怪/提示状态不延续到 overtime；属性成长在 spawnEnemy 中单独继承半速曲线。
+  const isFinalSwarm = engine.state.gameTime >= FINAL_SWARM_START_TIME && engine.state.gameTime < REGULAR_GAME_DURATION;
   engine.state.finalSwarm = isFinalSwarm;
 
   const shrineDifficulty = engine.state.player.difficultyMult ?? 1;
@@ -346,13 +350,24 @@ export function checkBossSpawn(engine: Engine): void {
 
   // 关卡决定机甲种类：第 1 关游侠机甲，第 2 关攻城机甲（各走独立 phase script）。
   const bossType = engine.state.stage >= 2 ? 'siege_mech' : 'gunner_mech';
+  const stageTwoSummonIndex = engine.state.stage >= 2 ? engine.stageTwoBossSummonCount++ : 0;
+  const stageTwoHpMultiplier = engine.state.stage >= 2
+    ? STAGE_TWO_BOSS_HP_MULTIPLIER_PER_SUMMON ** stageTwoSummonIndex
+    : 1;
+  const stageTwoDamageMultiplier = engine.state.stage >= 2
+    ? STAGE_TWO_BOSS_DAMAGE_MULTIPLIER_PER_SUMMON ** stageTwoSummonIndex
+    : 1;
+  const chestDropChance = engine.state.stage >= 2
+    ? 1 + stageTwoSummonIndex * STAGE_TWO_BOSS_CHEST_DROP_CHANCE_PER_SUMMON
+    : 1;
+  const bossHp = Math.round(BOSS_HP * tierCfg.bossHpMultiplier * stageTwoHpMultiplier);
 
   engine.state.boss = {
     x: bossX,
     y: Number.isFinite(bossY) ? bossY : 0,
     z: bossZ,
-    hp: Math.round(BOSS_HP * tierCfg.bossHpMultiplier),
-    maxHp: Math.round(BOSS_HP * tierCfg.bossHpMultiplier),
+    hp: bossHp,
+    maxHp: bossHp,
     bossType,
     phase: 1,
     currentAttack: 'idle',
@@ -362,6 +377,8 @@ export function checkBossSpawn(engine: Engine): void {
     hitFlashTimer: 0,
     speed: 3.0,
     enraged: false,
+    damageMultiplier: stageTwoDamageMultiplier,
+    chestDropChance,
   };
 
   engine.state.phase = 'boss_intro';

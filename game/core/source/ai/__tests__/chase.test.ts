@@ -57,13 +57,13 @@ describe('chase brain', () => {
     expect(enemy.x).toBeLessThanOrEqual((100 + 10) * 0.5);
   });
 
-  it('finalSwarm 时速度 ×1.2', () => {
+  it('finalSwarm 时速度 ×1.3', () => {
     const a = makeEnemy(1, 'skeleton_soldier', 0, 0);
     a.targetX = 100; a.targetZ = 0; a.speed = 6;
     const b = makeEnemy(2, 'skeleton_soldier', 0, 0);
     b.targetX = 100; b.targetZ = 0; b.speed = 6;
     chase(a, makeAiContext({ aiGroup: 99, finalSwarm: false, dt: 1 }), 0);
     chase(b, makeAiContext({ aiGroup: 99, finalSwarm: true, dt: 1 }), 0);
-    expect(b.x).toBeCloseTo(a.x * 1.2, 4);
+    expect(b.x).toBeCloseTo(a.x * 1.3, 4);
   });
 });

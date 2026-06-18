@@ -16,6 +16,7 @@ import {
   BOSS_HP,
   BOSS_INTRO_DURATION,
   REGULAR_GAME_DURATION,
+  FINAL_SWARM_START_TIME,
   STEP_HEIGHT,
 } from '../config.ts';
 import { ENEMIES } from '../data/enemies.ts';
@@ -55,8 +56,8 @@ export function tickSpawning(engine: Engine, dt: number): void {
   }
 
   // Final Swarm 阶段（gameTime 480-540, 即 boss 来之前的 1 分钟）
-  // 注：保留作为常规生存期收尾的怪潮提示；overtime 后由 overtime 系数接管，不再延续 finalSwarm。
-  const isFinalSwarm = engine.state.gameTime >= 480 && engine.state.gameTime < REGULAR_GAME_DURATION;
+  // 注：finalSwarm 作为刷怪/提示状态不延续到 overtime；属性成长在 spawnEnemy 中单独继承半速曲线。
+  const isFinalSwarm = engine.state.gameTime >= FINAL_SWARM_START_TIME && engine.state.gameTime < REGULAR_GAME_DURATION;
   engine.state.finalSwarm = isFinalSwarm;
 
   const shrineDifficulty = engine.state.player.difficultyMult ?? 1;

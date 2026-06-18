@@ -241,8 +241,8 @@
     "arcane": {
       "name": "Arcane",
       "t1": "+4% damage with arcane weapons; +0.1 damage multiplier.",
-      "t2": "Arcane hits build Mystery. At 100, blast the highest-HP enemy nearby; surrounding foes take 50% splash.",
-      "t3": "Mystery threshold 100 → 60; burst damage ×1.5."
+      "t2": "Arcane hits build Mystery. At 60, blast the highest-HP enemy nearby; surrounding foes take 50% splash.",
+      "t3": "Mystery threshold 60 → 30; burst damage ×1.5."
     },
     "zero_range": {
       "name": "Point-Blank",

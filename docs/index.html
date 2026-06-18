@@ -2135,8 +2135,8 @@ scale(k, N) = 0.6 + 0.4 × (k / N)²</code></pre>
       <table>
         <tr><th>档</th><th>类型</th><th>效果</th></tr>
         <tr><td>T1</td><td>激活</td><td>羁绊内武器伤害 <strong>+4%</strong>；立即获得 <strong>+0.1</strong> 伤害倍率（写入属性 <code>damageMult</code>）</td></tr>
-        <tr><td>T2</td><td>机制</td><td><code>arcane_mystery</code>：羁绊内武器每命中 1 名敌人获得 <strong>1 点「奥秘」</strong>，但每秒最多获得 <strong>15</strong> 点；累计 <strong>100</strong> 点时对索敌范围内<strong>当前生命值最高</strong>的 1 名敌人造成一次较高 AoE 伤（强度 ∝ 羁绊内武器<strong>平均等级</strong>；周围敌人受到目标伤害的 <strong>50%</strong>），并扣除 <strong>100</strong> 点奥秘</td></tr>
-        <tr><td>T3</td><td>升格</td><td>触发阈值 <strong>100→60</strong>；累计 <strong>60</strong> 点奥秘时同样爆发并扣除 <strong>60</strong> 点奥秘；奥秘爆发伤害提升</td></tr>
+        <tr><td>T2</td><td>机制</td><td><code>arcane_mystery</code>：羁绊内武器每命中 1 名敌人获得 <strong>1 点「奥秘」</strong>，但每秒最多获得 <strong>15</strong> 点；累计 <strong>60</strong> 点时对索敌范围内<strong>当前生命值最高</strong>的 1 名敌人造成一次高额 AoE 伤（强度 ∝ 羁绊内武器<strong>平均等级</strong>；周围敌人受到目标伤害的 <strong>50%</strong>），并扣除 <strong>60</strong> 点奥秘</td></tr>
+        <tr><td>T3</td><td>升格</td><td>触发阈值 <strong>60→30</strong>；累计 <strong>30</strong> 点奥秘时同样爆发并扣除 <strong>30</strong> 点奥秘；奥秘爆发伤害提升</td></tr>
       </table>
     </div>
     <div class="card">
@@ -2241,7 +2241,7 @@ scale(k, N) = 0.6 + 0.4 × (k / N)²</code></pre>
   <table>
     <tr><th>mechanicId</th><th>羁绊</th><th>感官要点</th><th>T3 升格</th></tr>
     <tr><td><code>iron_blood_counter</code></td><td>铁血</td><td>受击刷新剑 CD + 下次斩击 +8%</td><td>10s 攻速/伤害 rage</td></tr>
-    <tr><td><code>arcane_mystery</code></td><td>奥术</td><td>奥秘计数（每秒最多 15）→ 满 100 爆发并扣 100</td><td>阈值 60、扣 60 奥秘、爆发伤↑</td></tr>
+    <tr><td><code>arcane_mystery</code></td><td>奥术</td><td>奥秘计数（每秒最多 15）→ 满 60 爆发并扣 60</td><td>阈值 30、扣 30 奥秘、爆发伤↑</td></tr>
     <tr><td><code>knockback_impact</code></td><td>零距寸劲</td><td>全体小击退 + 位移额外伤</td><td>3m 击退↑、撞墙高额伤</td></tr>
     <tr><td><code>ember_detonate</code></td><td>余烬</td><td>击杀原地爆炸</td><td>爆炸↑、3s 灼地痕</td></tr>
     <tr><td><code>volley_tempo</code></td><td>弹幕</td><td>每武等级 +1% 攻速</td><td>可打敌方弹幕</td></tr>

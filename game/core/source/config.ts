@@ -52,7 +52,7 @@ export const XP_BASE = 10;
 export const XP_GROWTH = 0.35;
 
 export const BOSS_SPAWN_TIME = 540;
-export const BOSS_HP = 2000;
+export const BOSS_HP = 20000;
 export const BOSS_INTRO_DURATION = 2.0;
 /**
  * 常规生存期（秒）。超过这个时间且玩家未进传送门 → 进入 overtime。

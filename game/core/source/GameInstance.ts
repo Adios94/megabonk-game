@@ -509,7 +509,7 @@ function makeAiContext(engine: Engine, dt: number): AiContext {
  */
 function makeEffects(engine: Engine): AiEffects {
   return {
-    addDamageEvent: (x, y, z, d, c, p, w) => addDamageEvent(engine, x, y, z, d, c, p, w),
+    addDamageEvent: (x, y, z, d, c, p, w, s, hitFlashColor) => addDamageEvent(engine, x, y, z, d, c, p, w, s, hitFlashColor),
     applyKnockback: (e, fx, fz, strengthMult) => applyKnockback(engine, e, fx, fz, strengthMult),
     addDamageDealt: (n, weaponType, target) => {
       if (weaponType) {

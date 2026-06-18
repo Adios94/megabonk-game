@@ -80,8 +80,9 @@ export function addDamageEvent(
   isPlayerDamage: boolean,
   weaponType?: WeaponType,
   isShield?: boolean,
+  hitFlashColor?: number,
 ): void {
-  engine.state.damageEvents.push({ x, y, z, damage, isCrit, isPlayerDamage, weaponType, isShield });
+  engine.state.damageEvents.push({ x, y, z, damage, isCrit, isPlayerDamage, weaponType, isShield, hitFlashColor });
 }
 
 /**

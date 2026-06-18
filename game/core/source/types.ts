@@ -360,6 +360,10 @@ export interface EnemyState {
   isElite: boolean;
   isMiniBoss: boolean;
   hitFlashTimer: number;
+  /** 本次受击闪光使用的玩家武器颜色；非伤害类闪光（如冲锋蓄力）不设置。 */
+  hitFlashWeaponType?: WeaponType;
+  /** 覆盖武器颜色的受击闪光色（如羁绊奥术奥秘）。 */
+  hitFlashColor?: number;
   attackCooldown: number;
   attackCooldownMax: number;
   targetX: number;
@@ -708,6 +712,10 @@ export interface BossState {
   attackAnimTimer: number;
   attackCooldown: number;
   hitFlashTimer: number;
+  /** 本次受击闪光使用的玩家武器颜色。 */
+  hitFlashWeaponType?: WeaponType;
+  /** 覆盖武器颜色的受击闪光色（如羁绊奥术奥秘）。 */
+  hitFlashColor?: number;
   speed: number;
   enraged: boolean;
   // --- Bond marks（羁绊 T2/T3 机制；boss 同样可被标记/施加，全部 optional）---
@@ -749,6 +757,8 @@ export interface DamageEvent {
   isPlayerDamage: boolean;
   /** Optional source weapon — used by client to drive weapon-specific VFX. */
   weaponType?: WeaponType;
+  /** Optional model hit flash override, independent from weapon attribution. */
+  hitFlashColor?: number;
   /** Shield absorption feedback uses a separate visual style from HP damage. */
   isShield?: boolean;
 }

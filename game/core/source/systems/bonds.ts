@@ -26,6 +26,7 @@ import type {
 
 /** 弧光导体：场上同时存在的导体标记上限（避免连锁过载）。 */
 const CONDUCTOR_MARK_CAP = 10;
+const ARCANE_MYSTERY_HIT_FLASH_COLOR = 0xaa44ff;
 
 /**
  * 羁绊命中 / 标记 / 持续伤害可作用的目标：普通敌人或 boss。
@@ -336,24 +337,40 @@ function tickArcaneBurst(engine: Engine): void {
 
   player.bondMystery = (player.bondMystery ?? 0) - threshold;
 
-  // 选索敌范围内当前生命值最高的目标（含 boss —— boss 血量通常最高，理应优先被爆发）
+  // 近身威胁优先：6m 内先打最近目标；没有近身目标时，再打索敌范围内当前生命值最高的目标。
   const RANGE = p.targetRange ?? 14;
   const RANGE_SQ = RANGE * RANGE;
-  let target: BondTarget | null = null;
+  const CLOSE_THREAT_RANGE = p.closeThreatRange ?? 6;
+  const CLOSE_THREAT_RANGE_SQ = CLOSE_THREAT_RANGE * CLOSE_THREAT_RANGE;
+  let closestThreat: BondTarget | null = null;
+  let closestThreatDistSq = CLOSE_THREAT_RANGE_SQ;
+  let highestHpTarget: BondTarget | null = null;
   for (const e of engine.state.enemies) {
     if (e.hp <= 0) continue;
-    if (distanceSqBetween(player.x, player.z, e.x, e.z) > RANGE_SQ) continue;
+    const distSq = distanceSqBetween(player.x, player.z, e.x, e.z);
+    if (distSq > RANGE_SQ) continue;
     if (Math.abs(e.y - player.y) > AOE_MAX_Y_DELTA) continue;
-    if (!target || e.hp > target.hp) target = e;
+    if (distSq <= closestThreatDistSq) {
+      closestThreat = e;
+      closestThreatDistSq = distSq;
+    }
+    if (!highestHpTarget || e.hp > highestHpTarget.hp) highestHpTarget = e;
   }
   const boss = engine.state.boss;
   if (
     boss && boss.hp > 0
-    && distanceSqBetween(player.x, player.z, boss.x, boss.z) <= RANGE_SQ
     && Math.abs(boss.y - player.y) <= AOE_MAX_Y_DELTA
   ) {
-    if (!target || boss.hp > target.hp) target = boss;
+    const bossDistSq = distanceSqBetween(player.x, player.z, boss.x, boss.z);
+    if (bossDistSq <= RANGE_SQ) {
+      if (bossDistSq <= closestThreatDistSq) {
+        closestThreat = boss;
+        closestThreatDistSq = bossDistSq;
+      }
+      if (!highestHpTarget || boss.hp > highestHpTarget.hp) highestHpTarget = boss;
+    }
   }
+  const target = closestThreat ?? highestHpTarget;
   if (!target) return;
 
   const { owned, k } = evalBondCounts(player, def);
@@ -370,7 +387,8 @@ function tickArcaneBurst(engine: Engine): void {
   target.hp -= burst;
   target.hitFlashTimer = 0.2;
   recordBondDamage(engine, 'arcane', burst, target, 'void_ripple');
-  engine.effects.addDamageEvent(target.x, targetDamageEventY(target), target.z, burst, true, false, 'void_ripple');
+  target.hitFlashColor = ARCANE_MYSTERY_HIT_FLASH_COLOR;
+  engine.effects.addDamageEvent(target.x, targetDamageEventY(target), target.z, burst, true, false, 'void_ripple', false, ARCANE_MYSTERY_HIT_FLASH_COLOR);
 
   for (const e of engine.state.enemies) {
     if (e.hp <= 0 || e === target) continue;
@@ -378,7 +396,8 @@ function tickArcaneBurst(engine: Engine): void {
       e.hp -= splash;
       e.hitFlashTimer = 0.15;
       recordBondDamage(engine, 'arcane', splash, e, 'void_ripple');
-      engine.effects.addDamageEvent(e.x, enemyDamageEventY(e), e.z, splash, false, false, 'void_ripple');
+      e.hitFlashColor = ARCANE_MYSTERY_HIT_FLASH_COLOR;
+      engine.effects.addDamageEvent(e.x, enemyDamageEventY(e), e.z, splash, false, false, 'void_ripple', false, ARCANE_MYSTERY_HIT_FLASH_COLOR);
     }
   }
   if (
@@ -389,7 +408,8 @@ function tickArcaneBurst(engine: Engine): void {
     boss.hp -= splash;
     boss.hitFlashTimer = 0.15;
     recordBondDamage(engine, 'arcane', splash, boss, 'void_ripple');
-    engine.effects.addDamageEvent(boss.x, bossDamageEventY(boss), boss.z, splash, false, false, 'void_ripple');
+    boss.hitFlashColor = ARCANE_MYSTERY_HIT_FLASH_COLOR;
+    engine.effects.addDamageEvent(boss.x, bossDamageEventY(boss), boss.z, splash, false, false, 'void_ripple', false, ARCANE_MYSTERY_HIT_FLASH_COLOR);
   }
 }
 

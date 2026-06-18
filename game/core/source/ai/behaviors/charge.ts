@@ -45,6 +45,8 @@ export const charge: EnemyBehaviorFn = (enemy, ctx, i) => {
     case 'windup': {
       enemy.chargeTimer -= dt;
       enemy.hitFlashTimer = 0.1;  // 红色脉冲蓄力 VFX
+      enemy.hitFlashWeaponType = undefined;
+      enemy.hitFlashColor = undefined;
       if (enemy.chargeTimer <= 0) {
         enemy.chargeState = 'charging';
         enemy.chargeTimer = 0.5;

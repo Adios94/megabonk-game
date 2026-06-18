@@ -46,4 +46,21 @@ describe('arcane bond', () => {
     expect(player.bondMystery).toBe(0);
     expect(target.hp).toBe(216); // avg level 2 * burstPerLevel 28 * T3 1.5
   });
+
+  it('prioritizes the nearest close threat over a higher-HP distant target', () => {
+    const player = makePlayer({
+      bonds: [{ bondId: 'arcane', tier: 2 }],
+      bondMystery: 60,
+      weapons: ARCANE_WEAPONS,
+    });
+    const engine = makeEngine({ state: { ...makeEngine().state, player } });
+    const closeThreat = makeEnemy(1, 'skeleton_soldier', 2, 0, { hp: 100, maxHp: 100 });
+    const distantTank = makeEnemy(2, 'necromancer', 20, 0, { hp: 300, maxHp: 300 });
+    engine.state.enemies = [closeThreat, distantTank];
+
+    tickBonds(engine, 0.1);
+
+    expect(closeThreat.hp).toBe(44);
+    expect(distantTank.hp).toBe(300);
+  });
 });

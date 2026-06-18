@@ -359,6 +359,16 @@ interface BillboardSpawnOpts {
   blending?: 'additive' | 'normal';
 }
 
+type HitFlashMaterial = THREE.Material & {
+  color?: THREE.Color;
+  emissive?: THREE.Color;
+};
+
+const HIT_FLASH_BASE_COLOR_KEY = '__hitFlashBaseColor';
+const HIT_FLASH_BASE_EMISSIVE_KEY = '__hitFlashBaseEmissive';
+const HIT_FLASH_TINT_INTENSITY = 0.88;
+const HIT_FLASH_EMISSIVE_STRENGTH = 0.2;
+
 // =============================================================================
 // LocalGameSession
 // =============================================================================
@@ -3796,6 +3806,7 @@ export class GameScene {
   private readonly _dummy = new THREE.Object3D();
   private readonly _tempVec = new THREE.Vector3();
   private readonly _tempColor = new THREE.Color();
+  private readonly _hitFlashColor = new THREE.Color();
   // 敌人弹幕火焰 billboard 朝向计算的临时量（避免每帧每弹分配）
   private readonly _camWorldPos = new THREE.Vector3();
   private readonly _vfxNormal = new THREE.Vector3();
@@ -3822,6 +3833,7 @@ export class GameScene {
   private bossAnimState: string | null = null;
   /** Boss 上一帧 XZ + 静止时长（移动判定，逻辑同敌人）。 */
   private bossPrevPos: { x: number; z: number; stillTime: number } | null = null;
+  private bossHitFlashTint: string | null = null;
   private ambientLight!: THREE.AmbientLight;
   private hemiLight!: THREE.HemisphereLight;
   private playerSpotLight!: THREE.SpotLight;
@@ -3937,6 +3949,7 @@ export class GameScene {
   // modelKey → 把该模型几何高度归一化到 1 单位高的系数（= 1 / 实际包围盒高度）。
   // 用于让来源尺寸各异的敌人模型统一缩放到目标高度（参考玩家），首次用到时按 loadedModels 实测缓存。
   private enemyModelNormHeight: Map<string, number> = new Map();
+  private enemyHitFlashTints: Map<number, string | null> = new Map(); // id → current material tint weapon
   private paralysisTriangleSprites: Map<number, THREE.Sprite[]> = new Map(); // enemy id → paralysis marker sprites
   private neuroMarkerSprites: Map<number, THREE.Sprite> = new Map(); // 毒师神经毒素 墨绿倒三角
   private hunterMarkerSprites: Map<number, THREE.Sprite> = new Map(); // 猎标烙印 红色瞄准圈
@@ -5881,7 +5894,7 @@ export class GameScene {
     this.blobShadows.begin();
 
     this.renderPlayer(state);
-    this.renderEnemies(state.enemies);
+    this.renderEnemies(state.enemies, state.damageEvents);
     this.renderProjectiles(state.projectiles);
     this.renderPickups(state.pickups);
     this.renderSilverPickups(state.pickups);
@@ -6520,7 +6533,109 @@ export class GameScene {
     gsapAnimations.screenFlash(color, duration);
   }
 
-  private renderEnemies(enemies: EnemyState[]): void {
+  private cloneHitFlashMaterial(mat: THREE.Material): THREE.Material {
+    const cloned = mat.clone();
+
+    // material.clone() copies userData, but not every custom shader callback reliably.
+    // Re-apply the stylized toon patch to cloned enemy materials so per-enemy tinting
+    // does not mutate shared source materials.
+    if (cloned instanceof THREE.MeshToonMaterial) {
+      delete cloned.userData['__stylized'];
+      applyStylizedToonShading(cloned, cloned.name.startsWith('Weapon') ? 0.35 : 0, true);
+      cloned.needsUpdate = true;
+    }
+
+    const tintable = cloned as HitFlashMaterial;
+    if (tintable.color) {
+      cloned.userData[HIT_FLASH_BASE_COLOR_KEY] = tintable.color.clone();
+    }
+    if (tintable.emissive) {
+      cloned.userData[HIT_FLASH_BASE_EMISSIVE_KEY] = tintable.emissive.clone();
+    }
+    return cloned;
+  }
+
+  private prepareHitFlashMaterials(root: THREE.Object3D): void {
+    root.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.material) return;
+      if (Array.isArray(mesh.material)) {
+        mesh.material = mesh.material.map((mat) => this.cloneHitFlashMaterial(mat));
+      } else {
+        mesh.material = this.cloneHitFlashMaterial(mesh.material);
+      }
+    });
+  }
+
+  private applyObjectHitFlashTint(root: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
+    const vfxColor = hitFlashColor !== undefined
+      ? this._hitFlashColor.setHex(hitFlashColor)
+      : weaponType
+        ? GameScene.WEAPON_VFX_COLORS[weaponType]
+        : undefined;
+    if (Array.isArray(vfxColor)) this._hitFlashColor.setRGB(vfxColor[0], vfxColor[1], vfxColor[2]);
+
+    root.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.material) return;
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const mat of materials) {
+        const tintable = mat as HitFlashMaterial;
+        const baseColor = mat.userData[HIT_FLASH_BASE_COLOR_KEY] as THREE.Color | undefined;
+        if (tintable.color && baseColor) {
+          if (vfxColor) {
+            tintable.color.copy(baseColor).lerp(this._hitFlashColor, HIT_FLASH_TINT_INTENSITY);
+          } else {
+            tintable.color.copy(baseColor);
+          }
+        }
+
+        const baseEmissive = mat.userData[HIT_FLASH_BASE_EMISSIVE_KEY] as THREE.Color | undefined;
+        if (tintable.emissive && baseEmissive) {
+          if (vfxColor) {
+            tintable.emissive.copy(this._hitFlashColor).multiplyScalar(HIT_FLASH_EMISSIVE_STRENGTH);
+          } else {
+            tintable.emissive.copy(baseEmissive);
+          }
+        }
+      }
+    });
+  }
+
+  private setEnemyHitFlashTint(enemyId: number, obj: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
+    const next = hitFlashColor !== undefined ? `color:${hitFlashColor}` : (weaponType ?? null);
+    if ((this.enemyHitFlashTints.get(enemyId) ?? null) === next) return;
+    this.enemyHitFlashTints.set(enemyId, next);
+    this.applyObjectHitFlashTint(obj, weaponType, hitFlashColor);
+  }
+
+  private setBossHitFlashTint(obj: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
+    const next = hitFlashColor !== undefined ? `color:${hitFlashColor}` : (weaponType ?? null);
+    if (this.bossHitFlashTint === next) return;
+    this.bossHitFlashTint = next;
+    this.applyObjectHitFlashTint(obj, weaponType, hitFlashColor);
+  }
+
+  private findDeathHitFlashTint(obj: THREE.Object3D, damageEvents: readonly DamageEvent[]): { weaponType?: string; hitFlashColor?: number } {
+    let bestTint: { weaponType?: string; hitFlashColor?: number } = {};
+    let bestDistSq = 2.25; // tolerate a little knockback / render-tick drift
+
+    for (let i = damageEvents.length - 1; i >= 0; i--) {
+      const evt = damageEvents[i];
+      if (evt.isPlayerDamage || (!evt.weaponType && evt.hitFlashColor === undefined)) continue;
+      const dx = evt.x - obj.position.x;
+      const dz = evt.z - obj.position.z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq <= bestDistSq) {
+        bestDistSq = distSq;
+        bestTint = { weaponType: evt.weaponType, hitFlashColor: evt.hitFlashColor };
+      }
+    }
+
+    return bestTint;
+  }
+
+  private renderEnemies(enemies: EnemyState[], damageEvents: readonly DamageEvent[]): void {
     // 动画 LOD：每帧重建一次视锥（点剔除）+ 缓存相机位置，循环内据此对 mixer 降频。
     this.cullMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
     this.cullFrustum.setFromProjectionMatrix(this.cullMatrix);
@@ -6541,6 +6656,9 @@ export class GameScene {
     for (const [id, obj] of this.enemyObjects) {
       if (!aliveIds.has(id) && !this.dyingEnemies.has(id)) {
         // Start death animation
+        const deathTint = this.findDeathHitFlashTint(obj, damageEvents);
+        this.setEnemyHitFlashTint(id, obj, deathTint.weaponType, deathTint.hitFlashColor);
+        this.enemyHitFlashTints.delete(id);
         this.playEnemyAnim(id, 'Death');
         this.dyingEnemies.set(id, { obj, timer: 0.6, type: obj.userData['enemyType'] as string });
         this.enemyObjects.delete(id);
@@ -6569,6 +6687,8 @@ export class GameScene {
         this.enemyAnimActions.delete(id);
         this.enemyAnimAccum.delete(id);
         this.enemyPrevPos.delete(id);
+        this.applyObjectHitFlashTint(dying.obj, undefined);
+        this.enemyHitFlashTints.delete(id);
         // Return to pool
         const pool = this.enemyPool.get(dying.type) ?? [];
         pool.push(dying.obj);
@@ -6599,6 +6719,7 @@ export class GameScene {
         const pool = this.enemyPool.get(enemy.type);
         if (pool && pool.length > 0) {
           obj = pool.pop()!;
+          this.applyObjectHitFlashTint(obj, undefined);
           // Reset animation state for recycled object — create new mixer
           const modelKey = enemyModelMap[enemy.type];
           const clips = modelKey ? loadedAnimClips.get(modelKey) : undefined;
@@ -6628,6 +6749,7 @@ export class GameScene {
             obj = cloneSkeleton(model) as THREE.Object3D;
             // KayKit 角色：把手持武器挂到 handslot 骨（其它皮肤无此骨，自动跳过）
             this.attachEnemyWeapons(obj, enemy.type);
+            this.prepareHitFlashMaterials(obj);
             // Setup animation mixer for cloned model
             const clips = modelKey ? loadedAnimClips.get(modelKey) : undefined;
             if (clips && clips.length > 0) {
@@ -6652,6 +6774,7 @@ export class GameScene {
             const geo = new THREE.BoxGeometry(0.9, 1.2, 0.9);
             const mat = new THREE.MeshToonMaterial({ color: ENEMY_COLORS[enemy.type] ?? 0x888888, gradientMap: toonGradientMap });
             obj = new THREE.Mesh(geo, mat);
+            this.prepareHitFlashMaterials(obj);
           }
           obj.name = `Enemy_${enemy.type}_${enemy.id}`;
           obj.userData['enemyType'] = enemy.type;
@@ -6712,11 +6835,14 @@ export class GameScene {
         prevPos.z = enemy.z;
       }
       const isMoving = prevPos.stillTime < 0.2;
+      const hitFlashWeaponType = enemy.hitFlashTimer > 0 ? enemy.hitFlashWeaponType : undefined;
+      const hitFlashColor = enemy.hitFlashTimer > 0 ? enemy.hitFlashColor : undefined;
+      this.setEnemyHitFlashTint(enemy.id, obj, hitFlashWeaponType, hitFlashColor);
 
       // Choose enemy animation based on state
       if (enemy.hitFlashTimer > 0) {
         this.playEnemyAnim(enemy.id, 'HitReact');
-        obj.visible = Math.sin(performance.now() * 0.03) > 0;
+        obj.visible = hitFlashWeaponType || hitFlashColor !== undefined ? true : Math.sin(performance.now() * 0.03) > 0;
       } else if (enemy.chargeState === 'charging') {
         this.playEnemyAnim(enemy.id, 'Run_Attack');
         obj.visible = true;
@@ -7330,12 +7456,14 @@ export class GameScene {
   private renderBoss(boss: BossState | null): void {
     if (!boss || boss.hp <= 0) {
       if (this.bossMesh) {
+        this.setBossHitFlashTint(this.bossMesh, undefined);
         this.bossMesh.visible = false;
       }
       if (!boss) {
         // Boss 离场：重置动画状态，下一个 boss 干净起播
         this.bossAnimState = null;
         this.bossPrevPos = null;
+        this.bossHitFlashTint = null;
       }
       return;
     }
@@ -7343,6 +7471,7 @@ export class GameScene {
     // 第一关用 enemy_2legs_gun（游侠机甲），第二关用 enemy_large_gun（攻城机甲）；关卡切换时重建网格。
     const stage = (this.session.getRenderState().stage ?? 1) as 1 | 2;
     if (this.bossMesh && this.bossMeshStage !== stage) {
+      this.setBossHitFlashTint(this.bossMesh, undefined);
       this.scene.remove(this.bossMesh);
       this.bossMesh = null;
       this.bossMeshStage = null;
@@ -7350,6 +7479,7 @@ export class GameScene {
       this.bossAnimActions.clear();
       this.bossAnimState = null;
       this.bossPrevPos = null;
+      this.bossHitFlashTint = null;
     }
 
     if (!this.bossMesh) {
@@ -7358,6 +7488,7 @@ export class GameScene {
       if (bossModel) {
         this.bossMesh = cloneSkeleton(bossModel) as unknown as THREE.Mesh;
         this.bossMesh.name = 'Boss';
+        this.prepareHitFlashMaterials(this.bossMesh);
         // 按 bounding box 自动缩放到目标高度（两关 boss 模型尺寸不同，统一到 7m）。
         const box = new THREE.Box3().setFromObject(this.bossMesh);
         const size = box.getSize(new THREE.Vector3());
@@ -7396,6 +7527,7 @@ export class GameScene {
         const mat = new THREE.MeshToonMaterial({ color: 0x9933cc, gradientMap: toonGradientMap });
         this.bossMesh = new THREE.Mesh(geo, mat);
         this.bossMesh.name = 'Boss';
+        this.prepareHitFlashMaterials(this.bossMesh);
         this.bossBaseScale = 1.0;
         this.bossMeshStage = stage;
         this.bossMixer = null;
@@ -7406,6 +7538,9 @@ export class GameScene {
 
     this.bossMesh.visible = true;
     this.bossMesh.position.set(boss.x, boss.y || 0, boss.z);
+    const bossHitFlashWeaponType = boss.hitFlashTimer > 0 ? boss.hitFlashWeaponType : undefined;
+    const bossHitFlashColor = boss.hitFlashTimer > 0 ? boss.hitFlashColor : undefined;
+    this.setBossHitFlashTint(this.bossMesh, bossHitFlashWeaponType, bossHitFlashColor);
 
     // Boss 大号 blob 阴影
     this.blobShadows?.place(boss.x, boss.y || 0, boss.z, 1.8);
@@ -7443,7 +7578,7 @@ export class GameScene {
     }
 
     // Hit flash / enrage color (only works on fallback geometry)
-    if (!loadedModels.boss) {
+    if (!(stage === 2 ? loadedModels.boss : loadedModels.boss_2legs) && !bossHitFlashWeaponType && bossHitFlashColor === undefined) {
       const mat = this.bossMesh.material as THREE.MeshToonMaterial;
       if (boss.hitFlashTimer > 0) {
         mat.color.setHex(0xffffff);
@@ -7646,7 +7781,7 @@ export class GameScene {
   // ===========================================================================
 
   private static readonly WEAPON_VFX_COLORS: Record<string, [number, number, number]> = {
-    sword: [1.0, 1.0, 1.0],
+    sword: [0.56, 0.85, 1.0],
     bone_bouncer: [0.95, 0.9, 0.8],
     axe: [1.0, 0.6, 0.1],
     pistol: [0.8, 1.0, 0.3],

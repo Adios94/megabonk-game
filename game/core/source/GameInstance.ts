@@ -134,6 +134,7 @@ export class GameInstance {
       chestPendingSpawnKeys: [],
       aiGroup: 0,
       miniBossTimer: 0,
+      stageTwoBossSummonCount: 0,
       landingTimer: 0,
       lastDashInput: false,
       lastJumpInput: false,
@@ -227,6 +228,7 @@ export class GameInstance {
     engine.aiGroup = 0;
     engine.landingTimer = 0;
     engine.miniBossTimer = 0;
+    engine.stageTwoBossSummonCount = 0;
     engine.weaponDamageWindows = {};
   }
 

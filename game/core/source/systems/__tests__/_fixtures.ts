@@ -106,6 +106,7 @@ export function makeEngine(overrides: Partial<Engine> = {}): Engine {
     chestPendingSpawnKeys: [],
     aiGroup: 0,
     miniBossTimer: 0,
+    stageTwoBossSummonCount: 0,
     landingTimer: 0,
     lastDashInput: false,
     lastJumpInput: false,

@@ -375,6 +375,7 @@ const PLAYER_HIT_FLASH_DURATION = 0.18;
 const START_INTRO_FADE_TO_BLACK_SECONDS = 0.28;
 const START_INTRO_WALK_SECONDS = 1.55;
 const START_INTRO_IDLE_SECONDS = 0.65;
+const START_INTRO_IDLE_SETTLE_SECONDS = 0.25;
 const START_INTRO_REVEAL_SECONDS = 0.75;
 const START_INTRO_WALK_DISTANCE = 10.5;
 const START_INTRO_TOP_CAMERA_HEIGHT = 13;
@@ -4643,7 +4644,7 @@ export class GameScene {
     intro.elapsed += dt;
     const fadeEnd = START_INTRO_FADE_TO_BLACK_SECONDS;
     const walkEnd = fadeEnd + START_INTRO_WALK_SECONDS;
-    const idleEnd = walkEnd + Math.max(START_INTRO_IDLE_SECONDS, intro.idleFlavorDuration);
+    const idleEnd = walkEnd + Math.max(START_INTRO_IDLE_SECONDS, intro.idleFlavorDuration) + START_INTRO_IDLE_SETTLE_SECONDS;
     const revealEnd = idleEnd + START_INTRO_REVEAL_SECONDS;
 
     if (intro.elapsed < fadeEnd) {
@@ -4746,7 +4747,15 @@ export class GameScene {
     if (walkT < 0.985) {
       this.playPlayerAnim('Walk', 1.05);
     } else {
-      this.playStartIntroIdleFlavor();
+      const intro = this.startIntro;
+      const idleElapsed = intro
+        ? intro.elapsed - START_INTRO_FADE_TO_BLACK_SECONDS - START_INTRO_WALK_SECONDS
+        : 0;
+      if (intro && intro.idleFlavorStarted && idleElapsed >= intro.idleFlavorDuration) {
+        this.playPlayerAnim('Idle');
+      } else {
+        this.playStartIntroIdleFlavor();
+      }
     }
 
     this.playerMesh.position.set(visualPos.x, visualPos.y + modelY, visualPos.z);

@@ -15,7 +15,7 @@ import { recordBossDefeated } from '../save.ts';
 import type { EnemyState, WeaponType } from '../types.ts';
 import type { Engine } from './types.ts';
 import { onBossDefeated } from './altars.ts';
-import { spawnBossChest } from './chests.ts';
+import { spawnBossChests } from './chests.ts';
 import { tryMoveHorizontally } from './horizontalMove.ts';
 
 /** 敌人横向碰撞半径（与 _move.ts 一致）。 */
@@ -134,7 +134,7 @@ export function checkGameOver(engine: Engine): void {
   // Boss 死亡：第一关开传送门进入下一关；第二关及以后只恢复祭坛召唤能力。
   if (engine.state.boss && engine.state.boss.hp <= 0) {
     const defeatedBoss = engine.state.boss;
-    spawnBossChest(engine, defeatedBoss);
+    spawnBossChests(engine, defeatedBoss);
     spawnBossXpPickup(engine, defeatedBoss);
     engine.state.boss = null;
     engine.state.stats.silverEarned += 50;

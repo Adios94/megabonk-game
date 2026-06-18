@@ -23,6 +23,9 @@ import type { BossState, ChestState, GameConfig } from '../types.ts';
 import type { Engine } from './types.ts';
 import { getChestGoldCost, rollRelicForPlayer } from './relics.ts';
 
+const BOSS_CHEST_DROP_MAX = 5;
+const BOSS_CHEST_SPREAD_RADIUS = 1.4;
+
 interface ChestSpawnPoint {
   x: number;
   y: number;
@@ -39,11 +42,39 @@ export function nextChestId(chests: readonly ChestState[]): number {
 }
 
 export function spawnBossChest(engine: Engine, boss: BossState): ChestState {
+  return spawnBossChestAt(engine, boss, boss.x, boss.z);
+}
+
+export function spawnBossChests(engine: Engine, boss: BossState): ChestState[] {
+  const count = getBossChestDropCount(boss);
+  const chests: ChestState[] = [];
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2;
+    const radius = i === 0 ? 0 : BOSS_CHEST_SPREAD_RADIUS;
+    chests.push(spawnBossChestAt(
+      engine,
+      boss,
+      boss.x + Math.cos(angle) * radius,
+      boss.z + Math.sin(angle) * radius,
+    ));
+  }
+  return chests;
+}
+
+function getBossChestDropCount(boss: BossState): number {
+  const chance = Math.max(0, boss.chestDropChance ?? 1);
+  const guaranteed = Math.min(BOSS_CHEST_DROP_MAX, Math.floor(chance));
+  if (guaranteed >= BOSS_CHEST_DROP_MAX) return BOSS_CHEST_DROP_MAX;
+  const fractional = chance - Math.floor(chance);
+  return guaranteed + (fractional > 0 && Math.random() < fractional ? 1 : 0);
+}
+
+function spawnBossChestAt(engine: Engine, boss: BossState, x: number, z: number): ChestState {
   const chest: ChestState = {
     id: engine.nextChestId++,
-    x: boss.x,
+    x,
     y: boss.y,
-    z: boss.z,
+    z,
     opened: false,
     bossDrop: true,
   };

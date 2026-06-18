@@ -45,13 +45,13 @@ function suppressFire(boss: BossState, ctx: AiContext): void {
 /** 近战横扫 25 dmg / 3.5 单位。 */
 function meleeSwipe(boss: BossState, ctx: AiContext): void {
   const dist = distanceBetween(boss.x, boss.z, ctx.player.x, ctx.player.z);
-  if (dist < MELEE_RANGE && canHitPlayerByHeight(boss, ctx)) ctx.effects.damagePlayer(scaleBossDamage(25));
+  if (dist < MELEE_RANGE && canHitPlayerByHeight(boss, ctx)) ctx.effects.damagePlayer(scaleBossDamage(25, boss));
 }
 
 /** 跳击：落地小范围 AOE 20 dmg / 4.0 单位（Jump 动画演出换位）。 */
 function leapStrike(boss: BossState, ctx: AiContext): void {
   const dist = distanceBetween(boss.x, boss.z, ctx.player.x, ctx.player.z);
-  if (dist < LEAP_RANGE && canHitPlayerByHeight(boss, ctx)) ctx.effects.damagePlayer(scaleBossDamage(20));
+  if (dist < LEAP_RANGE && canHitPlayerByHeight(boss, ctx)) ctx.effects.damagePlayer(scaleBossDamage(20, boss));
 }
 
 export const GUNNER_MECH_PHASES: readonly BossPhaseConfig[] = [

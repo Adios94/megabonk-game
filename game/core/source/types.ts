@@ -718,6 +718,10 @@ export interface BossState {
   hitFlashColor?: number;
   speed: number;
   enraged: boolean;
+  /** 本次召唤的额外伤害倍率。第二关重复召唤会递增；缺省为 1。 */
+  damageMultiplier?: number;
+  /** Boss 死亡时的宝箱掉落概率，1 = 100%；超过 1 的整数部分为保底额外宝箱。 */
+  chestDropChance?: number;
   // --- Bond marks（羁绊 T2/T3 机制；boss 同样可被标记/施加，全部 optional）---
   /** B7 弧光导体：导体标记剩余秒数。 */
   conductorMarkTimer?: number;

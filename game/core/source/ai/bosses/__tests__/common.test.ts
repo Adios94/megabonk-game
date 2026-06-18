@@ -45,6 +45,13 @@ describe('getBossMeleeDamage', () => {
     b.phase = 2; expect(getBossMeleeDamage(b)).toBe(36);
     b.phase = 3; expect(getBossMeleeDamage(b)).toBe(48);
   });
+
+  it('额外 boss 伤害倍率会叠加到通用倍率后取整', () => {
+    const b = makeBoss();
+    b.phase = 1;
+    b.damageMultiplier = 1.2;
+    expect(getBossMeleeDamage(b)).toBe(29);
+  });
 });
 
 describe('fireBolt / aimAngle', () => {
@@ -60,5 +67,15 @@ describe('fireBolt / aimAngle', () => {
     expect(arg.fromPlayer).toBe(false);
     const speed = Math.sqrt(arg.vx ** 2 + arg.vz ** 2);
     expect(speed).toBeCloseTo(12, 5);
+  });
+
+  it('boss 弹幕同样吃额外伤害倍率', () => {
+    const effects = makeAiEffects();
+    const player = makePlayer({ x: 10, z: 0 });
+    const ctx = makeAiContext({ player, effects });
+    const boss = makeBoss(0, 0);
+    boss.damageMultiplier = 1.2;
+    fireBolt(boss, ctx, aimAngle(boss, ctx), 12, 12);
+    expect(effects.spawnProjectileSpy.mock.calls[0][0].damage).toBe(17);
   });
 });

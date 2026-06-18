@@ -9,8 +9,8 @@ import type { BossPhaseConfig } from './types.ts';
 
 export const BOSS_DAMAGE_MULTIPLIER = 1.2;
 
-export function scaleBossDamage(damage: number): number {
-  return Math.max(1, Math.round(damage * BOSS_DAMAGE_MULTIPLIER));
+export function scaleBossDamage(damage: number, boss?: Pick<BossState, 'damageMultiplier'>): number {
+  return Math.max(1, Math.round(damage * BOSS_DAMAGE_MULTIPLIER * (boss?.damageMultiplier ?? 1)));
 }
 
 /** 根据 hp/maxHp 比例在给定 phases 表里查找当前 phase 配置。 */
@@ -41,7 +41,7 @@ export function getBossMeleeDamage(boss: BossState): number {
     case 3: damage = 40; break;
     default: damage = 20; break;
   }
-  return scaleBossDamage(damage);
+  return scaleBossDamage(damage, boss);
 }
 
 /**
@@ -65,7 +65,7 @@ export function fireBolt(
     vx: Math.sin(angle) * speed,
     vy: 0,
     vz: Math.cos(angle) * speed,
-    damage: scaleBossDamage(damage),
+    damage: scaleBossDamage(damage, boss),
     bouncesLeft: 0,
     pierceLeft: 0,
     lifetime: 4.0,

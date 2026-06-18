@@ -44,6 +44,8 @@ export interface Engine {
   /** 错峰组 0..3, 每帧末 cycle. ranged/chase 行为用 (i % 4 === aiGroup) 错峰 */
   aiGroup: number;
   miniBossTimer: number;
+  /** 第二关及以后已召唤过的 boss 次数，用于递增血量 / 伤害 / 宝箱概率。 */
+  stageTwoBossSummonCount: number;
   landingTimer: number;
   /** Edge detection: 上一帧 dash 输入（jumpPressed = 当前 ∧ ¬lastDashInput） */
   lastDashInput: boolean;

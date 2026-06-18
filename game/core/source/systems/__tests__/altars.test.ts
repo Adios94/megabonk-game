@@ -92,27 +92,17 @@ describe('generateAltars', () => {
 });
 
 describe('tickAltars — 状态机', () => {
-  it('ready + 玩家在范围内 + 按 E → summoning（边缘触发）', () => {
-    const engine = makeEngine();
-    engine.state.altars = [altar()];
-    engine.state.player.x = 0;
-    engine.state.player.z = 0;
-    engine.input.interact = true;
-    tickAltars(engine, 0.05);
-    expect(engine.state.altars[0].phase).toBe('summoning');
-  });
-
-  it('ready 但玩家不按 E → 保持 ready', () => {
+  it('ready + 玩家进入范围 → 自动 summoning（无需按键）', () => {
     const engine = makeEngine();
     engine.state.altars = [altar()];
     engine.state.player.x = 0;
     engine.state.player.z = 0;
     engine.input.interact = false;
     tickAltars(engine, 0.05);
-    expect(engine.state.altars[0].phase).toBe('ready');
+    expect(engine.state.altars[0].phase).toBe('summoning');
   });
 
-  it('ready 但玩家在范围外 + 按 E → 保持 ready', () => {
+  it('ready 但玩家在范围外 → 保持 ready', () => {
     const engine = makeEngine();
     engine.state.altars = [altar()];
     engine.state.player.x = ALTAR_INTERACT_RADIUS + 1;
@@ -133,11 +123,21 @@ describe('tickAltars — 状态机', () => {
     expect(engine.state.altars[0].phase).toBe('boss_active');
   });
 
-  it('summoning 时玩家走出范围 → 重置 ready', () => {
+  it('summoning 时玩家走出范围 → 进度缓慢回落，未归零前保持 summoning', () => {
     const engine = makeEngine();
     engine.state.altars = [altar({ phase: 'summoning', summonTimer: 0.5 })];
     engine.state.player.x = ALTAR_INTERACT_RADIUS + 5;
     tickAltars(engine, 0.05);
+    expect(engine.state.altars[0].phase).toBe('summoning');
+    expect(engine.state.altars[0].summonTimer).toBeLessThan(0.5);
+    expect(engine.state.altars[0].summonTimer).toBeGreaterThan(0);
+  });
+
+  it('summoning 时玩家走出范围且进度回落到 0 → 回到 ready', () => {
+    const engine = makeEngine();
+    engine.state.altars = [altar({ phase: 'summoning', summonTimer: 0.01 })];
+    engine.state.player.x = ALTAR_INTERACT_RADIUS + 5;
+    tickAltars(engine, 0.5);
     expect(engine.state.altars[0].phase).toBe('ready');
     expect(engine.state.altars[0].summonTimer).toBe(0);
   });

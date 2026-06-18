@@ -4,7 +4,7 @@
  * 状态机:
  *   inactive   -- 仅占位，目前不会出现 (生成时直接 charging)
  *   charging   -- 玩家在 SHRINE_RADIUS 内累计 chargeTimer
- *                 玩家离开 → chargeTimer 立刻归零 (megabonk 设计：必须连续站满)
+ *                 玩家离开 → chargeTimer 按 SHRINE_CHARGE_DECAY_RATE 缓慢回落（非立刻归零）
  *                 chargeTimer >= chargeDuration → ready
  *   ready      -- 4 个 reward option roll 出, GameState.phase = 'shrine_reward',
  *                 activeShrineId 锁定本 shrine
@@ -18,6 +18,7 @@ import {
   SHRINE_COUNT,
   SHRINE_RADIUS,
   SHRINE_CHARGE_DURATION,
+  SHRINE_CHARGE_DECAY_RATE,
   SHRINE_REWARD_COUNT,
   STEP_HEIGHT,
 } from '../config.ts';
@@ -150,7 +151,7 @@ export function generateShrines(config: GameConfig, geo?: LevelGeometry): Shrine
 /**
  * 每帧 tick:
  *   - 玩家在范围内: chargeTimer += dt
- *   - 离开范围: chargeTimer 立即归零（必须连续充能）
+ *   - 离开范围: chargeTimer 按 SHRINE_CHARGE_DECAY_RATE 缓慢回落（归零前可重新进入续充）
  *   - 充满: phase=ready, roll 4 options, 进入 shrine_reward phase（占用主循环）
  *
  * 注意：
@@ -181,8 +182,10 @@ export function tickShrines(engine: Engine, dt: number): void {
         // 否则保留在 chargeTimer = chargeDuration，下一帧再检查（队列等待）
       }
     } else {
-      // 玩家离开 → 立即归零 (megabonk 设计)
-      if (shrine.chargeTimer > 0) shrine.chargeTimer = 0;
+      // 玩家离开 → 进度按 SHRINE_CHARGE_DECAY_RATE 缓慢回落（不立刻归零）
+      if (shrine.chargeTimer > 0) {
+        shrine.chargeTimer = Math.max(0, shrine.chargeTimer - dt * SHRINE_CHARGE_DECAY_RATE);
+      }
     }
   }
 }

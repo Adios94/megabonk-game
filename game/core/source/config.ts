@@ -95,8 +95,13 @@ export const CHEST_LEVEL_MAX = 24;               // Cap on chests generated from
 export const CHEST_MIN_SEPARATION = 6;           // Min distance between two unopened chests
 
 // Altar (formerly Teleporter) settings
-/** 召唤 Boss 的读条秒数（防误触）。 */
-export const ALTAR_SUMMON_DURATION = 1.0;
+/** 召唤 Boss 的读条秒数。 */
+export const ALTAR_SUMMON_DURATION = 2.0;
+/**
+ * 玩家离开召唤半径后，读条进度的回落速率（相对充能速率的倍数）。
+ * 0.5 表示回落速度为充能的一半，进度缓慢减少直到归零才取消召唤。
+ */
+export const ALTAR_SUMMON_DECAY_RATE = 0.5;
 /** 第二关及以后 Boss 击败后，祭坛再次可召唤前的冷却秒数。 */
 export const ALTAR_BOSS_RESPAWN_COOLDOWN = 60;
 /** 玩家与祭坛 / 传送门交互的触发半径。 */
@@ -126,6 +131,11 @@ export const SHRINE_COUNT = 5;
 export const SHRINE_RADIUS = 2.5;
 /** 充满 / 解锁需要的站立秒数。 */
 export const SHRINE_CHARGE_DURATION = 4.0;
+/**
+ * 玩家离开充能圈后，充能进度的回落速率（相对充能速率的倍数）。
+ * 0.5 表示回落速度为充能的一半，进度缓慢减少直到归零，而非立刻消失。
+ */
+export const SHRINE_CHARGE_DECAY_RATE = 0.5;
 /** 解锁后的奖励选项数量（megabonk 充能圣殿固定为 4 选 1）。 */
 export const SHRINE_REWARD_COUNT = 4;
 /** 护盾每秒回满的速率（玩家护盾比 HP 恢复快得多）。 */

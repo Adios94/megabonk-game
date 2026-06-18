@@ -4,9 +4,10 @@
  * 设计文档：docs/boss-loop-redesign.md
  *
  * 状态机：
- *   ready          玩家未交互；进入半径时 UI 显示 `[E] 召唤 Boss`
- *     ↓ 玩家按 interact + 在交互半径内
- *   summoning      读条 `ALTAR_SUMMON_DURATION` 秒（防误触）；走出半径回 ready
+ *   ready          玩家未进入；玩家走进交互半径即自动开始召唤（无需按键）
+ *     ↓ 玩家进入交互半径
+ *   summoning      读条 `ALTAR_SUMMON_DURATION` 秒；走出半径时进度按
+ *                  `ALTAR_SUMMON_DECAY_RATE` 缓慢回落，归零后才回 ready
  *     ↓ 读条满
  *   boss_active    Boss 已生成；祭坛锁住、不可再交互
  *     ↓ Boss 死亡（boss.hp <= 0），由外部系统翻转
@@ -15,7 +16,7 @@
  *   portal_used    终态；tier 推进流程会消费它（清掉或替换为下一关祭坛）
  *
  * 触发方式：
- *   - 召唤 Boss：玩家按下 interact 键，且当前在 ready 半径内 → 进入 summoning
+ *   - 召唤 Boss：玩家走进 ready 半径即自动进入 summoning（不再需要按键）
  *   - 进入传送门：玩家按下 interact 键，且当前在 portal_ready 半径内 → portal_used
  *
  * 副作用：
@@ -28,6 +29,7 @@ import { pickRandomSubset } from '../spawnPick.ts';
 import {
   ALTAR_BOSS_RESPAWN_COOLDOWN,
   ALTAR_SUMMON_DURATION,
+  ALTAR_SUMMON_DECAY_RATE,
   ALTAR_INTERACT_RADIUS,
   ALTAR_MIN_DISTANCE,
   ALTAR_MAX_DISTANCE_RATIO,
@@ -135,7 +137,8 @@ export function tickAltars(engine: Engine, dt: number): void {
 
     switch (altar.phase) {
       case 'ready': {
-        if (inRange && interact) {
+        // 进入交互半径即自动开始召唤（不再需要按 interact）。
+        if (inRange) {
           altar.phase = 'summoning';
           altar.summonTimer = 0;
         }
@@ -143,9 +146,12 @@ export function tickAltars(engine: Engine, dt: number): void {
       }
       case 'summoning': {
         if (!inRange) {
-          // 走出半径 → 取消
-          altar.phase = 'ready';
-          altar.summonTimer = 0;
+          // 走出半径 → 进度缓慢回落（不立刻消失）；归零后才回到 ready。
+          altar.summonTimer -= dt * ALTAR_SUMMON_DECAY_RATE;
+          if (altar.summonTimer <= 0) {
+            altar.summonTimer = 0;
+            altar.phase = 'ready';
+          }
           break;
         }
         altar.summonTimer += dt;

@@ -84,7 +84,7 @@ import { CameraOrbit } from './systems/cameraOrbit.ts';
 import { PlayerInvincibilityFx } from './systems/playerFx.ts';
 import { BlobShadowPool } from './systems/blobShadows.ts';
 import { gsapAnimations } from './gsap-animations.ts';
-import { uiPlainText, uiColoredText, UI_PLAIN_TEXT_STYLE, UI_TEXT_OUTLINE_SHADOW, UI_BAR_TEXT_LAYER } from './ui/textStyle.ts';
+import { uiPlainText, uiPlainTextBold, uiColoredText, uiColoredTextBold, UI_PLAIN_TEXT_STYLE, UI_TEXT_OUTLINE_SHADOW, UI_BAR_TEXT_LAYER } from './ui/textStyle.ts';
 import {
   createUpgradeFrameCard,
   upgradeFrameUrl,
@@ -126,6 +126,7 @@ import {
   UI_SCROLLBAR_TRANSPARENT_CLASS,
 } from './ui/layout.ts';
 import { createPauseDataPanel, PAUSE_SIDE_PANEL_WIDTH } from './ui/pauseDataPanel.ts';
+import { playTransition } from './ui/sceneTransition.ts';
 import type { I18nMode } from '@minigame/i18n';
 import { EventEmitter } from './session/EventEmitter.ts';
 
@@ -894,69 +895,56 @@ const CHARACTER_FULL_PATHS: Record<CharacterType, string> = {
 
 const CHARACTER_LOCKED_OVERLAY_PATH = '/ui/characters/locked_character.png';
 
-// ZLabs Pixel 12px (EN/Latin) + ZLabs RoundPix 12px (ZH/CJK), split via unicode-range
-const UI_FONT_FACE = '"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif';
+// 本地 Lilita One（拉丁） + Noto Sans SC（中文/CJK）。
+// 不再走 Google Fonts CDN，也不再叠像素字体 fallback。
+const UI_FONT_FACE = '"Lilita One","Noto Sans SC",Arial,sans-serif';
 
 const GAME_UI_FONT_FILES = {
-  pixelEnWoff2: '/fonts/zlabs-pixel-hc.woff2',
-  roundCnTtf: '/fonts/zlabs-roundpix-m-cn.ttf',
+  lilitaOneTtf: '/fonts/LilitaOne-Regular.ttf',
+  notoSansScVf: '/fonts/NotoSansSC-VF.ttf',
 } as const;
 
 function installGameUIFonts(): void {
-  if (!document.getElementById('megabonk-ui-fonts-lilita')) {
-    const preconnect1 = document.createElement('link');
-    preconnect1.rel = 'preconnect';
-    preconnect1.href = 'https://fonts.googleapis.com';
-    document.head.appendChild(preconnect1);
-    const preconnect2 = document.createElement('link');
-    preconnect2.rel = 'preconnect';
-    preconnect2.href = 'https://fonts.gstatic.com';
-    preconnect2.crossOrigin = 'anonymous';
-    document.head.appendChild(preconnect2);
-    const lilita = document.createElement('link');
-    lilita.id = 'megabonk-ui-fonts-lilita';
-    lilita.rel = 'stylesheet';
-    lilita.href = 'https://fonts.googleapis.com/css2?family=Lilita+One&family=Noto+Sans+SC:wght@400;700&display=swap';
-    document.head.appendChild(lilita);
-  }
   if (document.getElementById('megabonk-ui-fonts')) return;
   const style = document.createElement('style');
   style.id = 'megabonk-ui-fonts';
+  // Noto Sans SC 用可变字体（wght 100~900），单文件覆盖 Regular/Bold；
+  // font-synthesis: none 防止浏览器对 Lilita One（仅 400 一档）合成假粗体扭曲笔画——
+  // 中文加粗由 Noto 可变轴提供真实 700 字重。
   style.textContent = `
 @font-face {
-  font-family: 'MegaBonk UI';
-  src: url('${GAME_UI_FONT_FILES.pixelEnWoff2}') format('woff2');
+  font-family: 'Lilita One';
+  src: url('${GAME_UI_FONT_FILES.lilitaOneTtf}') format('truetype');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
-  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
 }
 @font-face {
-  font-family: 'MegaBonk UI';
-  src: url('${GAME_UI_FONT_FILES.pixelEnWoff2}') format('woff2');
-  font-weight: 700;
+  font-family: 'Noto Sans SC';
+  src: url('${GAME_UI_FONT_FILES.notoSansScVf}') format('truetype');
+  font-weight: 100 900;
   font-style: normal;
   font-display: swap;
-  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
 }
-@font-face {
-  font-family: 'MegaBonk UI';
-  src: url('${GAME_UI_FONT_FILES.roundCnTtf}') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-  unicode-range: U+3000-303F,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF,U+FF00-FFEF;
-}
-@font-face {
-  font-family: 'MegaBonk UI';
-  src: url('${GAME_UI_FONT_FILES.roundCnTtf}') format('truetype');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-  unicode-range: U+3000-303F,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF,U+FF00-FFEF;
-}
-body {
+html, body {
   font-synthesis: none;
+  /* 全局禁用文本选区：游戏 UI 不需要复制/选词，长按或拖拽误触会破坏体验。 */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  /* 关掉 iOS 长按浮出的"拷贝/查找"气泡。 */
+  -webkit-touch-callout: none;
+  /* 关掉移动端点击时的灰色高亮闪烁。 */
+  -webkit-tap-highlight-color: transparent;
+}
+/* 真正需要输入的元素（音量条 / 等级输入 / 未来的聊天框）仍保留正常选区行为。 */
+input, textarea, [contenteditable="true"], [contenteditable=""] {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
 }
   `.trim();
   document.head.appendChild(style);
@@ -965,8 +953,6 @@ body {
 async function ensureGameUIFontsLoaded(): Promise<void> {
   installGameUIFonts();
   await Promise.all([
-    document.fonts.load(`12px ${UI_FONT_FACE}`),
-    document.fonts.load(`bold 60px ${UI_FONT_FACE}`),
     document.fonts.load(`16px "Lilita One"`),
     document.fonts.load(`bold 60px "Lilita One"`),
     document.fonts.load(`16px "Noto Sans SC"`),
@@ -974,7 +960,7 @@ async function ensureGameUIFontsLoaded(): Promise<void> {
   ]);
 }
 
-const CHARACTER_SELECT_BACK_ICON = '/ui/button/back.png';
+const CHARACTER_SELECT_BACK_ICON = '/ui/button/back.svg';
 const LANG_BUTTON_CN = '/ui/button/btn_lang_cn.png';
 const LANG_BUTTON_EN = '/ui/button/btn_lang_en.png';
 const CHARACTER_DETAIL_PANEL_BG = '/ui/panel/svg/character_detail.svg';
@@ -1116,7 +1102,7 @@ function tierInsetXPct(valueSvgPx: number): string {
 }
 
 const SHOP_ITEM_LIST_PANEL_BG = '/ui/shop/event-bg.svg';
-/** event-bg.svg 原图 8346×4715 */
+/** event-bg.svg 原图 8342×4700 */
 /** 商店商品卡与 event-bg 整体显示倍率（相对基准尺寸） */
 const SHOP_DISPLAY_SCALE = 1.3;
 /** shop_item_bg 内文字/图标/按钮等内容相对网格字号的缩放 */
@@ -1241,7 +1227,8 @@ function createShopLevelSegments(currentLevel: number, maxLevel: number): HTMLDi
   const litCount = Math.max(0, Math.min(maxLevel, currentLevel));
   for (let i = 0; i < maxLevel; i++) {
     const seg = document.createElement('img');
-    seg.src = i < litCount ? BAR_ASSETS.stat.fill : BAR_ASSETS.stat.trackSingle;
+    // 商店进度条用橙色填充（和 stat_fill.svg 同结构，仅换色），与角色面板的蓝色 stat 条做视觉区分。
+    seg.src = i < litCount ? '/ui/bar/stat_fill_orange.svg' : BAR_ASSETS.stat.trackSingle;
     seg.alt = '';
     seg.draggable = false;
     // 每段宽度均分；`stat_track_single.svg` / `stat_fill.svg` 都带
@@ -1307,7 +1294,7 @@ const CHARACTER_STAT_BAR_MAX = {
 // 角色选择整页背景：低多边形沙漠场景，覆盖整个 characterSelectEl；
 // 中间 stage 走透明，让主角立绘直接站在沙漠地平线上。
 // 共用的 PREP_SCREEN_STYLE（其他 prep 页面也吃）保持原样不动，避免影响 tier select / shop。
-const CHARACTER_SELECT_PAGE_BG_IMAGE = '/ui/characters/select_bg.png';
+const CHARACTER_SELECT_PAGE_BG_IMAGE = '/ui/characters/select_bg.webp';
 const CHARACTER_PREVIEW_STAGE_BG = 'transparent';
 
 const TITLE_IMAGE_PATH_ZH = '/ui/title/title_cn.webp';
@@ -1339,31 +1326,34 @@ function titleImageWidthStyle(): string {
 }
 const LOBBY_BG_PATH = '/ui/common/bg_lobby.webp';
 const UI_COMMON_BG_PATH = '/ui/common/bg_ui_common.webp';
+const TIER_SELECT_PAGE_BG_IMAGE = '/ui/common/bg_tier_select.webp';
+const SHOP_QUEST_PAGE_BG_IMAGE = '/ui/common/bg_city.webp';
 /**
  * 任务面板复用商店一套 SVG（与 SHOP_ITEM_LIST_PANEL_BG / SHOP_ITEM_PANEL_BG 同源），
  * 让首页 / 商店 / 任务三处主蓝面板视觉统一。
  *
- * 外框 event-bg.svg viewBox 8346×4715，几何：
- * - 外圈黑描边圆角矩形：(28, 24) 8290×4586, rx=179, stroke-width=48（外缘 ≈ x=4, y=0）
- * - 内蓝深色板：(52, 48) 8242×4538, rx=155 —— 内容必须落在这块板里
- *   · 横向 inset = 52/8346 ≈ 0.62%
- *   · 顶部 inset = 48/4715 ≈ 1.02%
- *   · 底部 inset = (4715-4586)/4715 ≈ 2.74%（底部比顶部厚，给阴影留位）
+ * 外框 event-bg.svg viewBox 8342×4700，几何：
+ * - 外圈黑描边圆角矩形：(24, 24) 8290×4586, rx=179, stroke-width=48
+ * - 内蓝主板：(48, 48) 8242×4538, rx=155 —— 内容必须落在这块板里
+ *   · 横向 inset = 48/8342 ≈ 0.58%
+ *   · 顶部 inset = 48/4700 ≈ 1.02%
+ *   · 底部 inset = (4700-4586)/4700 ≈ 2.43%（底部比顶部厚，给阴影留位）
  *
  * scroll-area 在内蓝板基础上再加 ~3% 呼吸 padding；底部多留 1% 给 row 阴影下溢。
  */
 const QUEST_LIST_PANEL_BG = '/ui/shop/event-bg.svg';
 const QUEST_LIST_PANEL_SIZE = { w: 8346, h: 4715 } as const;
 /**
- * 任务行背景 Quest_item_bg.svg viewBox 5894×1301（landscape AR ≈ 4.53），几何：
+ * 任务行背景 Quest_item_bg.svg viewBox 10019×1301（landscape AR ≈ 7.70），几何：
  * - 灰阴影底层 `y=87..1301`（向下偏移 +87 制造 drop shadow，约占总高 6.7%）
- * - 蓝色主板    `(13.5,13.5)→5867×1241`, rx=105.5
- * - 内描边      `(42,42)→5810×1184`, rx=77
+ * - 蓝色主板    `(32.5,13.5)→9954×1241`, rx=105.5
+ * - 内描边      `(61,42)→9897×1184`, rx=77
  * - 底部装饰浪 `y=1070..1241`（占 SVG 高 13.1%）—— row 内容 padding-bottom
  *   至少要 13.1% × rowHeight + 安全余量，否则文字/进度条会压到深蓝浪上。
  *
- * SVG 已加 `preserveAspectRatio="none"`，row 容器走 background-size:100% 100%
- * 时内容会真正拉伸贴合 row 形状（默认 meet 会被 letterbox 到 4.53:1 AR）。
+ * SVG 加 `preserveAspectRatio="none"`，row 容器走 background-size:100% 100%
+ * 时内容会真正拉伸贴合 row 形状（默认 meet 会按 7.70:1 AR letterbox，
+ * 已领取行 AR≈10:1 时左右会出现 ~12% 透明带）。
  */
 const QUEST_ITEM_BG = '/ui/quests/Quest_item_bg.svg';
 const QUEST_LIST_SCROLL_INSET = { top: 0.04, right: 0.04, bottom: 0.06, left: 0.04 } as const;
@@ -1405,7 +1395,6 @@ const MENU_BUTTON_ICONS = {
 
 const GOLD_COIN_ICON_PATH = '/ui/icon/coin_gold.png';
 const SILVER_COIN_ICON_PATH = '/ui/icon/coin_silver.png';
-const STOPWATCH_ICON_PATH = '/ui/icon/stopwatch.png';
 const KILL_COUNT_ICON_PATH = '/ui/icon/icon_killcount.png';
 const CHEST_ICON_PATH = '/ui/icon/in_game_HUD/treasure_chest.png';
 
@@ -1413,10 +1402,12 @@ const CHEST_ICON_PATH = '/ui/icon/in_game_HUD/treasure_chest.png';
 function chestIconHtml(): string {
   return `<img src="${CHEST_ICON_PATH}" draggable="false" style="height:1.25em;width:auto;object-fit:contain;vertical-align:-0.22em;margin-right:2px;" />`;
 }
-const HUD_TASK_TRACK_BG = '/ui/panel/hud_task_track_bg.png';
-const HUD_TASK_TRACK_SIZE = { w: 1172, h: 276 } as const;
-/** 背景图左侧星形图标占位（原图宽度比例，文字从此之后开始） */
-const HUD_TASK_TRACK_TEXT_INSET_LEFT = 0.25;
+const HUD_TASK_TRACK_BG = '/ui/panel/hud_task_track_bg.svg';
+const HUD_TASK_TRACK_SIZE = { w: 1207, h: 337 } as const;
+/** 背景图左侧齿轮图标占位（齿轮右边缘约 290/1207 ≈ 24%，给文字留点边距取 26%） */
+const HUD_TASK_TRACK_TEXT_INSET_LEFT = 0.26;
+/** 任务条整体相对 topLeft 的横向偏移（负值=向左推）。 */
+const HUD_TASK_TRACK_OFFSET_LEFT = 'clamp(-10px,-3vw,-10px)';
 /** 局内底部经验条宽度。 */
 const HUD_XP_BAR_WIDTH = 'min(86vw,560px)';
 const HUD_XP_BAR_HEIGHT = 'clamp(8px,2.1vw,11px)';
@@ -1900,6 +1891,7 @@ function createStylizedDebugPanel(opts: {
   bloom: UnrealBloomPass | null;
   renderer: THREE.WebGLRenderer;
   colorGrade: ColorGradePass | null;
+  darkComic?: DarkComicPass | null;
   cameraOrbit?: CameraOrbit | null;
   onSkyModeChange?: (mode: 'photo' | 'color') => void;
 }): void {
@@ -1909,6 +1901,7 @@ function createStylizedDebugPanel(opts: {
   const bloom = opts.bloom;
   const renderer = opts.renderer;
   const colorGrade = opts.colorGrade;
+  const darkComic = opts.darkComic ?? null;
   const cameraOrbit = opts.cameraOrbit;
 
   type Ctl = { label: string; min: number; max: number; step: number; get: () => number; set: (v: number) => void };
@@ -2010,6 +2003,17 @@ function createStylizedDebugPanel(opts: {
       ],
     });
   }
+  if (darkComic) {
+    sections.push({
+      title: '暗黑漫画 DarkComic (Final Swarm)', ctls: [
+        { label: 'Enabled 开关', min: 0, max: 1, step: 1, get: () => darkComic.enabled ? 1 : 0, set: (v) => { darkComic.enabled = v >= 0.5; } },
+        { label: '去饱和最大值', min: 0, max: 1, step: 0.01, get: () => darkComic.desaturateMax, set: (v) => { darkComic.desaturateMax = v; } },
+        { label: '噪点最大值', min: 0, max: 0.3, step: 0.005, get: () => darkComic.noiseMax, set: (v) => { darkComic.noiseMax = v; } },
+        { label: '渐变时长(s)', min: 1, max: 120, step: 1, get: () => darkComic.rampDurationSeconds, set: (v) => { darkComic.rampDurationSeconds = v; } },
+        { label: '当前进度 ramp', min: 0, max: 1, step: 0.01, get: () => darkComic.ramp01, set: (v) => { darkComic.ramp01 = v; } },
+      ],
+    });
+  }
   if (fog) {
     sections.push({
       title: '雾 Fog', ctls: [
@@ -2098,6 +2102,7 @@ function createStylizedDebugPanel(opts: {
       fog ? `// fog: new THREE.Fog('#87CEEB', ${fog.near}, ${fog.far})` : '',
       bloom ? `// bloom: strength=${bloom.strength}, radius=${bloom.radius}, threshold=${bloom.threshold}` : '',
       colorGrade ? `// ColorGrade: saturation=${colorGrade.saturation.toFixed(3)}, contrast=${colorGrade.contrast.toFixed(3)}, brightness=${colorGrade.brightness.toFixed(3)}` : '',
+      darkComic ? `// DarkComic: enabled=${darkComic.enabled}, desatMax=${darkComic.desaturateMax.toFixed(2)}, noiseMax=${darkComic.noiseMax.toFixed(3)}, rampDuration=${darkComic.rampDurationSeconds}s, ramp01=${darkComic.ramp01.toFixed(2)}` : '',
     ].filter(Boolean).join('\n');
     navigator.clipboard?.writeText(snippet).catch(() => { /* ignore */ });
     console.log('[stylized] 当前参数：\n' + snippet);
@@ -2344,6 +2349,121 @@ class ColorGradePass extends Pass {
 
   render(renderer: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget): void {
     this.material.uniforms.tDiffuse.value = readBuffer.texture;
+    if (this.renderToScreen) {
+      renderer.setRenderTarget(null);
+    } else {
+      renderer.setRenderTarget(writeBuffer);
+      if (this.clear) renderer.clear();
+    }
+    this.fsQuad.render(renderer);
+  }
+
+  override dispose(): void {
+    this.material.dispose();
+    this.fsQuad.dispose?.();
+  }
+}
+
+/**
+ * 末端"暗黑漫画"风格 post-fx pass（精简版）。
+ * 灵感来自 Andicraft 的 Dark Comic Master URP shader（那是个 8000+ 行 PBR surface shader，
+ * 无法 1:1 移到 three.js），实际只保留两个对画面观感最关键的因素：
+ *   1) Desaturate 去饱和 —— 朝灰阶推，"暗黑"基调
+ *   2) Noise 印刷噪点 —— 颗粒做旧感
+ *
+ * 数值由外部 `ramp01` (0..1) 驱动：进入"最终狂潮"时由 GameScene 每帧渐进式拉到 1，
+ * 退出时快速回落到 0。`desaturateMax / noiseMax` 是 ramp=1 时的目标上限。
+ * 放在 ColorGradePass 之后，全部在 LDR sRGB 空间做。单 FSQ，开销 ~ 1 个全屏 draw。
+ */
+class DarkComicPass extends Pass {
+  private readonly material: THREE.ShaderMaterial;
+  private readonly fsQuad: FullScreenQuad;
+
+  /** 主开关；关闭时 ramp 视为 0（画面不变） */
+  enabled = true;
+  /** 渐进进度 [0,1]，由 GameScene.updateDarkComic 驱动 */
+  ramp01 = 0;
+  /** ramp=1 时去饱和的目标值（0..1） */
+  desaturateMax = 0.85;
+  /** ramp=1 时噪点的目标值（0..0.3 常用） */
+  noiseMax = 0.18;
+  /** 从 0 → 1 渐进满所需秒数（finalSwarm 进入时） */
+  rampDurationSeconds = 45;
+
+  constructor() {
+    super();
+    this.material = new THREE.ShaderMaterial({
+      uniforms: {
+        tDiffuse: { value: null },
+        uResolution: { value: new THREE.Vector2(1, 1) },
+        uTime: { value: 0 },
+        uDesaturate: { value: 0 }, // 实际值每帧由 ramp01 × desaturateMax 写入
+        uNoise: { value: 0 },      // 同上
+      },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        precision highp float;
+        varying vec2 vUv;
+        uniform sampler2D tDiffuse;
+        uniform vec2 uResolution;
+        uniform float uTime;
+        uniform float uDesaturate;
+        uniform float uNoise;
+
+        const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+        // hash-based 低成本伪噪点（每帧时间扰动 → 颗粒感而非贴图感）
+        float hash21(vec2 p) {
+          p = fract(p * vec2(123.34, 456.21));
+          p += dot(p, p + 45.32);
+          return fract(p.x * p.y);
+        }
+
+        void main() {
+          vec4 src = texture2D(tDiffuse, vUv);
+          vec3 c = src.rgb;
+
+          float l = dot(c, LUMA);
+          c = mix(c, vec3(l), uDesaturate);
+
+          vec2 fragPx = vUv * uResolution;
+          float n = hash21(fragPx + vec2(uTime * 60.0, uTime * 37.0)) - 0.5;
+          c += n * uNoise;
+
+          gl_FragColor = vec4(clamp(c, 0.0, 1.0), src.a);
+        }
+      `,
+      depthTest: false,
+      depthWrite: false,
+    });
+    this.fsQuad = new FullScreenQuad(this.material);
+  }
+
+  override setSize(width: number, height: number): void {
+    this.material.uniforms.uResolution.value.set(width, height);
+  }
+
+  /** 当前实际生效的去饱和强度（含开关与 ramp） */
+  get currentDesaturate(): number {
+    return this.enabled ? this.desaturateMax * this.ramp01 : 0;
+  }
+  /** 当前实际生效的噪点强度（含开关与 ramp） */
+  get currentNoise(): number {
+    return this.enabled ? this.noiseMax * this.ramp01 : 0;
+  }
+
+  override render(renderer: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget): void {
+    const u = this.material.uniforms;
+    u.uDesaturate.value = this.currentDesaturate;
+    u.uNoise.value = this.currentNoise;
+    u.tDiffuse.value = readBuffer.texture;
+    u.uTime.value = performance.now() * 0.001;
     if (this.renderToScreen) {
       renderer.setRenderTarget(null);
     } else {
@@ -3837,6 +3957,7 @@ export class GameScene {
   private outlinePass: SceneOutlinePass | null = null; // 屏幕空间描边 pass（screenSpace/none，dev 下 O 键切换）
   private bloomPass: UnrealBloomPass | null = null;
   private colorGradePass: ColorGradePass | null = null;
+  private darkComicPass: DarkComicPass | null = null; // 末端"暗黑漫画"风格 post-fx；DARK_COMIC_ENABLED 控制
   private blobShadows: BlobShadowPool | null = null;
   private readonly scene: THREE.Scene;
   private readonly camera: THREE.PerspectiveCamera;
@@ -4337,6 +4458,7 @@ export class GameScene {
         bloom: this.bloomPass,
         renderer: this.renderer,
         colorGrade: this.colorGradePass,
+        darkComic: this.darkComicPass,
         cameraOrbit: this.cameraOrbit,
         onSkyModeChange: (mode) => {
           this.applySkyMode(mode);
@@ -4448,6 +4570,7 @@ export class GameScene {
     // session 后，旧 GameScene 整棵场景图与 GL 上下文已无引用，可被 GC 连同 GPU 资源回收。
     this.composer?.dispose();
     this.outlinePass?.dispose(); // EffectComposer.dispose 不级联各 pass，手动释放 sceneRT / 深度纹理 / 描边材质
+    this.darkComicPass?.dispose();
     this.blobShadows?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -4864,6 +4987,28 @@ export class GameScene {
     }
   }
 
+  /**
+   * 最终狂潮 → DarkComic 后期渐进。
+   * - `state.finalSwarm` true：ramp01 在 `rampDurationSeconds` 内线性从 0 → 1，画面逐渐去饱和+起噪点
+   * - false 或非战斗相位：~2s 内快速回落到 0，结算/失败画面立刻清爽
+   * 实际去饱和/噪点上限由 darkComicPass.desaturateMax / noiseMax 控制（🎨 调试面板可调）。
+   */
+  private updateDarkComic(state: GameState, dt: number): void {
+    const dc = this.darkComicPass;
+    if (!dc) return;
+    const inFinalSwarm = !!state.finalSwarm
+      && state.phase !== 'defeat'
+      && state.phase !== 'victory';
+    if (inFinalSwarm) {
+      const dur = Math.max(0.5, dc.rampDurationSeconds);
+      dc.ramp01 = Math.min(1, dc.ramp01 + dt / dur);
+    } else {
+      // 退出时 2s 内回落，避免胜利/失败屏还带灰阶颗粒
+      const fallback = 2.0;
+      dc.ramp01 = Math.max(0, dc.ramp01 - dt / fallback);
+    }
+  }
+
   private applyWeatherVisuals(): void {
     const t = this.weatherBlend;
 
@@ -4934,6 +5079,16 @@ export class GameScene {
     const colorGrade = new ColorGradePass(GRADE_SATURATION, GRADE_CONTRAST, GRADE_BRIGHTNESS);
     composer.addPass(colorGrade);
     this.colorGradePass = colorGrade;
+
+    // feat/dark-comic-postfx：末端"暗黑漫画"风格 pass。开关常量在这里，关掉就是回到主分支观感。
+    // 实际去饱和/噪点强度由 GameScene.updateDarkComic 每帧根据 state.finalSwarm 渐进驱动。
+    const DARK_COMIC_ENABLED = true;
+    if (DARK_COMIC_ENABLED) {
+      const darkComic = new DarkComicPass();
+      darkComic.setSize(Math.round(w * dpr), Math.round(h * dpr));
+      composer.addPass(darkComic);
+      this.darkComicPass = darkComic;
+    }
 
     this.composer = composer;
   }
@@ -5617,7 +5772,7 @@ export class GameScene {
 
   private setupHUD(): void {
     this.hudContainer = document.createElement('div');
-    this.hudContainer.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:100;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);box-sizing:border-box;';
+    this.hudContainer.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:100;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);box-sizing:border-box;';
     document.body.appendChild(this.hudContainer);
 
     // ---------------------------------------------------------------------
@@ -5662,6 +5817,7 @@ export class GameScene {
       position:relative;width:${HUD_QUEST_TRACK_WIDTH};max-width:100%;flex-shrink:0;pointer-events:none;overflow:visible;
       aspect-ratio:${HUD_TASK_TRACK_SIZE.w}/${HUD_TASK_TRACK_SIZE.h};
       background:url(${HUD_TASK_TRACK_BG}) center center/100% 100% no-repeat;
+      margin-left:${HUD_TASK_TRACK_OFFSET_LEFT};
     `;
     this.questLabel = document.createElement('div');
     this.questLabel.style.cssText = uiPlainText(`
@@ -5696,19 +5852,16 @@ export class GameScene {
     this.stageBadge.style.cssText = 'color:#ffe08a;font-size:clamp(11px,2.8vw,15px);font-weight:900;text-shadow:0 1px 3px rgba(0,0,0,0.9);letter-spacing:1px;white-space:nowrap;';
     rightHudStack.appendChild(this.stageBadge);
 
-    // Timer (no background box)
+    // Timer 改为屏幕顶部居中的独立胶囊（参考 megabonk 风格 UI）
+    const timerCenterWrap = document.createElement('div');
+    timerCenterWrap.style.cssText = 'position:absolute;top:max(12px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:1;';
     this.timerLabel = document.createElement('div');
-    this.timerLabel.style.cssText = uiPlainText('display:flex;align-items:center;gap:5px;font-size:clamp(11px,2.8vw,18px);font-weight:bold;font-variant-numeric:tabular-nums;white-space:nowrap;');
-    const timerIcon = document.createElement('img');
-    timerIcon.src = STOPWATCH_ICON_PATH;
-    timerIcon.alt = '';
-    timerIcon.draggable = false;
-    timerIcon.style.cssText = 'height:clamp(14px,3.2vw,22px);width:auto;aspect-ratio:1/1;object-fit:contain;flex-shrink:0;display:block;';
+    this.timerLabel.style.cssText = 'display:flex;align-items:center;justify-content:center;padding:clamp(2px,0.6vw,5px) clamp(10px,2.6vw,16px);background:rgba(40,30,55,0.82);border-radius:9999px;box-shadow:0 2px 6px rgba(0,0,0,0.38),inset 0 1px 0 rgba(255,255,255,0.04);font-size:clamp(11px,2.8vw,15px);font-weight:bold;color:#fff;text-shadow:0 2px 0 rgba(0,0,0,0.7),0 0 3px rgba(0,0,0,0.55);font-variant-numeric:tabular-nums;letter-spacing:0.5px;line-height:1;white-space:nowrap;';
     this.timerTimeEl = document.createElement('span');
     this.timerTimeEl.textContent = '00:00';
-    this.timerLabel.appendChild(timerIcon);
     this.timerLabel.appendChild(this.timerTimeEl);
-    rightHudStack.appendChild(this.timerLabel);
+    timerCenterWrap.appendChild(this.timerLabel);
+    this.hudContainer.appendChild(timerCenterWrap);
 
     // Gold this run (moved into the top-right cluster, no background box)
     this.goldLabel = createGoldBadge(0);
@@ -6319,6 +6472,7 @@ export class GameScene {
       this.updateCamera(state);
     }
     this.updateWeather(state, dt);
+    this.updateDarkComic(state, dt);
 
     // 游戏已结束（失败 / 胜利）后不再触发新的镜头晃动，避免"死后被打仍在晃"的违和感
     const isGameEnded = state.phase === 'defeat' || state.phase === 'victory';
@@ -8516,12 +8670,11 @@ export class GameScene {
     overlay.style.cssText = inGameChoiceOverlayStyle(`
       z-index:320;pointer-events:auto;
       background:radial-gradient(circle at 50% 45%, rgba(255,220,120,0.16), rgba(0,0,0,0.78) 62%);
-      font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;
-    `);
+      font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;    `);
 
     const centerGroup = createInGameChoiceCenterGroup();
     const title = document.createElement('div');
-    title.style.cssText = uiPlainText('color:#ffcc00;font-size:clamp(20px,5.5vw,24px);font-weight:bold;margin-bottom:clamp(12px,3vh,20px);text-align:center;width:100%;');
+    title.style.cssText = uiColoredTextBold('#ffcc00') + 'font-size:clamp(20px,5.5vw,24px);font-weight:bold;margin-bottom:clamp(12px,3vh,20px);text-align:center;width:100%;';
     title.textContent = t('chest.rewardTitle');
     centerGroup.appendChild(title);
 
@@ -8667,11 +8820,13 @@ export class GameScene {
     toast.style.cssText = `
       position:fixed;top:18%;left:50%;transform:translateX(-50%) scale(0.85);
       z-index:250;pointer-events:none;text-align:center;
-      font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;opacity:0;
+      font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;opacity:0;
     `;
 
     const title = document.createElement('div');
-    title.style.cssText = `color:${accent};font-size:clamp(22px,7vw,28px);font-weight:bold;letter-spacing:2px;text-shadow:0 0 20px ${accent}88,0 2px 8px rgba(0,0,0,0.8);`;
+    // 2px 8 向黑描边 + 原本的彩色 glow + 软投影：描边吃在最前保证字形锐利，glow/投影叠在外圈。
+    title.style.cssText = uiColoredTextBold(accent, `0 0 20px ${accent}88,0 2px 8px rgba(0,0,0,0.8)`)
+      + 'font-size:clamp(22px,7vw,28px);font-weight:bold;letter-spacing:2px;';
     title.textContent = t('upgrade.compensationTitle');
     toast.appendChild(title);
 
@@ -8681,7 +8836,8 @@ export class GameScene {
     toast.appendChild(levelLine);
 
     const rewardLine = document.createElement('div');
-    rewardLine.style.cssText = `color:${accent};font-size:clamp(18px,5.5vw,22px);font-weight:bold;margin-top:8px;text-shadow:0 0 12px ${accent}66;`;
+    rewardLine.style.cssText = uiColoredTextBold(accent, `0 0 12px ${accent}66`)
+      + 'font-size:clamp(18px,5.5vw,22px);font-weight:bold;margin-top:8px;';
     rewardLine.textContent = evt.kind === 'silver'
       ? t('upgrade.compensationSilver', { amount: String(evt.amount) })
       : t('upgrade.compensationGold', { amount: String(evt.amount) });
@@ -9170,12 +9326,12 @@ export class GameScene {
     this.shrinePanel = document.createElement('div');
     this.shrinePanel.dataset.cameraBlock = 'true';
     this.shrinePanel.style.cssText = inGameChoiceOverlayStyle(
-      'background:radial-gradient(ellipse at center,rgba(40,30,80,0.85),rgba(0,0,0,0.85));z-index:300;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;',
+      'background:radial-gradient(ellipse at center,rgba(40,30,80,0.85),rgba(0,0,0,0.85));z-index:300;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;',
     );
 
     const centerGroup = createInGameChoiceCenterGroup('min(96vw,760px)');
     const title = document.createElement('div');
-    title.style.cssText = uiPlainText('color:#ffd966;font-size:clamp(20px,5.5vw,26px);font-weight:bold;margin-bottom:clamp(12px,3vh,20px);letter-spacing:1px;text-align:center;width:100%;');
+    title.style.cssText = uiColoredTextBold('#ffd966') + 'font-size:clamp(20px,5.5vw,26px);font-weight:bold;margin-bottom:clamp(12px,3vh,20px);letter-spacing:1px;text-align:center;width:100%;';
     title.textContent = t('shrine.title');
     centerGroup.appendChild(title);
 
@@ -11281,11 +11437,13 @@ export class GameScene {
       box-shadow:0 0 34px ${accentColor}88,0 18px 70px rgba(0,0,0,0.68);
       color:#fff;text-align:center;pointer-events:none;z-index:260;opacity:0;
       transition:opacity 180ms ease,transform 220ms ease;
-      font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;box-sizing:border-box;
+      font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;box-sizing:border-box;
     `;
 
     const title = document.createElement('div');
-    title.style.cssText = `color:${accentColor};font-size:clamp(28px,8vw,54px);font-weight:900;letter-spacing:2px;text-shadow:0 0 18px ${accentColor},0 3px 8px #000;`;
+    // boss banner：保留 accent glow + 黑色硬投影，再叠 2px 黑描边让 28–54px 大字在彩色背景里仍清晰。
+    title.style.cssText = uiColoredTextBold(accentColor, `0 0 18px ${accentColor},0 3px 8px #000`)
+      + 'font-size:clamp(28px,8vw,54px);font-weight:900;letter-spacing:2px;';
     title.textContent = titleText;
 
     const body = document.createElement('div');
@@ -11320,12 +11478,12 @@ export class GameScene {
     this.upgradePanel = document.createElement('div');
     this.upgradePanel.dataset.cameraBlock = 'true';
     this.upgradePanel.style.cssText = inGameChoiceOverlayStyle(
-      'background:rgba(0,0,0,0.7);z-index:300;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;',
+      'background:rgba(0,0,0,0.7);z-index:300;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;',
     );
 
     const centerGroup = createInGameChoiceCenterGroup();
     const title = document.createElement('div');
-    title.style.cssText = uiPlainText('color:#ffcc00;font-size:clamp(20px,5.5vw,24px);font-weight:bold;margin-bottom:clamp(12px,3vh,20px);text-align:center;width:100%;');
+    title.style.cssText = uiColoredTextBold('#ffcc00') + 'font-size:clamp(20px,5.5vw,24px);font-weight:bold;margin-bottom:clamp(12px,3vh,20px);text-align:center;width:100%;';
     title.textContent = t('upgrade.title');
     centerGroup.appendChild(title);
 
@@ -11465,7 +11623,7 @@ export class GameScene {
 
     const overlay = document.createElement('div');
     overlay.dataset.cameraBlock = 'true';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:400;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:400;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
     this.installItemTooltipHandlers(overlay);
 
     const sideMaxH = `calc(100% - ${sideInset * 2}px)`;
@@ -11750,7 +11908,7 @@ export class GameScene {
 
     const overlay = document.createElement('div');
     overlay.dataset.cameraBlock = 'true';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:420;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:420;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
     this.installItemTooltipHandlers(overlay);
 
     const sideMaxH = `calc(100% - ${sideInset * 2}px)`;
@@ -12099,8 +12257,7 @@ function ensureSelectableCharacter(): void {
 
 const PREP_SCREEN_STYLE = `
   position:fixed;top:0;left:0;width:100%;height:100%;box-sizing:border-box;
-  z-index:550;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;
-  background:#0a0a1a url(${UI_COMMON_BG_PATH}) center center/cover no-repeat;
+  z-index:550;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;  background:#0a0a1a url(${UI_COMMON_BG_PATH}) center center/cover no-repeat;
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
   padding-left:env(safe-area-inset-left,0px);
@@ -12109,7 +12266,7 @@ const PREP_SCREEN_STYLE = `
 
 const PREP_SCREEN_HEADER_STYLE = `
   display:flex;align-items:center;justify-content:space-between;width:100%;flex-shrink:0;
-  padding:4px 12px 4px 14px;box-sizing:border-box;z-index:2;
+  padding:0 12px 4px 0;box-sizing:border-box;z-index:2;
 `;
 
 /** 预备界面（英雄/难度选择）的固定设计尺寸：横屏锚定，不随屏幕放大、不换行重排 */
@@ -12128,26 +12285,31 @@ function createPrepBackButton(onClick: () => void): HTMLButtonElement {
   const backBtn = document.createElement('button');
   backBtn.type = 'button';
   backBtn.setAttribute('aria-label', t('characterSelect.back'));
+  // 红丝带形 SVG 的画布是 837×188，但实际可见图形（红丝带 + 黑色阴影）只覆盖 viewBox 左侧的
+  // x∈[0, ~637]，右侧 ~24% 是透明空白（Figma 切图遗留）。如果让按钮按 SVG 自然宽渲染，
+  // 标题会被这片透明空白往右顶 ~47px，看起来"和红丝带隔得很远"。
+  // 这里把按钮盒子宽高比锁到"可见部分"的 637:188，再用 overflow:hidden 把 img 自然宽溢出
+  // 的透明右段裁掉，从而让标题（leftGroup 里 6px gap 之后的 span）紧贴红丝带末端。
+  // - margin/padding 全部清零 + header `padding-left:0` → 红丝带最左像素贴屏幕左边缘
+  // - transform-origin:left center → hover 缩放时丝带头部不会从屏幕边缘拉开
   backBtn.style.cssText = `
-    min-width:36px;min-height:36px;padding:0;border:none;background:transparent;cursor:pointer;
-    touch-action:manipulation;display:flex;align-items:center;justify-content:center;flex-shrink:0;
-    transition:transform 0.15s;
+    height:44px;aspect-ratio:637/188;padding:0;margin:0;border:none;background:transparent;cursor:pointer;
+    touch-action:manipulation;display:flex;align-items:center;justify-content:flex-start;flex-shrink:0;
+    overflow:hidden;transform-origin:left center;transition:transform 0.15s;
   `;
   const backImg = document.createElement('img');
   backImg.src = CHARACTER_SELECT_BACK_ICON;
   backImg.alt = '';
   backImg.draggable = false;
-  backImg.style.cssText = 'width:36px;height:36px;object-fit:contain;pointer-events:none;';
+  // 图片按 SVG 自然 837:188 比例渲染（≈ 196px 宽 @44px 高），右侧透明 ~47px 由按钮盒
+  // overflow:hidden 裁掉。不能给 img 设 width:100%，那会把 SVG 横向压扁。
+  backImg.style.cssText = 'height:100%;width:auto;display:block;pointer-events:none;flex-shrink:0;';
   backBtn.appendChild(backImg);
   backBtn.addEventListener('mouseenter', () => { backBtn.style.transform = 'scale(1.05)'; });
   backBtn.addEventListener('mouseleave', () => { backBtn.style.transform = 'scale(1)'; });
   backBtn.addEventListener('click', onClick);
   return backBtn;
 }
-
-const PREP_SCREEN_TITLE_STYLE = uiPlainText(
-  'font-size:clamp(15px,4vw,20px);font-weight:bold;white-space:nowrap;',
-);
 
 function createPrepScreenHeader(
   title: string,
@@ -12157,14 +12319,26 @@ function createPrepScreenHeader(
   const header = document.createElement('header');
   header.style.cssText = PREP_SCREEN_HEADER_STYLE;
 
-  const leftGroup = document.createElement('div');
-  leftGroup.style.cssText = 'display:flex;align-items:center;gap:6px;min-width:0;';
-  leftGroup.appendChild(createPrepBackButton(onBack));
+  // 标题直接叠在红丝带的宽阔上半段（"丝带 logo"风），不再做 flex 行内排版。
+  // - 标题 append 到 backBtn 内部（而不是 leftGroup 同级），这样 backBtn 在 hover 时的
+  //   `transform:scale(1.05)` 会带着标题一起缩放，丝带和文字同步放大。
+  // - backBtn 需要 position:relative 给 absolute 子元素提供坐标系（默认 button 是 static）。
+  // - 定位按红丝带的几何：箭头末端 ~28px，丝带顶部 y≈5 处最宽；2 字标题 14px ≈ 28px 宽，
+  //   起点 34 + 文字 28 = 62px，远小于丝带顶端可容纳的 ~135px。
+  // - pointer-events:none → 文字不挡住 back 的 click / hover 检测，整条丝带都能点。
+  // - 白字 + 黑色描边阴影，保证盖在红底（#CD4040）上仍清晰。
+  const backBtn = createPrepBackButton(onBack);
+  backBtn.style.position = 'relative';
+
   const titleEl = document.createElement('span');
-  titleEl.style.cssText = PREP_SCREEN_TITLE_STYLE;
+  // 描边走 textStyle.uiPlainTextBold（2px 8 向 + 底投影），项目里大字号标题统一用这套。
+  titleEl.style.cssText = uiPlainTextBold(
+    'position:absolute;left:50px;top:7px;pointer-events:none;'
+    + 'font-weight:bold;font-size:24px;line-height:1;letter-spacing:0.04em;white-space:nowrap;',
+  );
   titleEl.textContent = title;
-  leftGroup.appendChild(titleEl);
-  header.appendChild(leftGroup);
+  backBtn.appendChild(titleEl);
+  header.appendChild(backBtn);
 
   header.appendChild(rightContent);
   return header;
@@ -12172,10 +12346,9 @@ function createPrepScreenHeader(
 
 const SHOP_OVERLAY_STYLE = `
   position:fixed;top:0;left:0;width:100%;height:100%;box-sizing:border-box;
-  background:#0a0a1a url(${UI_COMMON_BG_PATH}) center center/cover no-repeat;
+  background:#1a2332 url(${SHOP_QUEST_PAGE_BG_IMAGE}) center center/cover no-repeat;
   display:flex;flex-direction:column;
-  z-index:600;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;
-  padding-top:env(safe-area-inset-top,0px);
+  z-index:600;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;  padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
   padding-left:env(safe-area-inset-left,0px);
   padding-right:env(safe-area-inset-right,0px);
@@ -12183,10 +12356,9 @@ const SHOP_OVERLAY_STYLE = `
 
 const QUESTS_OVERLAY_STYLE = `
   position:fixed;top:0;left:0;width:100%;height:100%;box-sizing:border-box;
-  background:#0a0a1a url(${UI_COMMON_BG_PATH}) center center/cover no-repeat;
+  background:#1a2332 url(${SHOP_QUEST_PAGE_BG_IMAGE}) center center/cover no-repeat;
   display:flex;flex-direction:column;
-  z-index:600;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;
-  padding-top:env(safe-area-inset-top,0px);
+  z-index:600;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;  padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
   padding-left:env(safe-area-inset-left,0px);
   padding-right:env(safe-area-inset-right,0px);
@@ -12618,10 +12790,10 @@ function createCharacterConfirmButton(label: string, onClick: () => void): HTMLD
 }
 
 /**
- * 角色面板 5 个属性行前置的小圆徽章 icon。
+ * 角色面板 5 个属性行前置的小方形徽章 icon。
  *
- * 项目里没有这套"小圆 + 白图形"的现成资源（`public/ui/icon/Shrine_Reward/*.png`
- * 都是大尺寸插画），所以这里用**内联 SVG** 拼出来：圆背景上叠一个白色 path，
+ * 项目里没有这套"小徽章 + 白图形"的现成资源（`public/ui/icon/Shrine_Reward/*.png`
+ * 都是大尺寸插画），所以这里用**内联 SVG** 拼出来：圆角方形背景上叠一个白色 path，
  * 颜色按目标视觉（参考 Brawl Stars 风格）选定，整体只占一行字高度。
  *
  * 未来若有正式 icon 资源，把这里换成 `<img src=...>` 即可。
@@ -12663,11 +12835,13 @@ function createStatIcon(key: CharacterStatKey): HTMLElement {
     flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;
     width:clamp(16px,3.4vw,20px);height:clamp(16px,3.4vw,20px);
   `;
+  // 背景从 r=11 的圆改成 22×22 的圆角方形（rx=3），让 5 个属性图标统一变方。
+  // 内嵌的 glyph path 都画在 24×24 viewBox 中心 ±10 范围内，圆变方后图形位置无需调整。
   wrap.innerHTML =
     `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" `
     + `style="width:100%;height:100%;display:block;">`
-    + `<circle cx="12" cy="12" r="11" fill="${STAT_ICON_BG[key]}" `
-    + `stroke="rgba(0,0,0,0.45)" stroke-width="1.4"/>`
+    + `<rect x="1" y="1" width="22" height="22" rx="3" ry="3" `
+    + `fill="${STAT_ICON_BG[key]}" stroke="rgba(0,0,0,0.45)" stroke-width="1.4"/>`
     + STAT_ICON_GLYPH[key]
     + `</svg>`;
   return wrap;
@@ -12781,9 +12955,10 @@ function refreshCharacterSelectDetail(): void {
     padding:0 ${characterDetailInsetXPct(CHARACTER_DETAIL_TITLE_BAR_PAD_X)};
   `;
   const nameEl = document.createElement('h2');
-  nameEl.style.cssText = detailFont(
-    'clamp(16px,4.2vw,22px)',
-    'font-weight:bold;margin:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;',
+  // 与"商店"红丝带标题、商店卡片标题统一描边强度（uiPlainTextBold：2px 8 向 + 底投影），
+  // 让所有"卡通丝带 logo"风的大字号标题保持一致；这里 16~22px 字号正好在 bold 描边的安全区间。
+  nameEl.style.cssText = uiPlainTextBold(
+    'margin:0;line-height:1.45;font-size:clamp(16px,4.2vw,22px);font-weight:bold;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;',
   );
   nameEl.textContent = t(`character.${id}`);
   titleBar.appendChild(nameEl);
@@ -13170,7 +13345,13 @@ function showTierSelectScreen(): void {
   };
 
   tierSelectEl = document.createElement('div');
-  tierSelectEl.style.cssText = `${PREP_SCREEN_STYLE}display:flex;flex-direction:column;`;
+  // 共用 PREP_SCREEN_STYLE 的布局/层级，但难度选择页单独换背景：
+  // 把 PREP_SCREEN_STYLE 里的 background 覆盖为沙漠场景，其他 prep 页面不受影响。
+  tierSelectEl.style.cssText = `
+    ${PREP_SCREEN_STYLE}
+    display:flex;flex-direction:column;
+    background:#1a2332 url(${TIER_SELECT_PAGE_BG_IMAGE}) center bottom / cover no-repeat;
+  `;
 
   const header = document.createElement('header');
   header.dataset.region = 'header';
@@ -13218,8 +13399,14 @@ function showTierSelectScreen(): void {
         showCharacterSelectScreen();
         return;
       }
-      destroyTierSelectScreen();
-      startGame(selectedCharacter);
+      const character = selectedCharacter;
+      playTransition(
+        () => {
+          destroyTierSelectScreen();
+          startGame(character);
+        },
+        { duration: 800 },
+      );
     },
     TIER_START_BUTTON_FRAME,
     TIER_START_BUTTON_PRESSED,
@@ -13273,7 +13460,7 @@ function appendTierPanelIcon(card: HTMLElement, tier: DifficultyTier): void {
 function appendTierPanelTitle(card: HTMLElement, tier: DifficultyTier): void {
   const titleEl = document.createElement('div');
   titleEl.textContent = t(`tier.${tier}`);
-  titleEl.style.cssText = uiPlainText(`
+  titleEl.style.cssText = uiPlainTextBold(`
     position:absolute;box-sizing:border-box;
     left:${tierInsetXPct(200)};right:${tierInsetXPct(200)};
     top:${TIER_TITLE_BAR_LAYOUT.topPct}%;height:${TIER_TITLE_BAR_LAYOUT.heightPct}%;
@@ -13306,14 +13493,11 @@ function appendTierPanelStatRows(card: HTMLElement, cfg: (typeof TIER_CONFIGS)[D
   });
 }
 
-function createTierPanelSelectButton(isSelected: boolean, onClick: () => void): HTMLDivElement {
+function createTierPanelSelectButton(isSelected: boolean): HTMLDivElement {
   const btn = document.createElement('div');
-  btn.setAttribute('role', 'button');
-  btn.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
   btn.style.cssText = `
     position:relative;width:100%;min-width:44px;max-width:100%;
-    cursor:${isSelected ? 'default' : 'pointer'};user-select:none;touch-action:manipulation;
-    transition:transform 0.15s;
+    user-select:none;pointer-events:none;
   `;
 
   const frame = document.createElement('img');
@@ -13331,18 +13515,12 @@ function createTierPanelSelectButton(isSelected: boolean, onClick: () => void): 
 
   btn.appendChild(frame);
   btn.appendChild(labelEl);
-  if (!isSelected) {
-    btn.addEventListener('mouseenter', () => { btn.style.transform = 'scale(1.05)'; });
-    btn.addEventListener('mouseleave', () => { btn.style.transform = 'scale(1)'; });
-    btn.addEventListener('click', onClick);
-  }
   return btn;
 }
 
 function appendTierPanelSelectButton(
   card: HTMLElement,
   isSelected: boolean,
-  onClick: () => void,
 ): void {
   const wrap = document.createElement('div');
   wrap.style.cssText = `
@@ -13350,8 +13528,9 @@ function appendTierPanelSelectButton(
     transform:translateX(-50%);
     width:${TIER_SELECT_BUTTON_LAYOUT.widthPct}%;
     min-width:44px;max-width:60%;box-sizing:border-box;
+    pointer-events:none;
   `;
-  wrap.appendChild(createTierPanelSelectButton(isSelected, onClick));
+  wrap.appendChild(createTierPanelSelectButton(isSelected));
   card.appendChild(wrap);
 }
 
@@ -13378,24 +13557,39 @@ function showTierSelect(onSelect: (tier: DifficultyTier) => void): HTMLDivElemen
     `;
 
     const card = document.createElement('div');
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
     card.setAttribute('aria-label', t(`tier.${tier}`));
+    const selectedScale = 1.07;
     card.style.cssText = `
       position:relative;width:100%;max-width:100%;
       aspect-ratio:${TIER_PANEL_SIZE.w}/${TIER_PANEL_SIZE.h};height:auto;
       box-sizing:border-box;
       background:url(${TIER_PANEL_BGS[tier]}) center center/contain no-repeat;
       border:none;overflow:visible;
+      cursor:${isSelected ? 'default' : 'pointer'};
+      user-select:none;touch-action:manipulation;
+      transition:transform 0.18s ease-out, filter 0.18s ease-out;
+      transform:${isSelected ? `scale(${selectedScale})` : 'scale(1)'};
+      transform-origin:center center;
+      z-index:${isSelected ? 2 : 1};
+      filter:${isSelected ? 'drop-shadow(0 6px 14px rgba(0,0,0,0.45))' : 'none'};
     `;
     appendTierPanelIcon(card, tier);
     appendTierPanelTitle(card, tier);
     appendTierPanelStatRows(card, cfg);
-    appendTierPanelSelectButton(card, isSelected, () => {
-      if (selectedTier === tier) return;
-      selectedTier = tier;
-      onSelect(tier);
-      const newPanel = showTierSelect(onSelect);
-      panel.replaceWith(newPanel);
-    });
+    appendTierPanelSelectButton(card, isSelected);
+    if (!isSelected) {
+      card.addEventListener('mouseenter', () => { card.style.transform = 'scale(1.05)'; });
+      card.addEventListener('mouseleave', () => { card.style.transform = 'scale(1)'; });
+      card.addEventListener('click', () => {
+        if (selectedTier === tier) return;
+        selectedTier = tier;
+        onSelect(tier);
+        const newPanel = showTierSelect(onSelect);
+        panel.replaceWith(newPanel);
+      });
+    }
     col.appendChild(card);
 
     panel.appendChild(col);
@@ -13456,7 +13650,9 @@ function createMainMenuButton(
   // label 区域 = [icon 右沿 + gap, 按钮右沿 - 内 padding]
   // left = icon.left(10) + icon.width(27) + gap(8) = 45；右侧留 12 与 icon 视觉对称。
   // text-align:center → 短标签（"商店"/"任务"）也在右侧矩形里居中，不会贴 icon 也不会贴右边框。
-  labelEl.style.cssText = uiPlainText(`
+  // 与"商店"红丝带标题、商店卡片标题、角色名统一描边强度（uiPlainTextBold：2px 8 向 + 底投影），
+  // 让首页"开始游戏 / 商店 / 任务"按钮文字也吃同一档"卡通丝带 logo"风的厚描边。
+  labelEl.style.cssText = uiPlainTextBold(`
     position:absolute;left:${uiPx(45)}px;right:${uiPx(12)}px;top:50%;transform:translateY(-50%);
     font-size:${uiPx(15)}px;font-weight:bold;line-height:1.2;white-space:nowrap;
     text-align:center;text-overflow:ellipsis;overflow:hidden;
@@ -13486,8 +13682,7 @@ function showMainMenu(): void {
   mainMenuEl.style.cssText = `
     position:fixed;top:0;left:0;width:100%;height:100%;
     display:flex;flex-direction:column;align-items:stretch;
-    z-index:500;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;
-    overflow:hidden;
+    z-index:500;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;    overflow:hidden;
     background:#0a0a1a url(${LOBBY_BG_PATH}) center center/cover no-repeat;
     ${OVERLAY_SAFE_AREA}
     padding-top:max(16px,env(safe-area-inset-top,0px));
@@ -13634,7 +13829,11 @@ function showShopOverlay(): void {
     `;
 
     const nameEl = document.createElement('div');
-    nameEl.style.cssText = shopText(1.2, 'font-weight:bold;text-overflow:ellipsis;white-space:nowrap;max-width:100%;flex-shrink:0;');
+    // 与商店红丝带标题（uiPlainTextBold，2px 8 向描边 + 底投影）统一描边强度，
+    // 让卡片标题在浅蓝面板上的"卡通丝带 logo"质感一致；不再用 1px 细描边的 uiPlainText。
+    nameEl.style.cssText = uiPlainTextBold(
+      'margin:0;font-size:1.2em;line-height:1.2;font-weight:bold;text-overflow:ellipsis;white-space:nowrap;max-width:100%;flex-shrink:0;',
+    );
     nameEl.textContent = t(upgrade.nameKey);
     cardInner.appendChild(nameEl);
 
@@ -13923,9 +14122,9 @@ function createQuestRow(
 ): HTMLDivElement {
   // Quest_item_bg.svg 底部装饰浪占 SVG 高 13.1% + 灰阴影底 6.7%。
   // padding-bottom 留 13% × rowHeight + 几像素呼吸，避免文字/进度条压在浪和阴影上。
-  const rowMinHeight = progress.completed
-    ? 'clamp(50px,12.5vw,60px)'
-    : 'clamp(68px,15.5vw,84px)';
+  // 所有状态用同一行高：SVG 用 9-slice 风格的整图拉伸（preserveAspectRatio=none），
+  // 不同高度会让 9954×1241 主板被纵向压扁，已领取行视觉上就会"背景缩水"。
+  const rowMinHeight = 'clamp(68px,15.5vw,84px)';
 
   const row = document.createElement('div');
   row.style.cssText = `
@@ -13963,7 +14162,8 @@ function createQuestRow(
     questFlag.src = BAR_ASSETS.quest.flag;
     questFlag.alt = '';
     questFlag.draggable = false;
-    questFlag.style.cssText = 'position:absolute;left:-1px;top:50%;transform:translateY(-50%);height:150%;width:auto;pointer-events:none;user-select:none;display:block;';
+    // 旗子相对进度条中心略向上偏 2px，避免视觉上压在进度条下沿。
+    questFlag.style.cssText = 'position:absolute;left:-1px;top:50%;transform:translate(0,calc(-50% - 4px));height:150%;width:auto;pointer-events:none;user-select:none;display:block;';
     progressBarContainer.appendChild(questFlag);
     infoEl.appendChild(progressBarContainer);
 
@@ -14360,9 +14560,8 @@ function showBootLoadingOverlay(): void {
 
   const title = document.createElement('div');
   title.textContent = t('game.title');
-  title.style.cssText =
-    'font-size:clamp(32px,10vw,64px);font-weight:700;letter-spacing:2px;' +
-    'text-shadow:3px 3px 0 rgba(0,0,0,0.35),-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000;';
+  // 主菜单游戏标题（loading 屏 / 大 logo 字）：32–64px 用 2px 8 向描边统一卡通厚度感。
+  title.style.cssText = uiPlainTextBold('font-size:clamp(32px,10vw,64px);font-weight:700;letter-spacing:2px;');
 
   const track = document.createElement('div');
   track.style.cssText =

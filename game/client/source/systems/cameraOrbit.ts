@@ -36,6 +36,10 @@ const CAM_COLLISION_BUFFER = 0.35; // 镜头离遮挡物的余量
 const CAM_MIN_FRAC = 0.18;         // 最近不小于满臂长的此比例（别钻进角色）
 const CAM_SHRINK_RATE = 30;        // 拉近：快（避免穿墙 / 角色被挡）
 const CAM_GROW_RATE = 3.5;         // 恢复：慢（去顿挫）
+// raycast 节流：每 N 帧执行一次 intersectObjects（O(关卡三角形数)，是 25% CPU 大头）。
+// camFrac 本身有指数 lerp 平滑（CAM_SHRINK_RATE / CAM_GROW_RATE），16-32ms 的命中刷新延迟
+// 在视觉上完全感知不到。命中结果在帧间用 cachedTargetFrac 复用。
+const CAM_RAYCAST_STRIDE = 2;
 
 export class CameraOrbit {
   public camDistance = 7;
@@ -54,6 +58,8 @@ export class CameraOrbit {
   private occluders: THREE.Object3D[] = [];
   private readonly raycaster = new THREE.Raycaster();
   private camFrac = 1; // 当前臂长比例（平滑），1=满臂长
+  private cachedTargetFrac = 1; // 上次 raycast 命中后计算出的目标臂长比例，节流帧之间复用
+  private raycastFrame = 0;     // 节流计数器
   private readonly _pivot = new THREE.Vector3();
   private readonly _fullCam = new THREE.Vector3();
   private readonly _dir = new THREE.Vector3();
@@ -159,20 +165,29 @@ export class CameraOrbit {
     );
     this._pivot.set(this.ghostX, this.ghostY + LOOK_AT_HEIGHT, this.ghostZ);
 
-    // 碰撞推镜：从枢轴朝镜头射线，命中遮挡物则按命中距离收臂长
-    let targetFrac = 1;
+    // 碰撞推镜：从枢轴朝镜头射线，命中遮挡物则按命中距离收臂长。
+    // 注意：intersectObjects 是 O(关卡三角形数) 的暴力搜索，每帧跑会吃 25% CPU；
+    // camFrac 本身平滑，节流到每 CAM_RAYCAST_STRIDE 帧一次完全够用。
+    let targetFrac = this.cachedTargetFrac;
     if (this.occluders.length > 0) {
-      this._dir.copy(this._fullCam).sub(this._pivot);
-      const fullLen = this._dir.length();
-      if (fullLen > 1e-3) {
-        this._dir.multiplyScalar(1 / fullLen);
-        this.raycaster.set(this._pivot, this._dir);
-        this.raycaster.far = fullLen;
-        const hits = this.raycaster.intersectObjects(this.occluders, true);
-        if (hits.length > 0) {
-          targetFrac = Math.min(1, Math.max(CAM_MIN_FRAC, (hits[0].distance - CAM_COLLISION_BUFFER) / fullLen));
+      this.raycastFrame = (this.raycastFrame + 1) % CAM_RAYCAST_STRIDE;
+      if (this.raycastFrame === 0) {
+        this._dir.copy(this._fullCam).sub(this._pivot);
+        const fullLen = this._dir.length();
+        if (fullLen > 1e-3) {
+          this._dir.multiplyScalar(1 / fullLen);
+          this.raycaster.set(this._pivot, this._dir);
+          this.raycaster.far = fullLen;
+          const hits = this.raycaster.intersectObjects(this.occluders, true);
+          targetFrac = hits.length > 0
+            ? Math.min(1, Math.max(CAM_MIN_FRAC, (hits[0].distance - CAM_COLLISION_BUFFER) / fullLen))
+            : 1;
+          this.cachedTargetFrac = targetFrac;
         }
       }
+    } else {
+      this.cachedTargetFrac = 1;
+      targetFrac = 1;
     }
     // 拉近快、恢复慢（去顿挫）
     const rate = targetFrac < this.camFrac ? CAM_SHRINK_RATE : CAM_GROW_RATE;

@@ -134,6 +134,44 @@ import zhLocale from '../../../i18n/zh.json';
 import enLocale from '../../../i18n/en.json';
 
 // =============================================================================
+// Pool Caps & Resource Disposal
+// =============================================================================
+// 对象池上限：超过这个数量的"空闲"实例不再缓存，直接释放。
+// 之所以要设上限：游戏过程中如果某个瞬间有很多敌人/投射物同时存在，池子会被
+// 撑大；当后续不再需要那么多时，多余的实例若不释放，会一直占据内存（材质/
+// 骨架包装器/动画 mixer 都会留在 GPU/JS 堆里），最终触发 Major GC 大暂停。
+const ENEMY_POOL_CAP_PER_TYPE = 24;
+const PROJECTILE_POOL_CAP = 16;
+const AREA_EFFECT_POOL_CAP_PER_KIND = 8;
+
+// userData 上的标记：true 表示此材质是"为单个对象 clone 出来的私有副本"，
+// 当对象被丢弃时可以安全 dispose；不带此标记的材质视为全局共享，禁止 dispose
+// （否则会破坏其它仍在使用该材质的 mesh）。
+const OWNED_CLONE_KEY = '__ownedClone';
+
+/**
+ * 释放一个被丢弃对象（池子超限被踢出）的可释放资源。
+ *
+ * 原则：
+ *  - 只 dispose 带 OWNED_CLONE_KEY 的材质（来自 cloneHitFlashMaterial）。
+ *  - 永不 dispose geometry —— SkeletonUtils.clone / Object3D.clone 共享几何体，
+ *    随便 dispose 会让其它克隆体的 GPU 资源失效。
+ *  - 几何体 GPU 资源由原始模型持有，clone 包装器被 GC 后整体内存会下降。
+ */
+function disposeOwnedResources(obj: THREE.Object3D): void {
+  obj.traverse((node) => {
+    const mesh = node as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.material) return;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const m of mats) {
+      if (m && m.userData && m.userData[OWNED_CLONE_KEY]) {
+        m.dispose();
+      }
+    }
+  });
+}
+
+// =============================================================================
 // GPU Curved World (Rolling Horizon) System
 // =============================================================================
 
@@ -524,6 +562,14 @@ const ENEMY_ANIM_LOD_NEAR_SQ = ENEMY_ANIM_LOD_NEAR * ENEMY_ANIM_LOD_NEAR;
 const ENEMY_ANIM_LOD_FAR_SQ = ENEMY_ANIM_LOD_FAR * ENEMY_ANIM_LOD_FAR;
 const ENEMY_ANIM_LOD_MID_STRIDE = 2;   // 中距：每 2 帧更新一次
 const ENEMY_ANIM_LOD_FAR_STRIDE = 4;   // 远距：每 4 帧更新一次
+
+// ── 敌人视距剔除（visible=false 直接跳过渲染 + skeleton.update + boneTexture 上传）─────
+// Three.js 会在 projectObject 里以 obj.visible 短路整棵子树，连 SkinnedMesh 的骨骼矩阵
+// 重算和 texSubImage2D 上传都会跳过。这是真正能砍掉骨骼纹理上传带宽的唯一办法。
+// 35m：地图半径 60m（角到角 ~85m），35m 已覆盖玩家 FOV 内主要威胁；屏幕上更小的远怪
+// 在 35m+ 几乎只占几像素，可见 pop-in 极少；夜晚雾起完全无感。
+const ENEMY_VISIBLE_CULL_DIST = 35;
+const ENEMY_VISIBLE_CULL_SQ = ENEMY_VISIBLE_CULL_DIST * ENEMY_VISIBLE_CULL_DIST;
 
 const WEAPON_PROJECTILE_COLORS: Record<string, number> = {
   sword: 0xcccccc,
@@ -4136,7 +4182,14 @@ export class GameScene {
   private axeObjects: Map<number, THREE.Object3D> = new Map(); // axe projectile id → cloned model
   private weaponObjects: Map<number, THREE.Object3D> = new Map(); // other weapon projectiles → cloned model
   private bossProjectileObjects: Map<number, THREE.Object3D> = new Map(); // boss（机器人）弹丸 → bullet.glb 克隆
+  // 投射物对象池：投射物消失时回收实例避免每发都 model.clone()。带容量上限，超
+  // 限实例直接释放，防止池子被某次峰值无限撑大。
+  private axePool: THREE.Object3D[] = [];
+  private weaponPool: Map<string, THREE.Object3D[]> = new Map(); // weaponType → 池
+  private bossProjPool: THREE.Object3D[] = [];
   private areaEffectObjects: Map<number, THREE.Object3D> = new Map(); // area effect id → mesh (gas/ripple/scorch/beam)
+  // 区域特效对象池（按 kind 分池）：消失时回收实例避免反复 createAreaEffectMesh + dispose。
+  private areaEffectPool: Map<string, THREE.Object3D[]> = new Map();
   private pickupMeshes: Map<PickupType, THREE.InstancedMesh> = new Map();
   private silverPickupObjects: Map<number, THREE.Object3D> = new Map();
   private consumableSprites: Map<number, THREE.Sprite> = new Map();
@@ -5393,6 +5446,54 @@ export class GameScene {
     };
     mount('handslot.r', loadout.right);
     mount('handslot.l', loadout.left);
+  }
+
+  /**
+   * 为一个敌人对象建立或复用 AnimationMixer + AnimationAction 表，并播放 Idle。
+   *
+   * 优化点：从对象池捞起来的 obj 在死亡时调用了 mixer.stopAllAction()，但 mixer 本
+   * 身和它的所有 clipAction（含 LinearInterpolant）都还能复用。原版每次复用都
+   * `new AnimationMixer(obj)` + 重建 actionsMap，每个动作动辄 ~45 个 LinearInterpolant，
+   * 几百次复用后堆里 LinearInterpolant 上六万。这里把 mixer/actionsMap 挂在 obj.userData
+   * 上跨复用周期保留，节省大量分配。
+   */
+  private setupEnemyAnimationsFor(obj: THREE.Object3D, enemyId: number, enemyType: string): void {
+    const cachedMixer = obj.userData['mixer'] as THREE.AnimationMixer | undefined;
+    const cachedActions = obj.userData['actionsMap'] as Map<string, THREE.AnimationAction> | undefined;
+
+    let mixer: THREE.AnimationMixer;
+    let actionsMap: Map<string, THREE.AnimationAction>;
+
+    if (cachedMixer && cachedActions) {
+      mixer = cachedMixer;
+      actionsMap = cachedActions;
+    } else {
+      const modelKey = getEnemyModelMap()[enemyType];
+      const clips = modelKey ? loadedAnimClips.get(modelKey) : undefined;
+      if (!clips || clips.length === 0) return;
+
+      mixer = new THREE.AnimationMixer(obj);
+      actionsMap = new Map<string, THREE.AnimationAction>();
+      for (const clip of clips) {
+        actionsMap.set(clip.name, mixer.clipAction(clip));
+      }
+      obj.userData['mixer'] = mixer;
+      obj.userData['actionsMap'] = actionsMap;
+    }
+
+    this.enemyMixers.set(enemyId, mixer);
+    this.enemyAnimActions.set(enemyId, actionsMap);
+
+    // 选 Idle 动画（带退化链：Idle → Walk → Flying → 任意第一个）。
+    // .reset() 是关键：池复用时 action 处于 stop 后状态，不 reset 直接 play 会停在 0 帧不动。
+    const idleAction = actionsMap.get('Idle')
+      ?? actionsMap.get('Walk')
+      ?? actionsMap.get('Flying')
+      ?? actionsMap.values().next().value;
+    if (idleAction) {
+      idleAction.reset().play();
+      this.enemyAnimStates.set(enemyId, idleAction.getClip().name);
+    }
   }
 
   private playEnemyAnim(enemyId: number, name: string): void {
@@ -7114,6 +7215,7 @@ export class GameScene {
 
   private cloneHitFlashMaterial(mat: THREE.Material): THREE.Material {
     const cloned = mat.clone();
+    cloned.userData[OWNED_CLONE_KEY] = true;
 
     // material.clone() copies userData, but not every custom shader callback reliably.
     // Re-apply the stylized toon patch to cloned enemy materials so per-enemy tinting
@@ -7297,10 +7399,15 @@ export class GameScene {
         this.enemyPrevPos.delete(id);
         this.applyObjectHitFlashTint(dying.obj, undefined);
         this.enemyHitFlashTints.delete(id);
-        // Return to pool
+        // Return to pool（带容量上限，超限直接释放避免无限累积）
         const pool = this.enemyPool.get(dying.type) ?? [];
-        pool.push(dying.obj);
-        this.enemyPool.set(dying.type, pool);
+        if (pool.length < ENEMY_POOL_CAP_PER_TYPE) {
+          pool.push(dying.obj);
+          this.enemyPool.set(dying.type, pool);
+        } else {
+          this.scene.remove(dying.obj);
+          disposeOwnedResources(dying.obj);
+        }
         this.dyingEnemies.delete(id);
       }
     }
@@ -7328,27 +7435,8 @@ export class GameScene {
         if (pool && pool.length > 0) {
           obj = pool.pop()!;
           this.applyObjectHitFlashTint(obj, undefined);
-          // Reset animation state for recycled object — create new mixer
-          const modelKey = enemyModelMap[enemy.type];
-          const clips = modelKey ? loadedAnimClips.get(modelKey) : undefined;
-          if (clips && clips.length > 0) {
-            const mixer = new THREE.AnimationMixer(obj);
-            this.enemyMixers.set(enemy.id, mixer);
-            const actionsMap = new Map<string, THREE.AnimationAction>();
-            for (const clip of clips) {
-              actionsMap.set(clip.name, mixer.clipAction(clip));
-            }
-            this.enemyAnimActions.set(enemy.id, actionsMap);
-            // Play idle by default — 退化链：Idle → Walk → Flying → 任意第一个 clip
-            const idleClip = clips.find(c => c.name === 'Idle')
-              ?? clips.find(c => c.name === 'Walk')
-              ?? clips.find(c => c.name === 'Flying')
-              ?? clips[0];
-            if (idleClip) {
-              mixer.clipAction(idleClip).play();
-              this.enemyAnimStates.set(enemy.id, idleClip.name);
-            }
-          }
+          // 池复用：mixer/actions 已挂在 obj.userData 上，setup helper 直接复用
+          this.setupEnemyAnimationsFor(obj, enemy.id, enemy.type);
         } else {
           // Clone from loaded model
           const modelKey = enemyModelMap[enemy.type];
@@ -7358,25 +7446,8 @@ export class GameScene {
             // KayKit 角色：把手持武器挂到 handslot 骨（其它皮肤无此骨，自动跳过）
             this.attachEnemyWeapons(obj, enemy.type);
             this.prepareHitFlashMaterials(obj);
-            // Setup animation mixer for cloned model
-            const clips = modelKey ? loadedAnimClips.get(modelKey) : undefined;
-            if (clips && clips.length > 0) {
-              const mixer = new THREE.AnimationMixer(obj);
-              this.enemyMixers.set(enemy.id, mixer);
-              const actionsMap = new Map<string, THREE.AnimationAction>();
-              for (const clip of clips) {
-                actionsMap.set(clip.name, mixer.clipAction(clip));
-              }
-              this.enemyAnimActions.set(enemy.id, actionsMap);
-              const idleClip = clips.find(c => c.name === 'Idle')
-                ?? clips.find(c => c.name === 'Walk')
-                ?? clips.find(c => c.name === 'Flying')
-                ?? clips[0];
-              if (idleClip) {
-                mixer.clipAction(idleClip).play();
-                this.enemyAnimStates.set(enemy.id, idleClip.name);
-              }
-            }
+            // 首次创建：在 obj.userData 上建立 mixer/actions 缓存，未来池复用直接重用
+            this.setupEnemyAnimationsFor(obj, enemy.id, enemy.type);
           } else {
             // Fallback: colored box
             const geo = new THREE.BoxGeometry(0.9, 1.2, 0.9);
@@ -7413,6 +7484,18 @@ export class GameScene {
       const hoverOffset = ENEMY_HOVER_OFFSET[enemy.type] ?? 0;
       obj.position.set(enemy.x, enemy.y + hoverOffset, enemy.z);
       obj.scale.set(s, s, s);
+
+      // ── 视距剔除：超过 ENEMY_VISIBLE_CULL_DIST 直接 visible=false，跳过本帧所有
+      //    渲染相关工作（包括 Three.js 内部的 skeleton.update + boneTexture 上传）。
+      //    动画 dt 不累积 —— 重新进入可见区时从冻结姿势继续，过渡可接受。
+      const cullDx = enemy.x - camX;
+      const cullDy = (enemy.y + 1) - camY;
+      const cullDz = enemy.z - camZ;
+      const cullDistSq = cullDx * cullDx + cullDy * cullDy + cullDz * cullDz;
+      if (cullDistSq > ENEMY_VISIBLE_CULL_SQ) {
+        if (obj.visible) obj.visible = false;
+        continue;
+      }
       obj.visible = true;
 
       // Blob 阴影贴脚下（飞行的 gargoyle 不贴 —— 它在空中，脚位非地面）
@@ -7665,16 +7748,20 @@ export class GameScene {
         activeAxeIds.add(proj.id);
         let axeObj = this.axeObjects.get(proj.id);
         if (!axeObj) {
-          const model = getWeaponModel('axe');
-          if (model) {
-            axeObj = model.clone();
-          } else {
-            const geo = new THREE.ConeGeometry(0.3, 0.6, 4);
-            const mat = new THREE.MeshToonMaterial({ color: 0x666688, gradientMap: toonGradientMap });
-            axeObj = new THREE.Mesh(geo, mat);
+          // 优先复用池中已有实例（池为空才走克隆，避免每发都 model.clone()）
+          axeObj = this.axePool.pop();
+          if (!axeObj) {
+            const model = getWeaponModel('axe');
+            if (model) {
+              axeObj = model.clone();
+            } else {
+              const geo = new THREE.ConeGeometry(0.3, 0.6, 4);
+              const mat = new THREE.MeshToonMaterial({ color: 0x666688, gradientMap: toonGradientMap });
+              axeObj = new THREE.Mesh(geo, mat);
+            }
+            axeObj.name = `Axe_${proj.id}`;
+            this.scene.add(axeObj);
           }
-          axeObj.name = `Axe_${proj.id}`;
-          this.scene.add(axeObj);
           this.axeObjects.set(proj.id, axeObj);
         }
         axeObj.position.set(proj.x, proj.y, proj.z);
@@ -7693,16 +7780,21 @@ export class GameScene {
         activeWeaponIds.add(proj.id);
         let obj = this.weaponObjects.get(proj.id);
         if (!obj) {
-          const model = hammerModel;
-          if (model) {
-            obj = model.clone();
-          } else {
-            const geo = new THREE.BoxGeometry(0.4, 0.4, 0.6);
-            const mat = new THREE.MeshToonMaterial({ color: 0x888888, gradientMap: toonGradientMap });
-            obj = new THREE.Mesh(geo, mat);
+          const hammerPool = this.weaponPool.get('hammer');
+          obj = hammerPool ? hammerPool.pop() : undefined;
+          if (!obj) {
+            const model = hammerModel;
+            if (model) {
+              obj = model.clone();
+            } else {
+              const geo = new THREE.BoxGeometry(0.4, 0.4, 0.6);
+              const mat = new THREE.MeshToonMaterial({ color: 0x888888, gradientMap: toonGradientMap });
+              obj = new THREE.Mesh(geo, mat);
+            }
+            obj.name = `Hammer_${proj.id}`;
+            obj.userData['weaponType'] = 'hammer';
+            this.scene.add(obj);
           }
-          obj.name = `Hammer_${proj.id}`;
-          this.scene.add(obj);
           this.weaponObjects.set(proj.id, obj);
         }
         obj.position.set(proj.x, proj.y, proj.z);
@@ -7721,19 +7813,25 @@ export class GameScene {
         activeWeaponIds.add(proj.id);
         let obj = this.weaponObjects.get(proj.id);
         if (!obj) {
-          const model = getWeaponModel(proj.weaponType);
-          if (model) {
-            obj = model.clone();
-          } else if (proj.weaponType === 'bone_bouncer' && boneGeometry) {
-            const mat = new THREE.MeshToonMaterial({ color: 0xf5f5dc, gradientMap: toonGradientMap });
-            obj = new THREE.Mesh(boneGeometry.clone(), mat);
-          } else {
-            const geo = new THREE.ConeGeometry(0.15, 0.5, 6);
-            const mat = new THREE.MeshToonMaterial({ color: 0xcccccc, gradientMap: toonGradientMap });
-            obj = new THREE.Mesh(geo, mat);
+          const wt = proj.weaponType as string;
+          const wpPool = this.weaponPool.get(wt);
+          obj = wpPool ? wpPool.pop() : undefined;
+          if (!obj) {
+            const model = getWeaponModel(proj.weaponType);
+            if (model) {
+              obj = model.clone();
+            } else if (proj.weaponType === 'bone_bouncer' && boneGeometry) {
+              const mat = new THREE.MeshToonMaterial({ color: 0xf5f5dc, gradientMap: toonGradientMap });
+              obj = new THREE.Mesh(boneGeometry, mat);
+            } else {
+              const geo = new THREE.ConeGeometry(0.15, 0.5, 6);
+              const mat = new THREE.MeshToonMaterial({ color: 0xcccccc, gradientMap: toonGradientMap });
+              obj = new THREE.Mesh(geo, mat);
+            }
+            obj.name = `Weapon_${proj.weaponType}_${proj.id}`;
+            obj.userData['weaponType'] = wt;
+            this.scene.add(obj);
           }
-          obj.name = `Weapon_${proj.weaponType}_${proj.id}`;
-          this.scene.add(obj);
           this.weaponObjects.set(proj.id, obj);
         }
         obj.position.set(proj.x, proj.y, proj.z);
@@ -7760,15 +7858,18 @@ export class GameScene {
         activeBossProjIds.add(proj.id);
         let obj = this.bossProjectileObjects.get(proj.id);
         if (!obj) {
-          if (bulletModel) {
-            obj = bulletModel.clone();
-          } else {
-            const geo = new THREE.SphereGeometry(0.3, 8, 6);
-            const mat = new THREE.MeshToonMaterial({ color: 0xff5522, gradientMap: toonGradientMap });
-            obj = new THREE.Mesh(geo, mat);
+          obj = this.bossProjPool.pop();
+          if (!obj) {
+            if (bulletModel) {
+              obj = bulletModel.clone();
+            } else {
+              const geo = new THREE.SphereGeometry(0.3, 8, 6);
+              const mat = new THREE.MeshToonMaterial({ color: 0xff5522, gradientMap: toonGradientMap });
+              obj = new THREE.Mesh(geo, mat);
+            }
+            obj.name = `BossProj_${proj.id}`;
+            this.scene.add(obj);
           }
-          obj.name = `BossProj_${proj.id}`;
-          this.scene.add(obj);
           this.bossProjectileObjects.set(proj.id, obj);
         }
         obj.position.set(proj.x, proj.y, proj.z);
@@ -7884,24 +7985,45 @@ export class GameScene {
     this.enemyProjectileMesh.instanceMatrix.needsUpdate = true;
     if (this.enemyProjectileMesh.instanceColor) this.enemyProjectileMesh.instanceColor.needsUpdate = true;
 
-    // Remove axe objects that are no longer active
+    // Recycle axe objects no longer active：进对象池（带上限）；超限直接 dispose
     for (const [id, obj] of this.axeObjects) {
       if (!activeAxeIds.has(id)) {
-        this.scene.remove(obj);
+        if (this.axePool.length < PROJECTILE_POOL_CAP) {
+          obj.visible = false;
+          this.axePool.push(obj);
+        } else {
+          this.scene.remove(obj);
+          disposeOwnedResources(obj);
+        }
         this.axeObjects.delete(id);
       }
     }
-    // Remove weapon objects that are no longer active
+    // Recycle weapon objects (按 weaponType 分池)
     for (const [id, obj] of this.weaponObjects) {
       if (!activeWeaponIds.has(id)) {
-        this.scene.remove(obj);
+        const wt = (obj.userData['weaponType'] as string | undefined) ?? '__unknown';
+        const pool = this.weaponPool.get(wt) ?? [];
+        if (pool.length < PROJECTILE_POOL_CAP) {
+          obj.visible = false;
+          pool.push(obj);
+          this.weaponPool.set(wt, pool);
+        } else {
+          this.scene.remove(obj);
+          disposeOwnedResources(obj);
+        }
         this.weaponObjects.delete(id);
       }
     }
-    // Remove boss projectile objects that are no longer active
+    // Recycle boss projectile objects
     for (const [id, obj] of this.bossProjectileObjects) {
       if (!activeBossProjIds.has(id)) {
-        this.scene.remove(obj);
+        if (this.bossProjPool.length < PROJECTILE_POOL_CAP) {
+          obj.visible = false;
+          this.bossProjPool.push(obj);
+        } else {
+          this.scene.remove(obj);
+          disposeOwnedResources(obj);
+        }
         this.bossProjectileObjects.delete(id);
       }
     }
@@ -9439,8 +9561,15 @@ export class GameScene {
       const ratio = ae.maxLifetime > 0 ? Math.max(0, ae.lifetime / ae.maxLifetime) : 1;
 
       if (!obj) {
-        obj = this.createAreaEffectMesh(ae);
-        this.scene.add(obj);
+        // 优先复用同 kind 池中实例
+        const kindPool = this.areaEffectPool.get(ae.kind);
+        obj = kindPool ? kindPool.pop() : undefined;
+        if (!obj) {
+          obj = this.createAreaEffectMesh(ae);
+          obj.userData['aeKind'] = ae.kind;
+          this.scene.add(obj);
+        }
+        obj.visible = true;
         this.areaEffectObjects.set(ae.id, obj);
       }
 
@@ -9525,18 +9654,26 @@ export class GameScene {
       }
     }
 
-    // 清除已消失的区域特效 mesh
+    // 清除已消失的区域特效 mesh：进对象池（按 kind 分池），超限再 dispose
     for (const [id, obj] of this.areaEffectObjects) {
       if (!live.has(id)) {
-        this.scene.remove(obj);
-        // 遍历销毁（gas_cloud 等是 Group，需逐子网格 dispose；贴图共享，不在此释放）
-        obj.traverse((node) => {
-          const mesh = node as THREE.Mesh;
-          if (mesh.geometry) mesh.geometry.dispose?.();
-          const mat = mesh.material;
-          if (Array.isArray(mat)) mat.forEach((m) => m.dispose?.());
-          else mat?.dispose?.();
-        });
+        const kind = obj.userData['aeKind'] as string | undefined;
+        const pool = kind ? (this.areaEffectPool.get(kind) ?? []) : null;
+        if (pool && kind && pool.length < AREA_EFFECT_POOL_CAP_PER_KIND) {
+          obj.visible = false;
+          pool.push(obj);
+          this.areaEffectPool.set(kind, pool);
+        } else {
+          this.scene.remove(obj);
+          // 遍历销毁（gas_cloud 等是 Group，需逐子网格 dispose；贴图共享，不在此释放）
+          obj.traverse((node) => {
+            const mesh = node as THREE.Mesh;
+            if (mesh.geometry) mesh.geometry.dispose?.();
+            const mat = mesh.material;
+            if (Array.isArray(mat)) mat.forEach((m) => m.dispose?.());
+            else mat?.dispose?.();
+          });
+        }
         this.areaEffectObjects.delete(id);
       }
     }

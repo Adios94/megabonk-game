@@ -566,9 +566,11 @@ const ENEMY_ANIM_LOD_FAR_STRIDE = 4;   // 远距：每 4 帧更新一次
 // ── 敌人视距剔除（visible=false 直接跳过渲染 + skeleton.update + boneTexture 上传）─────
 // Three.js 会在 projectObject 里以 obj.visible 短路整棵子树，连 SkinnedMesh 的骨骼矩阵
 // 重算和 texSubImage2D 上传都会跳过。这是真正能砍掉骨骼纹理上传带宽的唯一办法。
-// 35m：地图半径 60m（角到角 ~85m），35m 已覆盖玩家 FOV 内主要威胁；屏幕上更小的远怪
-// 在 35m+ 几乎只占几像素，可见 pop-in 极少；夜晚雾起完全无感。
-const ENEMY_VISIBLE_CULL_DIST = 35;
+// 20m：实测 35m 时几乎没怪被剔（far-culled ≈ 1/66），多数远怪本来也在视锥外。压到
+// 20m 后视锥外的远怪也能被 visible=false 短路掉 SkinnedMesh 上传；20m 是玩家典型
+// 战斗交战半径（武器射程多在 5–12m），20m 外的怪即使在视锥内屏幕上也只占几像素，
+// pop-in 仍可接受。
+const ENEMY_VISIBLE_CULL_DIST = 20;
 const ENEMY_VISIBLE_CULL_SQ = ENEMY_VISIBLE_CULL_DIST * ENEMY_VISIBLE_CULL_DIST;
 
 const WEAPON_PROJECTILE_COLORS: Record<string, number> = {
@@ -5041,18 +5043,20 @@ export class GameScene {
   }
 
   /**
-   * 最终狂潮 → DarkComic 后期渐进。
-   * - `state.finalSwarm` true：ramp01 在 `rampDurationSeconds` 内线性从 0 → 1，画面逐渐去饱和+起噪点
-   * - false 或非战斗相位：~2s 内快速回落到 0，结算/失败画面立刻清爽
+   * 最终狂潮 / 超时 → DarkComic 后期渐进。
+   * - `state.finalSwarm` true（gameTime 480-540）：ramp01 在 `rampDurationSeconds` 内线性从 0 → 1
+   * - `state.overtimeSeconds > 0`（超时进 overtime）：继续保持 / 继续 ramp 到 1，避免一过 540 立刻被冲掉
+   *   ——核心要点：spawning 系统在 gameTime≥540 会把 finalSwarm 重置为 false，所以这里必须额外看 overtime
+   * - 其它情况或 defeat/victory：~2s 内快速回落到 0，结算/失败画面立刻清爽
    * 实际去饱和/噪点上限由 darkComicPass.desaturateMax / noiseMax 控制（🎨 调试面板可调）。
    */
   private updateDarkComic(state: GameState, dt: number): void {
     const dc = this.darkComicPass;
     if (!dc) return;
-    const inFinalSwarm = !!state.finalSwarm
-      && state.phase !== 'defeat'
-      && state.phase !== 'victory';
-    if (inFinalSwarm) {
+    const interactive = state.phase !== 'defeat' && state.phase !== 'victory';
+    const inFinalSwarm = !!state.finalSwarm && interactive;
+    const inOvertime = state.overtimeSeconds > 0 && interactive;
+    if (inFinalSwarm || inOvertime) {
       const dur = Math.max(0.5, dc.rampDurationSeconds);
       dc.ramp01 = Math.min(1, dc.ramp01 + dt / dur);
     } else {
@@ -6278,9 +6282,13 @@ export class GameScene {
     }
     const b = this.perfDrawBreakdown;
     const bSum = b.enemy + b.shadow + b.level + b.other;
+    // alive 来自 enemyObjects（含 dying 动画前的所有挂载对象），culled = 因 >ENEMY_VISIBLE_CULL_DIST
+    // 被强制 visible=false 的；alive - culled 即「画面附近实际尝试渲染的怪」（再被视锥过滤就是 b.enemy）。
+    const culled = this.perfEnemyCulledFar;
     this.perfStatsEl.textContent =
       `FPS: ${this.perfFpsDisplay}\nDraw: ${drawCalls}\nTris: ${(tris / 1000).toFixed(0)}k\n` +
       `Enemies: ${this.perfEnemyCount} → ${this.perfEnemyMeshes} draws\n` +
+      `  far-culled (>${ENEMY_VISIBLE_CULL_DIST}m): ${culled}\n` +
       `merge tex→ ${this.perfEnemyMerged} / sig→ ${this.perfEnemyMergedSig}\n` +
       `real draws (frustum):\n` +
       `  enemy ${b.enemy}  shadow ${b.shadow}\n` +
@@ -6332,6 +6340,10 @@ export class GameScene {
   private perfEnemyMerged = 0;
   private perfEnemyMergedSig = 0;
   private perfEnemyCount = 0;
+  // 每帧 updateEnemyObjects 累加：被 ENEMY_VISIBLE_CULL_DIST 远距剔除掉的敌人数。
+  // 写在 perf 字段里方便 overlay 立刻显示「活着但不可见」的怪有多少 —— 帮玩家分辨
+  // 「真的没怪」vs「怪都在 35m 外被剔除」。
+  private perfEnemyCulledFar = 0;
   private perfDrawBreakdown = { enemy: 0, shadow: 0, level: 0, other: 0 };
 
   // ===========================================================================
@@ -7353,6 +7365,9 @@ export class GameScene {
     const camY = this.camera.position.y;
     const camZ = this.camera.position.z;
 
+    // 每帧重置远距剔除计数（用于 perf overlay 显示「活着但 >35m 不渲染」的怪数）
+    this.perfEnemyCulledFar = 0;
+
     // 玩家坐标（敌人朝向用）只需每帧读一次，避免在循环内对每个敌人重复 getRenderState。
     const playerPos = this.session.getRenderState().player;
 
@@ -7416,11 +7431,14 @@ export class GameScene {
     const enemyModelMap = getEnemyModelMap();
 
     // 目标世界高度（米）—— 模型按实际高度归一化后缩放到此值。整体比玩家(1.8)矮一截以凸显角色（约 ×0.8）。
+    // 注意：所有敌人共享 core 的 ENEMY_RADIUS=0.4 水平碰撞半径，视觉体型 ≫ 该半径时多只
+    // 同类（特别是 charge 行为）会在玩家脚下视觉重叠。各值已按此约束权衡。
     const enemyScales: Record<string, number> = {
       skeleton_soldier: 1.2,   // KayKit 小兵 — 略矮于玩家
       zombie: 1.1,             // 高 HP 僵尸
       skeleton_archer: 1.2,    // KayKit 法师 — 落地人形
-      skeleton_knight: 2.6,    // KayKit 战士 — 精英，明显更大
+      skeleton_knight: 1.6,    // KayKit 战士 — 精英 (再叠 isElite ×1.2 ≈ 1.92m)：明显大于小兵/法师，
+                               // 又不至于像之前 2.6 那样把 0.4m 碰撞半径远远撑爆、多只冲锋时严重穿模
       necromancer: 0.7,        // 法师 — 飘浮幽灵（小巧）
       gargoyle: 0.7,           // 蝙蝠 — 小型飞行
     };
@@ -7494,6 +7512,7 @@ export class GameScene {
       const cullDistSq = cullDx * cullDx + cullDy * cullDy + cullDz * cullDz;
       if (cullDistSq > ENEMY_VISIBLE_CULL_SQ) {
         if (obj.visible) obj.visible = false;
+        this.perfEnemyCulledFar++;
         continue;
       }
       obj.visible = true;

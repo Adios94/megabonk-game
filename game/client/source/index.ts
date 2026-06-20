@@ -336,7 +336,7 @@ type VfxTextureKey =
   | 'spark' | 'star' | 'smoke' | 'light' | 'slash'
   | 'muzzle' | 'magic_circle' | 'portal_swirl' | 'scorch' | 'dirt' | 'flame'
   | 'twirl' | 'slash_fill' | 'flame_aura' | 'lightning' | 'flare' | 'void_ripple'
-  | 'scorch_boots' | 'enemy_bullet' | 'scorch_boots_fire';
+  | 'scorch_boots' | 'enemy_bullet';
 
 const VFX_TEXTURE_FILES: Record<VfxTextureKey, string> = {
   spark: '/textures/vfx/spark.png',
@@ -362,9 +362,6 @@ const VFX_TEXTURE_FILES: Record<VfxTextureKey, string> = {
   lightning: '/textures/vfx/spark.png',         // 原 lightning.png == spark.png
   scorch_boots: '/textures/vfx/scorch.png',     // 原 scorch_boots.png == scorch.png
   enemy_bullet: '/textures/vfx/muzzle.png',     // 原 enemy_bullet.png == muzzle.png
-  // 像素火焰序列帧（224×32，14 帧 × 16×32），用于 scorch_trail 上层立体火焰。
-  // 加载时会强制 NEAREST 过滤，保留像素硬边缘。
-  scorch_boots_fire: '/textures/vfx/pixel_flame_red.png',
 };
 
 /** Billboard 池中每个槽位的运行时状态。 */
@@ -5861,18 +5858,9 @@ export class GameScene {
 
     // ─── Billboard VFX：预加载贴图 + 预分配 plane 池 ───
     const billboardLoader = new THREE.TextureLoader();
-    // 像素艺术 sprite-sheet：禁用 mipmap、最近邻采样，避免边缘模糊
-    const PIXEL_ART_KEYS: ReadonlySet<VfxTextureKey> = new Set([
-      'scorch_boots_fire',
-    ]);
     for (const key of Object.keys(VFX_TEXTURE_FILES) as VfxTextureKey[]) {
       const tex = billboardLoader.load(VFX_TEXTURE_FILES[key]);
       tex.colorSpace = THREE.SRGBColorSpace;
-      if (PIXEL_ART_KEYS.has(key)) {
-        tex.magFilter = THREE.NearestFilter;
-        tex.minFilter = THREE.NearestFilter;
-        tex.generateMipmaps = false;
-      }
       this.vfxTextures[key] = tex;
     }
 
@@ -9733,7 +9721,7 @@ export class GameScene {
    * 渲染区域特效（毒气云 / 虚空涟漪 / 灼地痕迹 / 激光线）。
    * 按 id 维护 Mesh，新增即创建、消失即移除，每帧更新位置 / 半径 / 透明度。
    */
-  private updateAreaEffects(state: GameState, dt: number): void {
+  private updateAreaEffects(state: GameState, _dt: number): void {
     const live = new Set<number>();
 
     for (const ae of state.areaEffects) {
@@ -9823,25 +9811,12 @@ export class GameScene {
         case 'scorch_trail': {
           obj.position.set(ae.x, ae.y + 0.06, ae.z);
           obj.scale.setScalar(Math.max(0.01, ae.radius));
-          // 焦土底层随时间淡出；竖向像素火焰精灵每帧推进 UV 序列帧，独立相位 + 节奏
+          // 焦土底层随时间淡出；发光放射层在中后段更快收敛，呈现"先亮后焦"的余烬感
           const burn = obj.getObjectByName('scorch_burn') as THREE.Mesh | null;
-          const flames = obj.getObjectByName('scorch_flames') as THREE.Group | null;
+          const glow = obj.getObjectByName('scorch_glow') as THREE.Mesh | null;
           if (burn) (burn.material as THREE.MeshBasicMaterial).opacity = ratio * 0.85;
-          if (flames) {
-            const FRAMES = 14;
-            // ratio² 让火焰在尾段加速变弱；末段还做轻微缩放收敛，模拟「火焰熄灭」
-            const flameOpacity = ratio * ratio * 0.95;
-            for (const child of flames.children) {
-              const sp = child as THREE.Sprite;
-              const mat = sp.material as THREE.SpriteMaterial;
-              if (!mat.map) continue;
-              const fps = (sp.userData['fps'] as number) ?? 12;
-              const ft = ((sp.userData['frameTime'] as number) ?? 0) + dt;
-              sp.userData['frameTime'] = ft;
-              const frame = Math.floor(ft * fps) % FRAMES;
-              mat.map.offset.x = frame / FRAMES;
-              mat.opacity = flameOpacity;
-            }
+          if (glow) {
+            (glow.material as THREE.MeshBasicMaterial).opacity = ratio * ratio * 0.9;
           }
           break;
         }
@@ -9978,15 +9953,14 @@ export class GameScene {
         return mesh;
       }
       case 'scorch_trail': {
-        // 灼地痕迹：底层贴地焦痕 + 上层一圈竖立的像素火焰精灵（14 帧 sprite-sheet 动画）。
+        // 灼地痕迹：贴地的双层贴花。
+        // 底层 = 暗橙焦土圆盘（普通混合），上层 = scorch_boots 放射状灼烧贴图（加色发光）。
         // 单位尺寸半径 1，由 update 按 ae.radius 缩放，正好覆盖 AoE。
         const group = new THREE.Group();
 
-        // 底层焦痕：保留原灼地圆盘（用 scorch 软边贴图，不再用 scorch_boots，
-        // 因为后者现在是像素竖向火焰序列帧、不适合贴在地面上）。
         const scorchGeo = new THREE.CircleGeometry(1, 24);
         const scorchMat = new THREE.MeshBasicMaterial({
-          map: this.vfxTextures.scorch ?? null,
+          map: this.vfxTextures.scorch_boots ?? null,
           color: 0x5a1f06, transparent: true, opacity: 1.0,
           side: THREE.DoubleSide, depthWrite: false,
         });
@@ -9996,47 +9970,19 @@ export class GameScene {
         scorch.name = 'scorch_burn';
         group.add(scorch);
 
-        // 上层：N 团竖向像素火焰（THREE.Sprite 自动朝相机），分布在半径环内。
-        // 每个 sprite 持有自己的 texture clone，独立动画相位，避免所有火同帧。
-        const fireBase = this.vfxTextures.scorch_boots_fire;
-        if (fireBase) {
-          const flames = new THREE.Group();
-          flames.name = 'scorch_flames';
-          flames.renderOrder = 4;
-          const FLAME_COUNT = 7;
-          const FRAMES = 14;
-          for (let i = 0; i < FLAME_COUNT; i++) {
-            const tex = fireBase.clone();
-            tex.needsUpdate = true;
-            tex.repeat.set(1 / FRAMES, 1);
-            tex.offset.set(Math.floor(Math.random() * FRAMES) / FRAMES, 0);
-            // 克隆已继承 NearestFilter，但保险起见再设一次
-            tex.magFilter = THREE.NearestFilter;
-            tex.minFilter = THREE.NearestFilter;
-            tex.generateMipmaps = false;
-            const mat = new THREE.SpriteMaterial({
-              map: tex,
-              color: 0xffffff,
-              transparent: true,
-              depthWrite: false,
-              blending: THREE.AdditiveBlending,
-            });
-            const sprite = new THREE.Sprite(mat);
-            // 单位 group 半径 = 1：在 0.30..0.85 半径环上均匀+扰动分布
-            const ang = (i / FLAME_COUNT) * Math.PI * 2 + Math.random() * 0.5;
-            const r = 0.30 + Math.random() * 0.55;
-            // sprite 位于火焰底部上方 0.5（贴图竖向 32px，scale.y=1.2 → 半高 0.6），
-            // 使火焰底部贴近地面
-            sprite.position.set(Math.cos(ang) * r, 0.6, Math.sin(ang) * r);
-            // 16:32 长宽比 → scale 比 1:2；整体由 group 按 AoE 半径放大
-            const sizeJitter = 0.85 + Math.random() * 0.4;
-            sprite.scale.set(0.6 * sizeJitter, 1.2 * sizeJitter, 1.0);
-            sprite.userData['frameTime'] = Math.random() * 1.0;
-            sprite.userData['fps'] = 10 + Math.random() * 4; // 每团火焰节奏稍微错开
-            flames.add(sprite);
-          }
-          group.add(flames);
-        }
+        const glowGeo = new THREE.PlaneGeometry(2, 2);
+        const glowMat = new THREE.MeshBasicMaterial({
+          map: this.vfxTextures.scorch_boots ?? null,
+          color: 0xff7a1a, transparent: true, opacity: 1.0,
+          side: THREE.DoubleSide, depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        });
+        const glow = new THREE.Mesh(glowGeo, glowMat);
+        glow.rotation.x = -Math.PI / 2;
+        glow.rotation.z = Math.random() * Math.PI * 2; // 随机初始朝向，避免每个痕迹放射纹理朝向一致
+        glow.renderOrder = 4;
+        glow.name = 'scorch_glow';
+        group.add(glow);
 
         return group;
       }

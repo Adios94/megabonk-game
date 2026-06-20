@@ -10,7 +10,7 @@
  *   - systems/collisions.ts — 4 种碰撞 + 击退 + damage event
  *   - systems/pickups.ts    — pickup 寿命 / 吸附 / collect / deaths / thorns
  *   - systems/weapons.ts    — fireWeapons / getWeaponStats / evolution
- *   - systems/altars.ts     — 祭坛 / 传送门状态机
+ *   - systems/altars.ts     — 飞碟 / 传送门状态机
  *   - systems/chests.ts     — 宝箱
  *   - systems/aiSystem.ts   — enemy AI 主循环
  *   - systems/bossAi.ts     — boss AI 主循环
@@ -68,6 +68,7 @@ import { grantRelic } from './systems/relics.ts';
 import { tickOvertime } from './systems/overtime.ts';
 import { tickTierTransition } from './systems/tierTransition.ts';
 import { tickShrines, generateShrines, applyShrineReward } from './systems/shrines.ts';
+import { tickEnemySeparation } from './systems/enemySeparation.ts';
 import { addDamageEvent, applyKnockback, checkGameOver } from './systems/helpers.ts';
 import { pickRandomOne } from './spawnPick.ts';
 
@@ -274,6 +275,8 @@ export class GameInstance {
     tickDash(engine, dt);
     tickTimers(engine, dt);
     tickEnemyAi(state.enemies, makeAiContext(engine, dt));
+    // 敌人之间软分离 —— AI 决定意图位移后，把贴脸/重叠的同伴推开（多帧软排斥，尊重墙体）。
+    tickEnemySeparation(engine);
     tickWeapons(engine, dt);
     tickProjectiles(engine, dt);
     tickAreaEffects(engine, dt);
@@ -296,7 +299,7 @@ export class GameInstance {
     }
     tickThorns(engine);
     checkGameOver(engine);
-    // Boss 死亡后祭坛会进 portal_ready；玩家按 E 进入后变 portal_used。
+    // Boss 死亡后飞碟会进 portal_ready；玩家按 E 进入后变 portal_used。
     // tickTierTransition 检测并执行下一关流程（清场 + tier++）。
     tickTierTransition(engine);
     // Overtime 累加（仅在 gameTime ≥ 540 且玩家未死且未在结算时）。

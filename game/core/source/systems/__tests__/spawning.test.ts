@@ -5,7 +5,7 @@
  *  - boss_fight 阶段不刷怪
  *  - finalSwarm 标志 (gameTime 480-540)
  *  - mini-boss 每 120 秒一只 (gameTime ≥ 180)
- *  - Boss 起场 = 必须有祭坛进入 boss_active（按 E 召唤完成），与时间无关
+ *  - Boss 起场 = 必须有飞碟进入 boss_active（按 E 召唤完成），与时间无关
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { tickSpawning, checkBossSpawn } from '../spawning.ts';
@@ -210,7 +210,7 @@ describe('checkBossSpawn', () => {
     expect(engine.state.boss).toBeNull();
   });
 
-  it('没有 boss_active 祭坛 → 不 spawn（即使时间已过去）', () => {
+  it('没有 boss_active 飞碟 → 不 spawn（即使时间已过去）', () => {
     const engine = makeEngine();
     engine.config = { ...engine.config, tier: 1 };
     engine.state.gameTime = REGULAR_GAME_DURATION + 60;  // 久过去
@@ -221,7 +221,7 @@ describe('checkBossSpawn', () => {
     expect(engine.state.boss).toBeNull();
   });
 
-  it('有 boss_active 祭坛 → boss spawn + phase=boss_intro + 不清场', () => {
+  it('有 boss_active 飞碟 → boss spawn + phase=boss_intro + 不清场', () => {
     const engine = makeEngine();
     engine.config = { ...engine.config, tier: 1 };
     engine.state.altars = [{
@@ -233,7 +233,7 @@ describe('checkBossSpawn', () => {
     expect(engine.state.boss).not.toBeNull();
     expect(engine.state.phase).toBe('boss_intro');
     expect(engine.state.enemies).toHaveLength(1);
-    // Boss 出场点应该贴近触发祭坛
+    // Boss 出场点应该贴近触发飞碟
     expect(engine.state.boss!.x).toBeCloseTo(5);
     expect(engine.state.boss!.z).toBeCloseTo(7);
     expect(engine.state.boss!.maxHp).toBe(BOSS_HP);
@@ -273,7 +273,7 @@ describe('checkBossSpawn', () => {
     });
   });
 
-  it('Boss 绑定触发祭坛，忽略旧 spawn_boss 标记', () => {
+  it('Boss 绑定触发飞碟，忽略旧 spawn_boss 标记', () => {
     const engine = makeEngine();
     engine.config = {
       ...engine.config,

@@ -1,5 +1,5 @@
 /**
- * 局内圆形进度指示器（充能神殿 / Boss 召唤祭坛）。
+ * 局内圆形进度指示器（充能神殿 / Boss 召唤飞碟）。
  * 黄色圆环通过 stroke-dashoffset 按 0-100% 顺时针揭示，带平滑过渡。
  */
 
@@ -169,7 +169,7 @@ export function createTempleChargeIndicator(): TempleChargeIndicator {
   return createCircularProgressIndicator(TEMPLE_STYLE);
 }
 
-/** 在 HUD 中创建 Boss 召唤祭坛圆形进度指示器（使用 progress_boss_fill.svg 风格）。 */
+/** 在 HUD 中创建 Boss 召唤飞碟圆形进度指示器（使用 progress_boss_fill.svg 风格）。 */
 export function createBossSummonIndicator(): BossSummonIndicator {
   return createCircularProgressIndicator(BOSS_STYLE);
 }

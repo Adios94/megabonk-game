@@ -1,5 +1,5 @@
 /**
- * 祭坛 / 传送门 系统。
+ * 飞碟 / 传送门 系统。
  *
  * 设计文档：docs/boss-loop-redesign.md
  *
@@ -9,11 +9,11 @@
  *   summoning      读条 `ALTAR_SUMMON_DURATION` 秒；走出半径时进度按
  *                  `ALTAR_SUMMON_DECAY_RATE` 缓慢回落，归零后才回 ready
  *     ↓ 读条满
- *   boss_active    Boss 已生成；祭坛锁住、不可再交互
+ *   boss_active    Boss 已生成；飞碟锁住、不可再交互
  *     ↓ Boss 死亡（boss.hp <= 0），由外部系统翻转
- *   portal_ready   祭坛变传送门；UI 显示 `[E] 进入下一关`
+ *   portal_ready   飞碟变传送门；UI 显示 `[E] 进入下一关`
  *     ↓ 玩家按 interact + 在半径内
- *   portal_used    终态；tier 推进流程会消费它（清掉或替换为下一关祭坛）
+ *   portal_used    终态；tier 推进流程会消费它（清掉或替换为下一关飞碟）
  *
  * 触发方式：
  *   - 召唤 Boss：玩家走进 ready 半径即自动进入 summoning（不再需要按键）
@@ -40,7 +40,7 @@ import type { LevelGeometry } from './collision.ts';
 import type { AltarState, GameConfig } from '../types.ts';
 import type { Engine } from './types.ts';
 
-/** 祭坛贴地：用竖直查询求 (x,z) 处地表高度（台顶）。无 geo（如单测）回退 0。 */
+/** 飞碟贴地：用竖直查询求 (x,z) 处地表高度（台顶）。无 geo（如单测）回退 0。 */
 function groundY(geo: LevelGeometry | undefined, x: number, z: number): number {
   if (!geo) return 0;
   const y = getTerrainHeightAt(geo, x, z);
@@ -53,7 +53,7 @@ interface AvoidPoint {
 }
 
 /**
- * 一局开始 / tier 推进时调用，按 tier 配置生成祭坛。
+ * 一局开始 / tier 推进时调用，按 tier 配置生成飞碟。
  * 位置：远离出生点（≥ ALTAR_MIN_DISTANCE）但在地图内（halfMap * ratio 内）。
  */
 export function generateAltars(config: GameConfig, avoidNearestTo?: AvoidPoint, geo?: LevelGeometry): AltarState[] {
@@ -119,7 +119,7 @@ function nearestPoint<T extends AvoidPoint>(points: readonly T[], origin: AvoidP
 }
 
 /**
- * 每帧推进祭坛状态机。读 engine.input.interact 作为按键触发信号。
+ * 每帧推进飞碟状态机。读 engine.input.interact 作为按键触发信号。
  *
  * 注意：本函数不直接生成 Boss / 触发 tier 推进。它只翻转 phase，副作用由：
  *   - spawning.checkBossSpawn 读 boss_active phase 来 spawn boss
@@ -189,9 +189,9 @@ export function tickAltars(engine: Engine, dt: number): void {
 }
 
 /**
- * Boss 死亡后调用：第一关把 boss_active 祭坛翻成 portal_ready；
+ * Boss 死亡后调用：第一关把 boss_active 飞碟翻成 portal_ready；
  * 第二关及以后进入 cooldown，冷却结束后才能再次召唤，不再提供进入下一关的传送门。
- * 通常一局只会有一个 boss_active 祭坛（设计上每 tier 1 个），但代码上不假设。
+ * 通常一局只会有一个 boss_active 飞碟（设计上每 tier 1 个），但代码上不假设。
  */
 export function onBossDefeated(engine: Engine): void {
   for (const altar of engine.state.altars) {
@@ -209,7 +209,7 @@ export function onBossDefeated(engine: Engine): void {
   }
 }
 
-/** 判断当前是否有任何祭坛进入了 summoning 完成态（boss_active），用于 spawning.checkBossSpawn。 */
+/** 判断当前是否有任何飞碟进入了 summoning 完成态（boss_active），用于 spawning.checkBossSpawn。 */
 export function hasReadyBossTrigger(engine: Engine): boolean {
   return engine.state.altars.some(a => a.phase === 'boss_active');
 }

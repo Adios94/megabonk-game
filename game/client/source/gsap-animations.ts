@@ -253,7 +253,7 @@ export class GSAPAnimationManager {
   }
 
   /**
-   * 充能神殿 / Boss 召唤祭坛 HUD 圆形指示器动画。
+   * 充能神殿 / Boss 召唤飞碟 HUD 圆形指示器动画。
    * 不同指示器须传不同 animationId，避免共享显隐状态互相覆盖。
    */
   animateShrineIndicator(element: HTMLElement, show: boolean, duration: number = 0.25, animationId: string = 'shrine'): void {

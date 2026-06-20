@@ -323,7 +323,7 @@ function getCoverSurfaceHeight(engine: Engine, x: number, z: number, referenceY?
 }
 
 /**
- * Boss 起场 —— 当玩家在祭坛完成召唤读条（altars.ts 把祭坛 phase 推到 `boss_active`）时触发。
+ * Boss 起场 —— 当玩家在飞碟完成召唤读条（altars.ts 把飞碟 phase 推到 `boss_active`）时触发。
  *
  * 不再依赖 `BOSS_SPAWN_TIME`：所有 tier 都需要主动召唤。
  *
@@ -334,13 +334,13 @@ export function checkBossSpawn(engine: Engine): void {
   if (engine.state.phase === 'victory' || engine.state.phase === 'defeat') return;
   if (engine.state.phase === 'boss_intro' || engine.state.phase === 'boss_fight') return;
 
-  // 必须有任何一个祭坛进入 boss_active 才触发
+  // 必须有任何一个飞碟进入 boss_active 才触发
   if (!hasReadyBossTrigger(engine)) return;
 
   const tierCfg = TIER_CONFIGS[engine.config.tier];
 
   // Boss 与触发的 spawn_altar 绑定；关卡模式不再需要单独的 spawn_boss 标记。
-  // boss.y 用竖直查询 getTerrainHeightAt 取出生点地表高度（祭坛常摆在高平台上）。
+  // boss.y 用竖直查询 getTerrainHeightAt 取出生点地表高度（飞碟常摆在高平台上）。
   // 之后每帧由 bossAi 的 getSupportHeightAt 跟地——但 support 只认“够得着的面”，
   // 若 spawn 时给 0，台顶（高出迈步范围）够不着，boss 会被钉在台底；故必须在此赋台顶高度。
   const triggerAltar = engine.state.altars.find(a => a.phase === 'boss_active');

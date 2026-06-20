@@ -94,10 +94,10 @@
     "silver": "银币: {{count}}",
     "finalSwarm": "最终狂潮！",
     "combo": "连击 x{{count}}",
-    "quest": "找到祭坛，召唤并击败BOSS！",
+    "quest": "找到飞碟，召唤并击败BOSS！",
     "weaponSlotLocked": "完成「装备 7 把不同武器」任务后解锁",
     "compass": {
-      "altar": "祭坛",
+      "altar": "飞碟",
       "portal": "传送门"
     }
   },
@@ -404,7 +404,7 @@
   },
   "altar": {
     "summoning": "正在召唤 Boss...",
-    "cooldown": "祭坛冷却中 {{seconds}}s",
+    "cooldown": "飞碟冷却中 {{seconds}}s",
     "prompt": {
       "summon": "[E] 召唤 Boss",
       "enterPortal": "[E] 进入传送门"

@@ -1,0 +1,1349 @@
+{
+  "Skeleton_Warrior.glb": {
+    "objects": [
+      {
+        "name": "Icosphere",
+        "type": "MESH",
+        "parent": null,
+        "modifiers": [],
+        "vertex_count": 42,
+        "poly_count": 80,
+        "vertex_groups": [],
+        "material_slots": []
+      },
+      {
+        "name": "Rig_Medium",
+        "type": "ARMATURE",
+        "parent": null,
+        "modifiers": [],
+        "bone_count": 23,
+        "bone_names": [
+          "root",
+          "hips",
+          "spine",
+          "chest",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "head",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r"
+        ],
+        "handslot_bones": [
+          "handslot.r",
+          "handslot.l"
+        ]
+      },
+      {
+        "name": "Skeleton_Warrior_ArmLeft",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 634,
+        "poly_count": 692,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "spine",
+          "chest",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "head",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Warrior_ArmRight",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 634,
+        "poly_count": 692,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "spine",
+          "chest",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "head",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Warrior_Body",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 1273,
+        "poly_count": 1130,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "spine",
+          "chest",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "head",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Warrior_Cloak",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 344,
+        "poly_count": 348,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "spine",
+          "chest",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "head",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Warrior_Eyes",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 80,
+        "poly_count": 132,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "spine",
+          "chest",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "head",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r"
+        ],
+        "material_slots": [
+          "Glow"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Warrior_Head",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 462,
+        "poly_count": 394,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "spine",
+          "chest",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "head",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Warrior_Helmet",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [],
+        "vertex_count": 1069,
+        "poly_count": 830,
+        "vertex_groups": [],
+        "material_slots": [
+          "skeleton"
+        ]
+      },
+      {
+        "name": "Skeleton_Warrior_Jaw",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 209,
+        "poly_count": 124,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "spine",
+          "chest",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "head",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Warrior_LegLeft",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 737,
+        "poly_count": 892,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "spine",
+          "chest",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "head",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Warrior_LegRight",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 675,
+        "poly_count": 700,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "spine",
+          "chest",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "head",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      }
+    ],
+    "armatures": [
+      "Rig_Medium"
+    ],
+    "materials": [
+      {
+        "name": "skeleton",
+        "image": "skeleton_texture"
+      },
+      {
+        "name": "Glow",
+        "image": null
+      }
+    ],
+    "images": [
+      "skeleton_texture"
+    ],
+    "kind": "character"
+  },
+  "Skeleton_Mage.glb": {
+    "objects": [
+      {
+        "name": "Icosphere",
+        "type": "MESH",
+        "parent": null,
+        "modifiers": [],
+        "vertex_count": 42,
+        "poly_count": 80,
+        "vertex_groups": [],
+        "material_slots": []
+      },
+      {
+        "name": "Rig_Medium",
+        "type": "ARMATURE",
+        "parent": null,
+        "modifiers": [],
+        "bone_count": 23,
+        "bone_names": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l"
+        ],
+        "handslot_bones": [
+          "handslot.l",
+          "handslot.r"
+        ]
+      },
+      {
+        "name": "Skeleton_Mage_ArmLeft",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 544,
+        "poly_count": 748,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Mage_ArmRight",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 544,
+        "poly_count": 748,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Mage_Body",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 1093,
+        "poly_count": 990,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Mage_Eyes",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 80,
+        "poly_count": 132,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l"
+        ],
+        "material_slots": [
+          "Glow"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Mage_Hat",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [],
+        "vertex_count": 340,
+        "poly_count": 308,
+        "vertex_groups": [],
+        "material_slots": [
+          "skeleton"
+        ]
+      },
+      {
+        "name": "Skeleton_Mage_Jaw",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 195,
+        "poly_count": 124,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Mage_LegLeft",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 405,
+        "poly_count": 558,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Mage_LegRight",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 405,
+        "poly_count": 558,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Mage_Skull",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 450,
+        "poly_count": 422,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      }
+    ],
+    "armatures": [
+      "Rig_Medium"
+    ],
+    "materials": [
+      {
+        "name": "skeleton",
+        "image": "skeleton_texture"
+      },
+      {
+        "name": "Glow",
+        "image": null
+      }
+    ],
+    "images": [
+      "skeleton_texture"
+    ],
+    "kind": "character"
+  },
+  "Skeleton_Minion.glb": {
+    "objects": [
+      {
+        "name": "Icosphere",
+        "type": "MESH",
+        "parent": null,
+        "modifiers": [],
+        "vertex_count": 42,
+        "poly_count": 80,
+        "vertex_groups": [],
+        "material_slots": []
+      },
+      {
+        "name": "Rig_Medium",
+        "type": "ARMATURE",
+        "parent": null,
+        "modifiers": [],
+        "bone_count": 23,
+        "bone_names": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r"
+        ],
+        "handslot_bones": [
+          "handslot.l",
+          "handslot.r"
+        ]
+      },
+      {
+        "name": "Skeleton_Minion_ArmLeft",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 406,
+        "poly_count": 644,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Minion_ArmRight",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 406,
+        "poly_count": 644,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Minion_Body",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 1833,
+        "poly_count": 1768,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Minion_Cloak",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 344,
+        "poly_count": 348,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Minion_Eyes",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 80,
+        "poly_count": 132,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r"
+        ],
+        "material_slots": [
+          "Glow"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Minion_Head",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 595,
+        "poly_count": 442,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Minion_Jaw",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 176,
+        "poly_count": 106,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Minion_LegLeft",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 509,
+        "poly_count": 602,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      },
+      {
+        "name": "Skeleton_Minion_LegRight",
+        "type": "MESH",
+        "parent": "Rig_Medium",
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "vertex_count": 509,
+        "poly_count": 602,
+        "vertex_groups": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r"
+        ],
+        "material_slots": [
+          "skeleton"
+        ],
+        "armature_target": "Rig_Medium"
+      }
+    ],
+    "armatures": [
+      "Rig_Medium"
+    ],
+    "materials": [
+      {
+        "name": "skeleton",
+        "image": "skeleton_texture"
+      },
+      {
+        "name": "Glow",
+        "image": null
+      }
+    ],
+    "images": [
+      "skeleton_texture"
+    ],
+    "kind": "character"
+  },
+  "weapons\\Skeleton_Blade.gltf": {
+    "objects": [
+      {
+        "name": "Skeleton_Blade",
+        "type": "MESH",
+        "parent": null,
+        "modifiers": [],
+        "vertex_count": 541,
+        "poly_count": 457,
+        "vertex_groups": [],
+        "material_slots": [
+          "skeleton"
+        ]
+      }
+    ],
+    "armatures": [],
+    "materials": [
+      {
+        "name": "skeleton",
+        "image": "skeleton_texture"
+      }
+    ],
+    "images": [
+      "skeleton_texture"
+    ],
+    "kind": "weapon"
+  },
+  "weapons\\Skeleton_Axe.gltf": {
+    "objects": [
+      {
+        "name": "Skeleton_Axe",
+        "type": "MESH",
+        "parent": null,
+        "modifiers": [],
+        "vertex_count": 692,
+        "poly_count": 534,
+        "vertex_groups": [],
+        "material_slots": [
+          "skeleton"
+        ]
+      }
+    ],
+    "armatures": [],
+    "materials": [
+      {
+        "name": "skeleton",
+        "image": "skeleton_texture"
+      }
+    ],
+    "images": [
+      "skeleton_texture"
+    ],
+    "kind": "weapon"
+  },
+  "weapons\\Skeleton_Staff.gltf": {
+    "objects": [
+      {
+        "name": "Skeleton_Staff",
+        "type": "MESH",
+        "parent": null,
+        "modifiers": [],
+        "vertex_count": 1879,
+        "poly_count": 1519,
+        "vertex_groups": [],
+        "material_slots": [
+          "skeleton"
+        ]
+      }
+    ],
+    "armatures": [],
+    "materials": [
+      {
+        "name": "skeleton",
+        "image": "skeleton_texture"
+      }
+    ],
+    "images": [
+      "skeleton_texture"
+    ],
+    "kind": "weapon"
+  },
+  "weapons\\Skeleton_Shield_Large_A.gltf": {
+    "objects": [
+      {
+        "name": "Skeleton_Shield_Large_A",
+        "type": "MESH",
+        "parent": null,
+        "modifiers": [],
+        "vertex_count": 923,
+        "poly_count": 626,
+        "vertex_groups": [],
+        "material_slots": [
+          "skeleton"
+        ]
+      }
+    ],
+    "armatures": [],
+    "materials": [
+      {
+        "name": "skeleton",
+        "image": "skeleton_texture"
+      }
+    ],
+    "images": [
+      "skeleton_texture"
+    ],
+    "kind": "weapon"
+  }
+}

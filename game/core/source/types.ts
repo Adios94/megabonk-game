@@ -13,7 +13,7 @@ export interface InputState {
   slide: boolean;
   /**
    * 通用交互按键（PC: KeyE / Mobile: 屏幕按钮）。
-   * 用于召唤 Boss 祭坛、进入传送门等场景交互。
+   * 用于召唤 Boss 飞碟、进入传送门等场景交互。
    */
   interact: boolean;
 }
@@ -324,7 +324,7 @@ export interface ShrineState {
   id: number;
   x: number;
   z: number;
-  /** 地表高度（与祭坛 / 宝箱一致，用于贴地渲染）。 */
+  /** 地表高度（与飞碟 / 宝箱一致，用于贴地渲染）。 */
   y?: number;
   phase: ShrinePhase;
   /** 当前充能进度（秒）。 */
@@ -612,13 +612,13 @@ export interface PendingChestReward extends ChestOpenEvent {
 
 // --- Altar (formerly Teleporter) ---
 /**
- * 祭坛 / 传送门状态机。
+ * 飞碟 / 传送门状态机。
  *
  * - `ready`         玩家未交互；进入半径时 UI 显示 `[E] 召唤 Boss`
  * - `summoning`     玩家按住 E 触发的短读条（防误触），离开半径会回 `ready`
- * - `boss_active`   Boss 已生成；祭坛此时锁住、不可再交互
+ * - `boss_active`   Boss 已生成；飞碟此时锁住、不可再交互
  * - `cooldown`      第二关及以后 Boss 死亡后的再召唤冷却
- * - `portal_ready`  Boss 死亡后祭坛变成传送门；UI 显示 `[E] 进入下一关`
+ * - `portal_ready`  Boss 死亡后飞碟变成传送门；UI 显示 `[E] 进入下一关`
  * - `portal_used`   玩家进入传送门；终态，会被 tier 推进流程消费
  */
 export type AltarPhase = 'ready' | 'summoning' | 'boss_active' | 'cooldown' | 'portal_ready' | 'portal_used';
@@ -626,7 +626,7 @@ export type AltarPhase = 'ready' | 'summoning' | 'boss_active' | 'cooldown' | 'p
 export interface AltarState {
   x: number;
   z: number;
-  /** 祭坛所在地表高度（贴地用）。关卡模式由 getTerrainHeightAt 求得；平面 arena / 缺省为 0。 */
+  /** 飞碟所在地表高度（贴地用）。关卡模式由 getTerrainHeightAt 求得；平面 arena / 缺省为 0。 */
   y?: number;
   phase: AltarPhase;
   /** 召唤读条进度（秒），仅 `summoning` 阶段递增。 */
@@ -641,7 +641,7 @@ export interface AltarState {
 
 /**
  * @deprecated 使用 `AltarPhase`。本别名仅为减少一次性破坏；新代码请用 `AltarPhase`。
- * 注意：阶段值与旧 `TeleporterPhase` 不再兼容（已重新设计为祭坛状态机）。
+ * 注意：阶段值与旧 `TeleporterPhase` 不再兼容（已重新设计为飞碟状态机）。
  */
 export type TeleporterPhase = AltarPhase;
 
@@ -809,7 +809,7 @@ export interface GameState {
   gameTime: number;
   /** 当前难度档位（普通/困难/噩梦），整局保持为玩家选择的难度。 */
   tier: DifficultyTier;
-  /** 当前是第几关：第一关 Boss 死亡开传送门，第二关及以后 Boss 死亡进入祭坛冷却。 */
+  /** 当前是第几关：第一关 Boss 死亡开传送门，第二关及以后 Boss 死亡进入飞碟冷却。 */
   stage: RunStage;
   /**
    * Overtime 累积时长（秒）。
@@ -848,7 +848,7 @@ export interface GameState {
   bondDamageStats: BondDamageStats[];
   waveIndex: number;
   /**
-   * 祭坛 / 传送门列表。Boss 召唤前是祭坛，Boss 死亡后变传送门，进入后被消费。
+   * 飞碟 / 传送门列表。Boss 召唤前是飞碟，Boss 死亡后变传送门，进入后被消费。
    * 旧字段名 `teleporters` 已弃用；请使用 `altars`。
    */
   altars: AltarState[];

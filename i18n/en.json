@@ -94,10 +94,10 @@
     "silver": "Silver: {{count}}",
     "finalSwarm": "FINAL SWARM!",
     "combo": "COMBO x{{count}}",
-    "quest": "Find the altar, summon and defeat the BOSS!",
+    "quest": "Find the UFO, summon and defeat the BOSS!",
     "weaponSlotLocked": "Unlocked after completing the \"equip 7 different weapons\" quest",
     "compass": {
-      "altar": "Altar",
+      "altar": "UFO",
       "portal": "Portal"
     }
   },
@@ -404,7 +404,7 @@
   },
   "altar": {
     "summoning": "Summoning Boss...",
-    "cooldown": "Altar cooldown {{seconds}}s",
+    "cooldown": "UFO cooldown {{seconds}}s",
     "prompt": {
       "summon": "[E] Summon Boss",
       "enterPortal": "[E] Enter Portal"

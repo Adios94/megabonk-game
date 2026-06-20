@@ -131,7 +131,7 @@ export function checkGameOver(engine: Engine): void {
     engine.state.running = false;
     return;
   }
-  // Boss 死亡：第一关开传送门进入下一关；第二关及以后只恢复祭坛召唤能力。
+  // Boss 死亡：第一关开传送门进入下一关；第二关及以后只恢复飞碟召唤能力。
   if (engine.state.boss && engine.state.boss.hp <= 0) {
     const defeatedBoss = engine.state.boss;
     spawnBossChests(engine, defeatedBoss);

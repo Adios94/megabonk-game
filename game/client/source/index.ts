@@ -2,7 +2,11 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 // @ts-ignore
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+// @ts-ignore
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
+// @ts-ignore
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 // @ts-ignore
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
@@ -332,7 +336,7 @@ type VfxTextureKey =
   | 'spark' | 'star' | 'smoke' | 'light' | 'slash'
   | 'muzzle' | 'magic_circle' | 'portal_swirl' | 'scorch' | 'dirt' | 'flame'
   | 'twirl' | 'slash_fill' | 'flame_aura' | 'lightning' | 'flare' | 'void_ripple'
-  | 'scorch_boots' | 'enemy_bullet';
+  | 'scorch_boots' | 'enemy_bullet' | 'scorch_boots_fire';
 
 const VFX_TEXTURE_FILES: Record<VfxTextureKey, string> = {
   spark: '/textures/vfx/spark.png',
@@ -358,6 +362,9 @@ const VFX_TEXTURE_FILES: Record<VfxTextureKey, string> = {
   lightning: '/textures/vfx/spark.png',         // 原 lightning.png == spark.png
   scorch_boots: '/textures/vfx/scorch.png',     // 原 scorch_boots.png == scorch.png
   enemy_bullet: '/textures/vfx/muzzle.png',     // 原 enemy_bullet.png == muzzle.png
+  // 像素火焰序列帧（224×32，14 帧 × 16×32），用于 scorch_trail 上层立体火焰。
+  // 加载时会强制 NEAREST 过滤，保留像素硬边缘。
+  scorch_boots_fire: '/textures/vfx/pixel_flame_red.png',
 };
 
 /** Billboard 池中每个槽位的运行时状态。 */
@@ -572,6 +579,11 @@ const ENEMY_ANIM_LOD_FAR_STRIDE = 4;   // 远距：每 4 帧更新一次
 // pop-in 仍可接受。
 const ENEMY_VISIBLE_CULL_DIST = 20;
 const ENEMY_VISIBLE_CULL_SQ = ENEMY_VISIBLE_CULL_DIST * ENEMY_VISIBLE_CULL_DIST;
+
+// ── charge 冲撞收招窗口（与 game/core/source/ai/behaviors/charge.ts 同步）────────────
+// core 在 chargeState='cooldown' 入口设 chargeTimer=3.0，前 0.7s 站定（applyMovement 跳过）
+// 让攻击/收招动画 Punch 完整可见。客户端用 chargeTimer > 3.0-0.7 = 2.3 判定收招窗口。
+const CHARGE_COOLDOWN_STRIKE_THRESHOLD = 3.0 - 0.7;
 
 const WEAPON_PROJECTILE_COLORS: Record<string, number> = {
   sword: 0xcccccc,
@@ -1460,6 +1472,7 @@ const HUD_TASK_TRACK_OFFSET_LEFT = 'clamp(-10px,-3vw,-10px)';
 const HUD_XP_BAR_WIDTH = 'min(86vw,560px)';
 const HUD_XP_BAR_HEIGHT = 'clamp(8px,2.1vw,11px)';
 const HUD_RELIC_BAR_BG = '/ui/panel/svg/hud_relic_bar_bg.svg';
+const HUD_RELIC_SLOT_BG = '/ui/panel/svg/hud_relic_slot.svg';
 const HUD_RELIC_BAR_VIEWBOX = { w: 404, h: 44 } as const;
 const HUD_RELIC_BAR_SLOT_COUNT = 10;
 const HUD_RELIC_SLOT_VIEWBOX = { x: 4, y: 4, w: 36, h: 36, pitch: 40 } as const;
@@ -2742,7 +2755,26 @@ interface LoadedModels {
  * 运行期（进对局后）GameScene 内部新建的 loader 不挂它，避免进度条已移除后还触发回调。
  */
 const bootLoadingManager = new THREE.LoadingManager();
-const gltfLoader = new GLTFLoader(bootLoadingManager);
+
+// 共享 DRACOLoader：解码 Draco 压缩的 GLB 几何（解码器文件部署在 /public/draco/）。
+// 关键设置：
+//   - setDecoderPath：本地 self-host 解码器，避免依赖 google CDN。
+//   - setDecoderConfig({ type: 'js' })：默认会优先用 wasm，wasm 解码更快但首帧多一次拉取；
+//     我们保留默认（不强制），让 Three 自动选 wasm。
+//   - preload()：提前拉解码器，避免第一帧加载 glb 时阻塞。
+// dispose 不调（整局都要用）。所有 GLTFLoader 实例共用这一个 DRACOLoader 实例（线程池共享）。
+const sharedDracoLoader = new DRACOLoader();
+sharedDracoLoader.setDecoderPath('/draco/');
+sharedDracoLoader.preload();
+
+/** 创建一个挂好 DRACOLoader 的 GLTFLoader（避免每次都忘了配 Draco）。 */
+function createGltfLoader(manager?: THREE.LoadingManager): GLTFLoader {
+  const loader = manager ? new GLTFLoader(manager) : new GLTFLoader();
+  loader.setDRACOLoader(sharedDracoLoader);
+  return loader;
+}
+
+const gltfLoader = createGltfLoader(bootLoadingManager);
 const loadedModels: LoadedModels = {
   zombie_basic: null,
   monster_bat: null,
@@ -2757,29 +2789,6 @@ const loadedModels: LoadedModels = {
 
 // Animation clips storage per model key
 const loadedAnimClips: Map<string, THREE.AnimationClip[]> = new Map();
-
-// =============================================================================
-// KayKit 手持武器（挂到角色 handslot 骨）
-// =============================================================================
-// KayKit 骷髅角色共用 Rig_Medium 骨架，手部有专用挂点骨 handslot.r / handslot.l，
-// 武器模型原点即握把，直接 add 到挂点骨（identity 变换）即落位。武器单独导出（gltf+bin
-// +共享 skeleton_texture.png），加载后做 toon 转换并缓存，按敌人类型克隆挂载。
-const loadedKayKitWeapons: Record<string, THREE.Group> = {};
-
-const KAYKIT_WEAPON_FILES: Record<string, string> = {
-  blade: '/models/skins/kaykit/weapons/Skeleton_Blade.gltf',
-  axe: '/models/skins/kaykit/weapons/Skeleton_Axe.gltf',
-  staff: '/models/skins/kaykit/weapons/Skeleton_Staff.gltf',
-  shield: '/models/skins/kaykit/weapons/Skeleton_Shield_Large_A.gltf',
-};
-
-// 敌人类型 → 手持武器配置（right=handslot.r，left=handslot.l）。
-// 仅当克隆出的模型确实带 handslot 骨（即 KayKit 角色）时才会真正挂上，其它皮肤天然跳过。
-const KAYKIT_WEAPON_LOADOUT: Record<string, { right?: string; left?: string }> = {
-  skeleton_knight: { right: 'blade', left: 'shield' }, // 战士：剑 + 大盾
-  skeleton_archer: { right: 'staff' },                 // 法师：法杖
-  skeleton_soldier: { right: 'axe' },                  // 小兵：斧
-};
 
 // 把 Rig_Medium 通用动画 clip 名映射到游戏敌人动画状态机要的名字。
 // KayKit FREE 包没有近战挥砍，用 Throw（手臂前送）当攻击替身（playEnemyAnim 找 'Punch'）。
@@ -2881,25 +2890,6 @@ async function loadSkinModels(): Promise<void> {
         console.log(`[Skin] Loaded ${key} (${path})`);
       } catch (err) {
         console.warn(`[Skin] Failed ${key} (${path}):`, err);
-      }
-    }),
-    // KayKit 手持武器（gltf + bin + 共享 skeleton_texture.png）
-    ...Object.entries(KAYKIT_WEAPON_FILES).map(async ([key, path]) => {
-      try {
-        const gltf = await gltfLoader.loadAsync(path);
-        const g = gltf.scene;
-        convertToToonMaterials(g, true);
-        g.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) {
-            const mesh = child as THREE.Mesh;
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-          }
-        });
-        loadedKayKitWeapons[key] = g;
-        console.log(`[Skin] Loaded weapon ${key} (${path})`);
-      } catch (err) {
-        console.warn(`[Skin] Failed weapon ${key} (${path}):`, err);
       }
     }),
     // Rig_Medium 动画：抽取需要的 clip，重命名为游戏状态机用的名字
@@ -3486,6 +3476,158 @@ function applySceneryMode(root: THREE.Object3D, mode: 'toon' | 'pbr'): void {
 }
 
 /**
+ * 关卡静态几何运行时合批（空间网格 × 材质签名）。
+ *
+ * 输入约定：在 tryLoadLevel 末尾、convertToToonMaterials + applySceneryMode 之后调用。
+ * 算法：
+ *   1. traverse 收集所有静态 Mesh（跳过 SkinnedMesh / 多 material / morph target）
+ *   2. 计算每个 mesh 的世界包围盒中心，按 `cellSize` 网格分桶 → (cellX, cellZ)
+ *   3. 同 cell 内再按 (背景? × 材质签名) 二次分桶
+ *   4. 每桶把子 geometry 烘焙 matrixWorld，统一 indexed/非 indexed + attribute 交集
+ *   5. mergeGeometries 合成单 BufferGeometry → 单 Mesh
+ *
+ * 为什么不能只按材质分桶（早期版本踩过的坑）：
+ *   - 合成一个超大 mesh 后 bounding box 包整张关卡，相机永远在它的 bbox 内 → frustum 剔除失效
+ *     → 顶点处理量 / shadowmap pass 翻几倍（whitebox tessellated 后顶点 1M+ 量级），FPS 反降
+ *   - 用空间网格切碎后，远 cell 的合批 mesh 在 frustum 外能正常被剔除，draw call 下降的同时顶点量也下降
+ *
+ * 调参 `cellSize`：
+ *   - 越小：culling 越精细，合批程度越低（draw 偏多但顶点少）
+ *   - 越大：合批越多，culling 越粗（draw 少但顶点多，回到老问题）
+ *   - whitebox 是 100m × 100m 量级 → 默认 40m（相机视域约覆盖 4-6 cell，正好平衡）
+ *
+ * 注意事项：
+ *   - sceneryMeshId 失效 → applySceneryMode('pbr') 在合批后的 mesh 上无效（dev tweakpane 切换不再回 PBR）
+ *     这是个 dev-only 控件，已写在注释里；如需恢复，方案：合批前 clone 一份原 scene 当 PBR 视觉源。
+ *   - 阴影 caster：背景桶 castShadow=false（保持原行为），前景桶 castShadow=true。
+ *   - cameraOccluder 仍 work：Raycaster 沿 root traverse 抓 mesh，合批后命中点与之前等价。
+ */
+function batchLevelGeometry(
+  root: THREE.Object3D,
+  options: { cellSize?: number } = {},
+): { before: number; after: number; skipped: number; buckets: number } {
+  const cellSize = options.cellSize ?? 40;
+  type Bucket = {
+    isBackground: boolean;
+    material: THREE.Material;
+    geos: THREE.BufferGeometry[];
+  };
+  const buckets = new Map<string, Bucket>();
+  const toRemove: THREE.Mesh[] = [];
+  let skipped = 0;
+  let processed = 0;
+
+  root.updateMatrixWorld(true);
+
+  const _bboxTmp = new THREE.Box3();
+  const _centerTmp = new THREE.Vector3();
+
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    if ((mesh as unknown as THREE.SkinnedMesh).isSkinnedMesh) { skipped++; return; }
+    if (Array.isArray(mesh.material)) { skipped++; return; }
+    const geo = mesh.geometry;
+    if (!geo || !geo.attributes.position) { skipped++; return; }
+    if (geo.morphAttributes && Object.keys(geo.morphAttributes).length > 0) { skipped++; return; }
+
+    // 用世界包围盒中心定位空间 cell（matrixWorld 已 update）
+    _bboxTmp.setFromObject(mesh);
+    _bboxTmp.getCenter(_centerTmp);
+    const cx = Math.floor(_centerTmp.x / cellSize);
+    const cz = Math.floor(_centerTmp.z / cellSize);
+
+    const isBg = mesh.userData.isBackground === true;
+    const sig =
+      `${cx}|${cz}|${isBg ? 'bg' : 'fg'}|` + materialBatchSignature(mesh.material);
+
+    let bucket = buckets.get(sig);
+    if (!bucket) {
+      bucket = { isBackground: isBg, material: mesh.material, geos: [] };
+      buckets.set(sig, bucket);
+    }
+    // 烘焙世界变换；clone 防污染原 BufferGeometry（关卡 cache 可能共享）。
+    const baked = geo.clone();
+    baked.applyMatrix4(mesh.matrixWorld);
+    bucket.geos.push(baked);
+    processed++;
+    toRemove.push(mesh);
+  });
+
+  for (const m of toRemove) m.parent?.remove(m);
+
+  const mergedRoot = new THREE.Group();
+  mergedRoot.name = 'BatchedLevelMeshes';
+  let mergedCount = 0;
+
+  for (const bucket of buckets.values()) {
+    // mergeGeometries 要求 attribute 名 / itemSize / indexed 完全一致。
+    // 步骤：(1) 取所有 geos attribute 名的交集；(2) 删多余 attribute；(3) 统一非 indexed。
+    const commonAttrs = intersectGeometryAttributes(bucket.geos);
+    const normalized = bucket.geos.map((g) => {
+      for (const k of Object.keys(g.attributes)) {
+        if (!commonAttrs.has(k)) g.deleteAttribute(k);
+      }
+      return g.index ? g.toNonIndexed() : g;
+    });
+
+    const merged = mergeGeometries(normalized, false);
+    if (!merged) {
+      // attribute itemSize 不一致等罕见情形：退回单 mesh，不打断流程
+      for (const g of normalized) {
+        const m = new THREE.Mesh(g, bucket.material);
+        m.castShadow = !bucket.isBackground;
+        m.receiveShadow = !bucket.isBackground;
+        if (bucket.isBackground) m.userData.isBackground = true;
+        mergedRoot.add(m);
+        mergedCount++;
+      }
+      continue;
+    }
+
+    const m = new THREE.Mesh(merged, bucket.material);
+    m.name = `Batched_${bucket.isBackground ? 'bg' : 'fg'}_${mergedCount}`;
+    m.castShadow = !bucket.isBackground;
+    m.receiveShadow = !bucket.isBackground;
+    if (bucket.isBackground) m.userData.isBackground = true;
+    mergedRoot.add(m);
+    mergedCount++;
+  }
+  root.add(mergedRoot);
+  return { before: processed, after: mergedCount, skipped, buckets: buckets.size };
+}
+
+/** 合批分桶用的材质签名：相同签名 → 渲染状态等价，可合并。 */
+function materialBatchSignature(mat: THREE.Material): string {
+  const tm = mat as THREE.MeshToonMaterial;
+  if (tm.isMeshToonMaterial) {
+    return [
+      'toon',
+      tm.color?.getHexString() ?? '-',
+      tm.map?.uuid ?? '-',
+      tm.gradientMap?.uuid ?? '-',
+      tm.emissive?.getHexString() ?? '-',
+      tm.emissiveMap?.uuid ?? '-',
+      tm.transparent ? 't' : 'o',
+      String(tm.side),
+      String(tm.alphaTest ?? 0),
+    ].join('|');
+  }
+  // 其它材质（罕见：背景天空盒 / 自定义 shader）按 uuid 走"自成一桶不合并"
+  return `uniq:${mat.uuid}`;
+}
+
+function intersectGeometryAttributes(geos: THREE.BufferGeometry[]): Set<string> {
+  if (geos.length === 0) return new Set();
+  const common = new Set(Object.keys(geos[0].attributes));
+  for (let i = 1; i < geos.length; i++) {
+    const cur = new Set(Object.keys(geos[i].attributes));
+    for (const k of [...common]) if (!cur.has(k)) common.delete(k);
+  }
+  return common;
+}
+
+/**
  * 加载唯一关卡 glb。强制双文件模式：
  *   - level_${name}.glb       视觉高模（缺则用 col 当视觉，纯灰盒）
  *   - level_${name}_col.glb   碰撞低模（必须，关卡逻辑 / spawn_* 只从这里解析）
@@ -3598,6 +3740,14 @@ async function tryLoadLevel(name: string = DEFAULT_LEVEL_NAME): Promise<void> {
 
   // 3. 应用当前的关卡视觉材质模式
   applySceneryMode(renderScene, sceneryMode);
+
+  // 4. 运行时合批（空间网格 × 材质签名）：把 draw call 从 mesh 数压到桶数，同时保留 frustum culling。
+  //    见 batchLevelGeometry 注释；对任意 glb 通用（whitebox / 新关卡都受益）。
+  const batchStats = batchLevelGeometry(renderScene, { cellSize: 40 });
+  console.log(
+    `[Level] Batched: ${batchStats.before} static mesh → ${batchStats.after} merged mesh ` +
+      `(${batchStats.skipped} skipped: skinned/multi-mat/morph)`,
+  );
 
   const data = parseLevelGltf(colSource);
   loadedLevel = { data, scene: renderScene };
@@ -4128,7 +4278,7 @@ export class GameScene {
   private teleporterMeshes: THREE.Mesh[] = [];
   private teleporterGlowMeshes: THREE.Mesh[] = [];
   /**
-   * 祭坛 / 传送门的地面 decal（魔法圆 / 漩涡），与祭坛索引一一对应。
+   * 飞碟 / 传送门的地面 decal（魔法圆 / 漩涡），与飞碟索引一一对应。
    * 每帧根据 altar.phase 切换贴图（magic_circle ↔ portal_swirl）+ 旋转。
    */
   private altarDecals: THREE.Mesh[] = [];
@@ -4245,7 +4395,7 @@ export class GameScene {
   /** 局内任务条（武器槽下方）。 */
   private questRow!: HTMLDivElement;
   private questLabel!: HTMLDivElement;
-  /** 局内主线任务条是否已触发完成消失动画（祭坛 Boss 被击败后）。 */
+  /** 局内主线任务条是否已触发完成消失动画（飞碟 Boss 被击败后）。 */
   private questHudDismissStarted = false;
   /** 经验条上方的 buff 行：左消耗品 / 右羁绊。 */
   private buffRow!: HTMLDivElement;
@@ -4311,7 +4461,7 @@ export class GameScene {
   private jumpKeyDown = false;
   /**
    * 交互按键的边缘状态。`interactKeyPressed` 在按下的那一帧为 true，
-   * 发完一帧后立即清零，避免长按反复触发祭坛召唤。
+   * 发完一帧后立即清零，避免长按反复触发飞碟召唤。
    */
   private interactKeyPressed = false;
   /** 移动端交互按钮被按下时由 UI 设置一次 true，发送一帧后清零（同 interactKeyPressed）。 */
@@ -5248,7 +5398,7 @@ export class GameScene {
     this.scene.add(this.playerMesh);
 
     // Attempt to load and replace with GLTF model
-    const loader = new GLTFLoader();
+    const loader = createGltfLoader();
     loader.load(modelPath, (gltf) => {
       const model = gltf.scene;
       model.name = 'Player';
@@ -5424,34 +5574,6 @@ export class GameScene {
     }
   }
 
-  // KayKit 骷髅：把配置的手持武器克隆并挂到角色的 handslot.r / handslot.l 骨。
-  // 武器原点即握把，挂点骨已摆好朝向，identity 变换即落位；武器随角色统一缩放。
-  // 模型若没有 handslot 骨（非 KayKit 皮肤）则什么都不做。
-  private attachEnemyWeapons(obj: THREE.Object3D, enemyType: string): void {
-    const loadout = KAYKIT_WEAPON_LOADOUT[enemyType];
-    if (!loadout) return;
-    // GLTFLoader 会去掉骨名里的保留字符（handslot.r → handslotr），按归一化后名字匹配，
-    // 兼容两种命名。
-    const norm = (s: string) => s.replace(/[\s[\].:/]/g, '');
-    const findBone = (target: string): THREE.Object3D | undefined => {
-      const want = norm(target);
-      let found: THREE.Object3D | undefined;
-      obj.traverse((c) => { if (!found && norm(c.name) === want) found = c; });
-      return found;
-    };
-    const mount = (slotBone: string, weaponKey?: string): void => {
-      if (!weaponKey) return;
-      const bone = findBone(slotBone);
-      const weapon = loadedKayKitWeapons[weaponKey];
-      if (!bone || !weapon) return;
-      const inst = weapon.clone(true);
-      inst.name = `Weapon_${weaponKey}`;
-      bone.add(inst);
-    };
-    mount('handslot.r', loadout.right);
-    mount('handslot.l', loadout.left);
-  }
-
   /**
    * 为一个敌人对象建立或复用 AnimationMixer + AnimationAction 表，并播放 Idle。
    *
@@ -5510,13 +5632,16 @@ export class GameScene {
       const fallbacks: Record<string, string[]> = {
         'Run_Attack': ['Run_Arms', 'Run'],
         'Run_Arms': ['Run', 'Walk'],
-        'Punch': ['Idle_Attack', 'Run_Attack', 'Idle'],
-        'HitReact': ['Idle'],
-        'Idle_Attack': ['Punch', 'Idle'],
+        // 'Attack' 兜底是给 Quaternius 系（Bat_Attack → Attack 这种）用的：
+        // Bat 没有 Punch/Idle_Attack，但有 Attack/Attack2，加上后 gargoyle 咬完会真的播挥击。
+        'Punch': ['Idle_Attack', 'Run_Attack', 'Attack', 'Attack2', 'Idle'],
+        // Bat_Hit → Hit：飞行怪受击红闪期间能看到挨打反应，而不是定身在 Idle。
+        'HitReact': ['Hit', 'Idle'],
+        'Idle_Attack': ['Punch', 'Attack', 'Idle'],
         // 施法 / 召唤（necromancer→ghost 模型无专用 spellcast clip，
         // 用 attack-melee / interact 这类伸手动作替代；其它皮肤回落到 Punch/Idle）
-        'Cast': ['Attack-melee-right', 'Attack-melee-left', 'Interact-right', 'Spellcast', 'Punch', 'Idle'],
-        'Summon': ['Interact-right', 'Interact-left', 'Attack-melee-right', 'Spellcast', 'Punch', 'Idle'],
+        'Cast': ['Attack-melee-right', 'Attack-melee-left', 'Interact-right', 'Spellcast', 'Punch', 'Attack', 'Idle'],
+        'Summon': ['Interact-right', 'Interact-left', 'Attack-melee-right', 'Spellcast', 'Punch', 'Attack', 'Idle'],
       };
       const chain = fallbacks[name];
       if (chain) {
@@ -5736,9 +5861,18 @@ export class GameScene {
 
     // ─── Billboard VFX：预加载贴图 + 预分配 plane 池 ───
     const billboardLoader = new THREE.TextureLoader();
+    // 像素艺术 sprite-sheet：禁用 mipmap、最近邻采样，避免边缘模糊
+    const PIXEL_ART_KEYS: ReadonlySet<VfxTextureKey> = new Set([
+      'scorch_boots_fire',
+    ]);
     for (const key of Object.keys(VFX_TEXTURE_FILES) as VfxTextureKey[]) {
       const tex = billboardLoader.load(VFX_TEXTURE_FILES[key]);
       tex.colorSpace = THREE.SRGBColorSpace;
+      if (PIXEL_ART_KEYS.has(key)) {
+        tex.magFilter = THREE.NearestFilter;
+        tex.minFilter = THREE.NearestFilter;
+        tex.generateMipmaps = false;
+      }
       this.vfxTextures[key] = tex;
     }
 
@@ -6133,7 +6267,7 @@ export class GameScene {
     applyShrineChargeHudLayout(this.shrineIndicator);
     this.hudContainer.appendChild(this.shrineIndicator);
 
-    // Boss 召唤祭坛圆形进度（与充能神殿进度共用位置）
+    // Boss 召唤飞碟圆形进度（与充能神殿进度共用位置）
     this.bossSummonWidget = createBossSummonIndicator();
     this.bossSummonIndicator = this.bossSummonWidget.root;
     this.bossSummonIndicator.style.position = 'absolute';
@@ -6143,7 +6277,7 @@ export class GameScene {
     applyShrineChargeHudLayout(this.bossSummonIndicator);
     this.hudContainer.appendChild(this.bossSummonIndicator);
 
-    // 移动端交互按钮（宝箱 / 祭坛）；PC 统一 KeyE
+    // 移动端交互按钮（宝箱 / 飞碟）；PC 统一 KeyE
     this.interactBtn = document.createElement('div');
     this.interactBtn.dataset.cameraBlock = 'true';
     const onInteractTap = (ev: Event) => { ev.preventDefault(); this.mobileInteractPressed = true; };
@@ -7461,8 +7595,8 @@ export class GameScene {
           const model = modelKey ? loadedModels[modelKey] : null;
           if (model) {
             obj = cloneSkeleton(model) as THREE.Object3D;
-            // KayKit 角色：把手持武器挂到 handslot 骨（其它皮肤无此骨，自动跳过）
-            this.attachEnemyWeapons(obj, enemy.type);
+            // KayKit 角色：武器已烘焙进 SkinnedMesh（详见 scripts/blender/merge-kaykit.py），
+            // 不再需要运行时挂载到 handslot.r/.l 骨。
             this.prepareHitFlashMaterials(obj);
             // 首次创建：在 obj.userData 上建立 mixer/actions 缓存，未来池复用直接重用
             this.setupEnemyAnimationsFor(obj, enemy.id, enemy.type);
@@ -7558,11 +7692,23 @@ export class GameScene {
         obj.visible = true;
       } else if (enemy.chargeState === 'windup') {
         this.playEnemyAnim(enemy.id, 'Idle');
+      } else if (enemy.chargeState === 'cooldown' && enemy.chargeTimer > CHARGE_COOLDOWN_STRIKE_THRESHOLD) {
+        // charging→cooldown 入口的 STRIKE_RECOVERY 窗口：core 把 enemy 站定，这里显式播
+        // Punch（KayKit Throw 映射，挥手前送）。靠 attackCooldown>threshold*max 的旧分支只有 ~0.4s
+        // 两端各被 0.2s crossfade 吃掉，几乎看不到攻击；用 chargeTimer 判定保证 0.7s 全程可见。
+        this.playEnemyAnim(enemy.id, 'Punch');
+      } else if (enemy.diveState === 'rising') {
+        // gargoyle 咬完起飞段（0.5s）：显式播 Punch → fallback 命中 Bat_Attack。
+        // 不靠 attackCooldown 阈值的原因：dive.ts 在 rising→flying 才把 cooldown 拉到 max，
+        // 那时 gargoyle 已经在巡航高度了，Punch 出现在半空中很违和；这里咬完直接接挥击姿态。
+        this.playEnemyAnim(enemy.id, 'Punch');
       } else if (enemy.type === 'necromancer' && enemy.summonCooldown > 7.0) {
         // 刚召唤完小兵（summonCooldown 每 8s 重置为 8）→ 召唤施法姿态（窗口 1s 便于看清）
         this.playEnemyAnim(enemy.id, 'Summon');
-      } else if (enemy.attackCooldown > enemy.attackCooldownMax * 0.8) {
-        // Just attacked (cooldown just reset) — necromancer 走施法动作，近战怪用 Punch
+      } else if (enemy.attackCooldown > enemy.attackCooldownMax * 0.7) {
+        // Just attacked (cooldown 刚 reset) — necromancer 走施法动作，近战怪用 Punch。
+        // 阈值 0.7：留出 30% 的窗口播攻击姿态（soldier 0.45s / zombie 0.75s / archer 0.9s /
+        // necromancer Cast 1.2s），避免被 fade-in 0.2s + fade-out 0.2s 吞掉看不见。
         this.playEnemyAnim(enemy.id, enemy.type === 'necromancer' ? 'Cast' : 'Punch');
       } else if (isMoving) {
         // Moving enemy — prefer Run_Arms (zombie arms out), fallback to Run/Walk
@@ -8378,12 +8524,12 @@ export class GameScene {
       if (loadedModels.teleporter) {
         const tp = cloneSkeleton(loadedModels.teleporter) as THREE.Object3D;
         tp.name = 'Altar_Model';
-        tp.scale.set(1.5, 1.5, 1.5);
+        tp.scale.set(3.0, 3.0, 3.0);
         this.scene.add(tp);
         this.teleporterMeshes.push(tp as unknown as THREE.Mesh);
       } else {
         // Fallback: ring on ground
-        const ringGeo = new THREE.RingGeometry(1.5, 2.0, 24);
+        const ringGeo = new THREE.RingGeometry(3.0, 4.0, 24);
         const ringMat = new THREE.MeshBasicMaterial({
           color: 0x00ccff,
           side: THREE.DoubleSide,
@@ -8398,7 +8544,7 @@ export class GameScene {
       }
 
       // Glow pillar
-      const pillarGeo = new THREE.CylinderGeometry(0.3, 1.5, 4, 12);
+      const pillarGeo = new THREE.CylinderGeometry(0.6, 3.0, 8, 12);
       const pillarMat = new THREE.MeshBasicMaterial({
         color: 0x00ffff,
         transparent: true,
@@ -8410,7 +8556,7 @@ export class GameScene {
       this.teleporterGlowMeshes.push(pillar);
 
       // Ground decal: magic circle / portal swirl（按 phase 切贴图）
-      const decalGeo = new THREE.PlaneGeometry(5, 5);
+      const decalGeo = new THREE.PlaneGeometry(10, 10);
       const decalMat = new THREE.MeshBasicMaterial({
         map: this.vfxTextures.magic_circle,
         transparent: true,
@@ -8434,19 +8580,27 @@ export class GameScene {
         const pillar = this.teleporterGlowMeshes[i];
         const decal = this.altarDecals[i];
 
-        // 祭坛贴地：标记常摆在高平台上，y 由 core 的 getTerrainHeightAt 求得（缺省 0）。
+        // 飞碟贴地：标记常摆在高平台上，y 由 core 的 getTerrainHeightAt 求得（缺省 0）。
         const ay = tp.y ?? 0;
 
         ring.visible = true;
-        ring.position.set(tp.x, ay + 0.1, tp.z);
-        ring.rotation.z = time;
+        // 飞碟悬浮在光柱顶端上方（光柱 height=8，center y=ay+4，顶端约 ay+8）
+        // 飞碟模型绕 Y 轴自转；fallback ring 维持贴地姿态
+        const isUfo = ring.name === 'Altar_Model';
+        if (isUfo) {
+          ring.position.set(tp.x, ay + 7.0, tp.z);
+          ring.rotation.set(0, time * 1.2, 0);
+        } else {
+          ring.position.set(tp.x, ay + 0.2, tp.z);
+          ring.rotation.set(-Math.PI / 2, 0, 0);
+        }
 
         pillar.visible = true;
-        pillar.position.set(tp.x, ay + 2, tp.z);
+        pillar.position.set(tp.x, ay + 3, tp.z);
 
         // 地面 decal 始终可见（除 portal_used 终态）
         decal.visible = tp.phase !== 'portal_used';
-        decal.position.set(tp.x, ay + 0.06, tp.z);
+        decal.position.set(tp.x, ay + 0.12, tp.z);
 
         // Color based on phase.
         // 注意：ring 可能是 GLB 模型（Object3D，无 .material）也可能是 fallback 的
@@ -8472,7 +8626,7 @@ export class GameScene {
             break;
           }
           case 'boss_active': {
-            // Boss 战进行中：祭坛沉默（decal 暗淡）
+            // Boss 战进行中：飞碟沉默（decal 暗淡）
             ringMat?.color.setHex(0xff2200);
             pillarMat.color.setHex(0xff4400);
             pillarMat.opacity = 0.4;
@@ -8841,15 +8995,20 @@ export class GameScene {
     rarityEl.textContent = '???';
     rarityEl.style.color = '#ffffff';
 
+    // 描述文案居中：用 white-space:pre-line + \n 强制按中文逗号 `，` 断行，
+    // 避免窄卡片自动换行时把末尾 "+N" 甩到第二行造成"伪左对齐"的视觉错觉。
+    // 单句描述（无逗号）保持单行渲染，只有多句描述（如"护盾值 +2，最大护盾值 +5"）才会拆行。
     const relicAttribute = document.createElement('div');
     relicAttribute.style.cssText = uiPlainText(
-      'font-size:clamp(12px,3.2vw,15px);line-height:1.35;text-align:center;width:100%;',
+      'font-size:11px;line-height:1.4;text-align:center;width:100%;white-space:pre-line;word-break:keep-all;overflow-wrap:break-word;',
     );
     relicAttribute.textContent = reward.bossDrop || reward.cost <= 0 ? 'Boss 宝箱 · 免费开启' : `消耗 ${reward.cost} 金币`;
     statsBox.appendChild(relicAttribute);
 
+    // 按钮行宽度对齐卡片宽度（min(72vw,240px)），避免出现"按钮比卡片宽"的视觉断层。
+    // 单按钮 flex:1 平分行宽，再设最小可点击宽度防止文字被挤压。
     const buttonRow = document.createElement('div');
-    buttonRow.style.cssText = 'display:none;gap:clamp(10px,3vw,14px);margin-top:clamp(14px,4vw,18px);width:100%;max-width:min(92vw,300px);justify-content:center;align-items:stretch;';
+    buttonRow.style.cssText = 'display:none;gap:clamp(8px,2.4vw,12px);margin-top:clamp(10px,2.8vw,14px);width:min(72vw,240px);justify-content:center;align-items:stretch;';
 
     const discardBtn = createFramedLabelButton(
       t('chest.discard'),
@@ -8862,7 +9021,8 @@ export class GameScene {
       '100%',
       true,
     );
-    discardBtn.style.maxWidth = `${uiPx(130)}px`;
+    discardBtn.style.flex = '1 1 0';
+    discardBtn.style.minWidth = '0';
 
     const keepBtn = createFramedLabelButton(
       t('chest.keep'),
@@ -8875,7 +9035,8 @@ export class GameScene {
       '100%',
       true,
     );
-    keepBtn.style.maxWidth = `${uiPx(130)}px`;
+    keepBtn.style.flex = '1 1 0';
+    keepBtn.style.minWidth = '0';
 
     buttonRow.appendChild(discardBtn);
     buttonRow.appendChild(keepBtn);
@@ -8909,7 +9070,8 @@ export class GameScene {
         titleEl.textContent = relic.name;
         rarityEl.textContent = t(`shrine.rarity.${reward.rarity}`);
         setIconImage(iconSlot, relicIconSrc(reward.relicId), relic.emoji);
-        relicAttribute.textContent = relic.description;
+        // 中文逗号 `，` 转换行符 → 在 white-space:pre-line 下强制断行，避免末尾 "+N" 被挤到孤行。
+        relicAttribute.textContent = relic.description.replace(/，\s*/g, '\n').replace(/,\s*/g, '\n');
         card.style.transform = 'scale(1.12) rotate(0deg)';
         setTimeout(() => { card.style.transform = 'scale(1) rotate(0deg)'; }, 140);
         buttonRow.style.display = 'flex';
@@ -9417,7 +9579,7 @@ export class GameScene {
   }
 
   /**
-   * 祭坛 phase==='summoning' 时显示圆形进度条（进度来自 summonTimer / summonDuration，0-100%）。
+   * 飞碟 phase==='summoning' 时显示圆形进度条（进度来自 summonTimer / summonDuration，0-100%）。
    * - 召唤成功（summoning → boss_active）时先把圆环补满 100% 再淡出消失。
    * - 玩家离开召唤区域后 core 会让进度缓慢回落，圆环随之逐渐减少，归零（回到 ready）后淡出。
    * - 与充能神殿进度共用 HUD 位置；神殿进度优先（suppress=true 时让位）。
@@ -9429,7 +9591,7 @@ export class GameScene {
 
     const activeAltar = suppress ? null : altars.find(a => a.phase === 'summoning') ?? null;
     if (!activeAltar) {
-      // 上一帧还在召唤、本帧已有祭坛进入 boss_active → 召唤成功：补满 100% 再淡出。
+      // 上一帧还在召唤、本帧已有飞碟进入 boss_active → 召唤成功：补满 100% 再淡出。
       if (this.bossSummonWasShowing && altars.some(a => a.phase === 'boss_active')) {
         widget.setPercent(100);
       }
@@ -9571,7 +9733,7 @@ export class GameScene {
    * 渲染区域特效（毒气云 / 虚空涟漪 / 灼地痕迹 / 激光线）。
    * 按 id 维护 Mesh，新增即创建、消失即移除，每帧更新位置 / 半径 / 透明度。
    */
-  private updateAreaEffects(state: GameState, _dt: number): void {
+  private updateAreaEffects(state: GameState, dt: number): void {
     const live = new Set<number>();
 
     for (const ae of state.areaEffects) {
@@ -9661,12 +9823,25 @@ export class GameScene {
         case 'scorch_trail': {
           obj.position.set(ae.x, ae.y + 0.06, ae.z);
           obj.scale.setScalar(Math.max(0.01, ae.radius));
-          // 焦土底层随时间淡出；发光放射层在中后段更快收敛，呈现"先亮后焦"的余烬感
+          // 焦土底层随时间淡出；竖向像素火焰精灵每帧推进 UV 序列帧，独立相位 + 节奏
           const burn = obj.getObjectByName('scorch_burn') as THREE.Mesh | null;
-          const glow = obj.getObjectByName('scorch_glow') as THREE.Mesh | null;
+          const flames = obj.getObjectByName('scorch_flames') as THREE.Group | null;
           if (burn) (burn.material as THREE.MeshBasicMaterial).opacity = ratio * 0.85;
-          if (glow) {
-            (glow.material as THREE.MeshBasicMaterial).opacity = ratio * ratio * 0.9;
+          if (flames) {
+            const FRAMES = 14;
+            // ratio² 让火焰在尾段加速变弱；末段还做轻微缩放收敛，模拟「火焰熄灭」
+            const flameOpacity = ratio * ratio * 0.95;
+            for (const child of flames.children) {
+              const sp = child as THREE.Sprite;
+              const mat = sp.material as THREE.SpriteMaterial;
+              if (!mat.map) continue;
+              const fps = (sp.userData['fps'] as number) ?? 12;
+              const ft = ((sp.userData['frameTime'] as number) ?? 0) + dt;
+              sp.userData['frameTime'] = ft;
+              const frame = Math.floor(ft * fps) % FRAMES;
+              mat.map.offset.x = frame / FRAMES;
+              mat.opacity = flameOpacity;
+            }
           }
           break;
         }
@@ -9803,14 +9978,15 @@ export class GameScene {
         return mesh;
       }
       case 'scorch_trail': {
-        // 灼地痕迹：贴地的双层贴花。
-        // 底层 = 暗橙焦土圆盘（普通混合），上层 = scorch_boots 放射状灼烧贴图（加色发光）。
+        // 灼地痕迹：底层贴地焦痕 + 上层一圈竖立的像素火焰精灵（14 帧 sprite-sheet 动画）。
         // 单位尺寸半径 1，由 update 按 ae.radius 缩放，正好覆盖 AoE。
         const group = new THREE.Group();
 
+        // 底层焦痕：保留原灼地圆盘（用 scorch 软边贴图，不再用 scorch_boots，
+        // 因为后者现在是像素竖向火焰序列帧、不适合贴在地面上）。
         const scorchGeo = new THREE.CircleGeometry(1, 24);
         const scorchMat = new THREE.MeshBasicMaterial({
-          map: this.vfxTextures.scorch_boots ?? null,
+          map: this.vfxTextures.scorch ?? null,
           color: 0x5a1f06, transparent: true, opacity: 1.0,
           side: THREE.DoubleSide, depthWrite: false,
         });
@@ -9820,19 +9996,47 @@ export class GameScene {
         scorch.name = 'scorch_burn';
         group.add(scorch);
 
-        const glowGeo = new THREE.PlaneGeometry(2, 2);
-        const glowMat = new THREE.MeshBasicMaterial({
-          map: this.vfxTextures.scorch_boots ?? null,
-          color: 0xff7a1a, transparent: true, opacity: 1.0,
-          side: THREE.DoubleSide, depthWrite: false,
-          blending: THREE.AdditiveBlending,
-        });
-        const glow = new THREE.Mesh(glowGeo, glowMat);
-        glow.rotation.x = -Math.PI / 2;
-        glow.rotation.z = Math.random() * Math.PI * 2; // 随机初始朝向，避免每个痕迹放射纹理朝向一致
-        glow.renderOrder = 4;
-        glow.name = 'scorch_glow';
-        group.add(glow);
+        // 上层：N 团竖向像素火焰（THREE.Sprite 自动朝相机），分布在半径环内。
+        // 每个 sprite 持有自己的 texture clone，独立动画相位，避免所有火同帧。
+        const fireBase = this.vfxTextures.scorch_boots_fire;
+        if (fireBase) {
+          const flames = new THREE.Group();
+          flames.name = 'scorch_flames';
+          flames.renderOrder = 4;
+          const FLAME_COUNT = 7;
+          const FRAMES = 14;
+          for (let i = 0; i < FLAME_COUNT; i++) {
+            const tex = fireBase.clone();
+            tex.needsUpdate = true;
+            tex.repeat.set(1 / FRAMES, 1);
+            tex.offset.set(Math.floor(Math.random() * FRAMES) / FRAMES, 0);
+            // 克隆已继承 NearestFilter，但保险起见再设一次
+            tex.magFilter = THREE.NearestFilter;
+            tex.minFilter = THREE.NearestFilter;
+            tex.generateMipmaps = false;
+            const mat = new THREE.SpriteMaterial({
+              map: tex,
+              color: 0xffffff,
+              transparent: true,
+              depthWrite: false,
+              blending: THREE.AdditiveBlending,
+            });
+            const sprite = new THREE.Sprite(mat);
+            // 单位 group 半径 = 1：在 0.30..0.85 半径环上均匀+扰动分布
+            const ang = (i / FLAME_COUNT) * Math.PI * 2 + Math.random() * 0.5;
+            const r = 0.30 + Math.random() * 0.55;
+            // sprite 位于火焰底部上方 0.5（贴图竖向 32px，scale.y=1.2 → 半高 0.6），
+            // 使火焰底部贴近地面
+            sprite.position.set(Math.cos(ang) * r, 0.6, Math.sin(ang) * r);
+            // 16:32 长宽比 → scale 比 1:2；整体由 group 按 AoE 半径放大
+            const sizeJitter = 0.85 + Math.random() * 0.4;
+            sprite.scale.set(0.6 * sizeJitter, 1.2 * sizeJitter, 1.0);
+            sprite.userData['frameTime'] = Math.random() * 1.0;
+            sprite.userData['fps'] = 10 + Math.random() * 4; // 每团火焰节奏稍微错开
+            flames.add(sprite);
+          }
+          group.add(flames);
+        }
 
         return group;
       }
@@ -10468,6 +10672,7 @@ export class GameScene {
           height:${(HUD_RELIC_SLOT_VIEWBOX.h / HUD_RELIC_BAR_VIEWBOX.h) * 100}%;
           transform:translate(-50%,-50%);
           display:flex;align-items:center;justify-content:center;
+          background:url("${HUD_RELIC_SLOT_BG}") center/100% 100% no-repeat;
           border-radius:7px;box-sizing:border-box;cursor:help;
           filter:drop-shadow(0 0 5px ${borderColor}80);
         `;
@@ -10525,9 +10730,9 @@ export class GameScene {
     }
 
     // --- Altar / Portal Indicator ---
-    // 显示距离最近的祭坛 / 宝箱（或玩家在交互半径里时的 prompt）。
+    // 显示距离最近的飞碟 / 宝箱（或玩家在交互半径里时的 prompt）。
     // 跳过终态：boss_active（Boss 战中无意义）/ portal_used（即将被消费）。
-    // 充能神殿进度指示器占用同位置时，压制宝箱 / 祭坛文字提示。
+    // 充能神殿进度指示器占用同位置时，压制宝箱 / 飞碟文字提示。
     const shrineIndicatorVisible = this.updateShrineIndicator(
       state.shrines,
       p.x,
@@ -10551,7 +10756,7 @@ export class GameScene {
     const isMobile = !window.matchMedia('(hover: hover)').matches;
     if (chargeIndicatorVisible) {
       gsapAnimations.animateTeleporterIndicator(this.teleporterIndicator, false, 0.2);
-    // [DISABLED] 局内祭坛位置显示
+    // [DISABLED] 局内飞碟位置显示
     // const visibleAltar = state.altars.find(a => a.phase !== 'boss_active' && a.phase !== 'portal_used');
     } else if (chestInRange && nearestChest && !isMobile) {
       // 使用 GSAP 动画显示传送门指示器
@@ -10571,7 +10776,7 @@ export class GameScene {
       // 触屏靠近宝箱：顶部不显示 [E] 提示，由底部 interactBtn 承担
       gsapAnimations.animateTeleporterIndicator(this.teleporterIndicator, false, 0.2);
     /*
-    // [DISABLED] 局内祭坛位置显示
+    // [DISABLED] 局内飞碟位置显示
     } else if (visibleAltar) {
       // 使用 GSAP 动画显示传送门指示器
       gsapAnimations.animateTeleporterIndicator(this.teleporterIndicator, true, 0.2);
@@ -10608,19 +10813,13 @@ export class GameScene {
         }
       }
     */
-    } else if (nearestChest) {
-      // 使用 GSAP 动画显示传送门指示器
-      gsapAnimations.animateTeleporterIndicator(this.teleporterIndicator, true, 0.2);
-      this.teleporterIndicator.style.color = '#ffdd66';
-      this.teleporterIndicator.style.textShadow = '0 0 8px #ffcc33,0 1px 3px rgba(0,0,0,0.8)';
-      this.teleporterIndicator.innerHTML = `${chestIconHtml()}<span>${escapeTooltipText(`${Math.round(nearestChest.dist)}m`)}</span>`;
     } else {
       // 使用 GSAP 动画隐藏传送门指示器
       gsapAnimations.animateTeleporterIndicator(this.teleporterIndicator, false, 0.2);
     }
 
     // --- 移动端交互按钮：仅在玩家位于传送门 / 宝箱交互半径内时显示 ---
-    // 召唤 Boss 的祭坛（ready）现在进入范围即自动充能，无需按键，故不再显示提示。
+    // 召唤 Boss 的飞碟（ready）现在进入范围即自动充能，无需按键，故不再显示提示。
     const portalInRange = state.altars.find(a =>
       a.phase === 'portal_ready'
       && Math.hypot(a.x - p.x, a.z - p.z) <= 2.0
@@ -11983,9 +12182,9 @@ export class GameScene {
 
   /**
    * 局内主线任务条显隐判定：
-   * - 完成条件：任意祭坛 phase 为 `portal_ready`（Boss 已死、传送门可用）或 `portal_used`（玩家已进入传送门）。
+   * - 完成条件：任意飞碟 phase 为 `portal_ready`（Boss 已死、传送门可用）或 `portal_used`（玩家已进入传送门）。
    * - 满足后播放「右弹 → 左滑出屏」动画，动画结束后隐藏任务条。
-   * - 若祭坛被重置（如进入下一难度 tier 后 altars 回到 ready），任务条重新显示。
+   * - 若飞碟被重置（如进入下一难度 tier 后 altars 回到 ready），任务条重新显示。
    */
   private updateQuestHudTrack(state: GameState): void {
     const bossDefeated = state.altars.some(
@@ -12812,7 +13011,7 @@ function createFramedLabelButton(
   const labelEl = document.createElement('span');
   labelEl.textContent = label;
   labelEl.style.cssText = uiPlainText(`
-    position:absolute;left:0;top:0;width:100%;height:100%;
+    position:absolute;left:0;top:-5px;width:100%;height:100%;
     display:flex;align-items:center;justify-content:center;
     font-size:clamp(${uiPx(9)}px,2.6vmin,${uiPx(12)}px);font-weight:bold;line-height:1.2;
     padding:0 clamp(4px,1.2vmin,8px);box-sizing:border-box;text-align:center;

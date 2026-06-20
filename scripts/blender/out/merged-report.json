@@ -1,0 +1,182 @@
+{
+  "Skeleton_Warrior.glb": {
+    "meshes": [
+      {
+        "name": "Skeleton_Warrior",
+        "verts": 7888,
+        "polys": 7017,
+        "vgroups": 23,
+        "material_slots": [
+          "skeleton",
+          "Glow"
+        ],
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "parent": "Rig_Medium"
+      },
+      {
+        "name": "Icosphere",
+        "verts": 42,
+        "polys": 80,
+        "vgroups": 0,
+        "material_slots": [],
+        "modifiers": [],
+        "parent": null
+      }
+    ],
+    "armatures": [
+      {
+        "name": "Rig_Medium",
+        "bone_count": 23,
+        "has_handslot_r": true,
+        "has_handslot_l": true,
+        "bones": [
+          "root",
+          "hips",
+          "spine",
+          "chest",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "head",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r"
+        ]
+      }
+    ]
+  },
+  "Skeleton_Mage.glb": {
+    "meshes": [
+      {
+        "name": "Skeleton_Mage",
+        "verts": 6087,
+        "polys": 6107,
+        "vgroups": 23,
+        "material_slots": [
+          "skeleton",
+          "Glow"
+        ],
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "parent": "Rig_Medium"
+      },
+      {
+        "name": "Icosphere",
+        "verts": 42,
+        "polys": 80,
+        "vgroups": 0,
+        "material_slots": [],
+        "modifiers": [],
+        "parent": null
+      }
+    ],
+    "armatures": [
+      {
+        "name": "Rig_Medium",
+        "bone_count": 23,
+        "has_handslot_r": true,
+        "has_handslot_l": true,
+        "bones": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l"
+        ]
+      }
+    ]
+  },
+  "Skeleton_Minion.glb": {
+    "meshes": [
+      {
+        "name": "Skeleton_Minion",
+        "verts": 5703,
+        "polys": 5822,
+        "vgroups": 23,
+        "material_slots": [
+          "skeleton",
+          "Glow"
+        ],
+        "modifiers": [
+          "ARMATURE"
+        ],
+        "parent": "Rig_Medium"
+      },
+      {
+        "name": "Icosphere",
+        "verts": 42,
+        "polys": 80,
+        "vgroups": 0,
+        "material_slots": [],
+        "modifiers": [],
+        "parent": null
+      }
+    ],
+    "armatures": [
+      {
+        "name": "Rig_Medium",
+        "bone_count": 23,
+        "has_handslot_r": true,
+        "has_handslot_l": true,
+        "bones": [
+          "root",
+          "hips",
+          "upperleg.r",
+          "lowerleg.r",
+          "foot.r",
+          "toes.r",
+          "upperleg.l",
+          "lowerleg.l",
+          "foot.l",
+          "toes.l",
+          "spine",
+          "chest",
+          "head",
+          "upperarm.l",
+          "lowerarm.l",
+          "wrist.l",
+          "hand.l",
+          "handslot.l",
+          "upperarm.r",
+          "lowerarm.r",
+          "wrist.r",
+          "hand.r",
+          "handslot.r"
+        ]
+      }
+    ]
+  }
+}

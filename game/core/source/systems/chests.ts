@@ -1,13 +1,13 @@
 /**
  * 宝箱系统：开局生成 N 个，玩家靠近并交互时消耗金币开启，roll 遗物。
  */
-import { distanceBetween } from '../physics.ts';
-import { pickRandomSubset } from '../spawnPick.ts';
+import { distanceBetween } from '../helpers/physics.ts';
+import { pickRandomSubset } from '../factories/spawnPick.ts';
 import {
   excludeMarkerPoints,
   markerPointKey,
   selectShrineMarkerPoints,
-} from '../levelMarkerSelection.ts';
+} from '../helpers/levelMarkerSelection.ts';
 import {
   CHEST_COUNT,
   CHEST_MAX_ACTIVE,

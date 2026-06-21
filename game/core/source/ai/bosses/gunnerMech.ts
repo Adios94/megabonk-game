@@ -12,7 +12,7 @@
  *
  * 定位：血薄机动，远程压制为主，贴脸惩罚 + 跳击换位。
  */
-import { distanceBetween } from '../../physics.ts';
+import { distanceBetween } from '../../helpers/physics.ts';
 import type { BossState } from '../../types.ts';
 import type { AiContext } from '../types.ts';
 import type { BossScript, BossPhaseConfig } from './types.ts';

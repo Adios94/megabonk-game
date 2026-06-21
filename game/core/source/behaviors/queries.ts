@@ -6,7 +6,7 @@
  * 抽到这里避免在每个行为里重新写一遍。
  */
 import type { EnemyState } from '../types.ts';
-import { distanceSqBetween } from '../physics.ts';
+import { distanceSqBetween } from '../helpers/physics.ts';
 
 /**
  * 找最近的活敌人。

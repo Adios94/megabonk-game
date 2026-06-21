@@ -16,9 +16,9 @@
  *  Phase 5 可能改为 'chain' tag 的 more 修饰符，那时移除此 hack。
  */
 import { computeWeaponDamage } from '../stats/index.ts';
-import { distanceSqBetween } from '../physics.ts';
+import { distanceSqBetween } from '../helpers/physics.ts';
 import { AOE_MAX_Y_DELTA } from '../config.ts';
-import { bossDamageEventY, enemyDamageEventY } from '../combatHeight.ts';
+import { bossDamageEventY, enemyDamageEventY } from '../helpers/combatHeight.ts';
 import { findNearestEnemy, findNearestEnemyExcluding } from './queries.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';

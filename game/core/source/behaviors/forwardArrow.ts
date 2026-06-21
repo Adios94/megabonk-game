@@ -8,10 +8,10 @@
  *
  * 数学等价于 fireBow，由 `__tests__/parity.test.ts` 锁定。
  */
-import { normalizeDirection } from '../physics.ts';
+import { normalizeDirection } from '../helpers/physics.ts';
 import { computeWeaponDamage } from '../stats/index.ts';
 import { AOE_MAX_Y_DELTA } from '../config.ts';
-import { playerProjectileY } from '../combatHeight.ts';
+import { playerProjectileY } from '../helpers/combatHeight.ts';
 import { findNearestEnemy } from './queries.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';

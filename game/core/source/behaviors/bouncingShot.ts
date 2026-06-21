@@ -9,9 +9,9 @@
  *
  * 数学等价于 fireBoneBouncer，由 parity 测试锁定。
  */
-import { normalizeDirection } from '../physics.ts';
+import { normalizeDirection } from '../helpers/physics.ts';
 import { computeWeaponDamage } from '../stats/index.ts';
-import { BONE_BOUNCER_MAX_Y_DELTA, playerProjectileY } from '../combatHeight.ts';
+import { BONE_BOUNCER_MAX_Y_DELTA, playerProjectileY } from '../helpers/combatHeight.ts';
 import { findNearestEnemy } from './queries.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';

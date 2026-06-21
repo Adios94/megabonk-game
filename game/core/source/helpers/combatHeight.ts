@@ -1,4 +1,4 @@
-import type { BossState, EnemyState, PlayerState } from './types.ts';
+import type { BossState, EnemyState, PlayerState } from '../types.ts';
 
 export const PLAYER_PROJECTILE_OFFSET_Y = 1.0;
 export const ENEMY_DAMAGE_EVENT_OFFSET_Y = 1.0;

@@ -1,12 +1,12 @@
 /**
  * 升级选项卡数值预览 —— 根据表内步进 × 稀有度（武器）或每级增益（典籍）生成展示行。
  */
-import { WEAPON_STATS } from './config.ts';
-import { TOMES } from './data/tomes.ts';
-import { computeWeaponUpgradeDeltas, getWeaponStats } from './systems/weapons.ts';
+import { WEAPON_STATS } from '../config.ts';
+import { TOMES } from './tomes.ts';
+import { computeWeaponUpgradeDeltas, getWeaponStats } from '../systems/weapons.ts';
 import { getTomeUpgradePower } from './tomeProgression.ts';
-import type { PlayerState, UpgradeOption, WeaponType } from './types.ts';
-import type { WeaponLevelStats } from './config.ts';
+import type { PlayerState, UpgradeOption, WeaponType } from '../types.ts';
+import type { WeaponLevelStats } from '../config.ts';
 
 export interface UpgradePreviewLine {
   /** i18n key，如 upgrade.stat.damage */

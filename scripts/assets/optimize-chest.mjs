@@ -1,8 +1,8 @@
 // Prop_Chest 宝箱模型「源 → 优化 glb」重建脚本（可重复跑）。
 //
 // 编辑纹理的工作流：
-//   1. 改 assets-archive/models/items/_unused/T_Props_Batch2_BaseColor.png(宝箱颜色/花纹源图)
-//   2. node scripts/optimize-chest.mjs   ← 重新生成 public/models/items/Prop_Chest.glb
+//   1. 改 _legacy/assets-archive/models/items/_unused/T_Props_Batch2_BaseColor.png(宝箱颜色/花纹源图)
+//   2. node scripts/assets/optimize-chest.mjs   ← 重新生成 public/models/items/Prop_Chest.glb
 //   3. dev 刷新看效果
 //
 // 它经 convertToToonMaterials 转成 MeshToonMaterial，运行时只用 baseColor 贴图，
@@ -14,7 +14,7 @@ import { prune, textureCompress } from '@gltf-transform/functions';
 import sharp from 'sharp';
 import { statSync } from 'node:fs';
 
-const SRC = 'assets-archive/models/items/_unused/Prop_Chest.gltf';
+const SRC = '_legacy/assets-archive/models/items/_unused/Prop_Chest.gltf';
 const OUT = 'public/models/items/Prop_Chest.glb';
 
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);

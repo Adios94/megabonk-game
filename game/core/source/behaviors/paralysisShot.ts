@@ -6,9 +6,9 @@
  *
  * 与 forwardArrow 结构相同：i===0 自动瞄准最近敌人，其余按朝向 spread。
  */
-import { normalizeDirection } from '../physics.ts';
+import { normalizeDirection } from '../helpers/physics.ts';
 import { computeWeaponDamage } from '../stats/index.ts';
-import { playerProjectileY } from '../combatHeight.ts';
+import { playerProjectileY } from '../helpers/combatHeight.ts';
 import { findNearestEnemy } from './queries.ts';
 import { AOE_MAX_Y_DELTA, PARALYSIS_SLOW_FACTOR, PARALYSIS_SLOW_DURATION } from '../config.ts';
 import type { BehaviorContext } from './types.ts';

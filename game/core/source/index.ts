@@ -116,18 +116,18 @@ export {
 export type { BondDef, BondThresholds, BondCounts } from './data/bonds.ts';
 export { getChestGoldCost } from './systems/relics.ts';
 
-export { applyMovement3D, distanceBetween, normalizeDirection } from './physics.ts';
-export { SpatialHash } from './spatial-hash.ts';
-export { fireWeapon, applyBounce, updateOrbitingProjectile, applyGravitationalPull } from './weapons.ts';
-export { computeActiveWeaponSlots, generateUpgradeOptions, xpForLevel } from './upgrades.ts';
-export { getUpgradePreviewLines } from './upgradePreview.ts';
-export type { UpgradePreviewLine } from './upgradePreview.ts';
+export { applyMovement3D, distanceBetween, normalizeDirection } from './helpers/physics.ts';
+export { SpatialHash } from './helpers/spatialHash.ts';
+export { fireWeapon, applyBounce, updateOrbitingProjectile, applyGravitationalPull } from './helpers/projectileMath.ts';
+export { computeActiveWeaponSlots, generateUpgradeOptions, xpForLevel } from './data/upgrades.ts';
+export { getUpgradePreviewLines } from './data/upgradePreview.ts';
+export type { UpgradePreviewLine } from './data/upgradePreview.ts';
 export { GameInstance } from './GameInstance.ts';
 
 // Progression systems
-export { loadSave, saveSave, getDefaultSave, addSilver, spendSilver, updateRunStats, recordWeaponsUsed, recordBossDefeated } from './save.ts';
-export type { SaveData } from './save.ts';
-export { SHOP_UPGRADES, getUpgradeCost, canAfford, purchaseUpgrade, getShopBonuses } from './shop.ts';
-export type { ShopUpgrade } from './shop.ts';
-export { QUESTS, checkQuestCompletion, claimQuest, getQuestProgress, getCompletedQuestCount } from './quests.ts';
-export type { Quest, QuestReward, QuestProgress } from './quests.ts';
+export { loadSave, saveSave, getDefaultSave, addSilver, spendSilver, updateRunStats, recordWeaponsUsed, recordBossDefeated } from './services/save.ts';
+export type { SaveData } from './services/save.ts';
+export { SHOP_UPGRADES, getUpgradeCost, canAfford, purchaseUpgrade, getShopBonuses } from './data/shop.ts';
+export type { ShopUpgrade } from './data/shop.ts';
+export { QUESTS, checkQuestCompletion, claimQuest, getQuestProgress, getCompletedQuestCount } from './data/quests.ts';
+export type { Quest, QuestReward, QuestProgress } from './data/quests.ts';

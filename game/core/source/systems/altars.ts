@@ -24,8 +24,8 @@
  *     由 spawning.checkBossSpawn() 检测后真正生成 boss。
  *   - portal_used 由 GameInstance 在 tick 末尾检测并触发 tier 推进。
  */
-import { distanceBetween } from '../physics.ts';
-import { pickRandomSubset } from '../spawnPick.ts';
+import { distanceBetween } from '../helpers/physics.ts';
+import { pickRandomSubset } from '../factories/spawnPick.ts';
 import {
   ALTAR_BOSS_RESPAWN_COOLDOWN,
   ALTAR_SUMMON_DURATION,
@@ -35,8 +35,8 @@ import {
   ALTAR_MAX_DISTANCE_RATIO,
   TIER_CONFIGS,
 } from '../config.ts';
-import { getTerrainHeightAt } from './collision.ts';
-import type { LevelGeometry } from './collision.ts';
+import { getTerrainHeightAt } from './levelGeometry.ts';
+import type { LevelGeometry } from './levelGeometry.ts';
 import type { AltarState, GameConfig } from '../types.ts';
 import type { Engine } from './types.ts';
 

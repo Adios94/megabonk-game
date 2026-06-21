@@ -9,10 +9,10 @@
  * - 不创建投射物；推一个 ray_beam 区域特效供客户端渲染激光线。
  */
 import { computeWeaponDamage } from '../stats/index.ts';
-import { normalizeDirection } from '../physics.ts';
+import { normalizeDirection } from '../helpers/physics.ts';
 import { findNearestEnemy } from './queries.ts';
 import { AOE_MAX_Y_DELTA, RAY_GUN_BEAM_LENGTH, RAY_BEAM_VISUAL_LIFETIME, RAY_BEAM_HIT_WIDTH_SCALE } from '../config.ts';
-import { bossDamageEventY, enemyDamageEventY } from '../combatHeight.ts';
+import { bossDamageEventY, enemyDamageEventY } from '../helpers/combatHeight.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
 

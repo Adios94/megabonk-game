@@ -10,10 +10,10 @@
  *
  * 数学等价 + 视觉等价于 fireSword（用 `__tests__/parity.test.ts` 锁住）。
  */
-import { distanceSqBetween } from '../physics.ts';
+import { distanceSqBetween } from '../helpers/physics.ts';
 import { computeWeaponDamage } from '../stats/index.ts';
 import { AOE_MAX_Y_DELTA } from '../config.ts';
-import { bossDamageEventY, enemyDamageEventY } from '../combatHeight.ts';
+import { bossDamageEventY, enemyDamageEventY } from '../helpers/combatHeight.ts';
 import { findNearestEnemy } from './queries.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';

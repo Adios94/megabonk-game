@@ -10,13 +10,13 @@
  *
  * 伤害统一走 helpers.addDamageEvent + stats.damageDealt，飘字颜色由 weaponType 驱动。
  */
-import { distanceSqBetween } from '../physics.ts';
+import { distanceSqBetween } from '../helpers/physics.ts';
 import { addDamageEvent } from './helpers.ts';
 import { applyPoison } from './statusEffects.ts';
 import { onBondWeaponHit } from './bonds.ts';
 import { recordWeaponDamage } from './weaponDamageStats.ts';
 import { AOE_MAX_Y_DELTA, GAS_POISON_REFRESH_DURATION } from '../config.ts';
-import { bossDamageEventY, enemyDamageEventY } from '../combatHeight.ts';
+import { bossDamageEventY, enemyDamageEventY } from '../helpers/combatHeight.ts';
 import type { AreaEffectState, EnemyState, BossState } from '../types.ts';
 import type { Engine } from './types.ts';
 

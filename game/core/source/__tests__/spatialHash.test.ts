@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { SpatialHash } from '../spatial-hash.ts';
+﻿import { describe, expect, it } from 'vitest';
+import { SpatialHash } from '../helpers/spatialHash.ts';
 
 describe('SpatialHash', () => {
   it('deduplicates entries inserted into multiple cells', () => {

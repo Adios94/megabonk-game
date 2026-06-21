@@ -16,7 +16,7 @@ import { applyCharacterTrait } from './applyCharacterTrait.ts';
 import { TOMES } from '../data/tomes.ts';
 import { getRelicStack } from '../data/relics.ts';
 import { bondGlobalModifiers, bondWeaponDamageMods } from '../data/bonds.ts';
-import { getTomePower } from '../tomeProgression.ts';
+import { getTomePower } from '../data/tomeProgression.ts';
 import {
   PLAYER_BASE_CRIT_DAMAGE,
   PLAYER_PICKUP_RADIUS,

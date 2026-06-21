@@ -87,7 +87,7 @@ import { initI18n, t, getLocale, setLocale, getAvailableLocales, getMode } from 
 import { CameraOrbit } from './systems/cameraOrbit.ts';
 import { PlayerInvincibilityFx } from './systems/playerFx.ts';
 import { BlobShadowPool } from './systems/blobShadows.ts';
-import { gsapAnimations } from './gsap-animations.ts';
+import { gsapAnimations } from './gsapAnimations.ts';
 import { uiPlainText, uiPlainTextBold, uiColoredText, uiColoredTextBold, UI_PLAIN_TEXT_STYLE, UI_TEXT_OUTLINE_SHADOW, UI_BAR_TEXT_LAYER } from './ui/textStyle.ts';
 import {
   createUpgradeFrameCard,
@@ -148,170 +148,12 @@ const ENEMY_POOL_CAP_PER_TYPE = 24;
 const PROJECTILE_POOL_CAP = 16;
 const AREA_EFFECT_POOL_CAP_PER_KIND = 8;
 
-// userData 上的标记：true 表示此材质是"为单个对象 clone 出来的私有副本"，
-// 当对象被丢弃时可以安全 dispose；不带此标记的材质视为全局共享，禁止 dispose
-// （否则会破坏其它仍在使用该材质的 mesh）。
-const OWNED_CLONE_KEY = '__ownedClone';
+import { OWNED_CLONE_KEY, disposeOwnedResources } from './materials/disposeOwned.ts';
 
-/**
- * 释放一个被丢弃对象（池子超限被踢出）的可释放资源。
- *
- * 原则：
- *  - 只 dispose 带 OWNED_CLONE_KEY 的材质（来自 cloneHitFlashMaterial）。
- *  - 永不 dispose geometry —— SkeletonUtils.clone / Object3D.clone 共享几何体，
- *    随便 dispose 会让其它克隆体的 GPU 资源失效。
- *  - 几何体 GPU 资源由原始模型持有，clone 包装器被 GC 后整体内存会下降。
- */
-function disposeOwnedResources(obj: THREE.Object3D): void {
-  obj.traverse((node) => {
-    const mesh = node as THREE.Mesh;
-    if (!mesh.isMesh || !mesh.material) return;
-    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    for (const m of mats) {
-      if (m && m.userData && m.userData[OWNED_CLONE_KEY]) {
-        m.dispose();
-      }
-    }
-  });
-}
-
-// =============================================================================
-// GPU Curved World (Rolling Horizon) System
-// =============================================================================
-
-export const curvedWorldUniforms = {
-  uWarpCenter: { value: new THREE.Vector3(0, 0, 0) },
-  uWarpStrength: { value: 0.015 } // adjustable! Default to 1/66.6 radius
-};
-
-// Global patch on THREE.Material to inject GPU curved world warp on all meshes and sprites!
-const originalOnBeforeCompile = THREE.Material.prototype.onBeforeCompile;
-THREE.Material.prototype.onBeforeCompile = function (shader, renderer) {
-  if (originalOnBeforeCompile) {
-    originalOnBeforeCompile.call(this, shader, renderer);
-  }
-
-  const allowedTypes = [
-    'MeshBasicMaterial',
-    'MeshToonMaterial',
-    'MeshStandardMaterial',
-    'MeshPhysicalMaterial',
-    'SpriteMaterial',
-    'MeshPhongMaterial',
-    'MeshLambertMaterial'
-  ];
-
-  if (this.isMaterial && (allowedTypes.includes(this.type) || (this as any).isMeshStandardMaterial || (this as any).isMeshBasicMaterial || (this as any).isSpriteMaterial || (this as any).isMeshToonMaterial)) {
-    if (!this.userData) this.userData = {};
-    if (!this.userData.uIsBackground) {
-      this.userData.uIsBackground = { value: this.userData.isBackground ? 1.0 : 0.0 };
-    }
-
-    shader.uniforms['uWarpCenter'] = curvedWorldUniforms.uWarpCenter;
-    shader.uniforms['uWarpStrength'] = curvedWorldUniforms.uWarpStrength;
-    shader.uniforms['uIsBackground'] = this.userData.uIsBackground;
-
-    shader.vertexShader = shader.vertexShader
-      .replace(
-        'void main() {',
-        `uniform vec3 uWarpCenter;\nuniform float uWarpStrength;\nuniform float uIsBackground;\nvoid main() {`
-      );
-
-    if (this.type === 'SpriteMaterial') {
-      shader.vertexShader = shader.vertexShader.replace(
-        '#include <project_vertex>',
-        `
-        vec4 mvPosition = modelViewMatrix * vec4( 0.0, 0.0, 0.0, 1.0 );
-        #ifdef USE_INSTANCING
-          mvPosition = instanceMatrix * mvPosition;
-        #endif
-
-        vec4 gpWorldPos = modelMatrix * vec4( 0.0, 0.0, 0.0, 1.0 );
-        vec3 diff = gpWorldPos.xyz - uWarpCenter;
-        float d = length(diff.xz);
-
-        if (d > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
-            float theta = d * uWarpStrength;
-            float sinTheta = sin(theta);
-            float cosTheta = cos(theta);
-            vec2 dir = diff.xz / d;
-
-            vec3 normal = vec3(sinTheta * dir.x, cosTheta, sinTheta * dir.y);
-            float r = (1.0 / uWarpStrength) + diff.y;
-            vec3 warpedPos = r * normal;
-            warpedPos.y -= (1.0 / uWarpStrength);
-
-            gpWorldPos.xyz = uWarpCenter + warpedPos;
-            mvPosition = viewMatrix * gpWorldPos;
-        }
-
-        vec2 scale = vec2( length( modelMatrix[ 0 ].xyz ), length( modelMatrix[ 1 ].xyz ) );
-        #ifndef USE_SIZEATTENUATION
-          bool isPerspective = isPerspectiveMatrix( projectionMatrix );
-          if ( isPerspective ) scale *= - mvPosition.z;
-        #endif
-
-        mvPosition.xy += position.xy * scale;
-        gl_Position = projectionMatrix * mvPosition;
-        `
-      );
-    } else {
-      shader.vertexShader = shader.vertexShader.replace(
-        '#include <project_vertex>',
-        `
-        vec4 localPos = vec4( transformed, 1.0 );
-        #ifdef USE_INSTANCING
-          localPos = instanceMatrix * localPos;
-        #endif
-        vec4 gpWorldPos = modelMatrix * localPos;
-
-        vec3 diff = gpWorldPos.xyz - uWarpCenter;
-        float d = length(diff.xz);
-
-        if (d > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
-            float theta = d * uWarpStrength;
-            float sinTheta = sin(theta);
-            float cosTheta = cos(theta);
-            vec2 dir = diff.xz / d;
-
-            vec3 normal = vec3(sinTheta * dir.x, cosTheta, sinTheta * dir.y);
-            float r = (1.0 / uWarpStrength) + diff.y;
-            vec3 warpedPos = r * normal;
-            warpedPos.y -= (1.0 / uWarpStrength);
-
-            gpWorldPos.xyz = uWarpCenter + warpedPos;
-        }
-
-        vec4 mvPosition = viewMatrix * gpWorldPos;
-        gl_Position = projectionMatrix * mvPosition;
-        `
-      );
-
-      // Normal rotation for non-basic lighted materials to align with spherical curvature
-      shader.vertexShader = shader.vertexShader.replace(
-        '#include <defaultnormal_vertex>',
-        `
-        #include <defaultnormal_vertex>
-
-        vec3 gpWorldPosForNormal = (modelMatrix * vec4(position, 1.0)).xyz;
-        vec3 diffForNormal = gpWorldPosForNormal - uWarpCenter;
-        float dForNormal = length(diffForNormal.xz);
-
-        if (dForNormal > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
-            float theta = dForNormal * uWarpStrength;
-            vec2 dir = diffForNormal.xz / dForNormal;
-            vec3 viewAxis = normalize( mat3(viewMatrix) * vec3( -dir.y, 0.0, dir.x ) );
-            
-            float cosA = cos(theta);
-            float sinA = sin(theta);
-            transformedNormal = transformedNormal * cosA + cross(viewAxis, transformedNormal) * sinA + viewAxis * dot(viewAxis, transformedNormal) * (1.0 - cosA);
-            transformedNormal = normalize(transformedNormal);
-        }
-        `
-      );
-    }
-  }
-};
+// GPU Curved World (Rolling Horizon) — see materials/curvedWorld.ts
+// Auto-installs onBeforeCompile patch on all material types when imported.
+import { curvedWorldUniforms } from './materials/curvedWorld.ts';
+export { curvedWorldUniforms };
 
 // =============================================================================
 // Runtime Event Types
@@ -540,349 +382,35 @@ export class LocalGameSession {
 // Constants
 // =============================================================================
 
-const ENEMY_COLORS: Record<string, number> = {
-  skeleton_soldier: 0xd4a574,
-  zombie: 0x44cc55,
-  skeleton_archer: 0xc87533,
-  skeleton_knight: 0xdd4444,
-  necromancer: 0x9944cc,
-  gargoyle: 0x667788,
-};
+import {
+  ENEMY_COLORS,
+  ENEMY_HOVER_OFFSET,
+  ENEMY_ANIM_LOD_NEAR,
+  ENEMY_ANIM_LOD_FAR,
+  ENEMY_ANIM_LOD_NEAR_SQ,
+  ENEMY_ANIM_LOD_FAR_SQ,
+  ENEMY_ANIM_LOD_MID_STRIDE,
+  ENEMY_ANIM_LOD_FAR_STRIDE,
+  ENEMY_VISIBLE_CULL_DIST,
+  ENEMY_VISIBLE_CULL_SQ,
+  CHARGE_COOLDOWN_STRIKE_THRESHOLD,
+  WEAPON_PROJECTILE_COLORS,
+  PICKUP_COLORS,
+  MAX_CONSUMABLE_PICKUPS,
+  CONSUMABLE_COLORS,
+  CONSUMABLE_EMOJI,
+  DAMAGE_NUMBER_FONT_FAMILY,
+  consumableIconSrc,
+} from './data/visualConfig.ts';
 
-// 视觉离地高度（米）—— 纯渲染偏移，不影响 core 逻辑（碰撞 / preferredRange 走水平 x/z）。
-// 用飞行/飘浮模型的地面单位（dragon / ghost）抬离地面更自然。gargoyle 的飞行高度由
-// core 的 dive 行为（y=1.8）控制，不在此叠加。
-const ENEMY_HOVER_OFFSET: Record<string, number> = {
-  // skeleton_archer 现用 KayKit 法师（落地人形），不再悬浮；仅 necromancer(ghost) 飘浮
-  necromancer: 1.0,     // 幽灵 — 飘浮（离地 1m）
-};
-
-// ── 敌人动画 LOD（同屏大量怪：按到相机距离 + 视锥分档降频 mixer.update）─────────
-// 蒙皮动画的骨骼矩阵重算是同屏 100 怪时的主 CPU 开销，且与是否在屏幕内无关。
-// 近处满帧、中/远降频、视锥外冻结；降频时累积 dt 一次性补上，保证动画速率不变。
-const ENEMY_ANIM_LOD_NEAR = 16;        // 米：此距离内每帧更新
-const ENEMY_ANIM_LOD_FAR = 34;         // 米：NEAR..FAR 隔帧，超过则每 4 帧
-const ENEMY_ANIM_LOD_NEAR_SQ = ENEMY_ANIM_LOD_NEAR * ENEMY_ANIM_LOD_NEAR;
-const ENEMY_ANIM_LOD_FAR_SQ = ENEMY_ANIM_LOD_FAR * ENEMY_ANIM_LOD_FAR;
-const ENEMY_ANIM_LOD_MID_STRIDE = 2;   // 中距：每 2 帧更新一次
-const ENEMY_ANIM_LOD_FAR_STRIDE = 4;   // 远距：每 4 帧更新一次
-
-// ── 敌人视距剔除（visible=false 直接跳过渲染 + skeleton.update + boneTexture 上传）─────
-// Three.js 会在 projectObject 里以 obj.visible 短路整棵子树，连 SkinnedMesh 的骨骼矩阵
-// 重算和 texSubImage2D 上传都会跳过。这是真正能砍掉骨骼纹理上传带宽的唯一办法。
-// 20m：实测 35m 时几乎没怪被剔（far-culled ≈ 1/66），多数远怪本来也在视锥外。压到
-// 20m 后视锥外的远怪也能被 visible=false 短路掉 SkinnedMesh 上传；20m 是玩家典型
-// 战斗交战半径（武器射程多在 5–12m），20m 外的怪即使在视锥内屏幕上也只占几像素，
-// pop-in 仍可接受。
-const ENEMY_VISIBLE_CULL_DIST = 20;
-const ENEMY_VISIBLE_CULL_SQ = ENEMY_VISIBLE_CULL_DIST * ENEMY_VISIBLE_CULL_DIST;
-
-// ── charge 冲撞收招窗口（与 game/core/source/ai/behaviors/charge.ts 同步）────────────
-// core 在 chargeState='cooldown' 入口设 chargeTimer=3.0，前 0.7s 站定（applyMovement 跳过）
-// 让攻击/收招动画 Punch 完整可见。客户端用 chargeTimer > 3.0-0.7 = 2.3 判定收招窗口。
-const CHARGE_COOLDOWN_STRIKE_THRESHOLD = 3.0 - 0.7;
-
-const WEAPON_PROJECTILE_COLORS: Record<string, number> = {
-  sword: 0xcccccc,
-  bone_bouncer: 0xf5f5dc,
-  axe: 0x888888,
-  pistol: 0xffcc44, // gold/brass bullet
-  lightning_staff: 0x44aaff,
-  flame_ring: 0xff6600,
-  shotgun: 0xffee44,
-  ray_gun: 0xff3366,        // 激光红
-  poison_bomb: 0x4caf3a,    // 深绿
-  paralysis_gun: 0xffdd22,  // 麻痹黄
-  void_ripple: 0x00ffff,    // 青色虚空涟漪
-  scorch_boots: 0xff7a1a,   // 灼地橙
-};
-
-const PICKUP_COLORS: Record<string, number> = {
-  xp_green: 0x00ff66,
-  xp_blue: 0x22aaff,
-  xp_purple: 0xcc44ff,
-  xp_orange: 0xffaa00,
-  gold: 0xffcc33,
-  silver: 0xeeeeee,
-  health: 0xff2222,
-  health_small: 0xff6666,
-};
-
-const MAX_CONSUMABLE_PICKUPS = 50;
-
-const CONSUMABLE_COLORS: Record<string, number> = {
-  wild_berry: 0xcc44aa,
-  hot_soup: 0xff8844,
-  mint_candy: 0x66ddff,
-  hard_bread: 0xddbb88,
-  energy_bar: 0xffcc33,
-  magnet: 0x4488ff,
-  iron_meal: 0x8899aa,
-  rage_potion: 0xff3344,
-  prophecy_book: 0xaa66ff,
-  craftsman_hammer: 0xffaa44,
-};
-
-const CONSUMABLE_EMOJI: Record<string, string> = {
-  wild_berry: '🫐',
-  hot_soup: '🍲',
-  mint_candy: '🍬',
-  hard_bread: '🥖',
-  energy_bar: '🍫',
-  magnet: '🧲',
-  iron_meal: '🍱',
-  rage_potion: '💢',
-  prophecy_book: '📖',
-  craftsman_hammer: '🔨',
-};
-
-const consumableEmojiTextureCache = new Map<string, THREE.Texture>();
-let paralysisTriangleTexture: THREE.Texture | null = null;
-let neuroTriangleTexture: THREE.Texture | null = null;
-let hunterCrosshairTexture: THREE.Texture | null = null;
-let conductorGlowTexture: THREE.Texture | null = null;
-let arcaneOrbTexture: THREE.Texture | null = null;
-const DAMAGE_NUMBER_FONT_FAMILY = "'Lilita One', 'Press Start 2P', monospace";
-
-function getConsumableEmojiTexture(consumableId: string): THREE.Texture {
-  const cached = consumableEmojiTextureCache.get(consumableId);
-  if (cached) return cached;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d')!;
-  ctx.clearRect(0, 0, 128, 128);
-
-  const glow = CONSUMABLE_COLORS[consumableId] ?? 0xcc66ff;
-  const r = ((glow >> 16) & 0xff);
-  const g = ((glow >> 8) & 0xff);
-  const b = (glow & 0xff);
-  const grad = ctx.createRadialGradient(64, 64, 10, 64, 64, 58);
-  grad.addColorStop(0, `rgba(${r},${g},${b},0.55)`);
-  grad.addColorStop(0.55, `rgba(${r},${g},${b},0.22)`);
-  grad.addColorStop(1, 'rgba(20,10,40,0.05)');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(64, 64, 56, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.strokeStyle = `rgba(${r},${g},${b},0.75)`;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(64, 64, 54, 0, Math.PI * 2);
-  ctx.stroke();
-
-  const drawEmojiFallback = () => {
-    ctx.font = '68px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(CONSUMABLE_EMOJI[consumableId] ?? '✨', 64, 66);
-  };
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  consumableEmojiTextureCache.set(consumableId, texture);
-
-  // PNG 图标异步加载：加载完绘制到画布中心并刷新纹理；失败则回退 emoji。
-  const iconImg = new Image();
-  iconImg.onload = () => {
-    const box = 88;
-    const ar = iconImg.width / iconImg.height || 1;
-    let w = box, h = box;
-    if (ar > 1) h = box / ar; else w = box * ar;
-    ctx.drawImage(iconImg, 64 - w / 2, 64 - h / 2, w, h);
-    texture.needsUpdate = true;
-  };
-  iconImg.onerror = () => {
-    drawEmojiFallback();
-    texture.needsUpdate = true;
-  };
-  iconImg.src = consumableIconSrc(consumableId);
-
-  return texture;
-}
-
-function getParalysisTriangleTexture(): THREE.Texture {
-  if (paralysisTriangleTexture) return paralysisTriangleTexture;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d')!;
-  ctx.clearRect(0, 0, 128, 128);
-
-  ctx.shadowColor = 'rgba(0,0,0,0.75)';
-  ctx.shadowBlur = 10;
-  ctx.fillStyle = 'rgba(30,20,8,0.95)';
-  ctx.beginPath();
-  ctx.moveTo(20, 26);
-  ctx.lineTo(108, 26);
-  ctx.lineTo(64, 110);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = 'rgba(194,128,32,0.92)';
-  ctx.beginPath();
-  ctx.moveTo(29, 34);
-  ctx.lineTo(99, 34);
-  ctx.lineTo(64, 98);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle = 'rgba(12,8,4,0.98)';
-  ctx.lineWidth = 8;
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  ctx.moveTo(20, 26);
-  ctx.lineTo(108, 26);
-  ctx.lineTo(64, 110);
-  ctx.closePath();
-  ctx.stroke();
-
-  ctx.strokeStyle = 'rgba(238,190,72,0.85)';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(38, 43);
-  ctx.lineTo(90, 43);
-  ctx.stroke();
-
-  paralysisTriangleTexture = new THREE.CanvasTexture(canvas);
-  paralysisTriangleTexture.colorSpace = THREE.SRGBColorSpace;
-  return paralysisTriangleTexture;
-}
-
-/** 毒师神经毒素：墨绿色倒三角标记（形似麻痹三角，配色改墨绿）。 */
-function getNeuroTriangleTexture(): THREE.Texture {
-  if (neuroTriangleTexture) return neuroTriangleTexture;
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d')!;
-  ctx.clearRect(0, 0, 128, 128);
-
-  ctx.shadowColor = 'rgba(0,0,0,0.7)';
-  ctx.shadowBlur = 10;
-  ctx.fillStyle = 'rgba(6,28,12,0.95)';
-  ctx.beginPath();
-  ctx.moveTo(20, 26);
-  ctx.lineTo(108, 26);
-  ctx.lineTo(64, 110);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = 'rgba(31,94,42,0.95)'; // 墨绿
-  ctx.beginPath();
-  ctx.moveTo(29, 34);
-  ctx.lineTo(99, 34);
-  ctx.lineTo(64, 98);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle = 'rgba(4,18,8,0.98)';
-  ctx.lineWidth = 8;
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  ctx.moveTo(20, 26);
-  ctx.lineTo(108, 26);
-  ctx.lineTo(64, 110);
-  ctx.closePath();
-  ctx.stroke();
-
-  ctx.strokeStyle = 'rgba(120,200,110,0.85)';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(38, 43);
-  ctx.lineTo(90, 43);
-  ctx.stroke();
-
-  neuroTriangleTexture = new THREE.CanvasTexture(canvas);
-  neuroTriangleTexture.colorSpace = THREE.SRGBColorSpace;
-  return neuroTriangleTexture;
-}
-
-/** 猎标烙印：红色狙击瞄准标识（圆环 + 十字）。 */
-function getHunterCrosshairTexture(): THREE.Texture {
-  if (hunterCrosshairTexture) return hunterCrosshairTexture;
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d')!;
-  ctx.clearRect(0, 0, 128, 128);
-
-  ctx.shadowColor = 'rgba(255,40,40,0.7)';
-  ctx.shadowBlur = 8;
-  ctx.strokeStyle = 'rgba(255,40,40,0.95)';
-  ctx.lineWidth = 7;
-  ctx.beginPath();
-  ctx.arc(64, 64, 40, 0, Math.PI * 2);
-  ctx.stroke();
-
-  ctx.shadowBlur = 0;
-  ctx.lineWidth = 5;
-  // 十字（四段，留出中心空隙）
-  ctx.beginPath();
-  ctx.moveTo(64, 8); ctx.lineTo(64, 40);
-  ctx.moveTo(64, 88); ctx.lineTo(64, 120);
-  ctx.moveTo(8, 64); ctx.lineTo(40, 64);
-  ctx.moveTo(88, 64); ctx.lineTo(120, 64);
-  ctx.stroke();
-
-  // 中心点
-  ctx.fillStyle = 'rgba(255,60,60,0.95)';
-  ctx.beginPath();
-  ctx.arc(64, 64, 5, 0, Math.PI * 2);
-  ctx.fill();
-
-  hunterCrosshairTexture = new THREE.CanvasTexture(canvas);
-  hunterCrosshairTexture.colorSpace = THREE.SRGBColorSpace;
-  return hunterCrosshairTexture;
-}
-
-/** 弧光导体：蓝色径向发光（加色混合贴敌人身上）。 */
-function getConductorGlowTexture(): THREE.Texture {
-  if (conductorGlowTexture) return conductorGlowTexture;
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d')!;
-  ctx.clearRect(0, 0, 128, 128);
-  const grad = ctx.createRadialGradient(64, 64, 4, 64, 64, 62);
-  grad.addColorStop(0, 'rgba(120,200,255,0.85)');
-  grad.addColorStop(0.4, 'rgba(40,120,255,0.45)');
-  grad.addColorStop(1, 'rgba(20,60,200,0.0)');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(64, 64, 62, 0, Math.PI * 2);
-  ctx.fill();
-  conductorGlowTexture = new THREE.CanvasTexture(canvas);
-  conductorGlowTexture.colorSpace = THREE.SRGBColorSpace;
-  return conductorGlowTexture;
-}
-
-/** 奥术奥秘爆发光球：蓝紫径向发光。 */
-function getArcaneOrbTexture(): THREE.Texture {
-  if (arcaneOrbTexture) return arcaneOrbTexture;
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d')!;
-  ctx.clearRect(0, 0, 128, 128);
-  const grad = ctx.createRadialGradient(64, 64, 2, 64, 64, 62);
-  grad.addColorStop(0, 'rgba(220,210,255,0.95)');
-  grad.addColorStop(0.35, 'rgba(150,90,255,0.8)');
-  grad.addColorStop(0.7, 'rgba(80,60,230,0.35)');
-  grad.addColorStop(1, 'rgba(60,40,180,0.0)');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(64, 64, 62, 0, Math.PI * 2);
-  ctx.fill();
-  arcaneOrbTexture = new THREE.CanvasTexture(canvas);
-  arcaneOrbTexture.colorSpace = THREE.SRGBColorSpace;
-  return arcaneOrbTexture;
-}
+import {
+  getConsumableEmojiTexture,
+  getParalysisTriangleTexture,
+  getNeuroTriangleTexture,
+  getHunterCrosshairTexture,
+  getConductorGlowTexture,
+  getArcaneOrbTexture,
+} from './materials/proceduralTextures.ts';
 
 const RARITY_COLORS: Record<string, string> = {
   common: '#aaaaaa',
@@ -952,70 +480,7 @@ const CHARACTER_FULL_PATHS: Record<CharacterType, string> = {
 
 const CHARACTER_LOCKED_OVERLAY_PATH = '/ui/characters/locked_character.png';
 
-// 本地 Lilita One（拉丁） + Noto Sans SC（中文/CJK）。
-// 不再走 Google Fonts CDN，也不再叠像素字体 fallback。
-const UI_FONT_FACE = '"Lilita One","Noto Sans SC",Arial,sans-serif';
-
-const GAME_UI_FONT_FILES = {
-  lilitaOneTtf: '/fonts/LilitaOne-Regular.ttf',
-  notoSansScVf: '/fonts/NotoSansSC-VF.ttf',
-} as const;
-
-function installGameUIFonts(): void {
-  if (document.getElementById('megabonk-ui-fonts')) return;
-  const style = document.createElement('style');
-  style.id = 'megabonk-ui-fonts';
-  // Noto Sans SC 用可变字体（wght 100~900），单文件覆盖 Regular/Bold；
-  // font-synthesis: none 防止浏览器对 Lilita One（仅 400 一档）合成假粗体扭曲笔画——
-  // 中文加粗由 Noto 可变轴提供真实 700 字重。
-  style.textContent = `
-@font-face {
-  font-family: 'Lilita One';
-  src: url('${GAME_UI_FONT_FILES.lilitaOneTtf}') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Noto Sans SC';
-  src: url('${GAME_UI_FONT_FILES.notoSansScVf}') format('truetype');
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-}
-html, body {
-  font-synthesis: none;
-  /* 全局禁用文本选区：游戏 UI 不需要复制/选词，长按或拖拽误触会破坏体验。 */
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  user-select: none;
-  /* 关掉 iOS 长按浮出的"拷贝/查找"气泡。 */
-  -webkit-touch-callout: none;
-  /* 关掉移动端点击时的灰色高亮闪烁。 */
-  -webkit-tap-highlight-color: transparent;
-}
-/* 真正需要输入的元素（音量条 / 等级输入 / 未来的聊天框）仍保留正常选区行为。 */
-input, textarea, [contenteditable="true"], [contenteditable=""] {
-  -webkit-user-select: text;
-  -moz-user-select: text;
-  -ms-user-select: text;
-  user-select: text;
-  -webkit-touch-callout: default;
-}
-  `.trim();
-  document.head.appendChild(style);
-}
-
-async function ensureGameUIFontsLoaded(): Promise<void> {
-  installGameUIFonts();
-  await Promise.all([
-    document.fonts.load(`16px "Lilita One"`),
-    document.fonts.load(`bold 60px "Lilita One"`),
-    document.fonts.load(`16px "Noto Sans SC"`),
-    document.fonts.load(`bold 16px "Noto Sans SC"`),
-  ]);
-}
+import { UI_FONT_FACE, GAME_UI_FONT_FILES, installGameUIFonts, ensureGameUIFontsLoaded } from './ui/fonts.ts';
 
 const CHARACTER_SELECT_BACK_ICON = '/ui/button/back.svg';
 const LANG_BUTTON_CN = '/ui/button/btn_lang_cn.png';
@@ -1311,7 +776,7 @@ const weaponIconSrc = (type: string): string => `/ui/icon/weapon/${type}.png`;
 const tomeIconSrc = (type: string): string => `/ui/icon/tome/${type}.png`;
 const relicIconSrc = (id: string): string => `/ui/icon/artifact/${id}.png`;
 const bondIconSrc = (id: string): string => `/ui/icon/bond/${id}.png`;
-const consumableIconSrc = (id: string): string => `/ui/icon/consumable_items/${id}.png`;
+// `consumableIconSrc` exported from `./data/visualConfig.ts`
 const shrineRewardIconSrc = (reward: string): string => `/ui/icon/Shrine_Reward/${reward}.png`;
 
 /**
@@ -2746,30 +2211,7 @@ interface LoadedModels {
   teleporter: THREE.Group | null;
 }
 
-/**
- * 启动期共享 LoadingManager：所有 boot 阶段的 GLTF/OBJ/MTL/Texture 加载都挂到它上面，
- * 借 onProgress 汇总「已加载 / 总数」驱动启动 loading 进度条（解决「白屏无反馈」）。
- * 运行期（进对局后）GameScene 内部新建的 loader 不挂它，避免进度条已移除后还触发回调。
- */
-const bootLoadingManager = new THREE.LoadingManager();
-
-// 共享 DRACOLoader：解码 Draco 压缩的 GLB 几何（解码器文件部署在 /public/draco/）。
-// 关键设置：
-//   - setDecoderPath：本地 self-host 解码器，避免依赖 google CDN。
-//   - setDecoderConfig({ type: 'js' })：默认会优先用 wasm，wasm 解码更快但首帧多一次拉取；
-//     我们保留默认（不强制），让 Three 自动选 wasm。
-//   - preload()：提前拉解码器，避免第一帧加载 glb 时阻塞。
-// dispose 不调（整局都要用）。所有 GLTFLoader 实例共用这一个 DRACOLoader 实例（线程池共享）。
-const sharedDracoLoader = new DRACOLoader();
-sharedDracoLoader.setDecoderPath('/draco/');
-sharedDracoLoader.preload();
-
-/** 创建一个挂好 DRACOLoader 的 GLTFLoader（避免每次都忘了配 Draco）。 */
-function createGltfLoader(manager?: THREE.LoadingManager): GLTFLoader {
-  const loader = manager ? new GLTFLoader(manager) : new GLTFLoader();
-  loader.setDRACOLoader(sharedDracoLoader);
-  return loader;
-}
+import { bootLoadingManager, sharedDracoLoader, createGltfLoader } from './loaders/gltfLoader.ts';
 
 const gltfLoader = createGltfLoader(bootLoadingManager);
 const loadedModels: LoadedModels = {

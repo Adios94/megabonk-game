@@ -3,10 +3,10 @@
  * Uses MegaBonk-style tomes (passive items) and weapons.
  */
 
-import type { PlayerState, UpgradeOption, UpgradeRarity } from './types.ts';
-import { XP_BASE, XP_GROWTH, TOME_MAX_LEVELS, WEAPON_MAX_LEVEL, MAX_WEAPONS_CAP, ALL_WEAPON_TYPES, ALL_TOME_TYPES } from './config.ts';
+import type { PlayerState, UpgradeOption, UpgradeRarity } from '../types.ts';
+import { XP_BASE, XP_GROWTH, TOME_MAX_LEVELS, WEAPON_MAX_LEVEL, MAX_WEAPONS_CAP, ALL_WEAPON_TYPES, ALL_TOME_TYPES } from '../config.ts';
 import { getTomePower } from './tomeProgression.ts';
-import { getBondUpgradeOptions } from './systems/bonds.ts';
+import { getBondUpgradeOptions } from '../systems/bonds.ts';
 
 const RARITY_WEIGHTS: { rarity: UpgradeRarity; weight: number }[] = [
   { rarity: 'common', weight: 55 },

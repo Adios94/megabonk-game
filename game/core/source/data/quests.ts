@@ -3,8 +3,8 @@
  * Progress tracked across runs via save system.
  */
 
-import { loadSave, saveSave } from './save.ts';
-import type { SaveData } from './save.ts';
+import { loadSave, saveSave } from '../services/save.ts';
+import type { SaveData } from '../services/save.ts';
 
 export interface Quest {
   id: string;

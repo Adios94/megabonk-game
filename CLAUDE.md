@@ -80,5 +80,5 @@ game/core/source/
 | `.cursor/hooks.json` | Cursor hook 注册 |
 | `.cursor/rules/` | Cursor 项目规则 |
 | `.cursor/skills/check-contract/` | Cursor 契约校验 skill |
-| `KUBEE.md` | 模板原始说明（保留作为参考） |
+| `docs/kubee-template.md` | 模板原始说明（保留作为参考） |
 | `CONTRIBUTING.md` | 协作流程 |

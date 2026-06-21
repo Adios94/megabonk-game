@@ -19,7 +19,7 @@
  */
 import type { EnemyState } from '../types.ts';
 import type { Engine } from './types.ts';
-import { SpatialHash } from '../spatial-hash.ts';
+import { SpatialHash } from '../helpers/spatialHash.ts';
 import { tryMoveHorizontally } from './horizontalMove.ts';
 
 /** 普通怪的分离半径（米）—— 比 ENEMY_RADIUS(0.4) 大一圈，把站桩同伴推到肉眼可见的间距。 */

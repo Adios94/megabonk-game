@@ -9,7 +9,7 @@
  * 减速本身不在这里施加位移影响——只负责计时与到期清理；移动时再读取。
  */
 import { ELITE_SLOW_COEF } from '../config.ts';
-import { enemyDamageEventY } from '../combatHeight.ts';
+import { enemyDamageEventY } from '../helpers/combatHeight.ts';
 import { addDamageEvent } from './helpers.ts';
 import { recordWeaponDamage } from './weaponDamageStats.ts';
 import type { EnemyState } from '../types.ts';

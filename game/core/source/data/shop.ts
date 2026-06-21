@@ -2,7 +2,7 @@
  * MegaBonk Permanent Shop - Spend silver to upgrade persistent stats.
  */
 
-import { loadSave, saveSave, spendSilver } from './save.ts';
+import { loadSave, saveSave, spendSilver } from '../services/save.ts';
 
 export interface ShopUpgrade {
   id: string;

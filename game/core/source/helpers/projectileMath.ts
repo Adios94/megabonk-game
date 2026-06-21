@@ -10,8 +10,8 @@
  * - Shotgun: spread shot forward
  */
 
-import type { EnemyState, PlayerState, ProjectileState, WeaponType, DamageEvent } from './types.ts';
-import { AOE_MAX_Y_DELTA, WEAPON_STATS } from './config.ts';
+import type { EnemyState, PlayerState, ProjectileState, WeaponType, DamageEvent } from '../types.ts';
+import { AOE_MAX_Y_DELTA, WEAPON_STATS } from '../config.ts';
 import { enemyDamageEventY, playerProjectileY, PLAYER_PROJECTILE_OFFSET_Y, targetHitCenterY } from './combatHeight.ts';
 import { distanceBetween, normalizeDirection } from './physics.ts';
 

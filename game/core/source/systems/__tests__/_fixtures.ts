@@ -5,13 +5,13 @@
  * 复用 ai/__tests__/_fixtures.ts 的 makePlayer / makeEnemy。
  */
 import { vi } from 'vitest';
-import { SpatialHash } from '../../spatial-hash.ts';
+import { SpatialHash } from '../../helpers/spatialHash.ts';
 import { createWorld } from '../../world.ts';
 import { DEFAULT_GAME_CONFIG } from '../../config.ts';
 import type { GameConfig, GameState, InputState, PlayerState } from '../../types.ts';
 import type { AiEffects } from '../../ai/types.ts';
 import type { Engine } from '../types.ts';
-import { NEON_CRUCIBLE_GEOMETRY } from '../collision.ts';
+import { NEON_CRUCIBLE_GEOMETRY } from '../levelGeometry.ts';
 import { makePlayer } from '../../ai/__tests__/_fixtures.ts';
 
 export { makePlayer, makeEnemy, makeBoss } from '../../ai/__tests__/_fixtures.ts';

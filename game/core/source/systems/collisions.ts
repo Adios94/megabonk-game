@@ -10,7 +10,7 @@
  *
  * boss 近战伤害走 ai/bosses/common.getBossMeleeDamage（两套机甲共用）。
  */
-import { distanceSqBetween, normalizeDirection } from '../physics.ts';
+import { distanceSqBetween, normalizeDirection } from '../helpers/physics.ts';
 import { getBossMeleeDamage } from '../ai/bosses/common.ts';
 import {
   addDamageEvent,
@@ -24,7 +24,7 @@ import { applyPoison, applySlow } from './statusEffects.ts';
 import { onBondWeaponHit } from './bonds.ts';
 import { recordWeaponDamage } from './weaponDamageStats.ts';
 import { bondConditionalDamageInc } from '../data/bonds.ts';
-import { BONE_BOUNCER_MAX_Y_DELTA, bossDamageEventY, enemyDamageEventY, targetHitCenterY } from '../combatHeight.ts';
+import { BONE_BOUNCER_MAX_Y_DELTA, bossDamageEventY, enemyDamageEventY, targetHitCenterY } from '../helpers/combatHeight.ts';
 import type { Engine } from './types.ts';
 
 // 垂直命中窗口（防止上下层穿模伤害）：

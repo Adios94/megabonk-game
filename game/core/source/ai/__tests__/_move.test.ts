@@ -8,7 +8,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { applyMovement } from '../behaviors/_move.ts';
-import { makeLevelGeometry, type LevelGeometry } from '../../systems/collision.ts';
+import { makeLevelGeometry, type LevelGeometry } from '../../systems/levelGeometry.ts';
 import { makeEnemy, makeAiContext } from './_fixtures.ts';
 import type { LevelData } from '../../types.ts';
 

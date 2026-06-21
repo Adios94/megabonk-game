@@ -21,11 +21,11 @@ import {
 } from '../config.ts';
 import { ENEMIES } from '../data/enemies.ts';
 import { spawnEnemy } from '../factories/spawnEnemy.ts';
-import { getTomePower } from '../tomeProgression.ts';
+import { getTomePower } from '../data/tomeProgression.ts';
 import type { EnemyType } from '../types.ts';
 import type { Engine } from './types.ts';
 import { hasReadyBossTrigger } from './altars.ts';
-import { isBlockedHorizontallyAt, getTerrainHeightAt } from './collision.ts';
+import { isBlockedHorizontallyAt, getTerrainHeightAt } from './levelGeometry.ts';
 
 const SPAWN_MIN_RADIUS = 5;
 const SPAWN_MAX_RADIUS = 10;

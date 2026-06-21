@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_GAME_CONFIG } from '../config.ts';
 import { GameInstance } from '../GameInstance.ts';
-import { loadSave } from '../save.ts';
+import { loadSave } from '../services/save.ts';
 
 function installLocalStorageMock(): void {
   const store = new Map<string, string>();

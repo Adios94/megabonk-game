@@ -9,8 +9,8 @@
 import type { BondId, GameConfig, GameState, InputState, WeaponType } from '../types.ts';
 import type { GameWorld } from '../world.ts';
 import type { AiEffects } from '../ai/types.ts';
-import type { SpatialHash } from '../spatial-hash.ts';
-import type { LevelGeometry } from './collision.ts';
+import type { SpatialHash } from '../helpers/spatialHash.ts';
+import type { LevelGeometry } from './levelGeometry.ts';
 
 export interface Engine {
   // ─── 核心状态 ───

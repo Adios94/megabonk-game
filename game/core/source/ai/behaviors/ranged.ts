@@ -7,7 +7,7 @@
  * - 射击后 STRIKE_RECOVERY 秒站定不移动，给客户端的 Cast/Punch 动画一个干净的施展窗口
  *   （否则边走边挥手，Run 动画把攻击姿势完全盖住）。
  */
-import { distanceSqBetween, normalizeDirection } from '../../physics.ts';
+import { distanceSqBetween, normalizeDirection } from '../../helpers/physics.ts';
 import { ENEMIES } from '../../data/enemies.ts';
 import type { EnemyBehaviorFn } from '../types.ts';
 import { applyMovement } from './_move.ts';

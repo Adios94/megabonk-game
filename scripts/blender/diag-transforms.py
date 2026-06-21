@@ -3,7 +3,7 @@ import bpy
 import os
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-PATH = os.path.join(ROOT, "assets-archive", "models", "_kaykit-original", "Skeleton_Minion.glb")
+PATH = os.path.join(ROOT, "_legacy", "assets-archive", "models", "_kaykit-original", "Skeleton_Minion.glb")
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=PATH)
@@ -39,7 +39,7 @@ for o in bpy.context.scene.objects:
         break
 
 # Now import the axe weapon and show its raw transform
-weapon_path = os.path.join(ROOT, "assets-archive", "models", "_kaykit-original",
+weapon_path = os.path.join(ROOT, "_legacy", "assets-archive", "models", "_kaykit-original",
                           "weapons", "Skeleton_Axe.gltf")
 print(f"\nImporting weapon: {weapon_path}")
 bpy.ops.import_scene.gltf(filepath=weapon_path)

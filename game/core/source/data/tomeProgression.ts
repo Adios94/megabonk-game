@@ -5,7 +5,7 @@
  * `growth` is the actual accumulated power: each selection adds the option
  * rarity multiplier, matching weapon upgrade semantics.
  */
-import type { TomeState, UpgradeRarity } from './types.ts';
+import type { TomeState, UpgradeRarity } from '../types.ts';
 
 export const TOME_RARITY_STEP_MULT: Record<UpgradeRarity, number> = {
   common: 1.0,

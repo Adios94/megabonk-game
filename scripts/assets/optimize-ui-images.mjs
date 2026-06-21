@@ -1,6 +1,6 @@
 // 一次性资源优化：把体积大的 UI PNG 转成 WebP（quality 82，保留 alpha）。
 // 包体优化用——大背景/立绘/标题图 PNG 未压缩，转 WebP 通常省 80%+，视觉接近无损。
-// 用法：node scripts/optimize-ui-images.mjs
+// 用法：node scripts/assets/optimize-ui-images.mjs
 // 转码后需手动把代码里这些路径的 .png 引用改成 .webp，并归档原 PNG。
 import sharp from 'sharp';
 import { statSync } from 'node:fs';

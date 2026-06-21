@@ -15,7 +15,7 @@ import sys
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 # Read from the immutable backup so this script is idempotent. The backup is
 # created once at the start of work (see project docs).
-SKIN_DIR = os.path.join(ROOT, "assets-archive", "models", "_kaykit-original")
+SKIN_DIR = os.path.join(ROOT, "_legacy", "assets-archive", "models", "_kaykit-original")
 OUT_DIR = os.path.join(ROOT, "scripts", "blender", "out")
 
 # (character_file, [(weapon_file, target_bone), ...])

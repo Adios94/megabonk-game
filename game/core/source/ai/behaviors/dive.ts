@@ -10,7 +10,7 @@
  * 咬击为单体近身判定（贴着玩家空中咬），不再砸地、不做范围伤害/击退。
  * 玩家伤害走 `ctx.effects.damagePlayer`（armor / shield_tome / invincible 减免在那里）。
  */
-import { distanceBetween } from '../../physics.ts';
+import { distanceBetween } from '../../helpers/physics.ts';
 import type { EnemyBehaviorFn, AiContext } from '../types.ts';
 import type { EnemyState } from '../../types.ts';
 import { applyMovement } from './_move.ts';

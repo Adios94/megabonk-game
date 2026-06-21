@@ -19,7 +19,7 @@ import {
   NEON_CRUCIBLE_GEOMETRY,
   VOID_HEIGHT,
   type LevelGeometry,
-} from '../collision.ts';
+} from '../levelGeometry.ts';
 import type { LevelData } from '../../types.ts';
 
 function geoFor(overrides: Partial<LevelData> = {}): LevelGeometry {

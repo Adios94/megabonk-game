@@ -7,11 +7,11 @@
  *   - applyKnockback: 子弹击退 + gargoyle landing AOE 共用
  *   - checkPlayerDeath / checkGameOver: 多个 damage / phase 路径触发
  */
-import { distanceSqBetween, normalizeDirection } from '../physics.ts';
-import { getTomePower } from '../tomeProgression.ts';
+import { distanceSqBetween, normalizeDirection } from '../helpers/physics.ts';
+import { getTomePower } from '../data/tomeProgression.ts';
 import { AOE_MAX_Y_DELTA, MAX_PICKUPS, PICKUP_LIFETIME } from '../config.ts';
-import { targetHitCenterY } from '../combatHeight.ts';
-import { recordBossDefeated } from '../save.ts';
+import { targetHitCenterY } from '../helpers/combatHeight.ts';
+import { recordBossDefeated } from '../services/save.ts';
 import type { EnemyState, WeaponType } from '../types.ts';
 import type { Engine } from './types.ts';
 import { onBossDefeated } from './altars.ts';

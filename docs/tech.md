@@ -46,7 +46,7 @@ GameScene.animate()
 | `game/core/source/systems/*.ts` | ~1300 (11 systems) |
 | `game/core/source/{data,behaviors,ai,factories,stats}/*.ts` | ~1700 |
 | `game/core/source/__tests__/*` | ~2200（232 单测） |
-| `game/core/` 其他（types/config/upgrades/quests/shop/save/physics/spatial-hash/world） | ~1500 |
+| `game/core/` 其他（types/config/upgrades/quests/shop/save/physics/spatialHash/world） | ~1500 |
 | `game/client/source/index.ts` | ~4500 |
 | **核心 + 客户端合计** | **≈ 11600** |
 

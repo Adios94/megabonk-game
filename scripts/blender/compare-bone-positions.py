@@ -76,7 +76,7 @@ def show(path, label):
             print(f"  bone '{bone}' IBM_t={ibm_t} (rough bind pos = {bind_pos})")
 
 
-orig = os.path.join(ROOT, "assets-archive", "models", "_kaykit-original", "Skeleton_Minion.glb")
+orig = os.path.join(ROOT, "_legacy", "assets-archive", "models", "_kaykit-original", "Skeleton_Minion.glb")
 merged = os.path.join(ROOT, "scripts", "blender", "out", "Skeleton_Minion.glb")
 
 show(orig, "ORIGINAL")

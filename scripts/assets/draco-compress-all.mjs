@@ -5,12 +5,12 @@
 //   - 调用 node_modules/.bin/gltf-transform draco <in> <tmp> ，再覆盖原文件
 //   - Draco 仅压缩三角网格几何（顶点 / 法线 / UV / 索引），不动动画轨道和贴图
 //
-// 前置：备份原始资源到 assets-archive/models-pre-draco/（已由人工 / shell 完成）
+// 前置：备份原始资源到 _legacy/assets-archive/models-pre-draco/（已由人工 / shell 完成）
 // 运行：
-//   node scripts/draco-compress-all.mjs
+//   node scripts/assets/draco-compress-all.mjs
 //
 // 还原（如果想退回未压缩版本）：
-//   Remove-Item -Recurse public/models; Copy-Item -Recurse assets-archive/models-pre-draco public/models
+//   Remove-Item -Recurse public/models; Copy-Item -Recurse _legacy/assets-archive/models-pre-draco public/models
 //
 // 运行时配合：game/client/source/index.ts 已挂 DRACOLoader（解码器在 public/draco/）。
 import { spawnSync, execSync } from 'node:child_process';

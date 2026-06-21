@@ -15,7 +15,7 @@
 
 ### ✅ 已完成（零风险）
 
-- **`public/**/_unused/` 整树移出 `public/` → 仓库根 `assets-archive/`**（74 文件 / 17.29 MB）。`git mv` 保留历史，不再进 `dist/`；发布体积 ~68 MB → ~51.6 MB。
+- **`public/**/_unused/` 整树移出 `public/` → 仓库 `_legacy/assets-archive/`**（74 文件 / 17.29 MB）。`git mv` 保留历史，不再进 `dist/`；发布体积 ~68 MB → ~51.6 MB。
 - **删除 client 死方法 / 死字段**：`emitBlackHoleVortex`、`spawnSlideDust`、`gridLines`、`bossDeathPlayed`、`screenFlashEl`、`xpNumbers`、`consumableLabel`（含各自的创建 / 清理残留）。
 
 ### ✅ 已完成（低风险）
@@ -106,7 +106,7 @@
 
 - **全部 `_unused/` 子目录 = 17.29 MB / 74 文件**（占 public 约 25%），Vite 原样打进 `dist/`，即玩家白下载量：
   - `models/_unused` 13.79 MB · `ui/_unused` 2.42 MB（单个「副本(2).png」）· `models/items/_unused` 0.23 MB · `monsters/_unused` 0.45 MB · `textures/_unused` 0.40 MB。
-  - **建议**：整树移出 `public/`（如挪到仓库根 `assets-archive/`），Git 保留但不再进 dist。
+  - **建议**：整树移出 `public/`（如挪到 `_legacy/assets-archive/`），Git 保留但不再进 dist。
 - **5 组字节级重复 VFX 贴图**（MD5 已核验完全一致，~377 KB）：
   - `light.png`=`flame_aura.png`、`scorch.png`=`scorch_boots.png`、`spark.png`=`lightning.png`、`muzzle.png`=`enemy_bullet.png`、`portal_swirl.png`=`slash_fill.png`。两键都被 `index.ts` 引用，需先在代码里合并引用再删文件。
 

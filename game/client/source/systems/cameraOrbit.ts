@@ -18,6 +18,7 @@
  */
 
 import * as THREE from 'three';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 
 interface PlayerPos {
   x: number;
@@ -43,6 +44,25 @@ const CAM_GROW_RATE = 3.5;         // 恢复：慢（去顿挫）
 // ~33% CPU 砍到 < 10%（详见 docs/performance.md「镜头避让 raycast」节）。
 const CAM_RAYCAST_STRIDE = 3;
 
+/**
+ * 单个静态遮挡 mesh + 预算的世界 bounding sphere / box。setOccluders 时算一次，
+ * update() 里做两层剪枝：
+ *   1. sphere distSq 测试：处理射线长度（pivot 到候选 sphere 必须在 fullLen+r 内）
+ *   2. AABB-ray 测试：处理射线方向（merged wall 的 box 很长，斜射常落空 → 跳过整 mesh）
+ * 通过两层的少数 mesh 才喂给 raycaster.intersectObjects 做三角形求交。
+ *
+ * 关卡按材质合批（merged 后单 mesh radius 20~50m），单纯 sphere 测试几乎全通过；
+ * AABB 是紧贴关卡形状的轴对齐盒，对长条 wall 剪枝率显著更高。
+ */
+interface OccluderEntry {
+  mesh: THREE.Mesh;
+  cx: number;
+  cy: number;
+  cz: number;
+  radius: number;
+  box: THREE.Box3;
+}
+
 export class CameraOrbit {
   public camDistance = 7;
   public camHeightBase = 5;
@@ -57,7 +77,11 @@ export class CameraOrbit {
   private dragLastY = 0;
   private enabled = true;
   // 碰撞推镜状态
-  private occluders: THREE.Object3D[] = [];
+  private occluderEntries: OccluderEntry[] = [];
+  /** 拥有 boundsTree 的 occluder geometry 列表，dispose 时回收。 */
+  private bvhGeometries: THREE.BufferGeometry[] = [];
+  /** raycast 候选 scratch buffer：每帧 reset + push，不产生 GC */
+  private readonly _candidates: THREE.Object3D[] = [];
   private readonly raycaster = new THREE.Raycaster();
   private camFrac = 1; // 当前臂长比例（平滑），1=满臂长
   private cachedTargetFrac = 1; // 上次 raycast 命中后计算出的目标臂长比例，节流帧之间复用
@@ -171,21 +195,50 @@ export class CameraOrbit {
     // 注意：intersectObjects 是 O(关卡三角形数) 的暴力搜索，每帧跑会吃 25% CPU；
     // camFrac 本身平滑，节流到每 CAM_RAYCAST_STRIDE 帧一次完全够用。
     let targetFrac = this.cachedTargetFrac;
-    if (this.occluders.length > 0) {
+    if (this.occluderEntries.length > 0) {
       this.raycastFrame = (this.raycastFrame + 1) % CAM_RAYCAST_STRIDE;
       if (this.raycastFrame === 0) {
         this._dir.copy(this._fullCam).sub(this._pivot);
         const fullLen = this._dir.length();
         if (fullLen > 1e-3) {
           this._dir.multiplyScalar(1 / fullLen);
+
+          // 两层剪枝：
+          //   1) sphere distSq 控制射线长度 — pivot 到 sphere 距离必须 ≤ fullLen + r + buffer，
+          //      否则 mesh 离射线线段太远不可能命中。
+          //   2) AABB-ray 控制射线方向 — 关卡按材质合批，merged mesh 的 sphere 很大但 AABB
+          //      是紧贴形状的长条 box，斜射射线大部分落空，能砍掉 sphere 测试漏过的绝大多数。
+          // 两层各自 O(1)/mesh，N=171 共 ~1000 op/帧（节流后 ~330 op/帧），代价微不足道；
+          // 通过的少数 mesh（一般 0~5 个）才喂给 raycaster.intersectObjects 做真正的三角形求交。
           this.raycaster.set(this._pivot, this._dir);
           this.raycaster.far = fullLen;
-          // occluders 在 setOccluders 时已被扁平化为前景 mesh 列表（剔除背景 / 非 mesh
-          // 节点），这里走 recursive=false：避免 raycaster 反复 traverse 整棵关卡子树。
-          const hits = this.raycaster.intersectObjects(this.occluders, false);
-          targetFrac = hits.length > 0
-            ? Math.min(1, Math.max(CAM_MIN_FRAC, (hits[0].distance - CAM_COLLISION_BUFFER) / fullLen))
-            : 1;
+          const ray = this.raycaster.ray;
+          const candidates = this._candidates;
+          candidates.length = 0;
+          const px = this._pivot.x;
+          const py = this._pivot.y;
+          const pz = this._pivot.z;
+          const baseR = fullLen + CAM_COLLISION_BUFFER;
+          for (let i = 0; i < this.occluderEntries.length; i++) {
+            const e = this.occluderEntries[i];
+            const dx = e.cx - px;
+            const dy = e.cy - py;
+            const dz = e.cz - pz;
+            const r = baseR + e.radius;
+            if (dx * dx + dy * dy + dz * dz > r * r) continue;
+            if (!ray.intersectsBox(e.box)) continue;
+            candidates.push(e.mesh);
+          }
+
+          if (candidates.length > 0) {
+            // recursive=false：candidates 已是扁平 mesh 列表，避免 raycaster traverse 子树。
+            const hits = this.raycaster.intersectObjects(candidates, false);
+            targetFrac = hits.length > 0
+              ? Math.min(1, Math.max(CAM_MIN_FRAC, (hits[0].distance - CAM_COLLISION_BUFFER) / fullLen))
+              : 1;
+          } else {
+            targetFrac = 1;
+          }
           this.cachedTargetFrac = targetFrac;
         }
       }
@@ -214,36 +267,87 @@ export class CameraOrbit {
    * 设置碰撞推镜的射线目标（关卡静态遮挡物：墙/平台等，不含怪/特效/地面）。
    *
    * 调用方一般传入 `[levelScene]`（整棵关卡根 Group）。这里**一次性扁平化**为前景
-   * mesh 列表，运行时 `intersectObjects(occluders, false)` 直接对数组求交：
+   * mesh 列表 + 预算每个 mesh 的**世界 boundingSphere**（center / radius），运行时
+   * update() 先用 pivot→sphere 的 distSq 比较剪枝，再把通过的子集喂给 raycaster：
    *
    *   - 跳过 `userData.isBackground === true` 的 mesh（远景装饰 / 远山等，离玩家几百米外，
    *     不可能挡到镜头臂；却会让 raycaster 多走一遍 boundingBox + 三角形求交）。
    *   - 跳过非 mesh 节点（Group / Bone / Light）。
+   *   - 预算 worldSphere：假定关卡 mesh 静态（位置不变）。若未来出现动态可破坏地形，
+   *     需要在 mesh 变换后重新调 setOccluders 刷新 sphere 缓存。
    *
    * 此前 `intersectObjects([levelScene], true)` 是 raycast 占 ~33% CPU 的元凶（每帧
-   * 递归整棵关卡子树）。预扁平化 + 过滤背景，把单次 raycast 命中候选从「整棵树」缩到
-   * 「真正会挡相机的几十个前景合批 mesh」。
+   * 递归整棵关卡子树）。预扁平化 + 背景过滤 + 距离剪枝三层下来，单次 raycast 的 mesh
+   * 候选数从「整棵树」→「全部前景 mesh」→「玩家周围 ~camDistance 内的几面墙」。
    */
   setOccluders(objects: THREE.Object3D[]): void {
-    if (objects.length === 0) {
-      this.occluders = [];
-      return;
-    }
-    const flat: THREE.Object3D[] = [];
+    this.disposeOccluderBvh();
+    this.occluderEntries = [];
+    if (objects.length === 0) return;
+    const tmpSphere = new THREE.Sphere();
     for (const root of objects) {
+      root.updateMatrixWorld(true);
       root.traverse((node) => {
         const mesh = node as THREE.Mesh;
         if (!mesh.isMesh) return;
         if (mesh.userData && mesh.userData['isBackground']) return;
-        flat.push(mesh);
+        const geo = mesh.geometry;
+        if (!geo) return;
+        if (!geo.boundingSphere) geo.computeBoundingSphere();
+        if (!geo.boundingBox) geo.computeBoundingBox();
+        const srcSphere = geo.boundingSphere;
+        const srcBox = geo.boundingBox;
+        if (!srcSphere || !srcBox) return;
+        tmpSphere.copy(srcSphere).applyMatrix4(mesh.matrixWorld);
+        const worldBox = new THREE.Box3().copy(srcBox).applyMatrix4(mesh.matrixWorld);
+
+        // three-mesh-bvh：给该 geometry 建一次 BVH 索引（已建过则跳），并把 mesh.raycast
+        // 替换为加速版。raycaster.intersectObjects 内部调 mesh.raycast，命中复杂度从
+        // O(三角形) 降到 O(log)。仅作用于 occluder mesh，不动全局 prototype，
+        // 避免影响项目其它地方未来可能的 raycast 用法。
+        // 共享 geometry（多个 mesh 引用同一 geo）：boundsTree 只建一次但 mesh.raycast
+        // 在每个 mesh 实例上替换 —— 这是 three-mesh-bvh 官方支持的用法。
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const geoAny = geo as any;
+        if (!geoAny.boundsTree) {
+          geoAny.computeBoundsTree = computeBoundsTree;
+          geoAny.disposeBoundsTree = disposeBoundsTree;
+          geoAny.computeBoundsTree();
+          this.bvhGeometries.push(geo);
+        }
+        mesh.raycast = acceleratedRaycast;
+
+        this.occluderEntries.push({
+          mesh,
+          cx: tmpSphere.center.x,
+          cy: tmpSphere.center.y,
+          cz: tmpSphere.center.z,
+          radius: tmpSphere.radius,
+          box: worldBox,
+        });
       });
     }
-    this.occluders = flat;
+  }
+
+  /**
+   * 释放本实例为 occluder geometry 建的 BVH（避免重复 setOccluders 或 dispose 时漏 GC）。
+   * geometry 本体不动 —— 它可能还被其它系统引用（渲染本身）；只销毁 boundsTree。
+   */
+  private disposeOccluderBvh(): void {
+    for (const geo of this.bvhGeometries) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const geoAny = geo as any;
+      if (geoAny.boundsTree && typeof geoAny.disposeBoundsTree === 'function') {
+        geoAny.disposeBoundsTree();
+      }
+    }
+    this.bvhGeometries = [];
   }
 
   dispose(): void {
     for (const c of this.cleanups) c();
     this.cleanups = [];
+    this.disposeOccluderBvh();
   }
 
   /** 指针是否落在可交互 UI 上（非画布游戏区域）。 */

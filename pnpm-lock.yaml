@@ -84,6 +84,9 @@ importers:
       three:
         specifier: ^0.170.0
         version: 0.170.0
+      three-mesh-bvh:
+        specifier: ^0.9.10
+        version: 0.9.10(three@0.170.0)
 
   game/core:
     dependencies:
@@ -2397,6 +2400,11 @@ packages:
   text-hex@1.0.0:
     resolution: {integrity: sha512-uuVGNWzgJ4yhRaNSiubPY7OjISw4sw4E5Uv0wbjp+OzcbmVU/rsT8ujgcXJhn9ypzsgr5vlzpPqP+MBBKcGvbg==}
 
+  three-mesh-bvh@0.9.10:
+    resolution: {integrity: sha512-UOlTgPIeqUURcwaG8knxvBaruwZlC4X3/WSHEFO7rYvMVv/YNUrkfFEszvfj36pXV88dCHoHNnIp0PifkirnTQ==}
+    peerDependencies:
+      three: '>= 0.159.0'
+
   three@0.170.0:
     resolution: {integrity: sha512-FQK+LEpYc0fBD+J8g6oSEyyNzjp+Q7Ks1C568WWaoMRLW+TkNNWmenWeGgJjV105Gd+p/2ql1ZcjYvNiPZBhuQ==}
 
@@ -2527,6 +2535,7 @@ packages:
 
   uuid@9.0.1:
     resolution: {integrity: sha512-b+1eJOlsR9K8HJpow9Ok3fiWOWSIcIzXodvv0rQjVoOVNpWMpxf1wZNpt4y9h10odCNrqnYp1OBzRktckBe3sA==}
+    deprecated: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
     hasBin: true
 
   vary@1.1.2:
@@ -4828,6 +4837,10 @@ snapshots:
       string-width: 3.1.0
 
   text-hex@1.0.0: {}
+
+  three-mesh-bvh@0.9.10(three@0.170.0):
+    dependencies:
+      three: 0.170.0
 
   three@0.170.0: {}
 

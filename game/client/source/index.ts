@@ -168,9 +168,13 @@ import {
 } from './materials/toon.ts';
 
 // Post-process passes — see materials/postProcessPasses.ts
+// SceneOutlinePass 保留作为旧链路 fallback（2026-06-21 起默认走 SceneRenderPass + FinalCompositePass
+// 4→1 合并版，详见 docs/performance.md §4.5）。
 import {
   type OutlineMode,
   SceneOutlinePass,
+  SceneRenderPass,
+  FinalCompositePass,
   ColorGradePass,
   DarkComicPass,
   GRADE_SATURATION,
@@ -2809,7 +2813,11 @@ export class GameScene {
   private readonly container: HTMLElement;
   private readonly renderer: THREE.WebGLRenderer;
   private composer: EffectComposer | null = null;
-  private outlinePass: SceneOutlinePass | null = null; // 屏幕空间描边 pass（screenSpace/none，dev 下 O 键切换）
+  // 后处理链路：默认 USE_FINAL_COMPOSITE=true 走合并版（SceneRenderPass + FinalCompositePass），
+  // outlinePass 字段保留作 legacy 链路引用占位，dev O 键切换 mode 时通过 finalPass / outlinePass 任一非 null。
+  private outlinePass: SceneOutlinePass | null = null;
+  private sceneRenderPass: SceneRenderPass | null = null;
+  private finalPass: FinalCompositePass | null = null;
   private bloomPass: UnrealBloomPass | null = null;
   private colorGradePass: ColorGradePass | null = null;
   private darkComicPass: DarkComicPass | null = null; // 末端"暗黑漫画"风格 post-fx；DARK_COMIC_ENABLED 控制
@@ -3398,7 +3406,10 @@ export class GameScene {
     // （toon 渐变贴图 / 预加载 VFX 贴图），错误释放会让下一局渲染崩坏。移除全局监听 + 退订
     // session 后，旧 GameScene 整棵场景图与 GL 上下文已无引用，可被 GC 连同 GPU 资源回收。
     this.composer?.dispose();
-    this.outlinePass?.dispose(); // EffectComposer.dispose 不级联各 pass，手动释放 sceneRT / 深度纹理 / 描边材质
+    // EffectComposer.dispose 不级联各 pass，手动释放 sceneRT / 深度纹理 / 描边材质 / 合成 shader
+    this.outlinePass?.dispose();
+    this.sceneRenderPass?.dispose();
+    this.finalPass?.dispose();
     this.darkComicPass?.dispose();
     this.blobShadows?.dispose();
     this.renderer.dispose();
@@ -3463,11 +3474,16 @@ export class GameScene {
     dir.name = 'DirectionalLight';
     dir.position.set(15, 25, 15);
     dir.castShadow = true;
-    dir.shadow.mapSize.width = 2048;
-    dir.shadow.mapSize.height = 2048;
+    // shadow map 预算：2048→1024 + frustum 60×60→44×44 + far 70→50。
+    // - PCFSoftShadowMap 保留（9-sample 高斯柔化，toon 风格视觉零损失）。
+    // - texel 密度：1024/44 ≈ 4.3cm/texel（原 2048/60 ≈ 2.9cm/texel），玩家根本看不到 <5cm 阴影细节。
+    // - shadow pass 渲染量 ~ mapSize² × 视野内 caster 数：贴图 ¼ + frustum ½ 面积 = GPU 阴影耗时降 ~70%。
+    // - far=50：dirLight 在 (15,25,15) 朝玩家投影，战斗范围 ≤20m，原 70 远端覆盖到了相机外。
+    dir.shadow.mapSize.width = 1024;
+    dir.shadow.mapSize.height = 1024;
     dir.shadow.camera.near = 0.5;
-    dir.shadow.camera.far = 70;
-    const d = 30;
+    dir.shadow.camera.far = 50;
+    const d = 22;
     dir.shadow.camera.left = -d;
     dir.shadow.camera.right = d;
     dir.shadow.camera.top = d;
@@ -3867,15 +3883,30 @@ export class GameScene {
   }
 
   /**
-   * 后处理：SceneOutlinePass（场景渲染 + 屏幕空间深度描边）→ [可选 bloom] → OutputPass（tonemap）。
+   * 后处理链路（2026-06-21 起默认走 4→1 合并版，详见 docs/performance.md §4.5）：
    *
-   * BLOOM_ENABLED = false（默认关闭，性能优化）：UnrealBloomPass 的半分辨率降采样 +
-   * 多次高斯模糊是移动端 / 集显帧率的最大单项开销，关闭后还会释放其 mip render targets 显存。
-   * 描边与 tone map（OutputPass）不受影响，画面整体观感基本一致，仅少了发光特效的辉光晕。
-   * 想开回：把 BLOOM_ENABLED 改回 true 即可（调试面板的 Bloom 段也会随之出现）。
+   *   SceneRenderPass（场景 → sceneRT，含 DepthTexture）
+   *     ↓
+   *   [可选 bloom — 仅 BLOOM_ENABLED=true 时插入]
+   *     ↓
+   *   FinalCompositePass（outline + neutralTonemap + sRGB + grade + darkcomic，单 fragment）
+   *
+   * 旧链路（SceneOutlinePass → OutputPass → ColorGradePass → DarkComicPass）保留 fallback：
+   * 把 USE_FINAL_COMPOSITE 改成 false 即可一键回滚。
+   *
+   * isMobile：自动 detect，决定 sceneRT 类型（HalfFloat vs UnsignedByte，省 ½ 带宽）
+   *           + outline tap scale（1.0 vs 2.0，等效半分核采样）。
+   *
+   * BLOOM_ENABLED = false：UnrealBloomPass 的半分辨率降采样 + 多次高斯模糊在移动 / 集显
+   * 是单项最大开销。想开回：把 BLOOM_ENABLED 改回 true；注意 bloom 在合并链路下会塞在
+   * SceneRenderPass 与 FinalCompositePass 之间，bloom 输出走 composer readBuffer，
+   * FinalCompositePass 当前直接从 sceneRT 读，bloom 暂不串通（需要时再扩 uniform）。
    */
   private setupComposer(): void {
     const BLOOM_ENABLED = false;
+    const USE_FINAL_COMPOSITE = true;
+    const isMobile = ('ontouchstart' in window) || /Mobi|Android/i.test(navigator.userAgent);
+
     const composer = new EffectComposer(this.renderer); // 默认 HalfFloat 目标，保 HDR
     const w = this.container.clientWidth || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
@@ -3883,38 +3914,75 @@ export class GameScene {
     composer.setPixelRatio(dpr);
     composer.setSize(w, h);
 
-    const outlinePass = new SceneOutlinePass(
-      this.scene, this.camera,
-      Math.round(w * dpr), Math.round(h * dpr),
-    );
-    composer.addPass(outlinePass);
-    this.outlinePass = outlinePass;
-
-    if (BLOOM_ENABLED) {
-      const bloom = new UnrealBloomPass(
-        new THREE.Vector2(Math.max(1, w * dpr * 0.5), Math.max(1, h * dpr * 0.5)), // 半分辨率省手机
-        0.3,  // strength：微微
-        0.5,  // radius
-        1.0,  // threshold：抬高 → 只让真正的发光特效辉光，普通亮面不再被晕白
-      );
-      composer.addPass(bloom);
-      this.bloomPass = bloom;
-    }
-
-    composer.addPass(new OutputPass()); // tone map：ACES + sRGB
-    // 末端美漫调色：提饱和 / 对比 / 亮度，让画面更鲜亮、色块更跳。
+    // ColorGradePass / DarkComicPass 在两条链路下都作为参数容器存在：
+    //   - 合并链路：仅持有调色 / darkcomic 参数，由 FinalCompositePass 每帧读取
+    //   - 旧链路：作为独立 pass 加入 composer
     const colorGrade = new ColorGradePass(GRADE_SATURATION, GRADE_CONTRAST, GRADE_BRIGHTNESS);
-    composer.addPass(colorGrade);
     this.colorGradePass = colorGrade;
 
-    // feat/dark-comic-postfx：末端"暗黑漫画"风格 pass。开关常量在这里，关掉就是回到主分支观感。
-    // 实际去饱和/噪点强度由 GameScene.updateDarkComic 每帧根据 state.finalSwarm 渐进驱动。
     const DARK_COMIC_ENABLED = true;
-    if (DARK_COMIC_ENABLED) {
-      const darkComic = new DarkComicPass();
+    const darkComic = DARK_COMIC_ENABLED ? new DarkComicPass() : null;
+    if (darkComic) {
       darkComic.setSize(Math.round(w * dpr), Math.round(h * dpr));
-      composer.addPass(darkComic);
       this.darkComicPass = darkComic;
+    }
+
+    if (USE_FINAL_COMPOSITE) {
+      // === 新链路：4 → 1 合并 ===
+      const sceneRenderPass = new SceneRenderPass(
+        this.scene, this.camera,
+        Math.round(w * dpr), Math.round(h * dpr),
+        { sceneRtType: isMobile ? THREE.UnsignedByteType : THREE.HalfFloatType },
+      );
+      composer.addPass(sceneRenderPass);
+      this.sceneRenderPass = sceneRenderPass;
+
+      if (BLOOM_ENABLED) {
+        const bloom = new UnrealBloomPass(
+          new THREE.Vector2(Math.max(1, w * dpr * 0.5), Math.max(1, h * dpr * 0.5)),
+          0.3, 0.5, 1.0,
+        );
+        composer.addPass(bloom);
+        this.bloomPass = bloom;
+      }
+
+      // darkComic 若关，挂一个 enabled=false 的实例当占位（currentDesaturate/currentNoise 恒 0），
+      // 保留 FinalCompositePass 内部 darkcomic shader 段（编译期可裁剪未来再加），同时 dispose
+      // 时这条引用会跟着 this.darkComicPass 一起被清理（DARK_COMIC_ENABLED=false 时也要赋值）。
+      if (!this.darkComicPass) {
+        const placeholder = new DarkComicPass();
+        placeholder.enabled = false;
+        this.darkComicPass = placeholder;
+      }
+      const finalPass = new FinalCompositePass(
+        sceneRenderPass, this.camera, colorGrade, this.darkComicPass, this.renderer,
+        Math.round(w * dpr), Math.round(h * dpr),
+        { outlineTapScale: isMobile ? 2.0 : 1.0 },
+      );
+      finalPass.renderToScreen = true;
+      composer.addPass(finalPass);
+      this.finalPass = finalPass;
+    } else {
+      // === 旧链路 fallback ===
+      const outlinePass = new SceneOutlinePass(
+        this.scene, this.camera,
+        Math.round(w * dpr), Math.round(h * dpr),
+      );
+      composer.addPass(outlinePass);
+      this.outlinePass = outlinePass;
+
+      if (BLOOM_ENABLED) {
+        const bloom = new UnrealBloomPass(
+          new THREE.Vector2(Math.max(1, w * dpr * 0.5), Math.max(1, h * dpr * 0.5)),
+          0.3, 0.5, 1.0,
+        );
+        composer.addPass(bloom);
+        this.bloomPass = bloom;
+      }
+
+      composer.addPass(new OutputPass());
+      composer.addPass(colorGrade);
+      if (darkComic) composer.addPass(darkComic);
     }
 
     this.composer = composer;
@@ -4813,7 +4881,7 @@ export class GameScene {
       `  enemy ${b.enemy}  shadow ${b.shadow}\n` +
       `  level ${b.level}  other ${b.other}\n` +
       `  sum ${bSum} (+post ${Math.max(0, drawCalls - bSum)})\n` +
-      `outline: ${this.outlinePass?.mode ?? 'off'}\n` +
+      `outline: ${(this.finalPass ?? this.outlinePass)?.mode ?? 'off'}\n` +
       `render: ${this.perfRenderMs.toFixed(1)}ms (submit)`;
     this.renderer.info.reset();
   }

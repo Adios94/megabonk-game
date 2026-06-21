@@ -337,3 +337,266 @@ export class DarkComicPass extends Pass {
     this.fsQuad.dispose?.();
   }
 }
+
+// ===========================================================================
+// FinalCompositePass：4 → 1 后处理合并（2026-06-21）
+// ===========================================================================
+// 把原本独立的 OutlinePass(合成段) / OutputPass(tonemap+sRGB) / ColorGradePass /
+// DarkComicPass 四个全屏 blit 合并到单个 fragment shader：
+//
+//   场景 sceneRT (color + depth, by SceneRenderPass)
+//     ↓
+//   FinalCompositePass：
+//     1) Outline (linear HDR space, depth 4-tap → edge → mix to black)
+//     2) Neutral tone mapping (Khronos PBR Neutral, HDR → LDR)
+//     3) Linear → sRGB encode
+//     4) Color grade (brightness × contrast × saturation)
+//     5) Dark comic (desaturate + noise，按 ramp 渐入)
+//     ↓ 写屏幕
+//
+// 数学等价性：每一步与原 4 个 pass 完全相同公式，仅合并到单 shader 减少中间 RT 与
+// 全屏 blit 次数。详见 docs/performance.md §4.5。
+//
+// 跨平台预算（由 setupComposer 在构造时按 isMobile 注入）：
+//   桌面：sceneRT=HalfFloat，uOutlineTapScale=1.0
+//   移动：sceneRT=UnsignedByte（带宽 ½），uOutlineTapScale=2.0（描边采样 ¼，等效半分核）
+
+/**
+ * 只负责把场景渲到内部 sceneRT（含 DepthTexture），不做任何合成。
+ * FinalCompositePass 通过引用读 sceneRT.texture / sceneRT.depthTexture。
+ *
+ * needsSwap=false：完全不动 EffectComposer 的 read/write buffer，下游 pass 看到的
+ * readBuffer 仍是上一帧最终输出（无副作用）。
+ */
+export class SceneRenderPass extends Pass {
+  public readonly sceneRT: THREE.WebGLRenderTarget;
+
+  constructor(
+    private readonly scene: THREE.Scene,
+    private readonly camera: THREE.PerspectiveCamera,
+    w: number,
+    h: number,
+    opts: { sceneRtType: THREE.TextureDataType },
+  ) {
+    super();
+    this.needsSwap = false;
+    this.clear = true;
+    const depthTexture = new THREE.DepthTexture(w, h);
+    this.sceneRT = new THREE.WebGLRenderTarget(w, h, {
+      type: opts.sceneRtType,
+      depthTexture,
+      depthBuffer: true,
+      stencilBuffer: false,
+    });
+  }
+
+  override setSize(width: number, height: number): void {
+    this.sceneRT.setSize(width, height);
+  }
+
+  override render(renderer: THREE.WebGLRenderer): void {
+    renderer.setRenderTarget(this.sceneRT);
+    renderer.clear();
+    renderer.render(this.scene, this.camera);
+  }
+
+  override dispose(): void {
+    this.sceneRT.dispose();
+  }
+}
+
+const FINAL_COMPOSITE_VERT = /* glsl */`
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+// 单 fragment 完成原 4 pass 工作。每一段写明对应原 pass 中的代码出处，便于回滚比对。
+const FINAL_COMPOSITE_FRAG = /* glsl */`
+  precision highp float;
+  uniform sampler2D tColor;
+  uniform highp sampler2D tDepth;
+  uniform vec2 uResolution;
+  uniform float uCameraNear;
+  uniform float uCameraFar;
+  uniform float uThickness;
+  uniform float uOutlineAlpha;
+  uniform float uOutlineTapScale;
+  uniform float uExposure;
+  uniform float uSaturation;
+  uniform float uContrast;
+  uniform float uBrightness;
+  uniform float uDesaturate;
+  uniform float uNoise;
+  uniform float uTime;
+  varying vec2 vUv;
+
+  const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+  // —— Outline 工具：来自原 SceneOutlinePass / OUTLINE_EDGE_FRAG
+  float toViewZ(float d) {
+    return (uCameraNear * uCameraFar) / ((uCameraFar - uCameraNear) * d - uCameraFar);
+  }
+  float sampleZ(vec2 uv) { return toViewZ(texture2D(tDepth, uv).r); }
+
+  // —— Khronos PBR Neutral tone mapping：与 three.js renderer 的 NeutralToneMapping 完全一致
+  // (来自 three.js src/renderers/shaders/ShaderChunk/tonemapping_pars_fragment.glsl.js)
+  vec3 neutralToneMapping(vec3 color) {
+    const float StartCompression = 0.8 - 0.04;
+    const float Desaturation = 0.15;
+    color *= uExposure;
+    float x = min(color.r, min(color.g, color.b));
+    float offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
+    color -= offset;
+    float peak = max(color.r, max(color.g, color.b));
+    if (peak < StartCompression) return color;
+    float d = 1.0 - StartCompression;
+    float newPeak = 1.0 - d * d / (peak + d - StartCompression);
+    color *= newPeak / peak;
+    float g = 1.0 - 1.0 / (Desaturation * (peak - newPeak) + 1.0);
+    return mix(color, newPeak * vec3(1.0), g);
+  }
+
+  // —— Linear → sRGB encode：与 renderer.outputColorSpace = SRGBColorSpace 等价
+  vec3 linearToSRGB(vec3 c) {
+    bvec3 cutoff = lessThan(c, vec3(0.0031308));
+    vec3 higher = vec3(1.055) * pow(max(c, vec3(0.0)), vec3(1.0/2.4)) - vec3(0.055);
+    vec3 lower = c * 12.92;
+    return mix(higher, lower, vec3(cutoff));
+  }
+
+  // —— DarkComic 噪点 hash（来自原 DarkComicPass.fragmentShader）
+  float hash21(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+
+  void main() {
+    vec4 src = texture2D(tColor, vUv);
+    vec3 color = src.rgb;
+
+    // [1] Outline（线性 HDR 空间，与原 SceneOutlinePass mix to black 完全等价）
+    vec2 texel = (uThickness * uOutlineTapScale) / uResolution;
+    float c = sampleZ(vUv);
+    float n = sampleZ(vUv + vec2(0.0,  texel.y));
+    float s = sampleZ(vUv + vec2(0.0, -texel.y));
+    float e = sampleZ(vUv + vec2( texel.x, 0.0));
+    float w = sampleZ(vUv + vec2(-texel.x, 0.0));
+    float hor = abs(e - w);
+    float ver = abs(n - s);
+    float delta = sqrt(hor * hor + ver * ver);
+    float threshold = abs(c) * 0.02 + 0.05;
+    float edge = smoothstep(threshold, threshold * 2.0, delta);
+    float depthMask = 1.0 - step(uCameraFar * 0.9, -c);
+    edge *= depthMask;
+    color = mix(color, vec3(0.0), edge * uOutlineAlpha);
+
+    // [2] Tone mapping（HDR → LDR linear）
+    color = neutralToneMapping(color);
+
+    // [3] Linear → sRGB encode
+    color = linearToSRGB(color);
+
+    // [4] Color grade（在 sRGB LDR，与原 ColorGradePass 公式完全一致）
+    color *= uBrightness;
+    color = (color - 0.5) * uContrast + 0.5;
+    float l = dot(color, LUMA);
+    color = mix(vec3(l), color, uSaturation);
+    color = clamp(color, 0.0, 1.0);
+
+    // [5] DarkComic：desaturate + noise（与原 DarkComicPass 完全一致）
+    float l2 = dot(color, LUMA);
+    color = mix(color, vec3(l2), uDesaturate);
+    vec2 fragPx = vUv * uResolution;
+    float nse = hash21(fragPx + vec2(uTime * 60.0, uTime * 37.0)) - 0.5;
+    color += nse * uNoise;
+    color = clamp(color, 0.0, 1.0);
+
+    gl_FragColor = vec4(color, src.a);
+  }
+`;
+
+/**
+ * 把 SceneRenderPass 的 sceneRT 合成到屏幕：outline + tonemap + sRGB + grade + darkcomic。
+ *
+ * 外部代码（weather lerp / updateDarkComic / dev panel）仍调 ColorGradePass / DarkComicPass
+ * 实例的 setter；本 pass 每帧 render() 时从这两个实例读取当前参数同步到自身 uniform，
+ * 让原来的接口完全不变。这两个 pass 不再 addPass 到 composer，仅作参数容器存在。
+ */
+export class FinalCompositePass extends Pass {
+  mode: OutlineMode = 'screenSpace';
+
+  private readonly material: THREE.ShaderMaterial;
+  private readonly fsq: FullScreenQuad;
+
+  constructor(
+    sceneSource: SceneRenderPass,
+    private readonly camera: THREE.PerspectiveCamera,
+    private readonly grade: ColorGradePass,
+    private readonly darkComic: DarkComicPass,
+    private readonly renderer: THREE.WebGLRenderer,
+    w: number,
+    h: number,
+    opts: { outlineTapScale: number },
+  ) {
+    super();
+    this.needsSwap = false;
+
+    this.material = new THREE.ShaderMaterial({
+      uniforms: {
+        tColor: { value: sceneSource.sceneRT.texture },
+        tDepth: { value: sceneSource.sceneRT.depthTexture },
+        uResolution: { value: new THREE.Vector2(w, h) },
+        uCameraNear: { value: camera.near },
+        uCameraFar: { value: camera.far },
+        uThickness: { value: 1.5 },
+        uOutlineAlpha: { value: 0.85 },
+        uOutlineTapScale: { value: opts.outlineTapScale },
+        uExposure: { value: renderer.toneMappingExposure },
+        uSaturation: { value: grade.saturation },
+        uContrast: { value: grade.contrast },
+        uBrightness: { value: grade.brightness },
+        uDesaturate: { value: 0 },
+        uNoise: { value: 0 },
+        uTime: { value: 0 },
+      },
+      vertexShader: FINAL_COMPOSITE_VERT,
+      fragmentShader: FINAL_COMPOSITE_FRAG,
+      depthTest: false,
+      depthWrite: false,
+    });
+    this.fsq = new FullScreenQuad(this.material);
+  }
+
+  override setSize(width: number, height: number): void {
+    this.material.uniforms.uResolution.value.set(width, height);
+  }
+
+  override render(renderer: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget): void {
+    const u = this.material.uniforms;
+    // 同步外部参数（来自 ColorGradePass setter / DarkComicPass ramp / renderer.toneMappingExposure）
+    u.uCameraNear.value = this.camera.near;
+    u.uCameraFar.value = this.camera.far;
+    u.uExposure.value = this.renderer.toneMappingExposure;
+    u.uSaturation.value = this.grade.saturation;
+    u.uContrast.value = this.grade.contrast;
+    u.uBrightness.value = this.grade.brightness;
+    u.uDesaturate.value = this.darkComic.currentDesaturate;
+    u.uNoise.value = this.darkComic.currentNoise;
+    u.uTime.value = performance.now() * 0.001;
+    // mode='none' → 关描边但其它合成不变（与原 SceneOutlinePass.mode='none' 等价）
+    u.uOutlineAlpha.value = this.mode === 'none' ? 0.0 : 0.85;
+
+    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    if (this.clear) renderer.clear();
+    this.fsq.render(renderer);
+  }
+
+  override dispose(): void {
+    this.material.dispose();
+    this.fsq.dispose();
+  }
+}

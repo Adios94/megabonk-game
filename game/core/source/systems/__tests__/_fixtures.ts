@@ -94,6 +94,8 @@ export function makeEngine(overrides: Partial<Engine> = {}): Engine {
     world: createWorld(),
     effects: overrides.effects ?? effects,
     spatialHash: overrides.spatialHash ?? new SpatialHash(4),
+    enemyById: overrides.enemyById ?? new Map(),
+    spatialIndexTick: overrides.spatialIndexTick ?? -1,
     geo: overrides.geo ?? NEON_CRUCIBLE_GEOMETRY,
     nextEnemyId: 100,
     nextProjectileId: 100,

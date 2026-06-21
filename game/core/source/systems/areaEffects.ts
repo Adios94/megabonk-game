@@ -15,6 +15,7 @@ import { addDamageEvent } from './helpers.ts';
 import { applyPoison } from './statusEffects.ts';
 import { onBondWeaponHit } from './bonds.ts';
 import { recordWeaponDamage } from './weaponDamageStats.ts';
+import { ensureSpatialIndex } from './collisions.ts';
 import { AOE_MAX_Y_DELTA, GAS_POISON_REFRESH_DURATION } from '../config.ts';
 import { bossDamageEventY, enemyDamageEventY } from '../helpers/combatHeight.ts';
 import type { AreaEffectState, EnemyState, BossState } from '../types.ts';
@@ -44,7 +45,12 @@ function damageBoss(engine: Engine, boss: BossState, dmg: number, ae: AreaEffect
 }
 
 export function tickAreaEffects(engine: Engine, dt: number): void {
-  const { enemies, boss } = engine.state;
+  const { boss } = engine.state;
+  // 用 spatial hash 把"全敌人扫一遍"压成"AOE 圆覆盖的几个 cell"。
+  // ensureSpatialIndex 按 state.tick 去重，processCollisions 之后再调一次是 no-op。
+  ensureSpatialIndex(engine);
+  const spatialHash = engine.spatialHash;
+  const enemyById = engine.enemyById;
 
   for (let i = engine.state.areaEffects.length - 1; i >= 0; i--) {
     const ae = engine.state.areaEffects[i];
@@ -57,8 +63,16 @@ export function tickAreaEffects(engine: Engine, dt: number): void {
           ae.tickTimer = ae.tickInterval ?? 0.5;
           const dps = ae.poisonDps ?? ae.damage;
           const radiusSq = ae.radius * ae.radius;
-          for (const enemy of enemies) {
-            if (enemy.hp <= 0) continue;
+          // queryRef 返回 spatialHash 内部复用 buffer：同步遍历完即可，期间不得再次调 query。
+          // ids 含 boss(-1)；boss 单独处理。同一 case 内不会嵌套 spatial 查询。
+          const ids = spatialHash.queryRef(ae.x, ae.z, ae.radius);
+          for (let k = 0; k < ids.length; k++) {
+            const id = ids[k];
+            if (id < 0) continue; // boss 走下面单独分支
+            const enemy = enemyById.get(id);
+            if (!enemy || enemy.hp <= 0) continue;
+            // 二次精确判：spatial hash 用 enemy 半径 0.5 做粗筛会把"中心在圆外、身体擦边"的也带进来，
+            // 原行为只看中心距 ≤ ae.radius，这里复刻同一语义。
             if (distanceSqBetween(ae.x, ae.z, enemy.x, enemy.z) > radiusSq) continue;
             if (!withinAoeHeight(ae.y, enemy.y)) continue;
             applyPoison(enemy, dps, ae.poisonDuration ?? GAS_POISON_REFRESH_DURATION);
@@ -91,9 +105,14 @@ export function tickAreaEffects(engine: Engine, dt: number): void {
         // 原本 O(enemies × hits) 单帧能跑出几十万次比较，是"卡顿"的主因。
         rippleHitScratch.clear();
         for (let h = 0; h < hits.length; h++) rippleHitScratch.add(hits[h]);
-        for (const enemy of enemies) {
-          if (enemy.hp <= 0) continue;
-          if (rippleHitScratch.has(enemy.id)) continue;
+        // 同样用 queryRef 候选集；boss id=-1 也会进来，复用原"hitEnemyIds 含 -1"语义。
+        const ids = spatialHash.queryRef(ae.x, ae.z, ae.radius);
+        for (let k = 0; k < ids.length; k++) {
+          const id = ids[k];
+          if (id < 0) continue; // boss 走下面分支保持原逻辑
+          if (rippleHitScratch.has(id)) continue;
+          const enemy = enemyById.get(id);
+          if (!enemy || enemy.hp <= 0) continue;
           if (
             distanceSqBetween(ae.x, ae.z, enemy.x, enemy.z) <= rippleRadiusSq
             && withinAoeHeight(ae.y, enemy.y)
@@ -127,8 +146,12 @@ export function tickAreaEffects(engine: Engine, dt: number): void {
         if (ae.tickTimer <= 0) {
           ae.tickTimer = ae.tickInterval ?? 0.4;
           const scorchRadiusSq = ae.radius * ae.radius;
-          for (const enemy of enemies) {
-            if (enemy.hp <= 0) continue;
+          const ids = spatialHash.queryRef(ae.x, ae.z, ae.radius);
+          for (let k = 0; k < ids.length; k++) {
+            const id = ids[k];
+            if (id < 0) continue;
+            const enemy = enemyById.get(id);
+            if (!enemy || enemy.hp <= 0) continue;
             if (distanceSqBetween(ae.x, ae.z, enemy.x, enemy.z) > scorchRadiusSq) continue;
             if (!withinAoeHeight(ae.y, enemy.y)) continue;
             damageEnemy(engine, enemy, ae.damage, ae);

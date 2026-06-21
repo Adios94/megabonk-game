@@ -122,6 +122,8 @@ export class GameInstance {
       world,
       effects: null as unknown as AiEffects,  // 绔嬪埢濉?
       spatialHash: new SpatialHash(4),
+      enemyById: new Map(),
+      spatialIndexTick: -1,
       // 鍏冲崱鍑犱綍 鈥斺€?applyLevelConfig() 浼氭牴鎹?config.level 閲嶆柊璧嬪€硷紱姝ゅ鍏堢敤榛樿鍗犱綅
       geo: NEON_CRUCIBLE_GEOMETRY,
       nextEnemyId: 1,

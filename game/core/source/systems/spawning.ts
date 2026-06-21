@@ -287,6 +287,10 @@ function hasStableSpawnNeighborhood(engine: Engine, x: number, z: number, y: num
  * (x,z) 处的可走面高度（col_ 顶面 / ramp_ 顶面）。
  * 传 referenceY 时返回**最接近该高度**的面（用玩家 y → 把怪刷在玩家所在的战斗平面，
  * 而非叠层几何里最高的塔顶/天台，避免"空中刷出"）；不传则返回最高面（旧行为）。
+ *
+ * wysiwyg 加载关卡：走 geo.grid 取 (x,z) 所在 cell 的候选；每次 spawn 在 hasStableSpawnNeighborhood
+ * 里被调 8 次，外加 spawn-around-player 24 次 ≈ 192 次/wave。原本每次扫整个 rects/ramps/discs
+ * 数组（whitebox 关数百形体）→ 单 wave 帧抖动来源之一。grid 路径单 cell ≈ 数个候选。
  */
 function getCoverSurfaceHeight(engine: Engine, x: number, z: number, referenceY?: number): number | null {
   let best: number | null = null;
@@ -298,13 +302,17 @@ function getCoverSurfaceHeight(engine: Engine, x: number, z: number, referenceY?
       best = h;
     }
   };
+  const grid = engine.geo.grid;
+  const rects = grid ? grid.rectsAt(x, z) : engine.geo.rects;
+  const ramps = grid ? grid.rampsAt(x, z) : engine.geo.ramps;
+  const discs = grid ? grid.discsAt(x, z) : engine.geo.discs;
   // rects = col_ 顶面
-  for (const rect of engine.geo.rects) {
+  for (const rect of rects) {
     const [cx, cz, halfW, halfD, height] = rect;
     if (Math.abs(x - cx) <= halfW && Math.abs(z - cz) <= halfD) consider(height);
   }
   // ramps = ramp_ 顶面
-  for (const ramp of engine.geo.ramps) {
+  for (const ramp of ramps) {
     const dx = x - ramp.cx;
     const dz = z - ramp.cz;
     const sCoord = dx * ramp.slopeDirX + dz * ramp.slopeDirZ;
@@ -314,7 +322,7 @@ function getCoverSurfaceHeight(engine: Engine, x: number, z: number, referenceY?
     consider(ramp.lowY + (ramp.highY - ramp.lowY) * t);
   }
   // discs = colcyl_ 圆形平台顶面
-  for (const disc of engine.geo.discs) {
+  for (const disc of discs) {
     const dx = x - disc.cx;
     const dz = z - disc.cz;
     if (dx * dx + dz * dz <= disc.radius * disc.radius) consider(disc.topY);

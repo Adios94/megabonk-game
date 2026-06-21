@@ -513,6 +513,11 @@ export interface AreaEffectState {
   followPlayer?: boolean;
   /** 已结算过伤害的敌人 id（ripple 每个敌人只吃一次）。 */
   hitEnemyIds?: number[];
+  /**
+   * void_ripple 收回阶段标志：扩散到 maxRadius 后切到 true，radius 反向缩回到 0 才删除。
+   * 收回阶段不再做命中判定，纯视觉演出（"波出去、再收回来"）。
+   */
+  retracting?: boolean;
   // --- ray_beam 视觉参数 ---
   /** 光束方向单位向量。 */
   dirX?: number;

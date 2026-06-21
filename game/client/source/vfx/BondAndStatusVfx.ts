@@ -9,12 +9,12 @@
  *
  * - **羁绊 VFX 事件消费**（{@link BondAndStatusVfx.processBondVfxEvents}）：
  *   每"新 tick" 扫一次 state.bondVfxEvents：
- *   - `arcane_burst` → 从玩家头顶生成抛物线奥术光球 Sprite，并起手两闪。
+ *   - `arcane_burst` → 从玩家头顶生成抛物线奥术光球 Sprite，并起手一次 muzzle 闪。
  *   - `ember_explode` → 委托 ParticlePool 喷红色爆炸烟雾。
  *
  * - **奥术光球推进**（{@link BondAndStatusVfx.updateArcaneBurstOrbs}）：
  *   生命周期 0.42s，沿 from→to lerp + 抛物线 y 偏移，沿途撒蓝紫粒子拖尾 +
- *   billboard 拖影；命中目标时 emitArcaneSmoke 收尾。
+ *   smoke billboard 拖影；命中目标时 emitArcaneSmoke 收尾。
  *
  * - **敌人状态粒子**（{@link BondAndStatusVfx.updateEnemyStatusVfx}）：
  *   每 N tick 给中毒（绿）/ 减速（黄电）的敌人喷少量提示粒子。
@@ -96,7 +96,7 @@ export class BondAndStatusVfx {
   /**
    * 消费 state.bondVfxEvents 一帧：
    * - `arcane_burst` → 从玩家头顶 (player.x, y+2.5, z) 朝目标点发射光球 Sprite
-   *   + 起手 muzzle/light 双闪 billboard；orb 进 {@link updateArcaneBurstOrbs} 推进。
+   *   + 起手一次 muzzle 闪 billboard；orb 进 {@link updateArcaneBurstOrbs} 推进。
    * - `ember_explode` → 委托 ParticlePool 红色爆炸烟雾。
    * 调用方需保证每 tick 仅消费一次（事件新鲜度判断）。
    */
@@ -120,12 +120,6 @@ export class BondAndStatusVfx {
           scale: 1.6, endScale: 2.6, lifetime: 0.22, opacityCurve: 'flash',
           opacity: 0.95, color: 0xa97bff, rotation: Math.random() * Math.PI * 2,
         });
-        this.billboards.spawn({
-          texture: 'light', x: from.x, y: from.y, z: from.z,
-          scale: 1.2, endScale: 2.2, lifetime: 0.28, opacityCurve: 'fadeOut',
-          opacity: 0.75, color: 0x6f7cff, rotation: Math.random() * Math.PI * 2,
-          blending: 'additive',
-        });
         this.arcaneBurstOrbs.push({ sprite, from, to, t: 0, life: 0.42 });
       } else if (evt.kind === 'ember_explode') {
         this.particles.emitEmberExplosion(evt.x, evt.y, evt.z);
@@ -137,7 +131,7 @@ export class BondAndStatusVfx {
    * 推进当前所有奥术光球：
    * - 位置：lerp(from → to, k) + 抛物线 y 偏移 sin(kπ)*0.8。
    * - 缩放：1.7 + sin(t*40)*0.25 脉动。
-   * - 拖尾：本帧位移区间补 3 颗蓝紫粒子 + 朝相机 smoke/light billboard 拖影。
+   * - 拖尾：本帧位移区间补 3 颗蓝紫粒子 + 朝相机 smoke billboard 拖影。
    * - 抵达目标（k≥1）：emitArcaneSmoke 收尾 + 移除 Sprite。
    * 贴图为共享缓存，仅 dispose material。
    */
@@ -169,12 +163,6 @@ export class BondAndStatusVfx {
         texture: 'smoke', x: pos.x, y: pos.y, z: pos.z,
         scale: 1.3, endScale: 0.5, lifetime: 0.28, opacityCurve: 'fadeOut',
         opacity: 0.65, color: 0x9a6bff, blending: 'additive',
-        rotation: Math.random() * Math.PI * 2,
-      });
-      this.billboards.spawn({
-        texture: 'light', x: pos.x, y: pos.y, z: pos.z,
-        scale: 0.85, endScale: 0.25, lifetime: 0.18, opacityCurve: 'fadeOut',
-        opacity: 0.55, color: 0x5f7cff, blending: 'additive',
         rotation: Math.random() * Math.PI * 2,
       });
 

@@ -124,13 +124,17 @@ export class ParticlePool {
         void main() {
           vec4 texColor = texture2D(uTexture, gl_PointCoord);
           float alpha = texColor.a * vLife;
-          gl_FragColor = vec4(vColor * texColor.rgb, alpha);
-          if (gl_FragColor.a < 0.01) discard;
+          // cel-shaded 硬剪裁：阈值 0.5（与 celShading.ts 中 alphaTest 对齐）。
+          // 注意：阈值高会让粒子在寿命过半即 pop 消失。要让节奏不"急促"，
+          // 不要降阈值（会破坏 cel 边缘风格），而应把对应 emit* 里的
+          // life / maxLife 拉长，让"前半段满亮"的可见区间足够长。
+          if (alpha < 0.5) discard;
+          gl_FragColor = vec4(vColor * texColor.rgb, 1.0);
         }
       `,
-      transparent: true,
+      transparent: false,
       depthWrite: false,
-      blending: THREE.AdditiveBlending,
+      blending: THREE.NormalBlending,
     });
 
     this.points = new THREE.Points(this.geometry, this.material);
@@ -161,7 +165,7 @@ export class ParticlePool {
     }
   }
 
-  /** 命中火花 + 朝相机的撞击 muzzle billboard，按武器颜色染色。 */
+  /** 命中火花：按武器颜色染色的发散粒子（不再叠加 muzzle 爆闪 billboard）。 */
   emitHitSparks(x: number, y: number, z: number, weaponType: string): void {
     const color = WEAPON_VFX_COLORS[weaponType] ?? [1.0, 0.9, 0.5];
     const count = 10 + Math.floor(Math.random() * 8);
@@ -179,19 +183,6 @@ export class ParticlePool {
       const cb = Math.min(1.0, color[2] + (Math.random() - 0.5) * 0.2);
       this.spawn(x, y, z, vx, vy, vz, size, life, cr, cg, cb);
     }
-    // Billboard: 一闪而过的撞击光晕（朝相机），跟武器染色一致
-    const colorHex = ((Math.round(color[0] * 255) << 16) | (Math.round(color[1] * 255) << 8) | Math.round(color[2] * 255)) >>> 0;
-    this.billboards.spawn({
-      texture: 'muzzle',
-      x, y, z,
-      scale: 1.6,
-      endScale: 2.4,
-      lifetime: 0.18,
-      opacityCurve: 'flash',
-      opacity: 1.0,
-      color: colorHex,
-      rotation: Math.random() * Math.PI * 2,
-    });
   }
 
   /** 极简死亡爆点：5–7 颗红橙粒 + 短命烟雾 + 地面烧痕。 */
@@ -205,7 +196,7 @@ export class ParticlePool {
       const vy = Math.abs(Math.sin(elevation)) * speed + 1.5;
       const vz = Math.sin(angle) * Math.cos(elevation) * speed;
       const size = 2.2 + Math.random() * 1.3;
-      const life = 0.14 + Math.random() * 0.1;
+      const life = 0.28 + Math.random() * 0.18;
       const r = 0.8 + Math.random() * 0.2;
       const g = 0.2 + Math.random() * 0.4;
       const b = Math.random() * 0.15;
@@ -256,7 +247,7 @@ export class ParticlePool {
       x, y: y + 0.3, z,
       scale: 0.5,
       endScale: 1.0,
-      lifetime: 0.35,
+      lifetime: 0.55,
       opacityCurve: 'flash',
       opacity: 0.85,
       color: colorHex,
@@ -299,16 +290,8 @@ export class ParticlePool {
       color,
       rotationSpeed: 5.0,
     });
-    this.billboards.spawn({
-      texture: 'light',
-      x, y: y + 0.4, z,
-      scale: 1.8,
-      endScale: 3.2,
-      lifetime: 0.75,
-      opacityCurve: 'fadeOut',
-      opacity: 0.8,
-      color: kind === 'silver' ? 0xccdfff : 0xffe080,
-    });
+    // 历史上这里还会 spawn 一个 light.png 光晕盘（升级 / 开宝箱 / 补偿共用），
+    // 按需求已移除：只保留环形粒子 + 顶部 star 闪光。
   }
 
   /** 升级金色爆发（emitCompensationBurst 'gold' 的语义包装）。 */
@@ -327,7 +310,7 @@ export class ParticlePool {
       const vy = 1 + Math.random() * 1.5;
       const vz = (Math.random() - 0.5) * 0.5;
       const size = 0.2 + Math.random() * 0.2;
-      const life = 0.2 + Math.random() * 0.2;
+      const life = 0.34 + Math.random() * 0.32;
       const r = 1.0;
       const g = 0.3 + Math.random() * 0.3;
       const b = Math.random() * 0.1;
@@ -368,11 +351,6 @@ export class ParticlePool {
     this.billboards.spawn({
       texture: 'muzzle', x, y, z, scale: 2.0, endScale: 3.6, lifetime: 0.22,
       opacityCurve: 'flash', opacity: 1.0, color: 0xc8a0ff,
-      rotation: Math.random() * Math.PI * 2, blending: 'additive',
-    });
-    this.billboards.spawn({
-      texture: 'light', x, y, z, scale: 2.8, endScale: 5.0, lifetime: 0.28,
-      opacityCurve: 'flash', opacity: 0.9, color: 0x8b7cff,
       rotation: Math.random() * Math.PI * 2, blending: 'additive',
     });
     this.billboards.spawn({

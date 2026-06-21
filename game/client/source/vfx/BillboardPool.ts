@@ -8,41 +8,38 @@
  */
 
 import * as THREE from 'three';
+import { applyCelShade } from './celShading.ts';
 
 /**
  * 已注册的 VFX 贴图 key（对应 public/textures/vfx/<key>.png）。
  * 增加新贴图时同步更新 `VFX_TEXTURE_FILES` 和此 union。
+ *
+ * 历史占位别名（`slash_fill` / `flame_aura` / `lightning` / `scorch_boots` / `enemy_bullet`）
+ * 已下线 —— 调用方直接使用底层主 key（如 `portal_swirl` / `light` / `spark` / `scorch` / `muzzle`）。
+ * 若将来要给某个特效做专属贴图，新增 key 并在 public/textures/vfx/ 放对应 PNG 即可。
  */
 export type VfxTextureKey =
-  | 'spark' | 'star' | 'smoke' | 'light' | 'slash'
-  | 'muzzle' | 'magic_circle' | 'portal_swirl' | 'scorch' | 'dirt' | 'flame'
-  | 'twirl' | 'slash_fill' | 'flame_aura' | 'lightning' | 'flare' | 'void_ripple'
-  | 'scorch_boots' | 'enemy_bullet';
+  | 'spark' | 'star' | 'smoke' | 'light' | 'sword_slash_arc'
+  | 'muzzle' | 'magic_circle' | 'portal_swirl' | 'scorch'
+  | 'flare'
+  | 'flame_ring_inner' | 'flame_ring_outer'
+  | 'void_ripple' | 'void_ring_burst';
 
 export const VFX_TEXTURE_FILES: Record<VfxTextureKey, string> = {
   spark: '/textures/vfx/spark.png',
   star: '/textures/vfx/star.png',
   smoke: '/textures/vfx/smoke.png',
   light: '/textures/vfx/light.png',
-  slash: '/textures/vfx/slash.png',
+  sword_slash_arc: '/textures/vfx/sword_slash_arc.png',
   muzzle: '/textures/vfx/muzzle.png',
   magic_circle: '/textures/vfx/magic_circle.png',
   portal_swirl: '/textures/vfx/portal_swirl.png',
   scorch: '/textures/vfx/scorch.png',
-  dirt: '/textures/vfx/dirt.png',
-  flame: '/textures/vfx/flame.png',
-  twirl: '/textures/particle_twirl.png',
-  flare: '/textures/particle_flare.png',
+  flare: '/textures/vfx/flare.png',
   void_ripple: '/textures/vfx/void_ripple.png',
-  // ↓ 以下 5 个 key 的贴图当前与另一 key 字节完全相同（同一占位图被复制了两份）。
-  // 去重：删掉重复文件，让这些 key 复用对应的「主」文件，省发布体积。
-  // ⚠️ 若将来要给某个特效做专属贴图（让它与主文件分化），请：
-  //    1) 在 public/textures/vfx/ 放回独立文件（如 lightning.png）；2) 把这里的路径改回去。
-  slash_fill: '/textures/vfx/portal_swirl.png',
-  flame_aura: '/textures/vfx/light.png',
-  lightning: '/textures/vfx/spark.png',
-  scorch_boots: '/textures/vfx/scorch.png',
-  enemy_bullet: '/textures/vfx/muzzle.png',
+  void_ring_burst: '/textures/vfx/void_ring_burst.png',
+  flame_ring_inner: '/textures/vfx/flame_ring_inner.png',
+  flame_ring_outer: '/textures/vfx/flame_ring_outer.png',
 };
 
 /** Billboard 池中每个槽位的运行时状态。 */
@@ -117,6 +114,7 @@ export class BillboardPool {
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
       });
+      applyCelShade(mat);
       const mesh = new THREE.Mesh(this.planeGeo, mat);
       mesh.visible = false;
       mesh.frustumCulled = false;
@@ -159,7 +157,8 @@ export class BillboardPool {
     mat.map = this.textures[opts.texture];
     mat.color.setHex(opts.color ?? 0xffffff);
     mat.opacity = slot.startOpacity;
-    mat.blending = opts.blending === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending;
+    // cel-shaded 模式：blending 固定为 NormalBlending（在构造时由 applyCelShade 设置），
+    // 忽略 opts.blending。
     mat.needsUpdate = true;
 
     slot.mesh.position.set(opts.x, opts.y, opts.z);

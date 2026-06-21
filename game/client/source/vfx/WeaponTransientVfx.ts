@@ -17,6 +17,7 @@
 import * as THREE from 'three';
 import { BillboardPool, type VfxTextureKey } from './BillboardPool.ts';
 import { ParticlePool } from './ParticlePool.ts';
+import { applyCelShade } from './celShading.ts';
 
 /** 火环柔光贴图淡出到不可见的归一化半径（相对贴图半宽）。 */
 export const FLAME_AURA_TIP_NORM = 0.85;
@@ -68,7 +69,7 @@ export class WeaponTransientVfx {
    * 剑气实心扇形（170°，与 `sweepArc` 命中区对齐）。
    *
    * 顶点 alpha 双向羽化：角度方向两侧 18%、径向外缘 30% 处淡出，消除硬边界。
-   * 使用 BillboardPool 的 `slash_fill` 贴图作为放射纹理（RingGeometry UV = 径向映射）。
+   * 使用 BillboardPool 的 `portal_swirl` 贴图作为放射纹理（RingGeometry UV = 径向映射）。
    * 0.18s 生命，由 {@link updateTransient} 渐隐回收。
    */
   spawnSlashSector(x: number, y: number, z: number, angle: number, range: number): void {
@@ -98,7 +99,7 @@ export class WeaponTransientVfx {
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 4));
     geo.rotateX(-Math.PI / 2);
 
-    const SLASH_SECTOR_TEXTURE: VfxTextureKey = 'slash_fill';
+    const SLASH_SECTOR_TEXTURE: VfxTextureKey = 'portal_swirl';
     const mat = new THREE.MeshBasicMaterial({
       color: 0x3aa0ff,
       map: this.billboards.textures[SLASH_SECTOR_TEXTURE] ?? null,
@@ -109,12 +110,13 @@ export class WeaponTransientVfx {
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
+    applyCelShade(mat);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x, y, z);
     mesh.rotation.y = angle - Math.PI / 2;
     mesh.renderOrder = 2;
     this.scene.add(mesh);
-    this.slashSectors.push({ mesh, life: 0.18, maxLife: 0.18, baseOpacity: 1.0 });
+    this.slashSectors.push({ mesh, life: 0.32, maxLife: 0.32, baseOpacity: 1.0 });
   }
 
   /**
@@ -125,9 +127,9 @@ export class WeaponTransientVfx {
    */
   spawnLightningBolt(x: number, y: number, z: number): void {
     const height = 8;
-    const maxLife = 0.25;
+    const maxLife = 0.42;
 
-    const tex = this.billboards.textures.lightning ?? null;
+    const tex = this.billboards.textures.spark ?? null;
     const makeBolt = (width: number, color: number, opacity: number, name: string): THREE.Mesh => {
       const geo = new THREE.PlaneGeometry(width, height);
       const mat = new THREE.MeshBasicMaterial({
@@ -139,6 +141,7 @@ export class WeaponTransientVfx {
         depthWrite: false,
         side: THREE.DoubleSide,
       });
+      applyCelShade(mat);
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(x, y + height / 2, z);
       mesh.name = name;
@@ -161,6 +164,7 @@ export class WeaponTransientVfx {
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
+    applyCelShade(ringMat);
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(x, y + 0.02, z);
@@ -194,7 +198,10 @@ export class WeaponTransientVfx {
     }
   }
 
-  /** Lazy-create 火环 Group（含一层柔光晕 plane），首次返回时已加入 scene。 */
+  /**
+   * Lazy-create 火环 Group：外层柔光晕（橙红 light 染色）+ 内焰旋焰（黄色 flame_ring_inner）。
+   * 内焰反向自转、略小尺寸，叠出"双层火环"的层次感。首次返回时已加入 scene。
+   */
   ensureFlameRingDisk(): THREE.Group {
     if (this.flameRingDisk) return this.flameRingDisk;
     const group = new THREE.Group();
@@ -203,7 +210,7 @@ export class WeaponTransientVfx {
 
     const planeGeo = new THREE.PlaneGeometry(1, 1);
     const mat = new THREE.MeshBasicMaterial({
-      map: this.billboards.textures.flame_aura ?? null,
+      map: this.billboards.textures.light ?? null,
       color: 0xff6a22,
       transparent: true,
       opacity: 1,
@@ -211,10 +218,39 @@ export class WeaponTransientVfx {
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
+    applyCelShade(mat);
     const mesh = new THREE.Mesh(planeGeo, mat);
     group.add(mesh);
 
-    this.flameRingLayers = [mesh];
+    const innerMat = new THREE.MeshBasicMaterial({
+      map: this.billboards.textures.flame_ring_inner ?? null,
+      color: 0xffd230,
+      transparent: true,
+      opacity: 0.9,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    applyCelShade(innerMat);
+    const innerMesh = new THREE.Mesh(planeGeo, innerMat);
+    innerMesh.position.z = 0.01;
+    group.add(innerMesh);
+
+    const outerMat = new THREE.MeshBasicMaterial({
+      map: this.billboards.textures.flame_ring_outer ?? null,
+      color: 0xff2a0a,
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    applyCelShade(outerMat);
+    const outerMesh = new THREE.Mesh(planeGeo, outerMat);
+    outerMesh.position.z = 0.02;
+    group.add(outerMesh);
+
+    this.flameRingLayers = [mesh, innerMesh, outerMesh];
     this.scene.add(group);
     this.flameRingDisk = group;
     return group;
@@ -235,7 +271,7 @@ export class WeaponTransientVfx {
     if (hasFlameRing) {
       const disk = this.ensureFlameRingDisk();
       disk.visible = true;
-      disk.position.set(playerX, playerY + 0.05, playerZ);
+      disk.position.set(playerX, playerY + 1.0, playerZ);
       this.flameRingTime += dt;
       const breathe = 1 + Math.sin(this.flameRingTime * 4) * 0.04;
       const size = (flameRingRadius * 2 / FLAME_AURA_TIP_NORM) * breathe;
@@ -244,6 +280,18 @@ export class WeaponTransientVfx {
         star.scale.set(size, size, 1);
         star.rotation.z = this.flameRingTime * 0.6;
         (star.material as THREE.MeshBasicMaterial).opacity = 1;
+      }
+      const inner = this.flameRingLayers[1];
+      if (inner) {
+        inner.scale.set(size, size, 1);
+        inner.rotation.z = this.flameRingTime * 0.25;
+        (inner.material as THREE.MeshBasicMaterial).opacity = 0.85 + Math.sin(this.flameRingTime * 6) * 0.1;
+      }
+      const outer = this.flameRingLayers[2];
+      if (outer) {
+        outer.scale.set(size, size, 1);
+        outer.rotation.z = this.flameRingTime * 1.8;
+        (outer.material as THREE.MeshBasicMaterial).opacity = 0.85 + Math.sin(this.flameRingTime * 8) * 0.12;
       }
     } else if (this.flameRingDisk) {
       this.flameRingDisk.visible = false;

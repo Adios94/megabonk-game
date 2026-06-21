@@ -31,6 +31,7 @@ import {
   TIER_CONFIGS,
   CHEST_INTERACT_RADIUS,
   CHEST_INTERACT_MAX_Y_DELTA,
+  AOE_MAX_Y_DELTA,
   RELICS,
   BONDS,
   evalBondCounts,
@@ -203,6 +204,7 @@ import { BondAndStatusVfx } from './vfx/BondAndStatusVfx.ts';
 
 // 武器 / 拾取 VFX 颜色查表 — 见 vfx/weaponColors.ts
 import { WEAPON_VFX_COLORS, PICKUP_VFX_COLORS } from './vfx/weaponColors.ts';
+import { applyCelShade } from './vfx/celShading.ts';
 
 // Damage number overlay — see ui/damageNumbers.ts
 import { DamageNumbersOverlay } from './ui/damageNumbers.ts';
@@ -4401,7 +4403,7 @@ export class GameScene {
 
     // 敌人弹幕：朝相机的火焰 billboard（平面 + 火焰贴图，加法混合发光）。
     // 每帧在 renderProjectiles 里按"朝相机 + 火焰尾沿速度反向拖尾"重建实例矩阵。
-    // enemy_bullet.png 与 muzzle.png 字节相同，已去重为后者（见 VFX_TEXTURE_FILES 注释）。
+    // 复用 muzzle 贴图（原 enemy_bullet 占位别名已下线）。
     const flameTex = new THREE.TextureLoader().load('/textures/vfx/muzzle.png');
     flameTex.colorSpace = THREE.SRGBColorSpace;
     const flameGeo = new THREE.PlaneGeometry(1, 1);
@@ -6620,15 +6622,17 @@ export class GameScene {
       this.teleporterGlowMeshes.push(pillar);
 
       // Ground decal: magic circle / portal swirl（按 phase 切贴图）
+      // 与 weapon / area effect 同款 cel-shaded 实心风：transparent=false + alphaTest=0.5
+      // → 不透明、硬边、不再与地面 additive 叠色。
       const decalGeo = new THREE.PlaneGeometry(10, 10);
       const decalMat = new THREE.MeshBasicMaterial({
         map: this.billboardPool.textures.magic_circle,
         transparent: true,
-        opacity: 0.85,
+        opacity: 1.0,
         depthWrite: false,
-        blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
       });
+      applyCelShade(decalMat);
       const decal = new THREE.Mesh(decalGeo, decalMat);
       decal.name = 'Altar_Decal';
       decal.rotation.x = -Math.PI / 2;
@@ -6676,6 +6680,10 @@ export class GameScene {
         const pillarMat = pillar.material as THREE.MeshBasicMaterial;
         const decalMat = decal.material as THREE.MeshBasicMaterial;
 
+        // decal 走 cel-shaded（alphaTest=0.5），opacity 保持 1.0；
+        // 状态差异由 color 表达，呼吸效果挪到 pillar / ring 上保留。
+        decalMat.opacity = 1.0;
+
         switch (tp.phase) {
           case 'summoning': {
             // 召唤读条阶段：金黄脉冲 + 魔法圆加速旋转
@@ -6685,28 +6693,25 @@ export class GameScene {
             pillarMat.opacity = pulse;
             decalMat.map = this.billboardPool.textures.magic_circle;
             decalMat.color.setHex(0xffcc44);
-            decalMat.opacity = 0.95;
             decal.rotation.z = -time * 4;  // 加速旋转
             break;
           }
           case 'boss_active': {
-            // Boss 战进行中：飞碟沉默（decal 暗淡）
+            // Boss 战进行中：飞碟沉默（decal 暗淡）—— cel 风格下用深暗红色表达
             ringMat?.color.setHex(0xff2200);
             pillarMat.color.setHex(0xff4400);
             pillarMat.opacity = 0.4;
-            decalMat.color.setHex(0x661100);
-            decalMat.opacity = 0.3;
+            decalMat.color.setHex(0x331108);
             decal.rotation.z = -time * 0.5;
             break;
           }
           case 'cooldown': {
-            // 冷却：低亮度蓝紫，表示暂不可交互
+            // 冷却：低亮度蓝紫，表示暂不可交互（用偏暗的色调代替透明度）
             ringMat?.color.setHex(0x5566aa);
             pillarMat.color.setHex(0x6677cc);
             pillarMat.opacity = 0.22 + Math.sin(time * 0.8) * 0.08;
             decalMat.map = this.billboardPool.textures.magic_circle;
-            decalMat.color.setHex(0x6677cc);
-            decalMat.opacity = 0.35;
+            decalMat.color.setHex(0x334477);
             decal.rotation.z = -time * 0.4;
             break;
           }
@@ -6718,19 +6723,17 @@ export class GameScene {
             pillarMat.opacity = 0.6 + Math.sin(time * 2) * 0.2;
             decalMat.map = this.billboardPool.textures.portal_swirl;
             decalMat.color.setHex(0xcc66ff);
-            decalMat.opacity = 0.95;
             decal.rotation.z = time * 6;
             break;
           }
           case 'ready':
           default: {
-            // 待召唤：青蓝色平稳呼吸 + 魔法圆缓慢旋转
+            // 待召唤：青蓝色 + 魔法圆缓慢旋转。呼吸感放在 pillar 上。
             ringMat?.color.setHex(0x00ccff);
             pillarMat.color.setHex(0x00ffff);
             pillarMat.opacity = 0.3 + Math.sin(time) * 0.1;
             decalMat.map = this.billboardPool.textures.magic_circle;
             decalMat.color.setHex(0x66ddff);
-            decalMat.opacity = 0.7 + Math.sin(time * 0.8) * 0.15;
             decal.rotation.z = -time * 1.2;
             break;
           }
@@ -7628,29 +7631,64 @@ export class GameScene {
       const justFired = curr > prev + 0.05 && player.alive;
 
       if (justFired && weapon.type === 'sword') {
-        // Find nearest enemy for slash direction
-        let slashAngle = player.rotation;
-        let nearestDist = Infinity;
-        for (const enemy of state.enemies) {
-          if (enemy.hp <= 0) continue;
-          const edx = enemy.x - player.x;
-          const edz = enemy.z - player.z;
-          const eDist = edx * edx + edz * edz;
-          if (eDist < nearestDist) {
-            nearestDist = eDist;
-            slashAngle = Math.atan2(edx, edz);
-          }
-        }
-
         // 剑气：程序化实心扇形，几何钉在 sweepArc 真实判定上
         // （圆心=玩家 / 外缘=range / 扇形 Math.PI*0.944 ≈ 170° / 朝最近敌人）。
         // 多刀（projectileCount>1）按 sweepArc 同样的 baseAngle 偏移逐刀绘制。
         const swordStats = this.getEffectiveWeaponStats(weapon);
         const swordRange = swordStats.range;
         const swipeCount = Math.max(1, Math.round(swordStats.projectileCount));
+
+        // 目标选择必须与 core/sweepArc 的 findNearestTarget 等价：
+        //   range × 1.5 平面距离上限 + AOE_MAX_Y_DELTA y 差过滤 + 把 boss 也纳入候选。
+        // 否则会出现"扇形画一个方向、判定打另一个方向"的视觉错位
+        // （远处剩一个敌人时 / boss 比小怪近时 / 最近敌人在楼上时）。
+        let slashAngle = player.rotation;
+        let nearestDistSq = (swordRange * 1.5) ** 2;
+        for (const enemy of state.enemies) {
+          if (enemy.hp <= 0) continue;
+          if (Math.abs(enemy.y - player.y) > AOE_MAX_Y_DELTA) continue;
+          const edx = enemy.x - player.x;
+          const edz = enemy.z - player.z;
+          const distSq = edx * edx + edz * edz;
+          if (distSq < nearestDistSq) {
+            nearestDistSq = distSq;
+            slashAngle = Math.atan2(edx, edz);
+          }
+        }
+        const boss = state.boss;
+        if (boss && boss.hp > 0 && Math.abs(boss.y - player.y) <= AOE_MAX_Y_DELTA) {
+          const bdx = boss.x - player.x;
+          const bdz = boss.z - player.z;
+          const distSq = bdx * bdx + bdz * bdz;
+          if (distSq < nearestDistSq) {
+            nearestDistSq = distSq;
+            slashAngle = Math.atan2(bdx, bdz);
+          }
+        }
         for (let s = 0; s < swipeCount; s++) {
           const sweepAngle = slashAngle + (s - (swipeCount - 1) / 2) * 0.3;
-          this.weaponTransientVfx.spawnSlashSector(player.x, player.y + 0.05, player.z, sweepAngle, swordRange);
+          this.weaponTransientVfx.spawnSlashSector(player.x, player.y + 1.0, player.z, sweepAngle, swordRange);
+
+          // 大剑深蓝色月牙剑痕：贴地圆弧贴花，凸面沿 sweepAngle 朝外、开口朝玩家身后。
+          //   - 贴图 sword_slash_arc 的 C 形凸面（亮月牙）在局部 +X 一侧（开口朝 -X）；
+          //     plane 平躺 + z-rotation = sweepAngle - π/2 → 局部 +X 转到 sweepAngle 方向，
+          //     凸面正好沿剑挥方向、与扇形剑气外缘对齐。
+          //   - 贴图本身就把"玩家=图片中心 + 月牙弧=剑刃扫过位置"画好了，plane 圆心放在
+          //     玩家位置即可，不要再沿 sweepAngle 加位移（否则把月牙推出扇形外）。
+          //   - 颜色 0x1a3a8a（深皇家蓝），与既有 0x3aa0ff 浅蓝剑气形成"深底亮缘"叠层。
+          this.billboardPool.spawn({
+            texture: 'sword_slash_arc',
+            x: player.x,
+            y: player.y + 0.05,
+            z: player.z,
+            scale: swordRange * 2.0,
+            lifetime: 0.38,
+            opacity: 1.0,
+            opacityCurve: 'fadeOut',
+            color: 0x1a3a8a,
+            facing: 'up',
+            rotation: sweepAngle - Math.PI / 2,
+          });
         }
 
         // 12 lightweight particles streaking along the arc for extra punch
@@ -7663,7 +7701,7 @@ export class GameScene {
             px, player.y + 1.0, pz,
             Math.sin(arcAngle) * 1.8, 0.8 + Math.random() * 0.6, Math.cos(arcAngle) * 1.8,
             0.5,
-            0.18,
+            0.32,
             0.95, 0.97, 1.0,
           );
         }

@@ -97,6 +97,7 @@ export {
   TIER_CONFIGS,
   CHEST_INTERACT_RADIUS,
   CHEST_INTERACT_MAX_Y_DELTA,
+  AOE_MAX_Y_DELTA,
 } from './config.ts';
 
 export type { WaveConfig, WeaponLevelStats, TierConfig } from './config.ts';

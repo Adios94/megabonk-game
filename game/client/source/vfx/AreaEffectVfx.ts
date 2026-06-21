@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import type { GameState } from '@minigame/core';
 import { BillboardPool } from './BillboardPool.ts';
 import { ParticlePool } from './ParticlePool.ts';
+import { applyCelShade } from './celShading.ts';
 
 type AreaEffect = GameState['areaEffects'][number];
 
@@ -110,11 +111,25 @@ export class AreaEffectVfx {
           break;
         }
         case 'void_ripple': {
-          obj.position.set(ae.x, ae.y + 0.08, ae.z);
+          obj.position.set(ae.x, ae.y + 1.0, ae.z);
           obj.scale.setScalar(Math.max(0.01, ae.radius));
-          const m = (obj as THREE.Mesh).material as THREE.MeshBasicMaterial;
-          m.color.setHex(0x00ffff);
-          m.opacity = ratio;
+          const group = obj as THREE.Group;
+          const ripple = group.getObjectByName('void_ripple_base') as THREE.Mesh | null;
+          const burst = group.getObjectByName('void_ripple_burst') as THREE.Mesh | null;
+          // 不用 ratio 衰减 opacity：cel-shaded `alphaTest=0.5` 会在 ratio<0.5 时整片 pop。
+          // 改为把"消失"全部交给 ae.radius 反向缩回（core 的 retracting 阶段会驱动），
+          // 视觉上波"塌回原点"，opacity 保持满。
+          if (ripple) {
+            const m = ripple.material as THREE.MeshBasicMaterial;
+            m.opacity = 1.0;
+          }
+          if (burst) {
+            const m = burst.material as THREE.MeshBasicMaterial;
+            // 内层补色环仍保留缓慢自转 + 弱脉动，但脉动幅度收紧以贴 alphaTest 阈值之上。
+            const pulse = 0.85 + Math.sin(state.tick * 0.18) * 0.15;
+            m.opacity = pulse;
+            burst.rotation.z += 0.012;
+          }
           break;
         }
         case 'scorch_trail': {
@@ -158,7 +173,7 @@ export class AreaEffectVfx {
    * 按 kind 构造对应特效 mesh（首次出现，或对象池被掏空时调用）：
    * - ray_beam: Group = 双交叉辉光 plane（light 贴图）+ 灼热核心 box，单位长度沿 z=1。
    * - gas_cloud: Group = 地面毒液斑（smoke）+ 边界毒环（scorch），半径 1。
-   * - void_ripple: 同心波纹 plane（青色加色发光），半径 1。
+   * - void_ripple: Group = 青色同心波纹 + 紫红色四向魔法尖环（补色叠加，尖环缓慢自转）。
    * - scorch_trail: Group = 暗橙焦土圆盘 + 加色发光放射层。
    * - default: 暗橙圆盘兜底。
    *
@@ -169,8 +184,14 @@ export class AreaEffectVfx {
       case 'ray_beam': {
         const group = new THREE.Group();
 
+        // 长度方向多分段（24 段）：让 curved-world vertex shader 有足够顶点拟合球面。
+        // 否则 4 顶点的长 plane 弯曲后是「角点贴球面、中段直线插值」，直线永远在凸球面下方，
+        // 视觉上整条射线会从中段开始钻进弯曲地面。
+        const LENGTH_SEGMENTS = 24;
         const makeGlowGeo = (lengthAxis: 'x' | 'y'): THREE.PlaneGeometry => {
-          const g = new THREE.PlaneGeometry(1, 1);
+          const g = lengthAxis === 'y'
+            ? new THREE.PlaneGeometry(1, 1, 1, LENGTH_SEGMENTS)
+            : new THREE.PlaneGeometry(1, 1, LENGTH_SEGMENTS, 1);
           const uv = g.attributes.uv as THREE.BufferAttribute;
           for (let i = 0; i < uv.count; i++) {
             if (lengthAxis === 'y') uv.setY(i, 0.5);
@@ -185,6 +206,7 @@ export class AreaEffectVfx {
             transparent: true, opacity: 1.0,
             side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
           });
+          applyCelShade(mat);
           const mesh = new THREE.Mesh(makeGlowGeo(lengthAxis), mat);
           mesh.name = 'beam_glow';
           return mesh;
@@ -193,13 +215,13 @@ export class AreaEffectVfx {
         const glowV = makeGlow('x'); glowV.rotation.y = Math.PI / 2;
         group.add(glowH, glowV);
 
-        const core = new THREE.Mesh(
-          new THREE.BoxGeometry(1, 1, 1),
-          new THREE.MeshBasicMaterial({
-            color: 0xffc2d2, transparent: true, opacity: 1.0,
-            blending: THREE.AdditiveBlending, depthWrite: false,
-          }),
-        );
+        const coreMat = new THREE.MeshBasicMaterial({
+          color: 0xffc2d2, transparent: true, opacity: 1.0,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        });
+        applyCelShade(coreMat);
+        // 长度方向（最后一个参数）多分段，理由同 makeGlowGeo。
+        const core = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1, 1, 1, LENGTH_SEGMENTS), coreMat);
         core.scale.set(0.28, 0.28, 1);
         core.name = 'beam_core';
         group.add(core);
@@ -208,7 +230,7 @@ export class AreaEffectVfx {
         this.billboards.spawn({
           texture: 'flare',
           x: ae.x + mdx * 0.4, y: ae.y + 1.0, z: ae.z + mdz * 0.4,
-          scale: 1.6, endScale: 2.4, lifetime: 0.16, opacity: 1.0,
+          scale: 1.6, endScale: 2.4, lifetime: 0.28, opacity: 1.0,
           opacityCurve: 'fadeOut', color: 0xff3366, blending: 'additive',
         });
 
@@ -223,6 +245,7 @@ export class AreaEffectVfx {
           color: 0x4faa2e, transparent: true, opacity: 1.0,
           side: THREE.DoubleSide, depthWrite: false,
         });
+        applyCelShade(fillMat);
         const fill = new THREE.Mesh(fillGeo, fillMat);
         fill.rotation.x = -Math.PI / 2;
         fill.renderOrder = 3;
@@ -236,6 +259,7 @@ export class AreaEffectVfx {
           side: THREE.DoubleSide, depthWrite: false,
           blending: THREE.AdditiveBlending,
         });
+        applyCelShade(ringMat);
         const ring = new THREE.Mesh(ringGeo, ringMat);
         ring.rotation.x = -Math.PI / 2;
         ring.renderOrder = 4;
@@ -245,25 +269,50 @@ export class AreaEffectVfx {
         return group;
       }
       case 'void_ripple': {
-        const geo = new THREE.PlaneGeometry(2, 2);
-        const mat = new THREE.MeshBasicMaterial({
+        const group = new THREE.Group();
+
+        // 基础层：青色同心涟漪。
+        const rippleGeo = new THREE.PlaneGeometry(2, 2);
+        const rippleMat = new THREE.MeshBasicMaterial({
           map: this.billboards.textures.void_ripple,
           color: 0x00ffff, transparent: true, opacity: 1.0,
           side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
         });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.rotation.x = -Math.PI / 2;
-        return mesh;
+        applyCelShade(rippleMat);
+        const ripple = new THREE.Mesh(rippleGeo, rippleMat);
+        ripple.rotation.x = -Math.PI / 2;
+        ripple.name = 'void_ripple_base';
+        ripple.renderOrder = 3;
+        group.add(ripple);
+
+        // 叠加层：紫红色魔法光环 + 四方向尖角，与青色基础环形成补色对比。
+        const burstGeo = new THREE.PlaneGeometry(2.4, 2.4);
+        const burstMat = new THREE.MeshBasicMaterial({
+          map: this.billboards.textures.void_ring_burst,
+          color: 0xc24bff, transparent: true, opacity: 1.0,
+          side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
+        });
+        applyCelShade(burstMat);
+        const burst = new THREE.Mesh(burstGeo, burstMat);
+        burst.rotation.x = -Math.PI / 2;
+        burst.rotation.z = Math.random() * Math.PI * 2;
+        burst.position.y = 0.02;
+        burst.name = 'void_ripple_burst';
+        burst.renderOrder = 4;
+        group.add(burst);
+
+        return group;
       }
       case 'scorch_trail': {
         const group = new THREE.Group();
 
         const scorchGeo = new THREE.CircleGeometry(1, 24);
         const scorchMat = new THREE.MeshBasicMaterial({
-          map: this.billboards.textures.scorch_boots ?? null,
+          map: this.billboards.textures.scorch ?? null,
           color: 0x5a1f06, transparent: true, opacity: 1.0,
           side: THREE.DoubleSide, depthWrite: false,
         });
+        applyCelShade(scorchMat);
         const scorch = new THREE.Mesh(scorchGeo, scorchMat);
         scorch.rotation.x = -Math.PI / 2;
         scorch.renderOrder = 3;
@@ -272,11 +321,12 @@ export class AreaEffectVfx {
 
         const glowGeo = new THREE.PlaneGeometry(2, 2);
         const glowMat = new THREE.MeshBasicMaterial({
-          map: this.billboards.textures.scorch_boots ?? null,
+          map: this.billboards.textures.scorch ?? null,
           color: 0xff7a1a, transparent: true, opacity: 1.0,
           side: THREE.DoubleSide, depthWrite: false,
           blending: THREE.AdditiveBlending,
         });
+        applyCelShade(glowMat);
         const glow = new THREE.Mesh(glowGeo, glowMat);
         glow.rotation.x = -Math.PI / 2;
         glow.rotation.z = Math.random() * Math.PI * 2;
@@ -292,6 +342,7 @@ export class AreaEffectVfx {
           color: 0xff6a1a, transparent: true, opacity: 1.0,
           side: THREE.DoubleSide, depthWrite: false,
         });
+        applyCelShade(mat);
         const mesh = new THREE.Mesh(geo, mat);
         mesh.rotation.x = -Math.PI / 2;
         return mesh;

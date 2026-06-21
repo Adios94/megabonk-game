@@ -96,6 +96,15 @@ export function tickAreaEffects(engine: Engine, dt: number): void {
           ae.y = engine.state.player.y;
           ae.z = engine.state.player.z;
         }
+        // 收回阶段：纯视觉，半径反向缩回到 0 后才真正销毁；不再做命中判定。
+        if (ae.retracting) {
+          ae.radius = Math.max(0, ae.radius - (ae.expandSpeed ?? 8) * dt);
+          if (ae.radius <= 0.01) {
+            engine.state.areaEffects.splice(i, 1);
+            continue;
+          }
+          break;
+        }
         const prev = ae.radius;
         ae.radius = prev + (ae.expandSpeed ?? 8) * dt;
         const rippleRadiusSq = ae.radius * ae.radius;
@@ -135,8 +144,9 @@ export function tickAreaEffects(engine: Engine, dt: number): void {
           }
         }
         if (ae.radius >= (ae.maxRadius ?? ae.radius)) {
-          engine.state.areaEffects.splice(i, 1);
-          continue;
+          // 触顶：钳到 maxRadius 并切到收回阶段（后续帧 radius 反向缩小，视觉上"波收回"）。
+          ae.radius = ae.maxRadius ?? ae.radius;
+          ae.retracting = true;
         }
         break;
       }

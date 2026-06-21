@@ -3177,6 +3177,12 @@ export class GameScene {
       powerPreference: 'high-performance',
       alpha: true, // 允许透明背景，便于支持高质量天空盒/CSS天空背景
     });
+    // 关掉 shader 编译错误检查：默认开启时，three.js 每次链接新 program 都会同步调
+    // gl.getProgramInfoLog() / gl.getShaderInfoLog()，强制 CPU 等 GPU 完成链接 →
+    // 单次 stall 可达 10+ms（敌人首次出现 / 新拾取 / 新光照组合都会触发）。
+    // 关掉后 three.js 自动走 KHR_parallel_shader_compile 异步链接路径，主线程不阻塞。
+    // 开发期如需排查 shader 报错，临时把这行注释掉即可。
+    this.renderer.debug.checkShaderErrors = false;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; // 开启高质量实时阴影
     this.renderer.toneMapping = THREE.NeutralToneMapping; // 更亮、更保饱和（Q 版鲜艳调性，替代偏暗去饱和的 ACES）

@@ -194,6 +194,9 @@ import { WeaponTransientVfx } from './vfx/WeaponTransientVfx.ts';
 // 区域特效（毒气 / 虚空涟漪 / 灼地痕迹 / 激光线）— 见 vfx/AreaEffectVfx.ts
 import { AreaEffectVfx } from './vfx/AreaEffectVfx.ts';
 
+// 羁绊 / 状态 VFX（奥秘数字 / 奥术光球 / bond 事件 / 敌人状态粒子）— 见 vfx/BondAndStatusVfx.ts
+import { BondAndStatusVfx } from './vfx/BondAndStatusVfx.ts';
+
 // 武器 / 拾取 VFX 颜色查表 — 见 vfx/weaponColors.ts
 import { WEAPON_VFX_COLORS, PICKUP_VFX_COLORS } from './vfx/weaponColors.ts';
 
@@ -2634,15 +2637,22 @@ async function loadObjItems(): Promise<void> {
   // (which runs convertToToonMaterials and caps lightness — fine for flat-color
   // models but darkens hand-painted textures), this rebuilds a white-tinted
   // toon material that lets the embedded diffuse map carry the color verbatim.
+  //
+  // tint：可选，作用在 toon material 的 color 上（乘到贴图上做染色）。默认
+  // 0xffffff 即"保留贴图原色"；传非白色相当于不动 .glb 也能换色（poison_bomb
+  // / coin 就是这条路）。如需按 mesh 分别染色，再扩成 (mesh)=>Color 形式。
   const loadTexturedGlbWeaponModel = async (
     name: string,
     glbPath: string,
     targetSize: number,
+    tint: THREE.ColorRepresentation = 0xffffff,
   ): Promise<THREE.Group | null> => {
     try {
       const gltf = await gltfLoader.loadAsync(glbPath);
       const obj = gltf.scene as THREE.Group;
       obj.name = name;
+
+      const tintColor = new THREE.Color(tint);
 
       obj.traverse((child) => {
         if (!(child as THREE.Mesh).isMesh) return;
@@ -2651,8 +2661,11 @@ async function loadObjItems(): Promise<void> {
           THREE.MeshStandardMaterial | undefined;
         const map = src?.map ?? null;
         tuneToonTexture(map);
+        const baseColor = map
+          ? tintColor.clone()
+          : (src?.color?.clone().multiply(tintColor) ?? tintColor.clone());
         const toon = new THREE.MeshToonMaterial({
-          color: map ? 0xffffff : (src?.color?.clone() ?? new THREE.Color(0xffffff)),
+          color: baseColor,
           map,
           gradientMap: toonGradientMap,
           side: THREE.FrontSide,
@@ -2738,7 +2751,9 @@ async function loadObjItems(): Promise<void> {
     // Magic weapon floater models (previously VFX-only)
     loadTexturedGlbWeaponModel('LightningStaffModel', '/models/items/lightning_staff.glb', 1.0),
     loadGlbWeaponModel('FlameRingModel', '/models/items/Ring3.glb', 0.45, true),
-    loadTexturedGlbWeaponModel('PoisonBombModel', '/models/items/poison_bomb.glb', 0.5),
+    // 瓶身染绿（visualConfig.WEAPON_HUD_COLORS.poison_bomb 同色）；贴图里偏白
+    // 的玻璃面会被染成毒绿，瓶塞那种偏暗区会变深绿——可接受就保留。
+    loadTexturedGlbWeaponModel('PoisonBombModel', '/models/items/poison_bomb.glb', 0.5, 0x4caf3a),
     loadGlbWeaponModel('VoidRippleModel', '/models/items/Book4_Closed.glb', 0.5, true),
     loadGlbWeaponModel('RayGunModel', '/models/items/ray_gun.glb', 0.7, true),
     loadPaletteObjWeaponModel('ShotgunModel', '/models/items/shotgun_2.obj', '/models/items/uv_palette.png', 0.8),
@@ -2775,7 +2790,9 @@ async function loadObjItems(): Promise<void> {
   paralysisGunModel = pgun;
   scorchBootsModel = sboots;
 
-  silverCoinModel = await loadTexturedGlbWeaponModel('SilverCoinModel', '/models/items/coin.glb', 0.45);
+  // 原 glb 是金色硬币，乘一个冷调浅灰把它压成"银白色"。
+  // 注：贴图饱和度高时乘法染色压不掉颜色，需要去 Blender 改贴图。
+  silverCoinModel = await loadTexturedGlbWeaponModel('SilverCoinModel', '/models/items/coin.glb', 0.45, 0xdcdce4);
 
   // Load chest model — Sci-Fi Essentials Prop_Chest (glTF + textures)
   try {
@@ -2954,10 +2971,8 @@ export class GameScene {
   private neuroMarkerSprites: Map<number, THREE.Sprite> = new Map(); // 毒师神经毒素 墨绿倒三角
   private hunterMarkerSprites: Map<number, THREE.Sprite> = new Map(); // 猎标烙印 红色瞄准圈
   private conductorGlowSprites: Map<number, THREE.Sprite> = new Map(); // 弧光导体 蓝色发光
-  private mysteryNumberSprite: THREE.Sprite | null = null; // 奥术奥秘计数（玩家头顶）
-  private mysteryNumberValue = -1;
-  private mysteryNumberPulse = 0;
-  private arcaneBurstOrbs: { sprite: THREE.Sprite; from: THREE.Vector3; to: THREE.Vector3; t: number; life: number }[] = [];
+  // 奥术奥秘头顶数字 + 奥术光球 + bond 事件 + 敌人状态粒子 — 见 vfx/BondAndStatusVfx.ts
+  private bondStatusVfx!: BondAndStatusVfx;
   private projectileMesh!: THREE.InstancedMesh;
   private enemyProjectileMesh!: THREE.InstancedMesh; // 敌人弹幕：朝相机的火焰 billboard
   private axeObjects: Map<number, THREE.Object3D> = new Map(); // axe projectile id → cloned model
@@ -4383,6 +4398,8 @@ export class GameScene {
     this.weaponTransientVfx = new WeaponTransientVfx(this.scene, this.billboardPool, this.particlePool);
     // ─── 区域特效（毒气 / 虚空涟漪 / 灼地痕迹 / 激光线）+ 按 kind 对象池 ───
     this.areaEffectVfx = new AreaEffectVfx(this.scene, this.billboardPool, this.particlePool);
+    // ─── 羁绊 / 状态 VFX（奥秘头顶数字 / 奥术光球 / bond 事件 / 敌人状态粒子）───
+    this.bondStatusVfx = new BondAndStatusVfx(this.scene, this.billboardPool, this.particlePool);
   }
 
   // spawnBillboard / updateBillboardVfx 已迁出至 BillboardPool；
@@ -7490,193 +7507,19 @@ export class GameScene {
   }
 
   // 区域特效（gas / ripple / scorch / beam）已迁出至 vfx/AreaEffectVfx.ts。
-  // 区域特效（gas / ripple / scorch / beam）已迁出至 vfx/AreaEffectVfx.ts。
 
-  /** 给中毒 / 麻痹的敌人喷少量状态粒子（绿色毒雾 / 黄色麻痹电花）。 */
-  private updateEnemyStatusVfx(state: GameState): void {
-    for (const e of state.enemies) {
-      if (e.hp <= 0) continue;
-      if ((e.poisonTimer ?? 0) > 0 && state.tick % 4 === 0) {
-        const a = Math.random() * Math.PI * 2;
-        this.particlePool.spawn(
-          e.x + Math.cos(a) * 0.4, e.y + 0.6 + Math.random() * 0.6, e.z + Math.sin(a) * 0.4,
-          0, 0.4 + Math.random() * 0.4, 0,
-          0.4, 0.45, 0.3, 0.85, 0.2,
-        );
-      }
-      if ((e.slowTimer ?? 0) > 0 && state.tick % 5 === 0) {
-        const a = Math.random() * Math.PI * 2;
-        this.particlePool.spawn(
-          e.x + Math.cos(a) * 0.5, e.y + 0.8 + Math.random() * 0.5, e.z + Math.sin(a) * 0.5,
-          (Math.random() - 0.5) * 1.2, 0.6, (Math.random() - 0.5) * 1.2,
-          0.4, 0.18, 1.0, 0.85, 0.1,
-        );
-      }
-    }
-  }
-
-  /** 生成奥术「奥秘」计数贴图（蓝紫渐变描边数字）。 */
-  private makeMysteryNumberTexture(value: number): THREE.Texture {
-    const canvas = document.createElement('canvas');
-    canvas.width = 128;
-    canvas.height = 96;
-    const ctx = canvas.getContext('2d')!;
-    ctx.clearRect(0, 0, 128, 96);
-    const text = String(value);
-    ctx.font = `bold 60px ${UI_FONT_FACE}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const grad = ctx.createLinearGradient(0, 18, 0, 78);
-    grad.addColorStop(0, '#f0d8ff');
-    grad.addColorStop(0.45, '#b06bff');
-    grad.addColorStop(1, '#4d8dff');
-    ctx.shadowColor = 'rgba(122,88,255,0.8)';
-    ctx.shadowBlur = 14;
-    ctx.lineWidth = 8;
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = 'rgba(10,4,30,0.92)';
-    ctx.strokeText(text, 64, 50);
-    ctx.fillStyle = grad;
-    ctx.fillText(text, 64, 50);
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
-  }
-
-  /** 奥术 T2+：在玩家头顶显示当前奥秘数值（蓝紫渐变）。 */
-  private updateMysteryNumber(state: GameState): void {
-    const player = state.player;
-    const arcaneTier = player.bonds?.find(b => b.bondId === 'arcane')?.tier ?? 0;
-    const value = Math.floor(player.bondMystery ?? 0);
-    if (arcaneTier < 2 || !player.alive) {
-      if (this.mysteryNumberSprite) this.mysteryNumberSprite.visible = false;
-      return;
-    }
-    if (!this.mysteryNumberSprite) {
-      const mat = new THREE.SpriteMaterial({ transparent: true, depthWrite: false, depthTest: false, opacity: 0.96 });
-      this.mysteryNumberSprite = new THREE.Sprite(mat);
-      this.mysteryNumberSprite.renderOrder = 20;
-      this.scene.add(this.mysteryNumberSprite);
-    }
-    const sprite = this.mysteryNumberSprite;
-    if (value !== this.mysteryNumberValue) {
-      if (this.mysteryNumberValue >= 0 && value > this.mysteryNumberValue) {
-        this.mysteryNumberPulse = 0.18;
-      }
-      this.mysteryNumberValue = value;
-      const oldMap = sprite.material.map;
-      sprite.material.map = this.makeMysteryNumberTexture(value);
-      sprite.material.needsUpdate = true;
-      oldMap?.dispose();
-    }
-    this.mysteryNumberPulse = Math.max(0, this.mysteryNumberPulse - this.frameDt);
-    const pulse = this.mysteryNumberPulse > 0
-      ? 1 + Math.sin((this.mysteryNumberPulse / 0.18) * Math.PI) * 0.22
-      : 1;
-    const arcaneParams = BONDS.arcane.params;
-    const threshold = arcaneTier >= 3 ? arcaneParams.thresholdT3 : arcaneParams.threshold;
-    const mysteryScale = 0.5 + Math.min(1, value / threshold) * 0.5;
-    const visualScale = Math.min(1, mysteryScale * pulse);
-    sprite.visible = true;
-    sprite.position.set(player.x, player.y + 2.5, player.z);
-    sprite.scale.set(1.15 * visualScale, 0.86 * visualScale, 1);
-  }
-
-  /** 消费羁绊 VFX 事件：奥术光球 / 余烬红色爆炸烟雾。 */
-  private processBondVfxEvents(state: GameState): void {
-    const player = state.player;
-    for (const evt of state.bondVfxEvents ?? []) {
-      if (evt.kind === 'arcane_burst') {
-        const from = new THREE.Vector3(player.x, player.y + 2.5, player.z);
-        const to = new THREE.Vector3(evt.x, evt.y, evt.z);
-        const mat = new THREE.SpriteMaterial({
-          map: getArcaneOrbTexture(), transparent: true, depthWrite: false,
-          blending: THREE.AdditiveBlending, opacity: 1,
-        });
-        const sprite = new THREE.Sprite(mat);
-        sprite.renderOrder = 18;
-        sprite.scale.setScalar(1.8);
-        sprite.position.copy(from);
-        this.scene.add(sprite);
-        // 起手闪光，强调发射
-        this.billboardPool.spawn({
-          texture: 'muzzle', x: from.x, y: from.y, z: from.z,
-          scale: 1.6, endScale: 2.6, lifetime: 0.22, opacityCurve: 'flash',
-          opacity: 0.95, color: 0xa97bff, rotation: Math.random() * Math.PI * 2,
-        });
-        this.billboardPool.spawn({
-          texture: 'light', x: from.x, y: from.y, z: from.z,
-          scale: 1.2, endScale: 2.2, lifetime: 0.28, opacityCurve: 'fadeOut',
-          opacity: 0.75, color: 0x6f7cff, rotation: Math.random() * Math.PI * 2,
-          blending: 'additive',
-        });
-        this.arcaneBurstOrbs.push({ sprite, from, to, t: 0, life: 0.42 });
-      } else if (evt.kind === 'ember_explode') {
-        this.particlePool.emitEmberExplosion(evt.x, evt.y, evt.z);
-      }
-    }
-  }
-
-  /** 推进奥术光球；沿途留蓝紫尾迹，抵达目标时生成蓝紫烟雾。 */
-  private updateArcaneBurstOrbs(dt: number): void {
-    for (let i = this.arcaneBurstOrbs.length - 1; i >= 0; i--) {
-      const orb = this.arcaneBurstOrbs[i];
-      const prevK = Math.min(1, orb.t / orb.life);
-      orb.t += dt;
-      const k = Math.min(1, orb.t / orb.life);
-      orb.sprite.position.lerpVectors(orb.from, orb.to, k);
-      orb.sprite.position.y += Math.sin(k * Math.PI) * 0.8; // 抛物线小拱
-      // 脉动放大，强调存在感
-      orb.sprite.scale.setScalar(1.7 + Math.sin(orb.t * 40) * 0.25);
-
-      // 尾迹：在本帧位移区间补几颗蓝紫拖尾粒子（独立于帧率）
-      const pos = orb.sprite.position;
-      const trailCount = 3;
-      for (let s = 0; s < trailCount; s++) {
-        const kk = prevK + (k - prevK) * (s / trailCount);
-        const tx = orb.from.x + (orb.to.x - orb.from.x) * kk + (Math.random() - 0.5) * 0.25;
-        const ty = orb.from.y + (orb.to.y - orb.from.y) * kk + Math.sin(kk * Math.PI) * 0.8 + (Math.random() - 0.5) * 0.25;
-        const tz = orb.from.z + (orb.to.z - orb.from.z) * kk + (Math.random() - 0.5) * 0.25;
-        this.particlePool.spawn(
-          tx, ty, tz,
-          (Math.random() - 0.5) * 0.6, (Math.random() - 0.3) * 0.6, (Math.random() - 0.5) * 0.6,
-          1.4 + Math.random() * 0.8, 0.3 + Math.random() * 0.2,
-          0.62 + Math.random() * 0.2, 0.45 + Math.random() * 0.15, 1.0,
-        );
-      }
-      // 朝相机的发光拖影
-      this.billboardPool.spawn({
-        texture: 'smoke', x: pos.x, y: pos.y, z: pos.z,
-        scale: 1.3, endScale: 0.5, lifetime: 0.28, opacityCurve: 'fadeOut',
-        opacity: 0.65, color: 0x9a6bff, blending: 'additive',
-        rotation: Math.random() * Math.PI * 2,
-      });
-      this.billboardPool.spawn({
-        texture: 'light', x: pos.x, y: pos.y, z: pos.z,
-        scale: 0.85, endScale: 0.25, lifetime: 0.18, opacityCurve: 'fadeOut',
-        opacity: 0.55, color: 0x5f7cff, blending: 'additive',
-        rotation: Math.random() * Math.PI * 2,
-      });
-
-      if (k >= 1) {
-        this.particlePool.emitArcaneSmoke(orb.to.x, orb.to.y, orb.to.z);
-        this.scene.remove(orb.sprite);
-        orb.sprite.material.dispose(); // 贴图为共享缓存，不 dispose
-        this.arcaneBurstOrbs.splice(i, 1);
-      }
-    }
-  }
+  // 奥秘头顶数字 / 奥术光球 / bond 事件 / 敌人状态粒子 已迁出至 vfx/BondAndStatusVfx.ts。
 
   private updateVFX(state: GameState, dt: number, eventsFresh = true): void {
     const enemies = state.enemies;
     const player = state.player;
 
     this.areaEffectVfx.update(state);
-    this.updateEnemyStatusVfx(state);
-    this.updateMysteryNumber(state);
+    this.bondStatusVfx.updateEnemyStatusVfx(state);
+    this.bondStatusVfx.updateMysteryNumber(state, this.frameDt);
     // 事件驱动的羁绊 VFX 只在新 tick 消费一次（高刷屏去重）。
-    if (eventsFresh) this.processBondVfxEvents(state);
-    this.updateArcaneBurstOrbs(dt);
+    if (eventsFresh) this.bondStatusVfx.processBondVfxEvents(state);
+    this.bondStatusVfx.updateArcaneBurstOrbs(dt);
 
     // --- Emit particles based on game events ---
 

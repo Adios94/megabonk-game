@@ -818,6 +818,7 @@ function titleImageWidthStyle(): string {
   return `width:${width};height:auto;object-fit:contain;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.65));user-select:none;`;
 }
 const LOBBY_BG_PATH = '/ui/common/bg_lobby.webp';
+const LOBBY_BG_VIDEO_PATH = '/ui/common/bg_lobby.mp4';
 const UI_COMMON_BG_PATH = '/ui/common/bg_ui_common.webp';
 const TIER_SELECT_PAGE_BG_IMAGE = '/ui/common/bg_tier_select.webp';
 const SHOP_QUEST_PAGE_BG_IMAGE = '/ui/common/bg_city.webp';
@@ -11235,11 +11236,29 @@ function showMainMenu(): void {
     padding-bottom:max(24px,env(safe-area-inset-bottom,0px));
   `;
 
+  const bgVideo = document.createElement('video');
+  bgVideo.src = LOBBY_BG_VIDEO_PATH;
+  bgVideo.poster = LOBBY_BG_PATH;
+  bgVideo.autoplay = true;
+  bgVideo.loop = true;
+  bgVideo.muted = true;
+  bgVideo.defaultMuted = true;
+  bgVideo.playsInline = true;
+  bgVideo.preload = 'auto';
+  bgVideo.setAttribute('aria-hidden', 'true');
+  bgVideo.setAttribute('disablepictureinpicture', '');
+  bgVideo.controls = false;
+  bgVideo.style.cssText =
+    'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;z-index:0;';
+  bgVideo.play().catch(() => { /* autoplay 被浏览器拒绝时回退到 webp 背景 */ });
+  mainMenuEl.appendChild(bgVideo);
+
   const save = loadSave();
   const silverDisplay = createSilverBadge(save.silver);
   silverDisplay.style.position = 'absolute';
   silverDisplay.style.top = 'max(16px, env(safe-area-inset-top, 0px))';
   silverDisplay.style.right = 'max(16px, env(safe-area-inset-right, 0px))';
+  silverDisplay.style.zIndex = '1';
   mainMenuEl.appendChild(silverDisplay);
 
   const langBtn = createLanguageSwitcherButton();
@@ -11247,11 +11266,13 @@ function showMainMenu(): void {
     langBtn.style.position = 'absolute';
     langBtn.style.left = 'max(12px, env(safe-area-inset-left, 0px))';
     langBtn.style.bottom = 'max(12px, env(safe-area-inset-bottom, 0px))';
+    langBtn.style.zIndex = '1';
     mainMenuEl.appendChild(langBtn);
   }
 
   const centerGroup = document.createElement('div');
   centerGroup.style.cssText = `
+    position:relative;z-index:1;
     flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
     gap:clamp(10px,2.5vh,14px);width:100%;min-height:0;
     overflow-y:${isUiShort() ? 'auto' : 'visible'};

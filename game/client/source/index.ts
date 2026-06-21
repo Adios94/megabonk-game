@@ -3284,14 +3284,16 @@ export class GameScene {
     );
     this.setupLighting();
     this.setupGround();
+    // ⚠️ HitFlashSystem / DamageNumbersOverlay 必须在 setupPlayer 之前构造：
+    // setupPlayer 内部会调用 cacheHitFlashMaterialBases → this.hitFlash.cacheBases(...)。
+    this.hitFlash = new HitFlashSystem(GameScene.WEAPON_VFX_COLORS);
+    this.damageNumbers = new DamageNumbersOverlay(this.camera);
     this.setupPlayer();
     this.setupProjectileMesh();
     this.setupPickupMesh();
     this.setupGoldMoteMesh();
     this.setupVFX();
     this.setupHUD();
-    this.damageNumbers = new DamageNumbersOverlay(this.camera);
-    this.hitFlash = new HitFlashSystem(GameScene.WEAPON_VFX_COLORS);
     this.setupPerfStats();
 
     this.setupComposer();

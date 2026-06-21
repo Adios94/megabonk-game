@@ -155,6 +155,50 @@ import { OWNED_CLONE_KEY, disposeOwnedResources } from './materials/disposeOwned
 import { curvedWorldUniforms } from './materials/curvedWorld.ts';
 export { curvedWorldUniforms };
 
+// Toon / cel-shading — see materials/toon.ts
+import {
+  toonGradientMap,
+  stylizedUniforms,
+  applyStylizedToonShading,
+  convertToToonMaterials,
+  brightenWeaponMaterials,
+  applyChestGoldMaterials,
+  tuneToonTexture,
+  boostMaterialSaturation,
+  capMaterialLightness,
+  smoothstep01,
+} from './materials/toon.ts';
+
+// Post-process passes — see materials/postProcessPasses.ts
+import {
+  type OutlineMode,
+  SceneOutlinePass,
+  ColorGradePass,
+  DarkComicPass,
+  GRADE_SATURATION,
+  GRADE_CONTRAST,
+  GRADE_BRIGHTNESS,
+} from './materials/postProcessPasses.ts';
+
+// Billboard VFX pool — see vfx/BillboardPool.ts
+import {
+  BillboardPool,
+  type VfxTextureKey,
+  type BillboardSpawnOpts,
+} from './vfx/BillboardPool.ts';
+
+// Damage number overlay — see ui/damageNumbers.ts
+import { DamageNumbersOverlay } from './ui/damageNumbers.ts';
+
+// Hit flash system — see render/HitFlashSystem.ts
+import {
+  HitFlashSystem,
+  type HitFlashMaterial,
+  PLAYER_SHIELD_HIT_FLASH_COLOR,
+  PLAYER_HP_HIT_FLASH_COLOR,
+  PLAYER_HIT_FLASH_DURATION,
+} from './render/HitFlashSystem.ts';
+
 // =============================================================================
 // Runtime Event Types
 // =============================================================================
@@ -166,102 +210,11 @@ export type GameRuntimeEvents = {
   game_reset: null;
 };
 
-// =============================================================================
-// Billboard VFX 类型
-// =============================================================================
+// Billboard VFX 类型 / 池 → 见 vfx/BillboardPool.ts（VfxTextureKey / VFX_TEXTURE_FILES /
+// BillboardVfxItem / BillboardSpawnOpts / BillboardPool）。
 
-/**
- * 已注册的 VFX 贴图 key（对应 public/textures/vfx/<key>.png）。
- * 增加新贴图时同步更新 `VFX_TEXTURE_FILES` 和此 union。
- */
-type VfxTextureKey =
-  | 'spark' | 'star' | 'smoke' | 'light' | 'slash'
-  | 'muzzle' | 'magic_circle' | 'portal_swirl' | 'scorch' | 'dirt' | 'flame'
-  | 'twirl' | 'slash_fill' | 'flame_aura' | 'lightning' | 'flare' | 'void_ripple'
-  | 'scorch_boots' | 'enemy_bullet';
-
-const VFX_TEXTURE_FILES: Record<VfxTextureKey, string> = {
-  spark: '/textures/vfx/spark.png',
-  star: '/textures/vfx/star.png',
-  smoke: '/textures/vfx/smoke.png',
-  light: '/textures/vfx/light.png',
-  slash: '/textures/vfx/slash.png',
-  muzzle: '/textures/vfx/muzzle.png',
-  magic_circle: '/textures/vfx/magic_circle.png',
-  portal_swirl: '/textures/vfx/portal_swirl.png',
-  scorch: '/textures/vfx/scorch.png',
-  dirt: '/textures/vfx/dirt.png',
-  flame: '/textures/vfx/flame.png',
-  twirl: '/textures/particle_twirl.png',
-  flare: '/textures/particle_flare.png',
-  void_ripple: '/textures/vfx/void_ripple.png',
-  // ↓ 以下 5 个 key 的贴图当前与另一 key 字节完全相同（同一占位图被复制了两份）。
-  // 去重：删掉重复文件，让这些 key 复用对应的「主」文件，省发布体积。
-  // ⚠️ 若将来要给某个特效做专属贴图（让它与主文件分化），请：
-  //    1) 在 public/textures/vfx/ 放回独立文件（如 lightning.png）；2) 把这里的路径改回去。
-  slash_fill: '/textures/vfx/portal_swirl.png', // 原 slash_fill.png == portal_swirl.png
-  flame_aura: '/textures/vfx/light.png',        // 原 flame_aura.png == light.png
-  lightning: '/textures/vfx/spark.png',         // 原 lightning.png == spark.png
-  scorch_boots: '/textures/vfx/scorch.png',     // 原 scorch_boots.png == scorch.png
-  enemy_bullet: '/textures/vfx/muzzle.png',     // 原 enemy_bullet.png == muzzle.png
-};
-
-/** Billboard 池中每个槽位的运行时状态。 */
-interface BillboardVfxItem {
-  mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
-  active: boolean;
-  age: number;
-  lifetime: number;
-  startScale: number;
-  endScale: number;
-  startOpacity: number;
-  /** 'fadeOut' = 起始 opacity → 0；'flash' = 0 → 起始 → 0；'constant' = 不变。 */
-  opacityCurve: 'fadeOut' | 'flash' | 'constant';
-  rotationSpeed: number;
-  /** 'camera' = 始终面向相机；'up' = 平躺地面（不旋转）。 */
-  facing: 'camera' | 'up';
-}
-
-/** spawnBillboard 选项。 */
-interface BillboardSpawnOpts {
-  texture: VfxTextureKey;
-  x: number;
-  y: number;
-  z: number;
-  /** 起始大小（m）。 */
-  scale: number;
-  /** 终止大小，默认 = scale（不缩放）。 */
-  endScale?: number;
-  /** 持续时间（s）。 */
-  lifetime: number;
-  /** 起始透明度，默认 1。 */
-  opacity?: number;
-  /** 渐隐曲线，默认 'fadeOut'。 */
-  opacityCurve?: 'fadeOut' | 'flash' | 'constant';
-  /** 染色，默认 0xffffff。 */
-  color?: number;
-  /** 初始旋转（弧度）。 */
-  rotation?: number;
-  /** 旋转速度（弧度/秒），默认 0。 */
-  rotationSpeed?: number;
-  /** 朝向：'camera' 面向相机，'up' 平躺地面（地面贴花用）。默认 'camera'。 */
-  facing?: 'camera' | 'up';
-  /** Blending 模式，默认 'additive'（光效）；'normal' 适合烧痕等不发光贴花。 */
-  blending?: 'additive' | 'normal';
-}
-
-type HitFlashMaterial = THREE.Material & {
-  color?: THREE.Color;
-  emissive?: THREE.Color;
-};
-
-const HIT_FLASH_BASE_COLOR_KEY = '__hitFlashBaseColor';
-const HIT_FLASH_BASE_EMISSIVE_KEY = '__hitFlashBaseEmissive';
-const HIT_FLASH_TINT_INTENSITY = 0.88;
-const HIT_FLASH_EMISSIVE_STRENGTH = 0.2;
-const PLAYER_SHIELD_HIT_FLASH_COLOR = 0x9edcff;
-const PLAYER_HP_HIT_FLASH_COLOR = 0xff3333;
-const PLAYER_HIT_FLASH_DURATION = 0.18;
+// HitFlash types / constants → see render/HitFlashSystem.ts
+//   (HitFlashMaterial / PLAYER_SHIELD_HIT_FLASH_COLOR / PLAYER_HP_HIT_FLASH_COLOR / PLAYER_HIT_FLASH_DURATION)
 
 const START_INTRO_FADE_TO_BLACK_SECONDS = 0.28;
 const START_INTRO_WALK_SECONDS = 1.55;
@@ -399,7 +352,6 @@ import {
   MAX_CONSUMABLE_PICKUPS,
   CONSUMABLE_COLORS,
   CONSUMABLE_EMOJI,
-  DAMAGE_NUMBER_FONT_FAMILY,
   consumableIconSrc,
 } from './data/visualConfig.ts';
 
@@ -1098,313 +1050,7 @@ function createLanguageSwitcherButton(): HTMLButtonElement | null {
   return btn;
 }
 
-const DAMAGE_NUM_POOL_SIZE = 30;
-
 // =============================================================================
-// Toon/Cel-Shading Utilities
-// =============================================================================
-
-/**
- * Multi-step toon gradient map (UltimateToon「stylized.gdshader」的 stepped-light 移植)。
- *
- * Godot 的 light() 用如下公式把连续 NdotL 量化成 `steps` 段、段间以 `step_smoothness` 做软过渡：
- *     light_mult   = light * steps
- *     step_base    = floor(light_mult)
- *     light_factor = smoothstep(0.5 - s, 0.5 + s, light_mult - step_base)
- *     light        = (step_base + light_factor) / steps
- * 这里把同一公式烘焙进一张高分辨率 ramp（LinearFilter），MeshToonMaterial 会按
- * NdotL∈[-1,1]→[0,1] 采样它的 .r 通道，于是得到「至少四层」的明暗台阶 + Godot 同款软边。
- *
- * steps=4 ⇒ 5 个亮度平台（阴影 / 暗部 / 中间调 / 亮部 / 高光），满足「至少四层」。
- * shadowFloor 抬高最暗台阶，避免背光面发死黑；highlightCap 给高光留头，白模不顶纯白。
- */
-const TOON_STEPS = 5;            // 分层台阶数（5 层，过渡更细）—— 对应 Godot uniform `steps`
-const TOON_STEP_SMOOTHNESS = 0.12; // 层间软过渡半宽 —— 对应 Godot `step_smoothness`
-const TOON_SHADOW_FLOOR = 0.18; // 最暗台阶的亮度地板（背光面不死黑）
-const TOON_HIGHLIGHT_CAP = 0.94; // 高光台阶封顶（受光面留头，浅色模不顶纯白）
-
-function smoothstep01(edge0: number, edge1: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
-}
-
-function createToonGradientMap(
-  steps = TOON_STEPS,
-  smoothness = TOON_STEP_SMOOTHNESS,
-  shadowFloor = TOON_SHADOW_FLOOR,
-  highlightCap = TOON_HIGHLIGHT_CAP,
-): THREE.DataTexture {
-  const width = 256; // 高分辨率：软过渡才平滑，台阶内部仍是纯平色块（cel 观感）
-  const data = new Uint8Array(width * 4);
-  const s = Math.max(0.0001, smoothness);
-  for (let i = 0; i < width; i++) {
-    const x = i / (width - 1); // 采样坐标 == 量化前的 NdotL（已 remap 到 0..1）
-    const lightMult = x * steps;
-    const stepBase = Math.floor(lightMult);
-    const factor = smoothstep01(0.5 - s, 0.5 + s, lightMult - stepBase);
-    let v = (stepBase + factor) / steps; // 0..1 阶梯化亮度
-    // 把 [0,1] 重映射到 [shadowFloor, highlightCap]：暗部不死黑、亮部留头。
-    v = shadowFloor + v * (highlightCap - shadowFloor);
-    const c = Math.round(Math.min(1, Math.max(0, v)) * 255);
-    const o = i * 4;
-    data[o] = c;
-    data[o + 1] = c;
-    data[o + 2] = c;
-    data[o + 3] = 255;
-  }
-  const gradMap = new THREE.DataTexture(data, width, 1, THREE.RGBAFormat);
-  // LinearFilter：让烘焙好的 smoothstep 软过渡平滑呈现（台阶边缘软、台阶内部平）。
-  gradMap.minFilter = THREE.LinearFilter;
-  gradMap.magFilter = THREE.LinearFilter;
-  gradMap.needsUpdate = true;
-  return gradMap;
-}
-
-const toonGradientMap = createToonGradientMap();
-
-/**
- * Convert all mesh materials in a scene to MeshToonMaterial (cel-shading).
- * Preserves color/map/normalMap from original materials.
- */
-/** 提升颜色饱和度（HSL 的 s ×factor），用于 toon 的"饱满高饱和纯色块"观感。 */
-function boostMaterialSaturation(color: THREE.Color, factor: number): void {
-  const hsl = { h: 0, s: 0, l: 0 };
-  color.getHSL(hsl);
-  color.setHSL(hsl.h, Math.min(1, hsl.s * factor), hsl.l);
-}
-
-/**
- * 明度封顶（HSL 的 L ≤ maxL）。浅灰白材质（如关卡白模）反照率接近 1，被照亮后线性亮度冲到 ~1.9，
- * 在色调映射里顶死成纯白、还会触发 bloom 晕开 → 整片"翻白"无细节。把明度压到中间调后，
- * 高光不再溢出，gradientMap 的阶梯断层 + 网点 + 黑描边才显得出来（参考图那种中间调质感）。
- */
-function capMaterialLightness(color: THREE.Color, maxL: number): void {
-  const hsl = { h: 0, s: 0, l: 0 };
-  color.getHSL(hsl);
-  if (hsl.l > maxL) color.setHSL(hsl.h, hsl.s, maxL);
-}
-
-/** 贴图过滤：各向异性 + mipmap，提升近景 / 斜视下的贴图清晰度（PR #56）。 */
-function tuneToonTexture(tex: THREE.Texture | null | undefined): void {
-  if (!tex) return;
-  tex.anisotropy = 8;
-  tex.minFilter = THREE.LinearMipmapLinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.needsUpdate = true;
-}
-
-/**
- * 全局共享的风格化光照参数（uniform 引用）。所有 stylized 材质在 onBeforeCompile 里都指向
- * 同一份对象，因此运行时改任一 `.value`，整场景的卡通表现实时跟着变 —— 这就是游戏内调参面板
- * 的数据源（见 createStylizedDebugPanel）。改这里的初值 = 改默认外观。
- *
- * 注意：uShadowTint / uLightTint / uRimColor 是「线性空间乘子」，分量可 >1（受光台阶要提亮就 >1）。
- * 所以面板用三个独立滑块而非取色器（取色器表达不了 >1）。
- */
-const stylizedUniforms = {
-  uSteps: { value: 5.0 },                                   // 分层台阶数（Godot steps）
-  uStepSmooth: { value: 0.0 },                              // 台阶软过渡半宽（0=硬切、纯色块；Godot step_smoothness）
-  uHalftoneTiling: { value: 11.0 },                         // 网点像素间距（大=点大且疏）
-  uHalftoneSmooth: { value: 0.10 },                         // 网点边缘脆度（小=硬）
-  uHalftoneDark: { value: 0.6 },                            // 网点压暗强度
-  uHalftoneBlend: { value: 0.85 },                          // 网点整体强度（0=关）
-  uShadowTint: { value: new THREE.Vector3(0.30, 0.37, 0.66) }, // 冷暗阴影色乘子
-  uLightTint: { value: new THREE.Vector3(1.10, 1.02, 0.88) },  // 暖亮受光色乘子
-  // 世界空间主光向（俯视/侧视相机的左上前太阳）。每帧 shader 内用 viewMatrix 转到视空间再点法线，
-  // 这样镜头平移/旋转时，世界中物体的明暗台阶与网点强度保持稳定 —— 不再"网点跟着镜头漂"。
-  // +Y 给到 0.92 让水平面（地面 / 白盒顶）的 ndotl≈0.92 落入顶端台阶（亮度 1.0）→ 网点 gate 直接归零。
-  uLightDirWorld: { value: new THREE.Vector3(-0.22, 0.92, 0.32).normalize() },
-  // 网点显示阈值：light 高于 uHalftoneCutLow 开始衰减，高于 uHalftoneCutHigh 完全消失。
-  // 漫画 halftone 的惯例 —— 网点只在阴影 / 半阴影区，亮面留作纯色块。
-  uHalftoneCutLow: { value: 0.55 },
-  uHalftoneCutHigh: { value: 0.78 },
-};
-
-/** stylized 片元需要的 uniform 声明（注入到 main 前）。 */
-const STYLIZED_UNIFORM_DECL = `
-uniform float uSpec;
-uniform float uHalftone;
-uniform float uSteps;
-uniform float uStepSmooth;
-uniform float uHalftoneTiling;
-uniform float uHalftoneSmooth;
-uniform float uHalftoneDark;
-uniform float uHalftoneBlend;
-uniform vec3 uShadowTint;
-uniform vec3 uLightTint;
-uniform vec3 uLightDirWorld;
-uniform float uHalftoneCutLow;
-uniform float uHalftoneCutHigh;
-`;
-
-/**
- * 风格化光照 GLSL —— UltimateToon「stylized.gdshader」的 light() 完整移植，注入 MeshToon 片元的
- * <opaque_fragment> 前并「完全接管 outgoingLight」。
- *
- * 关键：旧版只在引擎算好的 outgoingLight 上"修补"，场景的环境光/半球光/自发光一抬，分层台阶就被
- * 压到顶端、糊成一片 → 看不出卡通感。新版无视场景灯光，自己用固定视空间光向重新算一遍光照，
- * 因此分层/网点/染色/rim 始终强烈可见，逐字对应 Godot 的 light()：
- *
- *   第 0 层 stepped light：light = (floor(L*steps) + smoothstep(.5±s, frac)) / steps —— ≥4 段台阶
- *   第 1 层 halftone      ：暗台阶网点大、亮台阶网点消失，pattern_blend 混入 light（Godot pattern）
- *   第 2 层 colored shadow：col = mix(albedo×冷暗, albedo×暖亮, light)（Godot shadow_tint）
- *   第 3 层 toon specular ：硬边塑料高光（per-material uSpec，主角/武器>0）
- *   末尾叠回 totalEmissiveRadiance —— 霓虹/发光贴图不丢。
- *   （rim 边缘光已移除：轮廓由屏幕空间深度描边负责，省掉每像素的菲涅尔运算。）
- *
- * 所有调参项都是 uniform（见 stylizedUniforms）：可在游戏内面板实时拖，也可改 stylizedUniforms 初值定基线。
- */
-const STYLIZED_TOON_GLSL = `
-	{
-		vec3 N = normalize( normal );
-		vec3 V = normalize( vViewPosition );                       // 片元 -> 相机(视空间)
-		// 主光向：世界空间固定 → 用 viewMatrix 转到视空间再做点法线。
-		// （旧版直接写死视空间向量，结果光相对相机固定，镜头一转，世界里的明暗面跟着扫，halftone 网点像在物体上爬。）
-		vec3 LDIR = normalize( ( viewMatrix * vec4( uLightDirWorld, 0.0 ) ).xyz );
-		float ndotl = saturate( dot( N, LDIR ) );
-
-		// —— 第 0 层 stepped light（Godot 量化公式，uSteps 段台阶 + 软过渡） ——
-		// uStepSmooth 可为 0（硬切纯色块），用 max(.,1e-4) 兜底避免 smoothstep edge0>=edge1 的 UB。
-		float steppedLight;
-		{
-			float lm = ndotl * uSteps;
-			float sb = floor( lm );
-			float ss = max( uStepSmooth, 1e-4 );
-			float lf = smoothstep( 0.5 - ss, 0.5 + ss, lm - sb );
-			steppedLight = ( sb + lf ) / uSteps;
-		}
-		float light = steppedLight;
-
-		// —— 第 1 层 halftone 网点（对应 Godot pattern）：暗台阶点大、亮台阶点消失 ——
-		// 漫画 halftone 惯例：网点只在阴影 / 半阴影区，亮面留作纯色块。
-		// brightGate = 1 - smoothstep(low, high, light)，light≥high 时网点完全消失（白盒顶 / 地面纯色）。
-		vec2 cell = fract( gl_FragCoord.xy / uHalftoneTiling ) - 0.5;
-		float dotDist = length( cell ) * 2.0;                      // 0=点心 ~1=邻边
-		float dotRadius = ( 1.0 - light ) * 0.95;                  // 越暗点越大
-		float dotInside = 1.0 - smoothstep( dotRadius - uHalftoneSmooth, dotRadius + uHalftoneSmooth, dotDist );
-		float brightGate = 1.0 - smoothstep( uHalftoneCutLow, uHalftoneCutHigh, light );
-		dotInside *= brightGate;
-		float patLight = light * ( 1.0 - dotInside * uHalftoneDark ); // 点内把局部亮度压暗
-		light = mix( light, patLight, uHalftoneBlend * uHalftone );
-
-		// —— 第 2 层 colored shadow（Godot shadow_tint）：暗部染冷、亮部染暖，全程乘 albedo ——
-		vec3 albedo = diffuseColor.rgb;
-		vec3 col = mix( albedo * uShadowTint, albedo * uLightTint, light );
-
-		// —— 第 3 层 toon specular（硬边塑料高光，仅 uSpec>0 的主角/武器） ——
-		vec3 H = normalize( LDIR + V );
-		float sp = smoothstep( 0.5, 0.53, pow( saturate( dot( N, H ) ), 48.0 ) ) * uSpec * saturate( ndotl );
-		col += vec3( sp );
-
-		outgoingLight = col + totalEmissiveRadiance;               // 完全接管光照 + 叠回自发光
-	}
-`;
-
-/**
- * 给 MeshToonMaterial 挂上风格化光照（接管 outgoingLight：stepped + halftone + 染色 + rim + spec）。
- * specStrength：toon 高光强度（per-material uniform）。怪物/场景传 0（哑光），主角/武器传 >0 留塑料光泽。
- * halftone：是否启用屏幕空间网点（per-material uniform）。
- * 其余风格化参数全部指向共享的 stylizedUniforms（同一引用 → 面板实时改一个值全场景生效）。
- * 幂等（userData 标记）；共享同一编译程序（uniform 值差异不影响 program 缓存）。
- */
-function applyStylizedToonShading(mat: THREE.MeshToonMaterial, specStrength = 0, halftone = true): void {
-  if (mat.userData['__stylized']) return;
-  mat.userData['__stylized'] = true;
-  mat.onBeforeCompile = (shader) => {
-    shader.uniforms['uSpec'] = { value: specStrength };          // per-material
-    shader.uniforms['uHalftone'] = { value: halftone ? 1.0 : 0.0 }; // per-material
-    // 共享引用：改 stylizedUniforms.*.value → 所有材质同步更新
-    shader.uniforms['uSteps'] = stylizedUniforms.uSteps;
-    shader.uniforms['uStepSmooth'] = stylizedUniforms.uStepSmooth;
-    shader.uniforms['uHalftoneTiling'] = stylizedUniforms.uHalftoneTiling;
-    shader.uniforms['uHalftoneSmooth'] = stylizedUniforms.uHalftoneSmooth;
-    shader.uniforms['uHalftoneDark'] = stylizedUniforms.uHalftoneDark;
-    shader.uniforms['uHalftoneBlend'] = stylizedUniforms.uHalftoneBlend;
-    shader.uniforms['uShadowTint'] = stylizedUniforms.uShadowTint;
-    shader.uniforms['uLightTint'] = stylizedUniforms.uLightTint;
-    shader.uniforms['uLightDirWorld'] = stylizedUniforms.uLightDirWorld;
-    shader.uniforms['uHalftoneCutLow'] = stylizedUniforms.uHalftoneCutLow;
-    shader.uniforms['uHalftoneCutHigh'] = stylizedUniforms.uHalftoneCutHigh;
-
-    if (!mat.userData.uIsBackground) {
-      mat.userData.uIsBackground = { value: mat.userData.isBackground ? 1.0 : 0.0 };
-    }
-
-    shader.uniforms['uWarpCenter'] = curvedWorldUniforms.uWarpCenter;
-    shader.uniforms['uWarpStrength'] = curvedWorldUniforms.uWarpStrength;
-    shader.uniforms['uIsBackground'] = mat.userData.uIsBackground;
-
-    shader.vertexShader = shader.vertexShader
-      .replace(
-        'void main() {',
-        `uniform vec3 uWarpCenter;\nuniform float uWarpStrength;\nuniform float uIsBackground;\nvoid main() {`
-      )
-      .replace(
-        '#include <project_vertex>',
-        `
-        vec4 localPos = vec4( transformed, 1.0 );
-        #ifdef USE_INSTANCING
-          localPos = instanceMatrix * localPos;
-        #endif
-        vec4 gpWorldPos = modelMatrix * localPos;
-
-        vec3 diff = gpWorldPos.xyz - uWarpCenter;
-        float d = length(diff.xz);
-
-        if (d > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
-            float theta = d * uWarpStrength;
-            float sinTheta = sin(theta);
-            float cosTheta = cos(theta);
-            vec2 dir = diff.xz / d;
-
-            vec3 normal = vec3(sinTheta * dir.x, cosTheta, sinTheta * dir.y);
-            float r = (1.0 / uWarpStrength) + diff.y;
-            vec3 warpedPos = r * normal;
-            warpedPos.y -= (1.0 / uWarpStrength);
-
-            gpWorldPos.xyz = uWarpCenter + warpedPos;
-        }
-
-        vec4 mvPosition = viewMatrix * gpWorldPos;
-        gl_Position = projectionMatrix * mvPosition;
-        vViewPosition = - mvPosition.xyz;
-        #ifdef USE_FOG
-          vFogDepth = - mvPosition.z;
-        #endif
-        `
-      )
-      .replace(
-        '#include <defaultnormal_vertex>',
-        `
-        #include <defaultnormal_vertex>
-
-        vec3 gpWorldPosForNormal = (modelMatrix * vec4(position, 1.0)).xyz;
-        vec3 diffForNormal = gpWorldPosForNormal - uWarpCenter;
-        float dForNormal = length(diffForNormal.xz);
-
-        if (dForNormal > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
-            float theta = dForNormal * uWarpStrength;
-            vec2 dir = diffForNormal.xz / dForNormal;
-            vec3 viewAxis = normalize( mat3(viewMatrix) * vec3( -dir.y, 0.0, dir.x ) );
-            
-            float cosA = cos(theta);
-            float sinA = sin(theta);
-            transformedNormal = transformedNormal * cosA + cross(viewAxis, transformedNormal) * sinA + viewAxis * dot(viewAxis, transformedNormal) * (1.0 - cosA);
-            transformedNormal = normalize(transformedNormal);
-        }
-        `
-      );
-
-    shader.fragmentShader = shader.fragmentShader
-      .replace('void main() {', `${STYLIZED_UNIFORM_DECL}\nvoid main() {`)
-      .replace(
-        '#include <opaque_fragment>',
-        `${STYLIZED_TOON_GLSL}\n\t#include <opaque_fragment>`,
-      );
-  };
-  mat.customProgramCacheKey = () => 'stylized-toon-v10-stepeps';
-}
-
 /**
  * 游戏内风格化调参面板（仅 dev）。把 stylizedUniforms + 雾 + bloom 全部接上滑块，实时拖动即时生效，
  * 不用改代码重编译。按 ` 键（反引号）或点右上角按钮开关。"复制参数"把当前值导成可粘回代码的片段。
@@ -1656,153 +1302,6 @@ function createStylizedDebugPanel(opts: {
   });
 }
 
-/**
- * 描边模式：
- *  - screenSpace：基于深度的屏幕空间描边，固定一道全屏 pass，开销与怪数无关。保留卡通黑轮廓。
- *    （替代旧的逐网格 OutlineEffect——后者放大翻面把不透明场景再画一遍，draw call 翻倍、
- *    开销随怪数线性增长，是手机掉帧元凶。已于本次性能优化移除。）
- *  - none：不描边（仅平涂着色，cel 来自材质本身，与描边无关）。
- */
-type OutlineMode = 'screenSpace' | 'none';
-
-const OUTLINE_EDGE_VERT = /* glsl */`
-  varying vec2 vUv;
-  void main() {
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-// 深度边缘检测：线性化深度(viewZ)后做 Roberts-cross 4-tap，差超阈值即描黑。
-// 阈值随距离放宽(近处细线/远处粗或无)；天空背景(viewZ≈-far)处抑制，避免天边整圈黑。
-const OUTLINE_EDGE_FRAG = /* glsl */`
-  precision highp float;
-  uniform sampler2D tColor;
-  uniform highp sampler2D tDepth;   // 必须 highp，否则移动端 mediump 截断 → 满屏黑边/噪点
-  uniform vec2 uResolution;
-  uniform float uCameraNear;
-  uniform float uCameraFar;
-  uniform float uThickness;
-  uniform float uOutlineAlpha;
-  varying vec2 vUv;
-
-  // perspectiveDepthToViewZ：NDC 深度[0,1] → 视空间 z（负值，-near..-far）
-  float toViewZ(float d) {
-    return (uCameraNear * uCameraFar) / ((uCameraFar - uCameraNear) * d - uCameraFar);
-  }
-  float sampleZ(vec2 uv) { return toViewZ(texture2D(tDepth, uv).r); }
-
-  void main() {
-    vec4 color = texture2D(tColor, vUv);
-    vec2 texel = uThickness / uResolution;
-    float c = sampleZ(vUv);
-    float n = sampleZ(vUv + vec2(0.0,  texel.y));
-    float s = sampleZ(vUv + vec2(0.0, -texel.y));
-    float e = sampleZ(vUv + vec2( texel.x, 0.0));
-    float w = sampleZ(vUv + vec2(-texel.x, 0.0));
-    float hor = abs(e - w);
-    float ver = abs(n - s);
-    float delta = sqrt(hor * hor + ver * ver);
-    float threshold = abs(c) * 0.02 + 0.05;          // 距离自适应阈值（k、floor 可调）
-    float edge = smoothstep(threshold, threshold * 2.0, delta);
-    float depthMask = 1.0 - step(uCameraFar * 0.9, -c); // 极远(天空/far 区)不描边
-    edge *= depthMask;
-    gl_FragColor = vec4(mix(color.rgb, vec3(0.0), edge * uOutlineAlpha), color.a);
-  }
-`;
-
-/**
- * EffectComposer 首道 pass：把场景渲进 composer 缓冲，并按 mode 叠加描边。
- * 渲到 RT 时引擎自动禁 in-material tonemap → 缓冲为线性 HDR，描边在线性空间 mix 向黑，
- * tonemap 交末端 OutputPass(Neutral + sRGB)。needsSwap=false，合成结果写 readBuffer。
- */
-class SceneOutlinePass extends Pass {
-  mode: OutlineMode = 'screenSpace';
-
-  private readonly sceneRT: THREE.WebGLRenderTarget;
-  private readonly fsqMaterial: THREE.ShaderMaterial;
-  private readonly fsq: FullScreenQuad;
-
-  constructor(
-    private readonly scene: THREE.Scene,
-    private readonly camera: THREE.PerspectiveCamera,
-    w: number, // 有效像素（CSS × dpr）
-    h: number,
-  ) {
-    super();
-    this.needsSwap = false;
-    this.clear = true;
-
-    // 深度纹理用默认 DepthFormat + UnsignedIntType（→ GL DEPTH_COMPONENT24），不要 HalfFloat / stencil。
-    const depthTexture = new THREE.DepthTexture(w, h);
-    this.sceneRT = new THREE.WebGLRenderTarget(w, h, {
-      type: THREE.HalfFloatType,   // 颜色：线性 HDR，匹配 composer 缓冲
-      depthTexture,
-      depthBuffer: true,
-      stencilBuffer: false,
-    });
-
-    this.fsqMaterial = new THREE.ShaderMaterial({
-      uniforms: {
-        tColor: { value: this.sceneRT.texture },
-        tDepth: { value: this.sceneRT.depthTexture },
-        uResolution: { value: new THREE.Vector2(w, h) },
-        uCameraNear: { value: camera.near },
-        uCameraFar: { value: camera.far },
-        uThickness: { value: 1.5 },
-        uOutlineAlpha: { value: 0.85 },
-      },
-      vertexShader: OUTLINE_EDGE_VERT,
-      fragmentShader: OUTLINE_EDGE_FRAG,
-      depthTest: false,
-      depthWrite: false,
-    });
-    this.fsq = new FullScreenQuad(this.fsqMaterial);
-  }
-
-  override setSize(width: number, height: number): void {
-    // width/height 由 EffectComposer 传入，已是 CSS×dpr 像素。深度纹理随 setSize 自动重建。
-    this.sceneRT.setSize(width, height);
-    this.fsqMaterial.uniforms.uResolution.value.set(width, height);
-  }
-
-  override render(renderer: THREE.WebGLRenderer, _writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget): void {
-    this.fsqMaterial.uniforms.uCameraNear.value = this.camera.near;
-    this.fsqMaterial.uniforms.uCameraFar.value = this.camera.far;
-
-    // 先把场景渲到带深度的 sceneRT
-    renderer.setRenderTarget(this.sceneRT);
-    renderer.clear();
-    renderer.render(this.scene, this.camera);
-
-    // 合成到 pass 输出（readBuffer，交 OutputPass tonemap）
-    renderer.setRenderTarget(this.renderToScreen ? null : readBuffer);
-    if (this.clear) renderer.clear();
-    if (this.mode === 'none') {
-      const prev = this.fsqMaterial.uniforms.uOutlineAlpha.value;
-      this.fsqMaterial.uniforms.uOutlineAlpha.value = 0.0; // 只 blit 颜色，不叠边
-      this.fsq.render(renderer);
-      this.fsqMaterial.uniforms.uOutlineAlpha.value = prev;
-    } else {
-      this.fsq.render(renderer);
-    }
-  }
-
-  override dispose(): void {
-    this.sceneRT.dispose(); // 链式释放 depthTexture
-    this.fsqMaterial.dispose();
-    this.fsq.dispose(); // 仅释放几何，材质已单独 dispose
-  }
-}
-
-/**
- * 末端调色 pass（美漫风格强化）：在 OutputPass 之后对最终显示色做
- * 饱和度 / 对比度 / 亮度提升，让整体更鲜亮、色块更"跳"、明暗更分明。
- * 全屏单 draw call，开销极低；参数集中在 GRADE_* 常量便于调。
- */
-const GRADE_SATURATION = 1.28; // 饱和度（>1 更艳）
-const GRADE_CONTRAST = 1.14;   // 对比度（绕中灰 0.5 拉伸）
-const GRADE_BRIGHTNESS = 1.05; // 整体亮度微提
 const WEATHER_DAY_EXPOSURE = 1.85;
 const WEATHER_NIGHT_EXPOSURE = 1.35;
 const WEATHER_NIGHT_GRADE_SATURATION = 1.04;
@@ -1823,303 +1322,6 @@ const WEATHER_DAY_SKY_BOTTOM = new THREE.Color('#dceeff');
 const WEATHER_NIGHT_SKY_TOP = new THREE.Color('#0f1628');
 const WEATHER_NIGHT_SKY_MID = new THREE.Color('#1a2945');
 const WEATHER_NIGHT_SKY_BOTTOM = new THREE.Color('#22385a');
-
-class ColorGradePass extends Pass {
-  private readonly material: THREE.ShaderMaterial;
-  private readonly fsQuad: FullScreenQuad;
-
-  constructor(saturation: number, contrast: number, brightness: number) {
-    super();
-    this.material = new THREE.ShaderMaterial({
-      uniforms: {
-        tDiffuse: { value: null },
-        uSaturation: { value: saturation },
-        uContrast: { value: contrast },
-        uBrightness: { value: brightness },
-      },
-      vertexShader: `
-        varying vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }`,
-      fragmentShader: `
-        varying vec2 vUv;
-        uniform sampler2D tDiffuse;
-        uniform float uSaturation;
-        uniform float uContrast;
-        uniform float uBrightness;
-        void main() {
-          vec4 tex = texture2D(tDiffuse, vUv);
-          vec3 c = tex.rgb * uBrightness;
-          c = (c - 0.5) * uContrast + 0.5;            // 对比度：绕中灰拉伸
-          float l = dot(c, vec3(0.2126, 0.7152, 0.0722)); // 感知亮度
-          c = mix(vec3(l), c, uSaturation);            // 饱和度：朝灰度反向外推
-          gl_FragColor = vec4(clamp(c, 0.0, 1.0), tex.a);
-        }`,
-    });
-    this.fsQuad = new FullScreenQuad(this.material);
-  }
-
-  get saturation(): number { return this.material.uniforms.uSaturation.value; }
-  set saturation(v: number) { this.material.uniforms.uSaturation.value = v; }
-
-  get contrast(): number { return this.material.uniforms.uContrast.value; }
-  set contrast(v: number) { this.material.uniforms.uContrast.value = v; }
-
-  get brightness(): number { return this.material.uniforms.uBrightness.value; }
-  set brightness(v: number) { this.material.uniforms.uBrightness.value = v; }
-
-  render(renderer: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget): void {
-    this.material.uniforms.tDiffuse.value = readBuffer.texture;
-    if (this.renderToScreen) {
-      renderer.setRenderTarget(null);
-    } else {
-      renderer.setRenderTarget(writeBuffer);
-      if (this.clear) renderer.clear();
-    }
-    this.fsQuad.render(renderer);
-  }
-
-  override dispose(): void {
-    this.material.dispose();
-    this.fsQuad.dispose?.();
-  }
-}
-
-/**
- * 末端"暗黑漫画"风格 post-fx pass（精简版）。
- * 灵感来自 Andicraft 的 Dark Comic Master URP shader（那是个 8000+ 行 PBR surface shader，
- * 无法 1:1 移到 three.js），实际只保留两个对画面观感最关键的因素：
- *   1) Desaturate 去饱和 —— 朝灰阶推，"暗黑"基调
- *   2) Noise 印刷噪点 —— 颗粒做旧感
- *
- * 数值由外部 `ramp01` (0..1) 驱动：进入"最终狂潮"时由 GameScene 每帧渐进式拉到 1，
- * 退出时快速回落到 0。`desaturateMax / noiseMax` 是 ramp=1 时的目标上限。
- * 放在 ColorGradePass 之后，全部在 LDR sRGB 空间做。单 FSQ，开销 ~ 1 个全屏 draw。
- */
-class DarkComicPass extends Pass {
-  private readonly material: THREE.ShaderMaterial;
-  private readonly fsQuad: FullScreenQuad;
-
-  /** 主开关；关闭时 ramp 视为 0（画面不变） */
-  enabled = true;
-  /** 渐进进度 [0,1]，由 GameScene.updateDarkComic 驱动 */
-  ramp01 = 0;
-  /** ramp=1 时去饱和的目标值（0..1） */
-  desaturateMax = 0.85;
-  /** ramp=1 时噪点的目标值（0..0.3 常用） */
-  noiseMax = 0.18;
-  /** 从 0 → 1 渐进满所需秒数（finalSwarm 进入时） */
-  rampDurationSeconds = 45;
-
-  constructor() {
-    super();
-    this.material = new THREE.ShaderMaterial({
-      uniforms: {
-        tDiffuse: { value: null },
-        uResolution: { value: new THREE.Vector2(1, 1) },
-        uTime: { value: 0 },
-        uDesaturate: { value: 0 }, // 实际值每帧由 ramp01 × desaturateMax 写入
-        uNoise: { value: 0 },      // 同上
-      },
-      vertexShader: /* glsl */ `
-        varying vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        precision highp float;
-        varying vec2 vUv;
-        uniform sampler2D tDiffuse;
-        uniform vec2 uResolution;
-        uniform float uTime;
-        uniform float uDesaturate;
-        uniform float uNoise;
-
-        const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
-
-        // hash-based 低成本伪噪点（每帧时间扰动 → 颗粒感而非贴图感）
-        float hash21(vec2 p) {
-          p = fract(p * vec2(123.34, 456.21));
-          p += dot(p, p + 45.32);
-          return fract(p.x * p.y);
-        }
-
-        void main() {
-          vec4 src = texture2D(tDiffuse, vUv);
-          vec3 c = src.rgb;
-
-          float l = dot(c, LUMA);
-          c = mix(c, vec3(l), uDesaturate);
-
-          vec2 fragPx = vUv * uResolution;
-          float n = hash21(fragPx + vec2(uTime * 60.0, uTime * 37.0)) - 0.5;
-          c += n * uNoise;
-
-          gl_FragColor = vec4(clamp(c, 0.0, 1.0), src.a);
-        }
-      `,
-      depthTest: false,
-      depthWrite: false,
-    });
-    this.fsQuad = new FullScreenQuad(this.material);
-  }
-
-  override setSize(width: number, height: number): void {
-    this.material.uniforms.uResolution.value.set(width, height);
-  }
-
-  /** 当前实际生效的去饱和强度（含开关与 ramp） */
-  get currentDesaturate(): number {
-    return this.enabled ? this.desaturateMax * this.ramp01 : 0;
-  }
-  /** 当前实际生效的噪点强度（含开关与 ramp） */
-  get currentNoise(): number {
-    return this.enabled ? this.noiseMax * this.ramp01 : 0;
-  }
-
-  override render(renderer: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget): void {
-    const u = this.material.uniforms;
-    u.uDesaturate.value = this.currentDesaturate;
-    u.uNoise.value = this.currentNoise;
-    u.tDiffuse.value = readBuffer.texture;
-    u.uTime.value = performance.now() * 0.001;
-    if (this.renderToScreen) {
-      renderer.setRenderTarget(null);
-    } else {
-      renderer.setRenderTarget(writeBuffer);
-      if (this.clear) renderer.clear();
-    }
-    this.fsQuad.render(renderer);
-  }
-
-  override dispose(): void {
-    this.material.dispose();
-    this.fsQuad.dispose?.();
-  }
-}
-
-function convertToToonMaterials(root: THREE.Object3D, halftone = true): void {
-  root.traverse((child) => {
-    if (!(child as THREE.Mesh).isMesh) return;
-    const mesh = child as THREE.Mesh;
-    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    const toonMats = materials.map((mat) => {
-      if (mat instanceof THREE.MeshToonMaterial) {
-        tuneToonTexture(mat.map);
-        tuneToonTexture(mat.emissiveMap);
-        if (mat.color) capMaterialLightness(mat.color, 0.55); // 已是 toon 也封顶：贴图×color，压暗白模
-        
-        if (mesh.userData.isBackground) {
-          mat.userData.isBackground = true;
-        }
-        applyStylizedToonShading(mat, 0, halftone); // 已是 toon：补挂风格化叠加
-        return mat;
-      }
-      const oldMat = mat as THREE.MeshStandardMaterial | THREE.MeshPhongMaterial | THREE.MeshLambertMaterial;
-      const color = (oldMat.color ?? new THREE.Color(0xffffff)).clone();
-      boostMaterialSaturation(color, 1.5); // 敌人/场景/道具统一高饱和（与玩家 ×1.6 对齐）
-      capMaterialLightness(color, 0.55);   // 明度封顶：白模白色多来自贴图，用 color 乘子压暗（贴图×color），不再顶白糊成一片
-      // 保留 emissive / emissiveMap：霓虹屏幕、发光贴图在 toon 转换后不丢（PR #56）。
-      const map = oldMat.map ?? null;
-      const emissiveMap = oldMat.emissiveMap ?? null;
-      tuneToonTexture(map);
-      tuneToonTexture(emissiveMap);
-      const toon = new THREE.MeshToonMaterial({
-        color,
-        map,
-        emissive: oldMat.emissive ?? new THREE.Color(0x000000),
-        emissiveMap,
-        gradientMap: toonGradientMap,
-        side: oldMat.side ?? THREE.FrontSide,
-        transparent: oldMat.transparent ?? false,
-        opacity: oldMat.opacity ?? 1,
-        vertexColors: oldMat.vertexColors, // 100% 继承并保留原始网格的顶点颜色（Vertex Colors）支持
-      });
-      toon.name = oldMat.name || 'ToonMat';
-      
-      // 传递背景标记到新创建的 Toon 材质
-      if (mesh.userData.isBackground || (oldMat.userData && oldMat.userData.isBackground)) {
-        toon.userData.isBackground = true;
-      }
-      
-      applyStylizedToonShading(toon, 0, halftone); // rim + toon spec + 染色阴影
-      return toon;
-    });
-    mesh.material = toonMats.length === 1 ? toonMats[0] : toonMats;
-  });
-}
-
-/**
- * Lift weapon materials so they don't collapse to near-black under our 3-step
- * toon ramp. Applies a gamma curve (darks brighten more than brights) plus a
- * small emissive floor so the shadow side stays readable.
- *
- * IMPORTANT: only call this on weapon meshes. Chests, scenery, and player
- * models intentionally keep their original tones.
- */
-function brightenWeaponMaterials(root: THREE.Object3D): void {
-  const gamma = 0.55;
-  const emissiveFloor = 0.18;
-  root.traverse((child) => {
-    if (!(child as THREE.Mesh).isMesh) return;
-    const mesh = child as THREE.Mesh;
-    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    const lifted = mats.map((mat) => {
-      const m = mat as THREE.MeshToonMaterial;
-      const original = (m.color ?? new THREE.Color(0xffffff)).clone();
-      const c = new THREE.Color(
-        Math.pow(original.r, gamma),
-        Math.pow(original.g, gamma),
-        Math.pow(original.b, gamma),
-      );
-      const newMat = new THREE.MeshToonMaterial({
-        color: c,
-        emissive: c.clone().multiplyScalar(emissiveFloor),
-        map: m.map ?? null,
-        gradientMap: m.gradientMap ?? toonGradientMap,
-        side: m.side ?? THREE.FrontSide,
-        transparent: m.transparent ?? false,
-        opacity: m.opacity ?? 1,
-      });
-      newMat.name = m.name || 'WeaponToon';
-      applyStylizedToonShading(newMat, 0.35); // 武器留一点高光
-      return newMat;
-    });
-    mesh.material = lifted.length === 1 ? lifted[0] : lifted;
-  });
-}
-
-function applyChestGoldMaterials(root: THREE.Object3D): void {
-  let meshIndex = 0;
-  root.traverse((child) => {
-    if (!(child as THREE.Mesh).isMesh) return;
-    const mesh = child as THREE.Mesh;
-    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    const lifted = mats.map((mat, matIndex) => {
-      const source = mat as THREE.MeshToonMaterial;
-      const sourceColor = source.color ?? new THREE.Color(0x8a4a20);
-      const isMetal = meshIndex % 3 === 0 || matIndex > 0 || sourceColor.r > sourceColor.g;
-      const color = isMetal ? new THREE.Color(0xffc44d) : new THREE.Color(0x9a5528);
-      const emissive = isMetal ? new THREE.Color(0x7a4a10) : new THREE.Color(0x261006);
-      const chestMat = new THREE.MeshToonMaterial({
-        color,
-        emissive,
-        gradientMap: toonGradientMap,
-        side: source.side ?? THREE.FrontSide,
-        transparent: source.transparent ?? false,
-        opacity: source.opacity ?? 1,
-      });
-      chestMat.name = `ChestReadable_${meshIndex}_${matIndex}`;
-      return chestMat;
-    });
-    mesh.material = lifted.length === 1 ? lifted[0] : lifted;
-    meshIndex++;
-  });
-}
 
 const WEAPON_ICONS: Record<string, string> = {
   sword: '🗡️',
@@ -3607,7 +2809,8 @@ export class GameScene {
   private readonly _dummy = new THREE.Object3D();
   private readonly _tempVec = new THREE.Vector3();
   private readonly _tempColor = new THREE.Color();
-  private readonly _hitFlashColor = new THREE.Color();
+  // HitFlash 受击 tint 系统 — 见 render/HitFlashSystem.ts
+  private hitFlash!: HitFlashSystem;
   // 敌人弹幕火焰 billboard 朝向计算的临时量（避免每帧每弹分配）
   private readonly _camWorldPos = new THREE.Vector3();
   private readonly _vfxNormal = new THREE.Vector3();
@@ -3621,8 +2824,7 @@ export class GameScene {
   private playerMesh!: THREE.Mesh;
   private playerRing!: THREE.Mesh;
   private groundMesh!: THREE.Mesh;
-  private playerHitFlashTimer = 0;
-  private playerHitFlashTint: number | null = null;
+  // 玩家 hit-flash 残余时长 / 当前 tint 已迁至 this.hitFlash.{playerTimer,playerTint}
   private bossMesh: THREE.Mesh | null = null;
   /** bossMesh 当前是用哪一关的模型构建的（关卡切换时需重建）。 */
   private bossMeshStage: 1 | 2 | null = null;
@@ -3636,7 +2838,7 @@ export class GameScene {
   private bossAnimState: string | null = null;
   /** Boss 上一帧 XZ + 静止时长（移动判定，逻辑同敌人）。 */
   private bossPrevPos: { x: number; z: number; stillTime: number } | null = null;
-  private bossHitFlashTint: string | null = null;
+  // Boss hit-flash 当前 tint 已迁至 this.hitFlash.bossTint
   private ambientLight!: THREE.AmbientLight;
   private hemiLight!: THREE.HemisphereLight;
   private playerSpotLight!: THREE.SpotLight;
@@ -3759,7 +2961,7 @@ export class GameScene {
   // modelKey → 把该模型几何高度归一化到 1 单位高的系数（= 1 / 实际包围盒高度）。
   // 用于让来源尺寸各异的敌人模型统一缩放到目标高度（参考玩家），首次用到时按 loadedModels 实测缓存。
   private enemyModelNormHeight: Map<string, number> = new Map();
-  private enemyHitFlashTints: Map<number, string | null> = new Map(); // id → current material tint weapon
+  // 敌人 hit-flash 当前 tint map 已迁至 this.hitFlash.enemyTints
   private paralysisTriangleSprites: Map<number, THREE.Sprite[]> = new Map(); // enemy id → paralysis marker sprites
   private neuroMarkerSprites: Map<number, THREE.Sprite> = new Map(); // 毒师神经毒素 墨绿倒三角
   private hunterMarkerSprites: Map<number, THREE.Sprite> = new Map(); // 猎标烙印 红色瞄准圈
@@ -3805,11 +3007,9 @@ export class GameScene {
 
   // === Billboard VFX system ===
   // 给"单帧贴图特效"用：剑气、撞击、魔法圆、烧痕、枪口火光等。
-  // 池化 Plane Mesh，每帧渐隐 + 缩放 + 旋转 + 生命到了归还。
+  // Billboard VFX 池（含贴图预载、64 槽 plane mesh）— 见 vfx/BillboardPool.ts。
   // 与上面 vfxPoints 的点云粒子互补：点云适合大量 sparkle，billboard 适合少量"漂亮"贴图。
-  private vfxTextures: Record<VfxTextureKey, THREE.Texture> = {} as Record<VfxTextureKey, THREE.Texture>;
-  private readonly MAX_BILLBOARDS = 64;
-  private billboardPool: BillboardVfxItem[] = [];
+  private billboardPool!: BillboardPool;
 
   // DOM overlays
   private hudContainer!: HTMLDivElement;
@@ -3872,8 +3072,8 @@ export class GameScene {
   private gameOverPanel: HTMLDivElement | null = null;
   private pausePanel: HTMLDivElement | null = null;
   private questCompleteAtRunStart: Set<string> = new Set();
-  private damageNums: HTMLDivElement[] = [];
-  private damageNumIndex = 0;
+  // 浮动伤害数字 / 升级补偿浮字 DOM 池 — 见 ui/damageNumbers.ts
+  private damageNumbers!: DamageNumbersOverlay;
   private finalSwarmBorder: HTMLDivElement | null = null;
   private wasFinalSwarm = false;
   private lastNoticeTier: DifficultyTier | null = null;
@@ -4090,7 +3290,8 @@ export class GameScene {
     this.setupGoldMoteMesh();
     this.setupVFX();
     this.setupHUD();
-    this.setupDamageNumbers();
+    this.damageNumbers = new DamageNumbersOverlay(this.camera);
+    this.hitFlash = new HitFlashSystem(GameScene.WEAPON_VFX_COLORS);
     this.setupPerfStats();
 
     this.setupComposer();
@@ -4258,7 +3459,7 @@ export class GameScene {
     this.closeBondDetail();
     this.bondDetailOverlay?.remove();
     this.comboLabel?.remove();
-    for (const el of this.damageNums) el.remove();
+    this.damageNumbers?.dispose();
   }
 
   // ===========================================================================
@@ -4880,7 +4081,7 @@ export class GameScene {
 
       // Replace the fallback mesh
       this.scene.remove(this.playerMesh);
-      const activePlayerTint = this.playerHitFlashTint;
+      const activePlayerTint = this.hitFlash.playerTint;
       this.setPlayerHitFlashTint(undefined);
       this.playerMesh = model as unknown as THREE.Mesh;
       if (activePlayerTint !== null) this.setPlayerHitFlashTint(activePlayerTint);
@@ -5298,142 +4499,12 @@ export class GameScene {
     this.vfxPoints.frustumCulled = false;
     this.scene.add(this.vfxPoints);
 
-    // ─── Billboard VFX：预加载贴图 + 预分配 plane 池 ───
-    const billboardLoader = new THREE.TextureLoader();
-    for (const key of Object.keys(VFX_TEXTURE_FILES) as VfxTextureKey[]) {
-      const tex = billboardLoader.load(VFX_TEXTURE_FILES[key]);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      this.vfxTextures[key] = tex;
-    }
-
-    const planeGeo = new THREE.PlaneGeometry(1, 1);
-    for (let i = 0; i < this.MAX_BILLBOARDS; i++) {
-      const mat = new THREE.MeshBasicMaterial({
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        side: THREE.DoubleSide,
-      });
-      const mesh = new THREE.Mesh(planeGeo, mat);
-      mesh.visible = false;
-      mesh.frustumCulled = false;
-      mesh.renderOrder = 5;  // 在 outline 之上、HUD 之下
-      this.scene.add(mesh);
-      this.billboardPool.push({
-        mesh,
-        active: false,
-        age: 0,
-        lifetime: 1,
-        startScale: 1,
-        endScale: 1,
-        startOpacity: 1,
-        opacityCurve: 'fadeOut',
-        rotationSpeed: 0,
-        facing: 'camera',
-      });
-    }
+    // ─── Billboard VFX：贴图预载 + 64 槽 plane mesh 池 ───
+    this.billboardPool = new BillboardPool(this.scene);
   }
 
-  /**
-   * 触发一个一次性贴图特效。从 billboard 池里取一个 plane，
-   * 配置好材质 / 位置 / 朝向 / 缩放 / 透明度曲线，由 updateBillboardVfx 每帧推进。
-   *
-   * 池满时静默丢弃（不阻塞，不报错）。VFX 帧丢失对体感几乎无影响。
-   */
-  spawnBillboard(opts: BillboardSpawnOpts): void {
-    const slot = this.billboardPool.find(b => !b.active);
-    if (!slot) return;
-
-    slot.active = true;
-    slot.age = 0;
-    slot.lifetime = Math.max(0.05, opts.lifetime);
-    slot.startScale = opts.scale;
-    slot.endScale = opts.endScale ?? opts.scale;
-    slot.startOpacity = opts.opacity ?? 1;
-    slot.opacityCurve = opts.opacityCurve ?? 'fadeOut';
-    slot.rotationSpeed = opts.rotationSpeed ?? 0;
-    slot.facing = opts.facing ?? 'camera';
-
-    const mat = slot.mesh.material;
-    mat.map = this.vfxTextures[opts.texture];
-    mat.color.setHex(opts.color ?? 0xffffff);
-    mat.opacity = slot.startOpacity;
-    mat.blending = opts.blending === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending;
-    mat.needsUpdate = true;
-
-    slot.mesh.position.set(opts.x, opts.y, opts.z);
-    slot.mesh.scale.set(slot.startScale, slot.startScale, slot.startScale);
-    slot.mesh.visible = true;
-
-    if (slot.facing === 'up') {
-      // 平躺地面：plane 默认面向 +Z，绕 X 轴 -90° 让法线朝 +Y
-      slot.mesh.rotation.set(-Math.PI / 2, 0, opts.rotation ?? 0);
-    } else {
-      // 朝向相机：每帧在 update 里 lookAt(camera)；初始 rotation 仅决定贴图自旋
-      slot.mesh.rotation.set(0, 0, opts.rotation ?? 0);
-    }
-  }
-
-  /**
-   * 每帧推进所有 active billboard：
-   *   - lerp scale (start → end)
-   *   - lerp opacity 按曲线
-   *   - 自旋
-   *   - facing='camera' 时 lookAt(相机)
-   *   - lifetime 到了归还槽位
-   */
-  private updateBillboardVfx(dt: number): void {
-    const cam = this.camera;
-    const _camPos = new THREE.Vector3();
-    cam.getWorldPosition(_camPos);
-
-    for (const b of this.billboardPool) {
-      if (!b.active) continue;
-      b.age += dt;
-      if (b.age >= b.lifetime) {
-        b.active = false;
-        b.mesh.visible = false;
-        continue;
-      }
-
-      const t = b.age / b.lifetime;  // 0..1
-      const scale = b.startScale + (b.endScale - b.startScale) * t;
-      b.mesh.scale.set(scale, scale, scale);
-
-      let alpha: number;
-      switch (b.opacityCurve) {
-        case 'flash':
-          // 0 → start → 0 (sin 曲线)
-          alpha = b.startOpacity * Math.sin(t * Math.PI);
-          break;
-        case 'constant':
-          alpha = b.startOpacity;
-          break;
-        case 'fadeOut':
-        default:
-          alpha = b.startOpacity * (1 - t);
-          break;
-      }
-      b.mesh.material.opacity = Math.max(0, alpha);
-
-      if (b.rotationSpeed !== 0) {
-        if (b.facing === 'up') {
-          b.mesh.rotation.z += b.rotationSpeed * dt;
-        } else {
-          // camera-facing 时由 lookAt 接管 X/Y rotation；自旋走 Z
-          // 但 lookAt 之后我们再叠 Z rotation
-          b.mesh.rotation.z += b.rotationSpeed * dt;
-        }
-      }
-
-      if (b.facing === 'camera') {
-        // 让 plane 法线指向相机（保留 z 自旋）
-        const zRot = b.mesh.rotation.z;
-        b.mesh.lookAt(_camPos);
-        b.mesh.rotation.z = zRot;
-      }
-    }
-  }
+  // spawnBillboard / updateBillboardVfx 已迁出至 BillboardPool；
+  // 调用方改为 this.billboardPool.spawn(...) / this.billboardPool.update(camera, dt)。
 
   // ===========================================================================
   // HUD
@@ -5745,16 +4816,6 @@ export class GameScene {
     this.comboLabel = document.createElement('div');
     this.comboLabel.style.cssText = `position:absolute;top:35%;left:50%;transform:translate(-50%,-50%);color:#ffd700;font-size:${uiPx(Math.round(HUD_COMBO_FONT_BASE * HUD_COMBO_SCALE))}px;font-weight:bold;text-shadow:0 0 ${uiPx(8)}px rgba(255,215,0,0.8),0 ${uiPx(2)}px ${uiPx(3)}px rgba(0,0,0,0.9);pointer-events:none;opacity:0;transition:opacity 0.3s ease-out;white-space:nowrap;`;
     this.hudContainer.appendChild(this.comboLabel);
-  }
-
-  private setupDamageNumbers(): void {
-    for (let i = 0; i < DAMAGE_NUM_POOL_SIZE; i++) {
-      const el = document.createElement('div');
-      el.style.cssText = `position:fixed;pointer-events:none;font-size:16px;font-weight:bold;opacity:0;transition:none;z-index:200;text-shadow:${UI_TEXT_OUTLINE_SHADOW};white-space:nowrap;padding-inline:3px;box-sizing:border-box;font-family:${DAMAGE_NUMBER_FONT_FAMILY};`;
-      el.dataset.animId = String(i);  // 稳定 id：GSAP 按元素 keying，池复用时 cancel 上一个 tween
-      document.body.appendChild(el);
-      this.damageNums.push(el);
-    }
   }
 
   /**
@@ -6142,7 +5203,7 @@ export class GameScene {
     this.renderChests(state);
     this.renderShrines(state.shrines, state.player.x, state.player.z);
     this.updateVFX(state, dt, eventsFresh);
-    this.updateBillboardVfx(dt);
+    this.billboardPool.update(this.camera, dt);
     if (introFullWorld) {
       this.updateStartIntroCamera(state);
     } else if (!introJustCompleted) {
@@ -6276,9 +5337,9 @@ export class GameScene {
     // 死亡后保持 mesh 可见，让 Death 动画播完并把尸体定格在地上
     this.playerMesh.visible = true;
 
-    if (this.playerHitFlashTimer > 0) {
-      this.playerHitFlashTimer = Math.max(0, this.playerHitFlashTimer - this.frameDt);
-      if (this.playerHitFlashTimer <= 0) this.setPlayerHitFlashTint(undefined);
+    if (this.hitFlash.playerTimer > 0) {
+      this.hitFlash.playerTimer = Math.max(0, this.hitFlash.playerTimer - this.frameDt);
+      if (this.hitFlash.playerTimer <= 0) this.setPlayerHitFlashTint(undefined);
     }
 
     // === Death Animation ===
@@ -6566,7 +5627,7 @@ export class GameScene {
     const SLASH_SECTOR_TEXTURE: VfxTextureKey = 'slash_fill';
     const mat = new THREE.MeshBasicMaterial({
       color: 0x3aa0ff, // 偏蓝
-      map: this.vfxTextures[SLASH_SECTOR_TEXTURE] ?? null,
+      map: this.billboardPool.textures[SLASH_SECTOR_TEXTURE] ?? null,
       vertexColors: true, // 顶点 alpha 羽化边界（附加混合用 SrcAlpha，alpha 调制贡献）
       transparent: true,
       opacity: 1.0, // 最亮（附加混合，opacity 直接放大亮度）
@@ -6591,7 +5652,7 @@ export class GameScene {
     // 竖直贴图面片：lightning.png 为白色闪电 + 透明底，加色混合自然发光。
     // 两层叠加：glow=宽蓝外晕、core=窄白亮芯 → "白热芯 + 蓝边"的电弧观感。
     // 面片仅绕 Y 轴朝相机（在 updateTransientEffects 里每帧更新），始终保持竖直。
-    const tex = this.vfxTextures.lightning ?? null;
+    const tex = this.billboardPool.textures.lightning ?? null;
     const makeBolt = (width: number, color: number, opacity: number, name: string): THREE.Mesh => {
       const geo = new THREE.PlaneGeometry(width, height);
       const mat = new THREE.MeshBasicMaterial({
@@ -6678,7 +5739,7 @@ export class GameScene {
     // 仅作"范围边界"用——半透明叠加发光，不做不透明的实心填充。
     const planeGeo = new THREE.PlaneGeometry(1, 1);
     const mat = new THREE.MeshBasicMaterial({
-      map: this.vfxTextures.flame_aura ?? null,
+      map: this.billboardPool.textures.flame_aura ?? null,
       color: 0xff6a22,
       transparent: true,
       opacity: 1,
@@ -6789,136 +5850,33 @@ export class GameScene {
     gsapAnimations.screenFlash(color, duration);
   }
 
+  // ─── Hit flash delegates — 实现已迁至 render/HitFlashSystem.ts ───
   private cloneHitFlashMaterial(mat: THREE.Material): THREE.Material {
-    const cloned = mat.clone();
-    cloned.userData[OWNED_CLONE_KEY] = true;
-
-    // material.clone() copies userData, but not every custom shader callback reliably.
-    // Re-apply the stylized toon patch to cloned enemy materials so per-enemy tinting
-    // does not mutate shared source materials.
-    if (cloned instanceof THREE.MeshToonMaterial) {
-      delete cloned.userData['__stylized'];
-      applyStylizedToonShading(cloned, cloned.name.startsWith('Weapon') ? 0.35 : 0, true);
-      cloned.needsUpdate = true;
-    }
-
-    const tintable = cloned as HitFlashMaterial;
-    if (tintable.color) {
-      cloned.userData[HIT_FLASH_BASE_COLOR_KEY] = tintable.color.clone();
-    }
-    if (tintable.emissive) {
-      cloned.userData[HIT_FLASH_BASE_EMISSIVE_KEY] = tintable.emissive.clone();
-    }
-    return cloned;
+    return this.hitFlash.cloneMaterial(mat);
   }
-
   private prepareHitFlashMaterials(root: THREE.Object3D): void {
-    root.traverse((child) => {
-      const mesh = child as THREE.Mesh;
-      if (!mesh.isMesh || !mesh.material) return;
-      if (Array.isArray(mesh.material)) {
-        mesh.material = mesh.material.map((mat) => this.cloneHitFlashMaterial(mat));
-      } else {
-        mesh.material = this.cloneHitFlashMaterial(mesh.material);
-      }
-    });
+    this.hitFlash.prepareMaterials(root);
   }
-
   private cacheHitFlashMaterialBases(root: THREE.Object3D): void {
-    root.traverse((child) => {
-      const mesh = child as THREE.Mesh;
-      if (!mesh.isMesh || !mesh.material) return;
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      for (const mat of materials) {
-        const tintable = mat as HitFlashMaterial;
-        if (tintable.color && !mat.userData[HIT_FLASH_BASE_COLOR_KEY]) {
-          mat.userData[HIT_FLASH_BASE_COLOR_KEY] = tintable.color.clone();
-        }
-        if (tintable.emissive && !mat.userData[HIT_FLASH_BASE_EMISSIVE_KEY]) {
-          mat.userData[HIT_FLASH_BASE_EMISSIVE_KEY] = tintable.emissive.clone();
-        }
-      }
-    });
+    this.hitFlash.cacheBases(root);
   }
-
   private applyObjectHitFlashTint(root: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
-    const vfxColor = hitFlashColor !== undefined
-      ? this._hitFlashColor.setHex(hitFlashColor)
-      : weaponType
-        ? GameScene.WEAPON_VFX_COLORS[weaponType]
-        : undefined;
-    if (Array.isArray(vfxColor)) this._hitFlashColor.setRGB(vfxColor[0], vfxColor[1], vfxColor[2]);
-
-    root.traverse((child) => {
-      const mesh = child as THREE.Mesh;
-      if (!mesh.isMesh || !mesh.material) return;
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      for (const mat of materials) {
-        const tintable = mat as HitFlashMaterial;
-        const baseColor = mat.userData[HIT_FLASH_BASE_COLOR_KEY] as THREE.Color | undefined;
-        if (tintable.color && baseColor) {
-          if (vfxColor) {
-            tintable.color.copy(baseColor).lerp(this._hitFlashColor, HIT_FLASH_TINT_INTENSITY);
-          } else {
-            tintable.color.copy(baseColor);
-          }
-        }
-
-        const baseEmissive = mat.userData[HIT_FLASH_BASE_EMISSIVE_KEY] as THREE.Color | undefined;
-        if (tintable.emissive && baseEmissive) {
-          if (vfxColor) {
-            tintable.emissive.copy(this._hitFlashColor).multiplyScalar(HIT_FLASH_EMISSIVE_STRENGTH);
-          } else {
-            tintable.emissive.copy(baseEmissive);
-          }
-        }
-      }
-    });
+    this.hitFlash.applyTint(root, weaponType, hitFlashColor);
   }
-
   private setEnemyHitFlashTint(enemyId: number, obj: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
-    const next = hitFlashColor !== undefined ? `color:${hitFlashColor}` : (weaponType ?? null);
-    if ((this.enemyHitFlashTints.get(enemyId) ?? null) === next) return;
-    this.enemyHitFlashTints.set(enemyId, next);
-    this.applyObjectHitFlashTint(obj, weaponType, hitFlashColor);
+    this.hitFlash.setEnemyTint(enemyId, obj, weaponType, hitFlashColor);
   }
-
   private setBossHitFlashTint(obj: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
-    const next = hitFlashColor !== undefined ? `color:${hitFlashColor}` : (weaponType ?? null);
-    if (this.bossHitFlashTint === next) return;
-    this.bossHitFlashTint = next;
-    this.applyObjectHitFlashTint(obj, weaponType, hitFlashColor);
+    this.hitFlash.setBossTint(obj, weaponType, hitFlashColor);
   }
-
   private triggerPlayerHitFlash(color: number): void {
-    this.playerHitFlashTimer = PLAYER_HIT_FLASH_DURATION;
-    this.setPlayerHitFlashTint(color);
+    this.hitFlash.triggerPlayer(this.playerMesh, color);
   }
-
   private setPlayerHitFlashTint(color?: number): void {
-    const next = color ?? null;
-    if (this.playerHitFlashTint === next) return;
-    this.playerHitFlashTint = next;
-    this.applyObjectHitFlashTint(this.playerMesh, undefined, color);
+    this.hitFlash.setPlayerTint(this.playerMesh, color);
   }
-
   private findDeathHitFlashTint(obj: THREE.Object3D, damageEvents: readonly DamageEvent[]): { weaponType?: string; hitFlashColor?: number } {
-    let bestTint: { weaponType?: string; hitFlashColor?: number } = {};
-    let bestDistSq = 2.25; // tolerate a little knockback / render-tick drift
-
-    for (let i = damageEvents.length - 1; i >= 0; i--) {
-      const evt = damageEvents[i];
-      if (evt.isPlayerDamage || (!evt.weaponType && evt.hitFlashColor === undefined)) continue;
-      const dx = evt.x - obj.position.x;
-      const dz = evt.z - obj.position.z;
-      const distSq = dx * dx + dz * dz;
-      if (distSq <= bestDistSq) {
-        bestDistSq = distSq;
-        bestTint = { weaponType: evt.weaponType, hitFlashColor: evt.hitFlashColor };
-      }
-    }
-
-    return bestTint;
+    return this.hitFlash.findDeathTint(obj, damageEvents);
   }
 
   private renderEnemies(enemies: EnemyState[], damageEvents: readonly DamageEvent[]): void {
@@ -6947,7 +5905,7 @@ export class GameScene {
         // Start death animation
         const deathTint = this.findDeathHitFlashTint(obj, damageEvents);
         this.setEnemyHitFlashTint(id, obj, deathTint.weaponType, deathTint.hitFlashColor);
-        this.enemyHitFlashTints.delete(id);
+        this.hitFlash.enemyTints.delete(id);
         this.playEnemyAnim(id, 'Death');
         this.dyingEnemies.set(id, { obj, timer: 0.6, type: obj.userData['enemyType'] as string });
         this.enemyObjects.delete(id);
@@ -6977,7 +5935,7 @@ export class GameScene {
         this.enemyAnimAccum.delete(id);
         this.enemyPrevPos.delete(id);
         this.applyObjectHitFlashTint(dying.obj, undefined);
-        this.enemyHitFlashTints.delete(id);
+        this.hitFlash.enemyTints.delete(id);
         // Return to pool（带容量上限，超限直接释放避免无限累积）
         const pool = this.enemyPool.get(dying.type) ?? [];
         if (pool.length < ENEMY_POOL_CAP_PER_TYPE) {
@@ -7788,7 +6746,7 @@ export class GameScene {
         // Boss 离场：重置动画状态，下一个 boss 干净起播
         this.bossAnimState = null;
         this.bossPrevPos = null;
-        this.bossHitFlashTint = null;
+        this.hitFlash.bossTint = null;
       }
       return;
     }
@@ -7804,7 +6762,7 @@ export class GameScene {
       this.bossAnimActions.clear();
       this.bossAnimState = null;
       this.bossPrevPos = null;
-      this.bossHitFlashTint = null;
+      this.hitFlash.bossTint = null;
     }
 
     if (!this.bossMesh) {
@@ -7988,7 +6946,7 @@ export class GameScene {
       // Ground decal: magic circle / portal swirl（按 phase 切贴图）
       const decalGeo = new THREE.PlaneGeometry(10, 10);
       const decalMat = new THREE.MeshBasicMaterial({
-        map: this.vfxTextures.magic_circle,
+        map: this.billboardPool.textures.magic_circle,
         transparent: true,
         opacity: 0.85,
         depthWrite: false,
@@ -8049,7 +7007,7 @@ export class GameScene {
             ringMat?.color.setHex(0xffaa00);
             pillarMat.color.setHex(0xffcc00);
             pillarMat.opacity = pulse;
-            decalMat.map = this.vfxTextures.magic_circle;
+            decalMat.map = this.billboardPool.textures.magic_circle;
             decalMat.color.setHex(0xffcc44);
             decalMat.opacity = 0.95;
             decal.rotation.z = -time * 4;  // 加速旋转
@@ -8070,7 +7028,7 @@ export class GameScene {
             ringMat?.color.setHex(0x5566aa);
             pillarMat.color.setHex(0x6677cc);
             pillarMat.opacity = 0.22 + Math.sin(time * 0.8) * 0.08;
-            decalMat.map = this.vfxTextures.magic_circle;
+            decalMat.map = this.billboardPool.textures.magic_circle;
             decalMat.color.setHex(0x6677cc);
             decalMat.opacity = 0.35;
             decal.rotation.z = -time * 0.4;
@@ -8082,7 +7040,7 @@ export class GameScene {
             ringMat?.color.setHex(0xaa44ff);
             pillarMat.color.setHex(0xcc66ff);
             pillarMat.opacity = 0.6 + Math.sin(time * 2) * 0.2;
-            decalMat.map = this.vfxTextures.portal_swirl;
+            decalMat.map = this.billboardPool.textures.portal_swirl;
             decalMat.color.setHex(0xcc66ff);
             decalMat.opacity = 0.95;
             decal.rotation.z = time * 6;
@@ -8094,7 +7052,7 @@ export class GameScene {
             ringMat?.color.setHex(0x00ccff);
             pillarMat.color.setHex(0x00ffff);
             pillarMat.opacity = 0.3 + Math.sin(time) * 0.1;
-            decalMat.map = this.vfxTextures.magic_circle;
+            decalMat.map = this.billboardPool.textures.magic_circle;
             decalMat.color.setHex(0x66ddff);
             decalMat.opacity = 0.7 + Math.sin(time * 0.8) * 0.15;
             decal.rotation.z = -time * 1.2;
@@ -8178,7 +7136,7 @@ export class GameScene {
     }
     // Billboard: 一闪而过的撞击光晕（朝相机），跟武器染色一致
     const colorHex = ((Math.round(color[0] * 255) << 16) | (Math.round(color[1] * 255) << 8) | Math.round(color[2] * 255)) >>> 0;
-    this.spawnBillboard({
+    this.billboardPool.spawn({
       texture: 'muzzle',
       x, y, z,
       scale: 1.6,
@@ -8210,7 +7168,7 @@ export class GameScene {
       this.spawnParticle(x, y + 0.5, z, vx, vy, vz, size, life, r, g, b);
     }
     // Billboard: 一团短命烟雾 + 地面烧痕，让死亡有"实体痕迹"
-    this.spawnBillboard({
+    this.billboardPool.spawn({
       texture: 'smoke',
       x, y: y + 0.6, z,
       scale: 1.2,
@@ -8222,7 +7180,7 @@ export class GameScene {
       rotation: Math.random() * Math.PI * 2,
       blending: 'normal',
     });
-    this.spawnBillboard({
+    this.billboardPool.spawn({
       texture: 'scorch',
       x, y: y + 0.05, z,
       scale: 1.4,
@@ -8250,7 +7208,7 @@ export class GameScene {
     }
     // Billboard: 一颗小星星，金色拾取仪式感
     const colorHex = ((Math.round(color[0] * 255) << 16) | (Math.round(color[1] * 255) << 8) | Math.round(color[2] * 255)) >>> 0;
-    this.spawnBillboard({
+    this.billboardPool.spawn({
       texture: 'star',
       x, y: y + 0.3, z,
       scale: 0.5,
@@ -8292,7 +7250,7 @@ export class GameScene {
     }
     // 中心星光 + 光柱（与正常升级类似的仪式感，颜色按奖励类型区分）
     const color = kind === 'silver' ? 0xaaccff : 0xffd866;
-    this.spawnBillboard({
+    this.billboardPool.spawn({
       texture: 'star',
       x, y: y + 1.4, z,
       scale: 1.2,
@@ -8303,7 +7261,7 @@ export class GameScene {
       color,
       rotationSpeed: 5.0,
     });
-    this.spawnBillboard({
+    this.billboardPool.spawn({
       texture: 'light',
       x, y: y + 0.4, z,
       scale: 1.8,
@@ -8519,32 +7477,7 @@ export class GameScene {
   }
 
   private spawnCompensationFloatText(evt: LevelUpCompensationEvent): void {
-    const el = this.damageNums[this.damageNumIndex];
-    this.damageNumIndex = (this.damageNumIndex + 1) % DAMAGE_NUM_POOL_SIZE;
-
-    this._tempVec.set(evt.x, evt.y + 1.2, evt.z);
-    this._tempVec.project(this.camera);
-    const hw = window.innerWidth / 2;
-    const hh = window.innerHeight / 2;
-    const screenX = this._tempVec.x * hw + hw;
-    const screenY = -(this._tempVec.y * hh) + hh;
-
-    const isSilver = evt.kind === 'silver';
-    const label = isSilver
-      ? t('upgrade.compensationSilver', { amount: String(evt.amount) })
-      : t('upgrade.compensationGold', { amount: String(evt.amount) });
-
-    // 走 GSAP（与伤害数字共用同一池 + 同一 keying），避免 CSS transition 与 GSAP 争 transform。
-    gsapAnimations.showFloatText(el, {
-      text: label,
-      color: isSilver ? '#cce0ff' : '#ffd700',
-      x: screenX,
-      y: screenY,
-      fontSize: uiPx(20),
-      textShadow: isSilver
-        ? '0 0 8px rgba(120,160,255,0.9)'
-        : '0 0 8px rgba(255,200,0,0.9)',
-    });
+    this.damageNumbers.spawnCompensationFloat(evt);
   }
 
   private showCompensationToast(evt: LevelUpCompensationEvent): void {
@@ -9221,7 +8154,7 @@ export class GameScene {
           if (state.tick % 6 === 0) {
             const a = Math.random() * Math.PI * 2;
             const r = Math.sqrt(Math.random()) * ae.radius;
-            this.spawnBillboard({
+            this.billboardPool.spawn({
               texture: 'smoke',
               x: ae.x + Math.cos(a) * r, y: ae.y + 0.4, z: ae.z + Math.sin(a) * r,
               scale: ae.radius * 0.55, endScale: ae.radius * 0.95,
@@ -9311,7 +8244,7 @@ export class GameScene {
         };
         const makeGlow = (lengthAxis: 'x' | 'y'): THREE.Mesh => {
           const mat = new THREE.MeshBasicMaterial({
-            map: this.vfxTextures.light, color: 0xff264d,
+            map: this.billboardPool.textures.light, color: 0xff264d,
             transparent: true, opacity: 1.0,
             side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
           });
@@ -9338,7 +8271,7 @@ export class GameScene {
 
         // 一次性：起点光斑（每次开火放一发）
         const mdx = ae.dirX ?? 0, mdz = ae.dirZ ?? 1;
-        this.spawnBillboard({
+        this.billboardPool.spawn({
           texture: 'flare',
           x: ae.x + mdx * 0.4, y: ae.y + 1.0, z: ae.z + mdz * 0.4,
           scale: 1.6, endScale: 2.4, lifetime: 0.16, opacity: 1.0,
@@ -9355,7 +8288,7 @@ export class GameScene {
         // 1) 地面毒液斑：柔和的 smoke 贴图平铺贴地，毒绿染色，标示效果范围内的污染地面
         const fillGeo = new THREE.PlaneGeometry(2, 2);
         const fillMat = new THREE.MeshBasicMaterial({
-          map: this.vfxTextures.smoke,
+          map: this.billboardPool.textures.smoke,
           color: 0x4faa2e, transparent: true, opacity: 1.0,
           side: THREE.DoubleSide, depthWrite: false,
         });
@@ -9368,7 +8301,7 @@ export class GameScene {
         // 2) 边界毒环：scorch 放射贴图染毒绿、加色发光，清晰勾出 AoE 半径
         const ringGeo = new THREE.PlaneGeometry(2, 2);
         const ringMat = new THREE.MeshBasicMaterial({
-          map: this.vfxTextures.scorch,
+          map: this.billboardPool.textures.scorch,
           color: 0x7bff3a, transparent: true, opacity: 1.0,
           side: THREE.DoubleSide, depthWrite: false,
           blending: THREE.AdditiveBlending,
@@ -9386,7 +8319,7 @@ export class GameScene {
         // 单位 plane 直径 2（半径 1），靠 scale(radius) 放大覆盖 AoE。
         const geo = new THREE.PlaneGeometry(2, 2);
         const mat = new THREE.MeshBasicMaterial({
-          map: this.vfxTextures.void_ripple,
+          map: this.billboardPool.textures.void_ripple,
           color: 0x00ffff, transparent: true, opacity: 1.0,
           side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
         });
@@ -9402,7 +8335,7 @@ export class GameScene {
 
         const scorchGeo = new THREE.CircleGeometry(1, 24);
         const scorchMat = new THREE.MeshBasicMaterial({
-          map: this.vfxTextures.scorch_boots ?? null,
+          map: this.billboardPool.textures.scorch_boots ?? null,
           color: 0x5a1f06, transparent: true, opacity: 1.0,
           side: THREE.DoubleSide, depthWrite: false,
         });
@@ -9414,7 +8347,7 @@ export class GameScene {
 
         const glowGeo = new THREE.PlaneGeometry(2, 2);
         const glowMat = new THREE.MeshBasicMaterial({
-          map: this.vfxTextures.scorch_boots ?? null,
+          map: this.billboardPool.textures.scorch_boots ?? null,
           color: 0xff7a1a, transparent: true, opacity: 1.0,
           side: THREE.DoubleSide, depthWrite: false,
           blending: THREE.AdditiveBlending,
@@ -9548,12 +8481,12 @@ export class GameScene {
         sprite.position.copy(from);
         this.scene.add(sprite);
         // 起手闪光，强调发射
-        this.spawnBillboard({
+        this.billboardPool.spawn({
           texture: 'muzzle', x: from.x, y: from.y, z: from.z,
           scale: 1.6, endScale: 2.6, lifetime: 0.22, opacityCurve: 'flash',
           opacity: 0.95, color: 0xa97bff, rotation: Math.random() * Math.PI * 2,
         });
-        this.spawnBillboard({
+        this.billboardPool.spawn({
           texture: 'light', x: from.x, y: from.y, z: from.z,
           scale: 1.2, endScale: 2.2, lifetime: 0.28, opacityCurve: 'fadeOut',
           opacity: 0.75, color: 0x6f7cff, rotation: Math.random() * Math.PI * 2,
@@ -9594,13 +8527,13 @@ export class GameScene {
         );
       }
       // 朝相机的发光拖影
-      this.spawnBillboard({
+      this.billboardPool.spawn({
         texture: 'smoke', x: pos.x, y: pos.y, z: pos.z,
         scale: 1.3, endScale: 0.5, lifetime: 0.28, opacityCurve: 'fadeOut',
         opacity: 0.65, color: 0x9a6bff, blending: 'additive',
         rotation: Math.random() * Math.PI * 2,
       });
-      this.spawnBillboard({
+      this.billboardPool.spawn({
         texture: 'light', x: pos.x, y: pos.y, z: pos.z,
         scale: 0.85, endScale: 0.25, lifetime: 0.18, opacityCurve: 'fadeOut',
         opacity: 0.55, color: 0x5f7cff, blending: 'additive',
@@ -9629,29 +8562,29 @@ export class GameScene {
       );
     }
     // 命中爆闪（朝相机，强对比强调命中）
-    this.spawnBillboard({
+    this.billboardPool.spawn({
       texture: 'muzzle', x, y, z, scale: 2.0, endScale: 3.6, lifetime: 0.22,
       opacityCurve: 'flash', opacity: 1.0, color: 0xc8a0ff,
       rotation: Math.random() * Math.PI * 2, blending: 'additive',
     });
-    this.spawnBillboard({
+    this.billboardPool.spawn({
       texture: 'light', x, y, z, scale: 2.8, endScale: 5.0, lifetime: 0.28,
       opacityCurve: 'flash', opacity: 0.9, color: 0x8b7cff,
       rotation: Math.random() * Math.PI * 2, blending: 'additive',
     });
     // 蓝紫扩散烟团
-    this.spawnBillboard({
+    this.billboardPool.spawn({
       texture: 'smoke', x, y, z, scale: 2.0, endScale: 4.4, lifetime: 0.6,
       opacityCurve: 'fadeOut', opacity: 0.8, color: 0x8a5cff,
       rotation: Math.random() * Math.PI * 2, blending: 'additive',
     });
     // 地面蓝紫光环
-    this.spawnBillboard({
+    this.billboardPool.spawn({
       texture: 'scorch', x, y: y - 1.0 + 0.06, z, scale: 1.6, endScale: 3.0, lifetime: 0.45,
       opacityCurve: 'fadeOut', opacity: 0.6, color: 0x6a4cff,
       facing: 'up', rotation: Math.random() * Math.PI * 2, blending: 'additive',
     });
-    this.spawnBillboard({
+    this.billboardPool.spawn({
       texture: 'magic_circle', x, y: y - 1.0 + 0.08, z, scale: 1.2, endScale: 3.4, lifetime: 0.5,
       opacityCurve: 'fadeOut', opacity: 0.5, color: 0xb16dff,
       facing: 'up', rotation: Math.random() * Math.PI * 2, blending: 'additive',
@@ -9670,7 +8603,7 @@ export class GameScene {
         0.95, 0.25 + Math.random() * 0.2, 0.12,
       );
     }
-    this.spawnBillboard({
+    this.billboardPool.spawn({
       texture: 'smoke', x, y, z, scale: 1.8, endScale: 3.6, lifetime: 0.55,
       opacityCurve: 'fadeOut', opacity: 0.8, color: 0xcc2a1a,
       rotation: Math.random() * Math.PI * 2, blending: 'normal',
@@ -11071,46 +10004,7 @@ export class GameScene {
   // ===========================================================================
 
   private spawnDamageNumber(evt: DamageEvent): void {
-    const el = this.damageNums[this.damageNumIndex];
-    this.damageNumIndex = (this.damageNumIndex + 1) % DAMAGE_NUM_POOL_SIZE;
-
-    this._tempVec.set(evt.x, evt.y, evt.z);
-    this._tempVec.project(this.camera);
-
-    const hw = window.innerWidth / 2;
-    const hh = window.innerHeight / 2;
-    const screenX = this._tempVec.x * hw + hw;
-    const screenY = -(this._tempVec.y * hh) + hh;
-
-    let color = '#ffffff';
-    if (evt.isShield) color = '#66ddff';
-    else if (evt.isPlayerDamage) color = '#ff4444';
-    else if (evt.isCrit) color = '#ffd700'; // gold for crits
-
-    // Damage number scaling by value
-    let fontSize = 14;
-    if (evt.damage > 50) fontSize = 24;
-    else if (evt.damage > 20) fontSize = 18;
-
-    // Crits: 1.5x size + "CRIT!" suffix
-    if (evt.isCrit) {
-      fontSize = Math.round(fontSize * 1.5);
-    }
-
-    // 按视口短边缩放，避免小屏伤害数字过大遮挡画面
-    fontSize = uiPx(fontSize);
-
-    const dmgText = evt.isShield ? `+${Math.round(evt.damage)}` : String(Math.round(evt.damage));
-    // Use GSAP for damage number animation
-    gsapAnimations.showDamageNumber(el, {
-      text: evt.isCrit ? `${dmgText} CRIT!` : dmgText,
-      color: color,
-      x: screenX,
-      y: screenY,
-      fontSize: fontSize,
-      isCrit: evt.isCrit,
-      damage: evt.damage
-    });
+    this.damageNumbers.spawnDamage(evt);
   }
 
   // ===========================================================================

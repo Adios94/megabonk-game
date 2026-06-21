@@ -6,6 +6,7 @@ packages:
   - packages/render-adapter
 allowBuilds:
   esbuild: true
+  sharp: false
   tree-sitter: true
   tree-sitter-html: true
   tree-sitter-javascript: true

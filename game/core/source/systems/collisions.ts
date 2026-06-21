@@ -15,9 +15,8 @@ import { getBossMeleeDamage } from '../ai/bosses/common.ts';
 import {
   addDamageEvent,
   applyKnockback,
-  findNearestEnemyExcluding,
+  findNearestTargetExcluding,
 } from './helpers.ts';
-import type { EnemyState } from '../types.ts';
 import { applyPlayerHit } from './consumables.ts';
 import { applyRelicTargetDamage } from './relics.ts';
 import { applyPoison, applySlow } from './statusEffects.ts';
@@ -46,16 +45,12 @@ function playerProjectileHitMaxYDelta(weaponType: string): number {
     : PLAYER_PROJECTILE_HIT_MAX_Y_DELTA;
 }
 
-// 复用的 id→enemy 索引：随 spatial hash 每帧重建，
-// 让投射物命中时按 id 直接 O(1) 取敌人，取代 findEnemyById 的 O(n) 线性扫描。
-const enemyByIdScratch = new Map<number, EnemyState>();
-
 export function processCollisions(engine: Engine): void {
   const player = engine.state.player;
   const enemies = engine.state.enemies;
 
   // 1. 投射物 vs 敌人 / boss —— 用 spatial hash 加速
-  rebuildSpatialHash(engine);
+  ensureSpatialIndex(engine);
 
   for (let i = engine.state.projectiles.length - 1; i >= 0; i--) {
     const proj = engine.state.projectiles[i];
@@ -96,7 +91,7 @@ export function processCollisions(engine: Engine): void {
       }
 
       // enemy 命中
-      const enemy = enemyByIdScratch.get(id);
+      const enemy = engine.enemyById.get(id);
       if (!enemy || enemy.hp <= 0) continue;
       if (!projectileCanHitTarget(proj.y, targetHitCenterY(enemy), playerProjectileHitMaxYDelta(proj.weaponType))) continue;
 
@@ -127,10 +122,10 @@ export function processCollisions(engine: Engine): void {
         }
       }
 
-      // bone_bouncer 弹跳 — 找下一个最近敌人
+      // bone_bouncer 弹跳 — 找下一个最近目标（含 boss；boss 用 -1 作为 hitEnemyIds 标记）
       if (proj.weaponType === 'bone_bouncer' && proj.bouncesLeft > 0) {
         proj.bouncesLeft--;
-        const nextTarget = findNearestEnemyExcluding(engine, proj.x, proj.z, proj.hitEnemyIds, proj.y, BONE_BOUNCER_MAX_Y_DELTA);
+        const nextTarget = findNearestTargetExcluding(engine, proj.x, proj.z, proj.hitEnemyIds, proj.y, BONE_BOUNCER_MAX_Y_DELTA);
         if (nextTarget) {
           const dir = normalizeDirection(nextTarget.x - proj.x, nextTarget.z - proj.z);
           const speed = Math.sqrt(proj.vx * proj.vx + proj.vz * proj.vz);
@@ -206,13 +201,27 @@ export function processCollisions(engine: Engine): void {
   }
 }
 
-function rebuildSpatialHash(engine: Engine): void {
+/**
+ * 重建 spatialHash + enemyById 索引；同一 tick 内多次调用只做一次（按 state.tick 去重）。
+ *
+ * GameInstance.tick 内的调用方：
+ *   - tickAreaEffects 在 processCollisions 之前先调一次 → 第一次实际 rebuild
+ *   - processCollisions 再调一次 → 命中 spatialIndexTick === state.tick 早退
+ *
+ * 安全性：tickAreaEffects 与 processCollisions 之间没有 system 写敌人 x/z（statusEffects /
+ * bonds 只改 hp / 状态计时器），故复用同一份索引位置正确。死敌（hp<=0）保留在 hash 内，
+ * 调用方依旧靠 `enemy.hp <= 0` 跳过，与原行为一致。
+ */
+export function ensureSpatialIndex(engine: Engine): void {
+  if (engine.spatialIndexTick === engine.state.tick) return;
+  engine.spatialIndexTick = engine.state.tick;
+
   engine.spatialHash.clear();
-  enemyByIdScratch.clear();
+  engine.enemyById.clear();
   for (const enemy of engine.state.enemies) {
     if (enemy.hp <= 0) continue;
     engine.spatialHash.insert(enemy.id, enemy.x, enemy.z, 0.5);
-    enemyByIdScratch.set(enemy.id, enemy);
+    engine.enemyById.set(enemy.id, enemy);
   }
   if (engine.state.boss && engine.state.boss.hp > 0) {
     engine.spatialHash.insert(-1, engine.state.boss.x, engine.state.boss.z, 1.5);

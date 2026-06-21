@@ -8,7 +8,7 @@
  * 无目标时把毒气云丢在玩家朝向前方 range×0.6 处。
  */
 import { computeWeaponDamage } from '../stats/index.ts';
-import { findNearestEnemy } from './queries.ts';
+import { findNearestTarget } from './queries.ts';
 import {
   AOE_MAX_Y_DELTA,
   GAS_CLOUD_LIFETIME,
@@ -19,9 +19,9 @@ import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
 
 export function poisonGas(_world: GameWorld, ctx: BehaviorContext): void {
-  const { player, enemies, def, stats, effects } = ctx;
+  const { player, enemies, boss, def, stats, effects } = ctx;
 
-  const target = findNearestEnemy(player.x, player.z, enemies, stats.range, player.y, AOE_MAX_Y_DELTA);
+  const target = findNearestTarget(player.x, player.z, enemies, boss, stats.range, player.y, AOE_MAX_Y_DELTA);
   let tx: number, tz: number;
   if (target) {
     tx = target.x;

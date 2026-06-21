@@ -19,29 +19,36 @@ import { computeWeaponDamage } from '../stats/index.ts';
 import { distanceSqBetween } from '../helpers/physics.ts';
 import { AOE_MAX_Y_DELTA } from '../config.ts';
 import { bossDamageEventY, enemyDamageEventY } from '../helpers/combatHeight.ts';
-import { findNearestEnemy, findNearestEnemyExcluding } from './queries.ts';
+import { findNearestTarget, findNearestEnemyExcluding } from './queries.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
+import type { EnemyState } from '../types.ts';
 
 const CHAIN_DECAY = 0.7;
 
 export function lightningChain(_world: GameWorld, ctx: BehaviorContext): void {
   const { player, enemies, boss, weapon, def, stats, effects } = ctx;
 
-  const target = findNearestEnemy(player.x, player.z, enemies, stats.range, player.y, AOE_MAX_Y_DELTA);
+  // 主目标：最近的活敌人或活 boss（boss 不在 enemies[] 里但同样应被追踪）
+  const target = findNearestTarget(player.x, player.z, enemies, boss, stats.range, player.y, AOE_MAX_Y_DELTA);
   if (!target) return;
 
-  // 主命中
+  const targetIsBoss = boss !== null && target === boss;
+
+  // 主命中（boss / enemy 用各自的 damageEventY）
   const isCrit = Math.random() < player.critChance;
   const damage = computeWeaponDamage(stats.damage, player, def.tags, isCrit, target);
   target.hp -= damage;
   target.hitFlashTimer = 0.15;
   effects.addDamageDealt(damage, weapon.type, target);
-  effects.addDamageEvent(target.x, enemyDamageEventY(target), target.z, damage, isCrit, false, 'lightning_staff');
+  const primaryEventY = targetIsBoss ? bossDamageEventY(boss!) : enemyDamageEventY(target as EnemyState);
+  effects.addDamageEvent(target.x, primaryEventY, target.z, damage, isCrit, false, 'lightning_staff');
   effects.bondHit?.(weapon.type, target, damage, isCrit);
 
-  // 链
-  const hitIds = new Set<number>([target.id]);
+  // 链：从主目标位置出发，跳到最近的未命中 enemy。
+  // 若主目标是 boss，链不再"反弹回 boss"（boss 已在主命中扣血）。
+  const hitIds = new Set<number>();
+  if (!targetIsBoss) hitIds.add((target as EnemyState).id);
   let currentX = target.x;
   let currentY = target.y;
   let currentZ = target.z;
@@ -68,8 +75,8 @@ export function lightningChain(_world: GameWorld, ctx: BehaviorContext): void {
     chainsLeft--;
   }
 
-  // boss 在 chainsLeft > 0 + range 内时也命中
-  if (boss && boss.hp > 0 && chainsLeft > 0) {
+  // boss 在 chainsLeft > 0 + range 内时也命中（主目标已是 boss 则跳过，避免重复扣血）
+  if (!targetIsBoss && boss && boss.hp > 0 && chainsLeft > 0) {
     if (distanceSqBetween(currentX, currentZ, boss.x, boss.z) < stats.range * stats.range && Math.abs(boss.y - currentY) <= AOE_MAX_Y_DELTA) {
       const bossCrit = Math.random() < player.critChance;
       const bossDmg = computeWeaponDamage(stats.damage * CHAIN_DECAY, player, def.tags, bossCrit, boss);

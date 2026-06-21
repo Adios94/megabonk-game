@@ -10,7 +10,7 @@
  */
 import { computeWeaponDamage } from '../stats/index.ts';
 import { normalizeDirection } from '../helpers/physics.ts';
-import { findNearestEnemy } from './queries.ts';
+import { findNearestTarget } from './queries.ts';
 import { AOE_MAX_Y_DELTA, RAY_GUN_BEAM_LENGTH, RAY_BEAM_VISUAL_LIFETIME, RAY_BEAM_HIT_WIDTH_SCALE } from '../config.ts';
 import { bossDamageEventY, enemyDamageEventY } from '../helpers/combatHeight.ts';
 import type { BehaviorContext } from './types.ts';
@@ -22,8 +22,8 @@ const BOSS_RADIUS = 1.5;
 export function rayBeam(_world: GameWorld, ctx: BehaviorContext): void {
   const { player, enemies, boss, weapon, def, stats, effects } = ctx;
 
-  // 方向：优先索敌（range 仅用于挑方向），否则沿朝向
-  const target = findNearestEnemy(player.x, player.z, enemies, stats.range, player.y, AOE_MAX_Y_DELTA);
+  // 方向：优先索敌（含 boss；range 仅用于挑方向），否则沿朝向
+  const target = findNearestTarget(player.x, player.z, enemies, boss, stats.range, player.y, AOE_MAX_Y_DELTA);
   let dx: number, dz: number;
   if (target) {
     const dir = normalizeDirection(target.x - player.x, target.z - player.z);

@@ -14,7 +14,7 @@ import { distanceSqBetween } from '../helpers/physics.ts';
 import { computeWeaponDamage } from '../stats/index.ts';
 import { AOE_MAX_Y_DELTA } from '../config.ts';
 import { bossDamageEventY, enemyDamageEventY } from '../helpers/combatHeight.ts';
-import { findNearestEnemy } from './queries.ts';
+import { findNearestTarget } from './queries.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
 
@@ -29,8 +29,8 @@ export function sweepArc(_world: GameWorld, ctx: BehaviorContext): void {
   const arcAngle = Math.PI * 0.944;
   const swipeCount = stats.projectileCount;
 
-  // 自动瞄准最近 enemy
-  const target = findNearestEnemy(player.x, player.z, enemies, stats.range * 1.5, player.y, AOE_MAX_Y_DELTA);
+  // 自动瞄准最近目标（含 boss；boss 不在 enemies[] 里但同样应被追踪）
+  const target = findNearestTarget(player.x, player.z, enemies, boss, stats.range * 1.5, player.y, AOE_MAX_Y_DELTA);
   const aimAngle = target
     ? Math.atan2(target.x - player.x, target.z - player.z)
     : player.rotation;

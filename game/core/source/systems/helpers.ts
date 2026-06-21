@@ -12,7 +12,7 @@ import { getTomePower } from '../data/tomeProgression.ts';
 import { AOE_MAX_Y_DELTA, MAX_PICKUPS, PICKUP_LIFETIME } from '../config.ts';
 import { targetHitCenterY } from '../helpers/combatHeight.ts';
 import { recordBossDefeated } from '../services/save.ts';
-import type { EnemyState, WeaponType } from '../types.ts';
+import type { BossState, EnemyState, WeaponType } from '../types.ts';
 import type { Engine } from './types.ts';
 import { onBossDefeated } from './altars.ts';
 import { spawnBossChests } from './chests.ts';
@@ -60,6 +60,45 @@ export function findNearestEnemyExcluding(
     if (distSq < nearestDistSq) {
       nearestDistSq = distSq;
       nearest = enemy;
+    }
+  }
+  return nearest;
+}
+
+/**
+ * `findNearestEnemyExcluding` 的"含 boss"变体：boss 不在 `state.enemies[]` 里，
+ * 但 bone_bouncer 弹跳、追踪型投射物等"挑下一目标"的场景应一视同仁地考虑它。
+ *
+ * `excludeIds` 用 `-1` 表示 boss 已被命中（与 spatial hash / proj.hitEnemyIds 的约定一致）。
+ */
+export function findNearestTargetExcluding(
+  engine: Engine,
+  x: number,
+  z: number,
+  excludeIds: readonly number[],
+  sourceY?: number,
+  maxYDelta: number = AOE_MAX_Y_DELTA,
+): EnemyState | BossState | null {
+  let nearest: EnemyState | BossState | null = null;
+  let nearestDistSq = 20 * 20;
+  for (const enemy of engine.state.enemies) {
+    if (enemy.hp <= 0) continue;
+    if (excludeIds.includes(enemy.id)) continue;
+    if (sourceY !== undefined && Math.abs(sourceY - targetHitCenterY(enemy)) > maxYDelta) continue;
+    const distSq = distanceSqBetween(x, z, enemy.x, enemy.z);
+    if (distSq < nearestDistSq) {
+      nearestDistSq = distSq;
+      nearest = enemy;
+    }
+  }
+  const boss = engine.state.boss;
+  if (boss && boss.hp > 0 && !excludeIds.includes(-1)) {
+    if (sourceY === undefined || Math.abs(sourceY - targetHitCenterY(boss)) <= maxYDelta) {
+      const distSq = distanceSqBetween(x, z, boss.x, boss.z);
+      if (distSq < nearestDistSq) {
+        nearestDistSq = distSq;
+        nearest = boss;
+      }
     }
   }
   return nearest;

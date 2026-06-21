@@ -2447,12 +2447,8 @@ let boneGeometry: THREE.BufferGeometry | null = null;
 let silverCoinModel: THREE.Group | null = null;
 let axeModel: THREE.Group | null = null; // Full model with materials
 let swordModel: THREE.Group | null = null;
-let katanaModel: THREE.Group | null = null;
 let pistolModel: THREE.Group | null = null;
 let bulletModel: THREE.Group | null = null; // pistol 子弹模型（items/bullet.glb）
-let daggerModel: THREE.Group | null = null;
-let hammerModel: THREE.Group | null = null;
-let dartModel: THREE.Group | null = null;
 let dartGoldenModel: THREE.Group | null = null; // Used for shotgun pellets
 let lightningStaffModel: THREE.Group | null = null; // lightning_staff floater
 let flameRingModel: THREE.Group | null = null; // flame_ring floater
@@ -2564,8 +2560,9 @@ async function loadObjItems(): Promise<void> {
 
   [crystalGeometry, heartGeometry, heartHalfGeometry, boneGeometry, crystal2Geometry, crystal3Geometry, crystal4Geometry] = await Promise.all([
     loadAndNormalizeGlb('/models/items/Crystal1.glb', 0.4),
-    loadAndNormalize('/models/items/Heart.obj', 0.5),
-    loadAndNormalize('/models/items/Heart_Half.obj', 0.42),
+    // Heart / Heart_Half 切到 glb（KayKit binary 导出）；材质丢弃，靠 instanceColor 染色。
+    loadAndNormalizeGlb('/models/items/Heart.glb', 0.5),
+    loadAndNormalizeGlb('/models/items/Heart_Half.glb', 0.42),
     loadAndNormalizeGlb('/models/items/Bone.glb', 0.5),
     loadAndNormalizeGlb('/models/items/Crystal2.glb', 0.4),
     loadAndNormalizeGlb('/models/items/Crystal3.glb', 0.4),
@@ -2736,15 +2733,11 @@ async function loadObjItems(): Promise<void> {
   };
 
   // Load all weapon models in parallel — pass brighten=true for weapons only
-  const [ax, sw, kat, pistol, dag, ham, dar, darG, bul, lstaff, fring, pbomb, vbook, rgun, sgun, pgun, sboots] = await Promise.all([
+  const [ax, sw, pistol, darG, bul, lstaff, fring, pbomb, vbook, rgun, sgun, pgun, sboots] = await Promise.all([
     loadGlbWeaponModel('AxeModel', '/models/items/Axe_small.glb', 0.6, true),
     loadFullModel('SwordModel', '/models/items/greatsword.mtl', '/models/items/greatsword.obj', 0.8, true),
-    loadFullModel('KatanaModel', '/models/items/Sword_big.mtl', '/models/items/Sword_big.obj', 0.9, true),
     // pistol 武器自身的悬浮模型（自导出 GLB + 贴图）
     loadTexturedGlbWeaponModel('PistolModel', '/models/items/pistol.glb', 0.7),
-    loadFullModel('DaggerModel', '/models/items/Dagger.mtl', '/models/items/Dagger.obj', 0.4, true),
-    loadFullModel('HammerModel', '/models/items/Hammer_Double.mtl', '/models/items/Hammer_Double.obj', 0.7, true),
-    loadFullModel('DartModel', '/models/items/Dart.mtl', '/models/items/Dart.obj', 0.4, true),
     loadGlbWeaponModel('DartGoldenModel', '/models/items/bullet.glb', 0.45, true),
     // pistol 子弹模型（与霰弹弹丸同源 bullet.glb，但独立缩放/朝向）
     loadGlbWeaponModel('BulletModel', '/models/items/bullet.glb', 0.5, true),
@@ -2762,11 +2755,7 @@ async function loadObjItems(): Promise<void> {
   ]);
   axeModel = ax;
   swordModel = sw;
-  katanaModel = kat;
   pistolModel = pistol;
-  daggerModel = dag;
-  hammerModel = ham;
-  dartModel = dar;
   dartGoldenModel = darG;
   bulletModel = bul;
   // bullet.glb 的长轴是 +X，而弹丸朝向约定是 +Z（方向渲染只绕 Y 旋转）。
@@ -5929,21 +5918,17 @@ export class GameScene {
       switch (weaponType) {
         case 'axe': return axeModel;
         case 'sword': return swordModel;
-        case 'katana': return katanaModel;
         case 'pistol': return bulletModel; // pistol 子弹模型（items/bullet.glb）
         case 'paralysis_gun': return bulletModel; // 麻痹弹复用 items/bullet.glb
         case 'bone_bouncer': return null; // handled with boneGeometry fallback below
         case 'shotgun': return dartGoldenModel; // golden dart pellets
-        case 'hammer': return hammerModel;
-        case 'dagger': return daggerModel;
-        case 'dart': return dartModel;
         default: return null;
       }
     };
 
     // Weapon types that use individual model clones (not InstancedMesh)
     // 'pistol' included — its bullets render with the bullet.glb model.
-    const modelWeaponTypes = new Set(['axe', 'sword', 'katana', 'hammer', 'dagger', 'dart', 'bone_bouncer', 'shotgun', 'pistol', 'paralysis_gun']);
+    const modelWeaponTypes = new Set(['axe', 'sword', 'bone_bouncer', 'shotgun', 'pistol', 'paralysis_gun']);
 
     for (const proj of projectiles) {
       // Axe projectiles: orbiting, blade faces outward
@@ -5978,41 +5963,8 @@ export class GameScene {
         continue;
       }
 
-      // Hammer: orbiting like axe, head faces outward
-      if ((proj.weaponType as string) === 'hammer' && proj.fromPlayer) {
-        activeWeaponIds.add(proj.id);
-        let obj = this.weaponObjects.get(proj.id);
-        if (!obj) {
-          const hammerPool = this.weaponPool.get('hammer');
-          obj = hammerPool ? hammerPool.pop() : undefined;
-          if (!obj) {
-            const model = hammerModel;
-            if (model) {
-              obj = model.clone();
-            } else {
-              const geo = new THREE.BoxGeometry(0.4, 0.4, 0.6);
-              const mat = new THREE.MeshToonMaterial({ color: 0x888888, gradientMap: toonGradientMap });
-              obj = new THREE.Mesh(geo, mat);
-            }
-            obj.name = `Hammer_${proj.id}`;
-            obj.userData['weaponType'] = 'hammer';
-            this.scene.add(obj);
-          }
-          this.weaponObjects.set(proj.id, obj);
-        }
-        obj.position.set(proj.x, proj.y, proj.z);
-        const state = this.session.getRenderState();
-        const angleFromPlayer = Math.atan2(proj.x - state.player.x, proj.z - state.player.z);
-        obj.rotation.set(0, 0, 0);
-        obj.rotation.order = 'YXZ';
-        obj.rotation.x = Math.PI / 2;
-        obj.rotation.y = angleFromPlayer;
-        obj.visible = true;
-        continue;
-      }
-
-      // Sword/Katana/Dagger/Dart/Pistol(bullet): directional, tip faces movement direction
-      if (modelWeaponTypes.has(proj.weaponType as string) && proj.fromPlayer && (proj.weaponType as string) !== 'axe' && (proj.weaponType as string) !== 'hammer') {
+      // Sword/Pistol(bullet)/Shotgun pellets/Bone/Paralysis: directional, tip faces movement direction
+      if (modelWeaponTypes.has(proj.weaponType as string) && proj.fromPlayer && (proj.weaponType as string) !== 'axe') {
         activeWeaponIds.add(proj.id);
         let obj = this.weaponObjects.get(proj.id);
         if (!obj) {

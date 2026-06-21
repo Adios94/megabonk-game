@@ -31,6 +31,11 @@ function withinAoeHeight(effectY: number, targetY: number): boolean {
   return Math.abs(targetY - effectY) <= AOE_MAX_Y_DELTA;
 }
 
+// 复用的 hit-set scratch：void_ripple 每帧把 hitEnemyIds（数组）升格成 Set 做 O(1) 命中查询，
+// 把"敌人 × 已命中"的 O(N×M) 退化成 O(N + M)。同帧内多个 ripple 串行 tick，每次 clear 重填即可，
+// 不会跨 ripple 串扰。
+const rippleHitScratch: Set<number> = new Set();
+
 function damageBoss(engine: Engine, boss: BossState, dmg: number, ae: AreaEffectState): void {
   boss.hp -= dmg;
   boss.hitFlashTimer = 0.15;
@@ -81,25 +86,32 @@ export function tickAreaEffects(engine: Engine, dt: number): void {
         ae.radius = prev + (ae.expandSpeed ?? 8) * dt;
         const rippleRadiusSq = ae.radius * ae.radius;
         if (!ae.hitEnemyIds) ae.hitEnemyIds = [];
+        const hits = ae.hitEnemyIds;
+        // 用 Set 替代 array.includes（线性扫描）—— 涟漪后期 hitEnemyIds 可能数百上千，
+        // 原本 O(enemies × hits) 单帧能跑出几十万次比较，是"卡顿"的主因。
+        rippleHitScratch.clear();
+        for (let h = 0; h < hits.length; h++) rippleHitScratch.add(hits[h]);
         for (const enemy of enemies) {
           if (enemy.hp <= 0) continue;
-          if (ae.hitEnemyIds.includes(enemy.id)) continue;
+          if (rippleHitScratch.has(enemy.id)) continue;
           if (
             distanceSqBetween(ae.x, ae.z, enemy.x, enemy.z) <= rippleRadiusSq
             && withinAoeHeight(ae.y, enemy.y)
           ) {
             damageEnemy(engine, enemy, ae.damage, ae);
-            ae.hitEnemyIds.push(enemy.id);
+            hits.push(enemy.id);
+            rippleHitScratch.add(enemy.id);
             onBondWeaponHit(engine, ae.weaponType, enemy, ae.damage, ae.isCrit ?? false);
           }
         }
-        if (boss && boss.hp > 0 && !ae.hitEnemyIds.includes(-1)) {
+        if (boss && boss.hp > 0 && !rippleHitScratch.has(-1)) {
           if (
             distanceSqBetween(ae.x, ae.z, boss.x, boss.z) <= rippleRadiusSq
             && withinAoeHeight(ae.y, boss.y)
           ) {
             damageBoss(engine, boss, ae.damage, ae);
-            ae.hitEnemyIds.push(-1);
+            hits.push(-1);
+            rippleHitScratch.add(-1);
             onBondWeaponHit(engine, ae.weaponType, boss, ae.damage, ae.isCrit ?? false);
           }
         }

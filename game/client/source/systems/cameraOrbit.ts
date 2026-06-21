@@ -39,7 +39,9 @@ const CAM_GROW_RATE = 3.5;         // 恢复：慢（去顿挫）
 // raycast 节流：每 N 帧执行一次 intersectObjects（O(关卡三角形数)，是 25% CPU 大头）。
 // camFrac 本身有指数 lerp 平滑（CAM_SHRINK_RATE / CAM_GROW_RATE），16-32ms 的命中刷新延迟
 // 在视觉上完全感知不到。命中结果在帧间用 cachedTargetFrac 复用。
-const CAM_RAYCAST_STRIDE = 2;
+// stride 从 2 → 3：60fps 下 50ms 一次，配合 setOccluders 的 mesh 过滤，把 raycast 占比从
+// ~33% CPU 砍到 < 10%（详见 docs/performance.md「镜头避让 raycast」节）。
+const CAM_RAYCAST_STRIDE = 3;
 
 export class CameraOrbit {
   public camDistance = 7;
@@ -178,7 +180,9 @@ export class CameraOrbit {
           this._dir.multiplyScalar(1 / fullLen);
           this.raycaster.set(this._pivot, this._dir);
           this.raycaster.far = fullLen;
-          const hits = this.raycaster.intersectObjects(this.occluders, true);
+          // occluders 在 setOccluders 时已被扁平化为前景 mesh 列表（剔除背景 / 非 mesh
+          // 节点），这里走 recursive=false：避免 raycaster 反复 traverse 整棵关卡子树。
+          const hits = this.raycaster.intersectObjects(this.occluders, false);
           targetFrac = hits.length > 0
             ? Math.min(1, Math.max(CAM_MIN_FRAC, (hits[0].distance - CAM_COLLISION_BUFFER) / fullLen))
             : 1;
@@ -206,9 +210,35 @@ export class CameraOrbit {
     );
   }
 
-  /** 设置碰撞推镜的射线目标（关卡静态遮挡物：墙/平台等，不含怪/特效/地面）。 */
+  /**
+   * 设置碰撞推镜的射线目标（关卡静态遮挡物：墙/平台等，不含怪/特效/地面）。
+   *
+   * 调用方一般传入 `[levelScene]`（整棵关卡根 Group）。这里**一次性扁平化**为前景
+   * mesh 列表，运行时 `intersectObjects(occluders, false)` 直接对数组求交：
+   *
+   *   - 跳过 `userData.isBackground === true` 的 mesh（远景装饰 / 远山等，离玩家几百米外，
+   *     不可能挡到镜头臂；却会让 raycaster 多走一遍 boundingBox + 三角形求交）。
+   *   - 跳过非 mesh 节点（Group / Bone / Light）。
+   *
+   * 此前 `intersectObjects([levelScene], true)` 是 raycast 占 ~33% CPU 的元凶（每帧
+   * 递归整棵关卡子树）。预扁平化 + 过滤背景，把单次 raycast 命中候选从「整棵树」缩到
+   * 「真正会挡相机的几十个前景合批 mesh」。
+   */
   setOccluders(objects: THREE.Object3D[]): void {
-    this.occluders = objects;
+    if (objects.length === 0) {
+      this.occluders = [];
+      return;
+    }
+    const flat: THREE.Object3D[] = [];
+    for (const root of objects) {
+      root.traverse((node) => {
+        const mesh = node as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        if (mesh.userData && mesh.userData['isBackground']) return;
+        flat.push(mesh);
+      });
+    }
+    this.occluders = flat;
   }
 
   dispose(): void {

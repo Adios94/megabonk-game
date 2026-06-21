@@ -146,8 +146,6 @@ import enLocale from '../../../i18n/en.json';
 // 骨架包装器/动画 mixer 都会留在 GPU/JS 堆里），最终触发 Major GC 大暂停。
 const ENEMY_POOL_CAP_PER_TYPE = 24;
 const PROJECTILE_POOL_CAP = 16;
-const AREA_EFFECT_POOL_CAP_PER_KIND = 8;
-
 import { OWNED_CLONE_KEY, disposeOwnedResources } from './materials/disposeOwned.ts';
 
 // GPU Curved World (Rolling Horizon) — see materials/curvedWorld.ts
@@ -192,6 +190,9 @@ import { ParticlePool } from './vfx/ParticlePool.ts';
 
 // 武器瞬态 VFX（剑气 / 闪电 / 火环）— 见 vfx/WeaponTransientVfx.ts
 import { WeaponTransientVfx } from './vfx/WeaponTransientVfx.ts';
+
+// 区域特效（毒气 / 虚空涟漪 / 灼地痕迹 / 激光线）— 见 vfx/AreaEffectVfx.ts
+import { AreaEffectVfx } from './vfx/AreaEffectVfx.ts';
 
 // 武器 / 拾取 VFX 颜色查表 — 见 vfx/weaponColors.ts
 import { WEAPON_VFX_COLORS, PICKUP_VFX_COLORS } from './vfx/weaponColors.ts';
@@ -2967,9 +2968,8 @@ export class GameScene {
   private axePool: THREE.Object3D[] = [];
   private weaponPool: Map<string, THREE.Object3D[]> = new Map(); // weaponType → 池
   private bossProjPool: THREE.Object3D[] = [];
-  private areaEffectObjects: Map<number, THREE.Object3D> = new Map(); // area effect id → mesh (gas/ripple/scorch/beam)
-  // 区域特效对象池（按 kind 分池）：消失时回收实例避免反复 createAreaEffectMesh + dispose。
-  private areaEffectPool: Map<string, THREE.Object3D[]> = new Map();
+  // 区域特效渲染（id → mesh / 按 kind 分池）— 见 vfx/AreaEffectVfx.ts
+  private areaEffectVfx!: AreaEffectVfx;
   private pickupMeshes: Map<PickupType, THREE.InstancedMesh> = new Map();
   private silverPickupObjects: Map<number, THREE.Object3D> = new Map();
   private consumableSprites: Map<number, THREE.Sprite> = new Map();
@@ -4381,6 +4381,8 @@ export class GameScene {
     this.particlePool = new ParticlePool(this.scene, this.billboardPool);
     // ─── 武器瞬态 VFX（剑气 / 闪电 / 火环）+ 自带常驻 lightningFlashLight ───
     this.weaponTransientVfx = new WeaponTransientVfx(this.scene, this.billboardPool, this.particlePool);
+    // ─── 区域特效（毒气 / 虚空涟漪 / 灼地痕迹 / 激光线）+ 按 kind 对象池 ───
+    this.areaEffectVfx = new AreaEffectVfx(this.scene, this.billboardPool, this.particlePool);
   }
 
   // spawnBillboard / updateBillboardVfx 已迁出至 BillboardPool；
@@ -7487,287 +7489,8 @@ export class GameScene {
     this.syncInGameTouchControlsEnabled();
   }
 
-  /**
-   * 渲染区域特效（毒气云 / 虚空涟漪 / 灼地痕迹 / 激光线）。
-   * 按 id 维护 Mesh，新增即创建、消失即移除，每帧更新位置 / 半径 / 透明度。
-   */
-  private updateAreaEffects(state: GameState, _dt: number): void {
-    const live = new Set<number>();
-
-    for (const ae of state.areaEffects) {
-      live.add(ae.id);
-      let obj = this.areaEffectObjects.get(ae.id);
-      const ratio = ae.maxLifetime > 0 ? Math.max(0, ae.lifetime / ae.maxLifetime) : 1;
-
-      if (!obj) {
-        // 优先复用同 kind 池中实例
-        const kindPool = this.areaEffectPool.get(ae.kind);
-        obj = kindPool ? kindPool.pop() : undefined;
-        if (!obj) {
-          obj = this.createAreaEffectMesh(ae);
-          obj.userData['aeKind'] = ae.kind;
-          this.scene.add(obj);
-        }
-        obj.visible = true;
-        this.areaEffectObjects.set(ae.id, obj);
-      }
-
-      switch (ae.kind) {
-        case 'ray_beam': {
-          // 交叉光柱 + 核心：从玩家沿 dir 延伸 length，宽度 = width*2
-          const dx = ae.dirX ?? 0, dz = ae.dirZ ?? 1;
-          const len = ae.length ?? 40;
-          obj.position.set(ae.x + dx * len * 0.5, ae.y + 1.0, ae.z + dz * len * 0.5);
-          obj.rotation.set(0, Math.atan2(dx, dz), 0);
-          const w = (ae.width ?? 0.5) * 0.625;
-          obj.scale.set(w, w, len);
-          // 能量抖动：每帧轻微闪烁，核心更亮、辉光更柔
-          const flicker = 0.82 + Math.random() * 0.18;
-          for (const child of (obj as THREE.Group).children) {
-            const cm = (child as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
-            if (!cm) continue;
-            const base = 1.0;
-            cm.opacity = base * ratio * flicker;
-          }
-          break;
-        }
-        case 'gas_cloud': {
-          obj.position.set(ae.x, ae.y + 0.08, ae.z);
-          obj.scale.setScalar(ae.radius);
-          const group = obj as THREE.Group;
-          const fill = group.children[0] as THREE.Mesh;
-          const ring = group.children[1] as THREE.Mesh;
-          if (fill && ring) {
-            const fillMat = fill.material as THREE.MeshBasicMaterial;
-            const ringMat = ring.material as THREE.MeshBasicMaterial;
-            // 缓慢呼吸，营造翻腾的浓淡变化（不旋转）
-            const pulse = 0.85 + Math.sin(state.tick * 0.12) * 0.15;
-            fillMat.opacity = ratio * pulse;
-            ringMat.opacity = ratio;
-          }
-          // 上升的毒气团：稀疏的大号 smoke billboard 自地面缓缓升腾、外扩、渐隐
-          if (state.tick % 6 === 0) {
-            const a = Math.random() * Math.PI * 2;
-            const r = Math.sqrt(Math.random()) * ae.radius;
-            this.billboardPool.spawn({
-              texture: 'smoke',
-              x: ae.x + Math.cos(a) * r, y: ae.y + 0.4, z: ae.z + Math.sin(a) * r,
-              scale: ae.radius * 0.55, endScale: ae.radius * 0.95,
-              lifetime: 1.4, opacity: ratio, opacityCurve: 'fadeOut',
-              color: 0x5fbf32, rotation: Math.random() * Math.PI * 2,
-              rotationSpeed: (Math.random() - 0.5) * 0.6, blending: 'normal',
-            });
-          }
-          // 细碎上浮的毒粒，点缀云体内部
-          if (state.tick % 3 === 0) {
-            const a = Math.random() * Math.PI * 2;
-            const r = Math.random() * ae.radius;
-            this.particlePool.spawn(
-              ae.x + Math.cos(a) * r, ae.y + 0.3 + Math.random() * 0.8, ae.z + Math.sin(a) * r,
-              0, 0.3 + Math.random() * 0.4, 0,
-              0.5, 0.5, 0.25, 0.7, 0.12,
-            );
-          }
-          break;
-        }
-        case 'void_ripple': {
-          obj.position.set(ae.x, ae.y + 0.08, ae.z);
-          obj.scale.setScalar(Math.max(0.01, ae.radius));
-        const m = (obj as THREE.Mesh).material as THREE.MeshBasicMaterial;
-        m.color.setHex(0x00ffff);
-        m.opacity = ratio;
-          break;
-        }
-        case 'scorch_trail': {
-          obj.position.set(ae.x, ae.y + 0.06, ae.z);
-          obj.scale.setScalar(Math.max(0.01, ae.radius));
-          // 焦土底层随时间淡出；发光放射层在中后段更快收敛，呈现"先亮后焦"的余烬感
-          const burn = obj.getObjectByName('scorch_burn') as THREE.Mesh | null;
-          const glow = obj.getObjectByName('scorch_glow') as THREE.Mesh | null;
-          if (burn) (burn.material as THREE.MeshBasicMaterial).opacity = ratio * 0.85;
-          if (glow) {
-            (glow.material as THREE.MeshBasicMaterial).opacity = ratio * ratio * 0.9;
-          }
-          break;
-        }
-      }
-    }
-
-    // 清除已消失的区域特效 mesh：进对象池（按 kind 分池），超限再 dispose
-    for (const [id, obj] of this.areaEffectObjects) {
-      if (!live.has(id)) {
-        const kind = obj.userData['aeKind'] as string | undefined;
-        const pool = kind ? (this.areaEffectPool.get(kind) ?? []) : null;
-        if (pool && kind && pool.length < AREA_EFFECT_POOL_CAP_PER_KIND) {
-          obj.visible = false;
-          pool.push(obj);
-          this.areaEffectPool.set(kind, pool);
-        } else {
-          this.scene.remove(obj);
-          // 遍历销毁（gas_cloud 等是 Group，需逐子网格 dispose；贴图共享，不在此释放）
-          obj.traverse((node) => {
-            const mesh = node as THREE.Mesh;
-            if (mesh.geometry) mesh.geometry.dispose?.();
-            const mat = mesh.material;
-            if (Array.isArray(mat)) mat.forEach((m) => m.dispose?.());
-            else mat?.dispose?.();
-          });
-        }
-        this.areaEffectObjects.delete(id);
-      }
-    }
-  }
-
-  private createAreaEffectMesh(ae: GameState['areaEffects'][number]): THREE.Object3D {
-    switch (ae.kind) {
-      case 'ray_beam': {
-        // 激光线：交叉两片"光柱辉光"(light 贴图) + 一条灼热高亮核心盒。
-        // 单位尺寸沿 z 长 1，靠 update 里的 scale(w,w,len) 拉伸。
-        const group = new THREE.Group();
-
-        // 把 plane 的"长度轴" UV 钉在贴图水平中线(0.5)，这样 light 的径向亮带沿光束
-        // 全长均匀发亮，只在宽度方向衰减 → 读起来是一根均匀发光的光柱。
-        const makeGlowGeo = (lengthAxis: 'x' | 'y'): THREE.PlaneGeometry => {
-          const g = new THREE.PlaneGeometry(1, 1);
-          const uv = g.attributes.uv as THREE.BufferAttribute;
-          for (let i = 0; i < uv.count; i++) {
-            if (lengthAxis === 'y') uv.setY(i, 0.5);
-            else uv.setX(i, 0.5);
-          }
-          uv.needsUpdate = true;
-          return g;
-        };
-        const makeGlow = (lengthAxis: 'x' | 'y'): THREE.Mesh => {
-          const mat = new THREE.MeshBasicMaterial({
-            map: this.billboardPool.textures.light, color: 0xff264d,
-            transparent: true, opacity: 1.0,
-            side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
-          });
-          const mesh = new THREE.Mesh(makeGlowGeo(lengthAxis), mat);
-          mesh.name = 'beam_glow';
-          return mesh;
-        };
-        // glowH 躺平(法线 +Y)：长度走局部 y；glowV 立起(法线 +X)：长度走局部 x
-        const glowH = makeGlow('y'); glowH.rotation.x = Math.PI / 2;
-        const glowV = makeGlow('x'); glowV.rotation.y = Math.PI / 2;
-        group.add(glowH, glowV);
-
-        // 灼热核心：细长高亮盒，近白粉，加色 → 一条刺眼实线
-        const core = new THREE.Mesh(
-          new THREE.BoxGeometry(1, 1, 1),
-          new THREE.MeshBasicMaterial({
-            color: 0xffc2d2, transparent: true, opacity: 1.0,
-            blending: THREE.AdditiveBlending, depthWrite: false,
-          }),
-        );
-        core.scale.set(0.28, 0.28, 1); // 比辉光更细
-        core.name = 'beam_core';
-        group.add(core);
-
-        // 一次性：起点光斑（每次开火放一发）
-        const mdx = ae.dirX ?? 0, mdz = ae.dirZ ?? 1;
-        this.billboardPool.spawn({
-          texture: 'flare',
-          x: ae.x + mdx * 0.4, y: ae.y + 1.0, z: ae.z + mdz * 0.4,
-          scale: 1.6, endScale: 2.4, lifetime: 0.16, opacity: 1.0,
-          opacityCurve: 'fadeOut', color: 0xff3366, blending: 'additive',
-        });
-
-        return group;
-      }
-      case 'gas_cloud': {
-        // 分层毒气云：地面毒液斑（smoke 贴图）+ 毒绿边界环（magic_circle）。
-        // Group 整体按 ae.radius 缩放，单位尺寸 = 直径 2 → 半径 1，缩放后正好覆盖 AoE。
-        const group = new THREE.Group();
-
-        // 1) 地面毒液斑：柔和的 smoke 贴图平铺贴地，毒绿染色，标示效果范围内的污染地面
-        const fillGeo = new THREE.PlaneGeometry(2, 2);
-        const fillMat = new THREE.MeshBasicMaterial({
-          map: this.billboardPool.textures.smoke,
-          color: 0x4faa2e, transparent: true, opacity: 1.0,
-          side: THREE.DoubleSide, depthWrite: false,
-        });
-        const fill = new THREE.Mesh(fillGeo, fillMat);
-        fill.rotation.x = -Math.PI / 2;
-        fill.renderOrder = 3;
-        fill.name = 'gas_fill';
-        group.add(fill);
-
-        // 2) 边界毒环：scorch 放射贴图染毒绿、加色发光，清晰勾出 AoE 半径
-        const ringGeo = new THREE.PlaneGeometry(2, 2);
-        const ringMat = new THREE.MeshBasicMaterial({
-          map: this.billboardPool.textures.scorch,
-          color: 0x7bff3a, transparent: true, opacity: 1.0,
-          side: THREE.DoubleSide, depthWrite: false,
-          blending: THREE.AdditiveBlending,
-        });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
-        ring.rotation.x = -Math.PI / 2;
-        ring.renderOrder = 4;
-        ring.name = 'gas_ring';
-        group.add(ring);
-
-        return group;
-      }
-      case 'void_ripple': {
-        // 同心波纹贴图（白环+透明底，alpha≈亮度），染青色加色发光；
-        // 单位 plane 直径 2（半径 1），靠 scale(radius) 放大覆盖 AoE。
-        const geo = new THREE.PlaneGeometry(2, 2);
-        const mat = new THREE.MeshBasicMaterial({
-          map: this.billboardPool.textures.void_ripple,
-          color: 0x00ffff, transparent: true, opacity: 1.0,
-          side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
-        });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.rotation.x = -Math.PI / 2;
-        return mesh;
-      }
-      case 'scorch_trail': {
-        // 灼地痕迹：贴地的双层贴花。
-        // 底层 = 暗橙焦土圆盘（普通混合），上层 = scorch_boots 放射状灼烧贴图（加色发光）。
-        // 单位尺寸半径 1，由 update 按 ae.radius 缩放，正好覆盖 AoE。
-        const group = new THREE.Group();
-
-        const scorchGeo = new THREE.CircleGeometry(1, 24);
-        const scorchMat = new THREE.MeshBasicMaterial({
-          map: this.billboardPool.textures.scorch_boots ?? null,
-          color: 0x5a1f06, transparent: true, opacity: 1.0,
-          side: THREE.DoubleSide, depthWrite: false,
-        });
-        const scorch = new THREE.Mesh(scorchGeo, scorchMat);
-        scorch.rotation.x = -Math.PI / 2;
-        scorch.renderOrder = 3;
-        scorch.name = 'scorch_burn';
-        group.add(scorch);
-
-        const glowGeo = new THREE.PlaneGeometry(2, 2);
-        const glowMat = new THREE.MeshBasicMaterial({
-          map: this.billboardPool.textures.scorch_boots ?? null,
-          color: 0xff7a1a, transparent: true, opacity: 1.0,
-          side: THREE.DoubleSide, depthWrite: false,
-          blending: THREE.AdditiveBlending,
-        });
-        const glow = new THREE.Mesh(glowGeo, glowMat);
-        glow.rotation.x = -Math.PI / 2;
-        glow.rotation.z = Math.random() * Math.PI * 2; // 随机初始朝向，避免每个痕迹放射纹理朝向一致
-        glow.renderOrder = 4;
-        glow.name = 'scorch_glow';
-        group.add(glow);
-
-        return group;
-      }
-      default: {
-        const geo = new THREE.CircleGeometry(1, 20);
-        const mat = new THREE.MeshBasicMaterial({
-          color: 0xff6a1a, transparent: true, opacity: 1.0,
-          side: THREE.DoubleSide, depthWrite: false,
-        });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.rotation.x = -Math.PI / 2;
-        return mesh;
-      }
-    }
-  }
+  // 区域特效（gas / ripple / scorch / beam）已迁出至 vfx/AreaEffectVfx.ts。
+  // 区域特效（gas / ripple / scorch / beam）已迁出至 vfx/AreaEffectVfx.ts。
 
   /** 给中毒 / 麻痹的敌人喷少量状态粒子（绿色毒雾 / 黄色麻痹电花）。 */
   private updateEnemyStatusVfx(state: GameState): void {
@@ -7948,7 +7671,7 @@ export class GameScene {
     const enemies = state.enemies;
     const player = state.player;
 
-    this.updateAreaEffects(state, dt);
+    this.areaEffectVfx.update(state);
     this.updateEnemyStatusVfx(state);
     this.updateMysteryNumber(state);
     // 事件驱动的羁绊 VFX 只在新 tick 消费一次（高刷屏去重）。

@@ -428,7 +428,7 @@
     "indicator_charging": "充能中... {{percent}}%",
     "rarity": {
       "common": "普通",
-      "uncommon": "罕见",
+      "uncommon": "优秀",
       "rare": "稀有",
       "legendary": "传说"
     },

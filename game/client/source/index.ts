@@ -187,6 +187,15 @@ import {
   type BillboardSpawnOpts,
 } from './vfx/BillboardPool.ts';
 
+// Particle pool + emit helpers — see vfx/ParticlePool.ts
+import { ParticlePool } from './vfx/ParticlePool.ts';
+
+// 武器瞬态 VFX（剑气 / 闪电 / 火环）— 见 vfx/WeaponTransientVfx.ts
+import { WeaponTransientVfx } from './vfx/WeaponTransientVfx.ts';
+
+// 武器 / 拾取 VFX 颜色查表 — 见 vfx/weaponColors.ts
+import { WEAPON_VFX_COLORS, PICKUP_VFX_COLORS } from './vfx/weaponColors.ts';
+
 // Damage number overlay — see ui/damageNumbers.ts
 import { DamageNumbersOverlay } from './ui/damageNumbers.ts';
 
@@ -2845,9 +2854,7 @@ export class GameScene {
   private dirLight!: THREE.DirectionalLight;
   private weatherBlend = 0;
   private weatherTarget = 0;
-  // 常驻共享闪电闪光灯：永远在场景里、待命强度 0。闪电复用它而非每道新建/移除 PointLight
-  // —— 场景光源数恒定，避免每次触发引发全场材质 shader 重编译（掉帧主因）。
-  private lightningFlashLight!: THREE.PointLight;
+  // 闪电常驻共享 PointLight 已迁至 weaponTransientVfx.lightningFlashLight（避免动态光源增减触发 shader 重编译）。
 
   // Weapon floaters — physical weapons orbit the player as visual indicator
   // Magic weapons (lightning_staff / flame_ring) use VFX only
@@ -2859,28 +2866,8 @@ export class GameScene {
     'lightning_staff', 'flame_ring', 'poison_bomb', 'void_ripple', 'ray_gun', 'paralysis_gun', 'scorch_boots',
   ];
 
-  // Transient mesh-based VFX (sword slash sectors, lightning columns)
-  // 剑气实心扇形：与 sweepArc 判定区一一对应（圆心=玩家 / 外缘=range / 108° / 内缘≈0），
-  // 叠在 slash.png 月牙之下作为"扫过的填充面积"底光。
-  private slashSectors: Array<{ mesh: THREE.Mesh; life: number; maxLife: number; baseOpacity: number }> = [];
-  // Textured lightning: glow/core 贴图竖直面片(lightning.png) + impact light + ground ring
-  private lightningBolts: Array<{
-    core: THREE.Mesh; // 窄白亮芯面片
-    glow: THREE.Mesh; // 宽蓝外晕面片
-    ring: THREE.Mesh;
-    endX: number;
-    endY: number;
-    endZ: number;
-    height: number;
-    life: number;
-    maxLife: number;
-    flickerTimer: number;
-  }> = [];
-  // Persistent flame_ring decal centered on player while equipped.
-  // 两层星形符文（外圈深橙 / 内核亮黄）反向旋转 + 呼吸脉动，尺寸吻合实际 aoeRadius。
-  private flameRingDisk: THREE.Group | null = null;
-  private flameRingLayers: THREE.Mesh[] = [];
-  private flameRingTime = 0;
+  // Transient mesh-based VFX：剑气扇形 / 闪电杆 / 火环常驻光晕 — 见 vfx/WeaponTransientVfx.ts
+  private weaponTransientVfx!: WeaponTransientVfx;
   // Edge-detect weapon firing for one-shot VFX
   private lastWeaponCooldown: Map<string, number> = new Map();
   private levelScene: THREE.Object3D | null = null;
@@ -2989,26 +2976,11 @@ export class GameScene {
   private goldMoteTexture!: THREE.Texture;
   private goldMoteSprites: Map<number, THREE.Sprite> = new Map();
 
-  // VFX Particle System
-  private readonly MAX_PARTICLES = 500;
-  private vfxParticles: {
-    x: number; y: number; z: number;
-    vx: number; vy: number; vz: number;
-    size: number;
-    life: number;
-    maxLife: number;
-    r: number; g: number; b: number;
-    active: boolean;
-  }[] = [];
-  private vfxGeometry!: THREE.BufferGeometry;
-  private vfxMaterial!: THREE.ShaderMaterial;
-  private vfxPoints!: THREE.Points;
-  private vfxTexture!: THREE.Texture;
-
-  // === Billboard VFX system ===
-  // 给"单帧贴图特效"用：剑气、撞击、魔法圆、烧痕、枪口火光等。
-  // Billboard VFX 池（含贴图预载、64 槽 plane mesh）— 见 vfx/BillboardPool.ts。
-  // 与上面 vfxPoints 的点云粒子互补：点云适合大量 sparkle，billboard 适合少量"漂亮"贴图。
+  // === VFX systems ===
+  // 点云粒子池（500 槽，shader 点云）+ 各种 emit* 辅助 — 见 vfx/ParticlePool.ts。
+  // Billboard VFX 池（plane mesh + 贴图）— 见 vfx/BillboardPool.ts。
+  // 两者互补：点云适合大量 sparkle，billboard 适合少量"漂亮"贴图（剑气 / 烧痕 / 魔法圆）。
+  private particlePool!: ParticlePool;
   private billboardPool!: BillboardPool;
 
   // DOM overlays
@@ -3286,7 +3258,7 @@ export class GameScene {
     this.setupGround();
     // ⚠️ HitFlashSystem / DamageNumbersOverlay 必须在 setupPlayer 之前构造：
     // setupPlayer 内部会调用 cacheHitFlashMaterialBases → this.hitFlash.cacheBases(...)。
-    this.hitFlash = new HitFlashSystem(GameScene.WEAPON_VFX_COLORS);
+    this.hitFlash = new HitFlashSystem(WEAPON_VFX_COLORS);
     this.damageNumbers = new DamageNumbersOverlay(this.camera);
     this.setupPlayer();
     this.setupProjectileMesh();
@@ -3510,11 +3482,7 @@ export class GameScene {
     this.scene.add(this.playerSpotLight);
     this.scene.add(this.playerSpotLight.target);
 
-    // 常驻闪电闪光灯（强度 0 待命）：闪电复用它，避免动态增删光源触发全场 shader 重编译。
-    this.lightningFlashLight = new THREE.PointLight(0x88ccff, 0, 10, 2);
-    this.lightningFlashLight.name = 'LightningFlashLight';
-    this.lightningFlashLight.visible = true; // 必须始终可见，否则光源数变化仍会重编译
-    this.scene.add(this.lightningFlashLight);
+    // 常驻闪电闪光灯已迁至 WeaponTransientVfx 内部（构造时自动加入 scene）。
   }
 
   private applySkyMode(mode: 'photo' | 'color'): void {
@@ -4406,103 +4374,13 @@ export class GameScene {
   }
 
   private setupVFX(): void {
-    // Pre-allocate particle pool
-    for (let i = 0; i < this.MAX_PARTICLES; i++) {
-      this.vfxParticles.push({
-        x: 0, y: -100, z: 0,
-        vx: 0, vy: 0, vz: 0,
-        size: 1,
-        life: 0,
-        maxLife: 1,
-        r: 1, g: 1, b: 1,
-        active: false,
-      });
-    }
-
-    // Load particle texture（升级到 Kenney spark：比 circle 更有"火花感"）
-    const textureLoader = new THREE.TextureLoader();
-    this.vfxTexture = textureLoader.load('/textures/vfx/spark.png');
-
-    // Create buffer geometry with per-particle attributes
-    this.vfxGeometry = new THREE.BufferGeometry();
-    const positions = new Float32Array(this.MAX_PARTICLES * 3);
-    const sizes = new Float32Array(this.MAX_PARTICLES);
-    const lifes = new Float32Array(this.MAX_PARTICLES);
-    const colors = new Float32Array(this.MAX_PARTICLES * 3);
-
-    this.vfxGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    this.vfxGeometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
-    this.vfxGeometry.setAttribute('aLife', new THREE.BufferAttribute(lifes, 1));
-    this.vfxGeometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
-
-    // Custom ShaderMaterial
-    this.vfxMaterial = new THREE.ShaderMaterial({
-      uniforms: {
-        uTexture: { value: this.vfxTexture },
-        uWarpCenter: curvedWorldUniforms.uWarpCenter,
-        uWarpStrength: curvedWorldUniforms.uWarpStrength,
-      },
-      vertexShader: `
-        uniform vec3 uWarpCenter;
-        uniform float uWarpStrength;
-
-        attribute float aSize;
-        attribute float aLife;
-        attribute vec3 aColor;
-
-        varying float vLife;
-        varying vec3 vColor;
-
-        void main() {
-          vLife = aLife;
-          vColor = aColor;
-
-          vec3 worldPos = position;
-          vec3 diff = worldPos - uWarpCenter;
-          float d = length(diff.xz);
-          if (d > 1e-5 && uWarpStrength > 0.0) {
-              float theta = d * uWarpStrength;
-              float sinTheta = sin(theta);
-              float cosTheta = cos(theta);
-              vec2 dir = diff.xz / d;
-
-              vec3 normal = vec3(sinTheta * dir.x, cosTheta, sinTheta * dir.y);
-              float r = (1.0 / uWarpStrength) + diff.y;
-              vec3 warpedPos = r * normal;
-              warpedPos.y -= (1.0 / uWarpStrength);
-
-              worldPos = uWarpCenter + warpedPos;
-          }
-
-          vec4 mvPosition = viewMatrix * vec4(worldPos, 1.0);
-          gl_PointSize = aSize * (400.0 / -mvPosition.z);
-          gl_Position = projectionMatrix * mvPosition;
-        }
-      `,
-      fragmentShader: `
-        uniform sampler2D uTexture;
-        varying float vLife;
-        varying vec3 vColor;
-
-        void main() {
-          vec4 texColor = texture2D(uTexture, gl_PointCoord);
-          float alpha = texColor.a * vLife;
-          gl_FragColor = vec4(vColor * texColor.rgb, alpha);
-          if (gl_FragColor.a < 0.01) discard;
-        }
-      `,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-
-    this.vfxPoints = new THREE.Points(this.vfxGeometry, this.vfxMaterial);
-    this.vfxPoints.name = 'VFXParticles';
-    this.vfxPoints.frustumCulled = false;
-    this.scene.add(this.vfxPoints);
-
     // ─── Billboard VFX：贴图预载 + 64 槽 plane mesh 池 ───
     this.billboardPool = new BillboardPool(this.scene);
+    // ─── 点云粒子池：500 槽 + shader 自渲染 ───
+    //（emitDeathBurst / emitHitSparks 等会同时调 billboardPool，所以必须在它之后）
+    this.particlePool = new ParticlePool(this.scene, this.billboardPool);
+    // ─── 武器瞬态 VFX（剑气 / 闪电 / 火环）+ 自带常驻 lightningFlashLight ───
+    this.weaponTransientVfx = new WeaponTransientVfx(this.scene, this.billboardPool, this.particlePool);
   }
 
   // spawnBillboard / updateBillboardVfx 已迁出至 BillboardPool；
@@ -4991,7 +4869,7 @@ export class GameScene {
 
   // GM debug: 强制在指定坐标劈一道闪电（测试用）
   debugSpawnLightning(x: number, y: number, z: number): void {
-    this.spawnLightningBolt(x, y, z);
+    this.weaponTransientVfx.spawnLightningBolt(x, y, z);
   }
 
   /**
@@ -5585,266 +5463,17 @@ export class GameScene {
   }
 
   // === Magic weapon VFX ===
-
-  // Sword slash filled sector: 与 sweepArc 命中区精确对应的实心扇形底光。
-  //   - 圆心 = 玩家 (x,z)；外缘 = range（击杀边界）；内缘 ≈ 0（贴近玩家）
-  //   - 扇形角 = Math.PI*0.6 (108°)，对称居中在该刀方向 angle 上
-  //   - 横躺地面，叠在 slash.png 月牙之下（更暗、更柔，表达"扫过的面积"）
-  private spawnSlashSector(x: number, y: number, z: number, angle: number, range: number): void {
-    const thetaLength = Math.PI * 0.944; // 170°，与 sweepArc arcAngle 一致
-    // 高分段：thetaSegs 让弧线圆滑、phiSegs 让径向 alpha 渐变平滑。
-    const thetaSegs = 48;
-    const phiSegs = 8;
-    // 内缘留极小值避免退化三角面在玩家脚下糊成一点
-    const geo = new THREE.RingGeometry(0.2, range, thetaSegs, phiSegs, -thetaLength / 2, thetaLength);
-
-    // 逐顶点 alpha 羽化：消除扇形的硬边界。
-    //   - 角度方向：两条直边 18% 处淡出到 0（凹口两侧不再是硬切线）
-    //   - 径向方向：外缘 30% 处淡出到 0（外圈融入地面，不再是硬弧线）
-    // RingGeometry 顶点顺序：外层 j(内→外) × 内层 i(沿角度)，索引 = j*(thetaSegs+1)+i。
-    const ANG_FEATHER = 0.18; // 角度边羽化带宽（占整段比例）
-    const OUT_FEATHER = 0.30; // 外缘羽化带宽（占径向比例）
-    const colors = new Float32Array(geo.attributes.position.count * 4);
-    let vi = 0;
-    for (let j = 0; j <= phiSegs; j++) {
-      const v = j / phiSegs;                                   // 0 内缘 → 1 外缘
-      const fr = Math.min(1, (1 - v) / OUT_FEATHER);           // 外缘淡出
-      for (let i = 0; i <= thetaSegs; i++) {
-        const u = i / thetaSegs;                               // 0..1 跨角度
-        const fa = Math.min(1, Math.min(u, 1 - u) / ANG_FEATHER); // 两侧淡出
-        const a = Math.max(0, fr) * Math.max(0, fa);
-        colors[vi * 4 + 0] = 1;
-        colors[vi * 4 + 1] = 1;
-        colors[vi * 4 + 2] = 1;
-        colors[vi * 4 + 3] = a;
-        vi++;
-      }
-    }
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 4));
-    geo.rotateX(-Math.PI / 2); // 躺平到地面（法线朝 +Y）
-
-    // RingGeometry 的 UV 是径向映射（贴图中心↔几何圆心，向外铺到外缘），
-    // 所以放射状贴图能贴成"从玩家朝外发散"的扇形切片。想换风格改这一行即可：
-    //   'scorch'(放射条纹) / 'magic_circle'(法术) / 也可用 particle_* 系列。
-    const SLASH_SECTOR_TEXTURE: VfxTextureKey = 'slash_fill';
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0x3aa0ff, // 偏蓝
-      map: this.billboardPool.textures[SLASH_SECTOR_TEXTURE] ?? null,
-      vertexColors: true, // 顶点 alpha 羽化边界（附加混合用 SrcAlpha，alpha 调制贡献）
-      transparent: true,
-      opacity: 1.0, // 最亮（附加混合，opacity 直接放大亮度）
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x, y, z);
-    // 扇形中心射线（local +X）对齐该刀的 swing 方向：rotation.y = angle - π/2
-    mesh.rotation.y = angle - Math.PI / 2;
-    mesh.renderOrder = 2; // 低于 slash.png 月牙
-    this.scene.add(mesh);
-    this.slashSectors.push({ mesh, life: 0.18, maxLife: 0.18, baseOpacity: 1.0 });
-  }
-
-  // Lightning bolt: textured billboard quad (lightning.png) with double-layer glow, impact light, ground ring
-  private spawnLightningBolt(x: number, y: number, z: number): void {
-    const height = 8;
-    const maxLife = 0.25;       // 适中寿命，不长不短
-
-    // 竖直贴图面片：lightning.png 为白色闪电 + 透明底，加色混合自然发光。
-    // 两层叠加：glow=宽蓝外晕、core=窄白亮芯 → "白热芯 + 蓝边"的电弧观感。
-    // 面片仅绕 Y 轴朝相机（在 updateTransientEffects 里每帧更新），始终保持竖直。
-    const tex = this.billboardPool.textures.lightning ?? null;
-    const makeBolt = (width: number, color: number, opacity: number, name: string): THREE.Mesh => {
-      const geo = new THREE.PlaneGeometry(width, height);
-      const mat = new THREE.MeshBasicMaterial({
-        map: tex,
-        color,
-        transparent: true,
-        opacity,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(x, y + height / 2, z);
-      mesh.name = name;
-      // 随机水平镜像，让每道电弧形态不同
-      if (Math.random() < 0.5) mesh.scale.x = -1;
-      return mesh;
-    };
-
-    const glow = makeBolt(3.4, 0x66bbff, 1.0, 'LightningGlow');
-    const core = makeBolt(1.7, 0xffffff, 1.0, 'LightningCore');
-
-    // 闪光由常驻共享灯负责（不再每道新建 PointLight）：定位 + 点亮，强度在 update 里衰减。
-    this.lightningFlashLight.position.set(x, y + 0.5, z);
-    this.lightningFlashLight.intensity = 6;
-
-    // ---- Ground impact ring: expands outward and fades ----
-    const ringGeo = new THREE.RingGeometry(0.3, 0.5, 32);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: 0xaaddff,
-      transparent: true,
-      opacity: 1.0,
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.set(x, y + 0.02, z);
-    ring.name = 'LightningRing';
-
-    this.scene.add(glow);
-    this.scene.add(core);
-    this.scene.add(ring);
-
-    this.lightningBolts.push({
-      core, glow, ring,
-      endX: x, endY: y, endZ: z, height,
-      life: maxLife, maxLife,
-      flickerTimer: 0.05,
-    });
-
-    // Spark burst at impact — light blue/white
-    const sparkCount = 14;
-    for (let i = 0; i < sparkCount; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const speed = 4 + Math.random() * 4;
-      const sg = 0.85 + Math.random() * 0.15;
-      const sb = 1.0;
-      const sr = 0.6 + Math.random() * 0.4;
-      this.spawnParticle(
-        x, y + 0.4, z,
-        Math.cos(a) * speed, 4 + Math.random() * 3, Math.sin(a) * speed,
-        1.4 + Math.random() * 0.6,
-        0.3 + Math.random() * 0.2,
-        sr, sg, sb,
-      );
-    }
-  }
-
-  // Persistent flame ring disk — created lazily, follows player while equipped
-  // 柔光贴图淡出到不可见的归一化半径（相对贴图半宽）。
-  // 用它把光晕外缘对齐到实际 aoeRadius：plane 边长 = 2 * radius / 此值。
-  private static readonly FLAME_AURA_TIP_NORM = 0.85;
-
-  private ensureFlameRingDisk(): THREE.Group {
-    if (this.flameRingDisk) return this.flameRingDisk;
-    const group = new THREE.Group();
-    group.name = 'FlameRingDisk';
-    // 平铺在地面上：组整体绕 X 转 -90°，子 plane 绕 Z 自转。
-    group.rotation.x = -Math.PI / 2;
-
-    // 单位尺寸 plane（每帧按 aoeRadius 缩放）；贴图为灰度柔光晕，可染色。
-    // 仅作"范围边界"用——半透明叠加发光，不做不透明的实心填充。
-    const planeGeo = new THREE.PlaneGeometry(1, 1);
-    const mat = new THREE.MeshBasicMaterial({
-      map: this.billboardPool.textures.flame_aura ?? null,
-      color: 0xff6a22,
-      transparent: true,
-      opacity: 1,
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const mesh = new THREE.Mesh(planeGeo, mat);
-    group.add(mesh);
-
-    this.flameRingLayers = [mesh];
-    this.scene.add(group);
-    this.flameRingDisk = group;
-    return group;
-  }
-
-  // Drive transient meshes (slash arcs, lightning bolts): fade and dispose
-  private updateTransientEffects(dt: number): void {
-    // Slash sectors: 固定尺寸（保持与 range 对齐，不放大），仅渐隐后回收。
-    for (let i = this.slashSectors.length - 1; i >= 0; i--) {
-      const e = this.slashSectors[i];
-      e.life -= dt;
-      if (e.life <= 0) {
-        this.scene.remove(e.mesh);
-        e.mesh.geometry.dispose();
-        (e.mesh.material as THREE.Material).dispose();
-        this.slashSectors.splice(i, 1);
-        continue;
-      }
-      const t = e.life / e.maxLife; // 1 → 0
-      (e.mesh.material as THREE.MeshBasicMaterial).opacity = e.baseOpacity * t;
-    }
-
-    // Lightning bolts: 贴图面片镜像翻转 + 抖动模拟电弧跳动，面片绕 Y 朝相机。闪光交给常驻共享灯。
-    let flashIntensity = 0; // 本帧所有闪电对共享灯的最强贡献
-    let flashX = 0, flashY = 0, flashZ = 0;
-    const lightningCamPos = new THREE.Vector3();
-    this.camera.getWorldPosition(lightningCamPos);
-    for (let i = this.lightningBolts.length - 1; i >= 0; i--) {
-      const e = this.lightningBolts[i];
-      e.life -= dt;
-      e.flickerTimer -= dt;
-
-      if (e.life <= 0) {
-        this.scene.remove(e.core);
-        this.scene.remove(e.glow);
-        this.scene.remove(e.ring);
-        e.core.geometry.dispose();
-        (e.core.material as THREE.Material).dispose();
-        e.glow.geometry.dispose();
-        (e.glow.material as THREE.Material).dispose();
-        e.ring.geometry.dispose();
-        (e.ring.material as THREE.Material).dispose();
-        this.lightningBolts.splice(i, 1);
-        continue;
-      }
-
-      const t = e.life / e.maxLife;
-      const inv = 1 - t;
-      // 标准二次衰减
-      const fade = t * t;
-
-      // 1. 面片绕 Y 朝相机（保持竖直，仅水平转向）
-      const yaw = Math.atan2(lightningCamPos.x - e.endX, lightningCamPos.z - e.endZ);
-      e.core.rotation.y = yaw;
-      e.glow.rotation.y = yaw;
-
-      // 2. Flicker: 周期性水平镜像，让电弧形态跳变（贴图廉价，无需重建几何）
-      if (e.flickerTimer <= 0) {
-        e.flickerTimer = 0.04 + Math.random() * 0.03;
-        const flip = Math.random() < 0.5 ? -1 : 1;
-        e.core.scale.x = Math.abs(e.core.scale.x) * flip;
-        e.glow.scale.x = Math.abs(e.glow.scale.x) * flip;
-      }
-
-      // 3. Opacity：在衰减之上叠一层随机闪烁，营造电流频闪
-      const flick = 0.6 + Math.random() * 0.4;
-      (e.core.material as THREE.MeshBasicMaterial).opacity = fade * flick;
-      (e.glow.material as THREE.MeshBasicMaterial).opacity = fade * flick;
-
-      // 4. 收集对共享闪光灯的贡献（取最亮的一道定位）
-      const lit = 6 * fade;
-      if (lit > flashIntensity) { flashIntensity = lit; flashX = e.endX; flashY = e.endY + 0.5; flashZ = e.endZ; }
-
-      // 5. Ground ring: expand and fade
-      const ringScale = 0.3 + inv * 5;
-      e.ring.scale.set(ringScale, ringScale, 1);
-      (e.ring.material as THREE.MeshBasicMaterial).opacity = fade;
-    }
-    // 驱动常驻共享灯：有闪电就跟最亮那道，否则归零（光源数始终不变，无重编译）。
-    this.lightningFlashLight.intensity = flashIntensity;
-    if (flashIntensity > 0) this.lightningFlashLight.position.set(flashX, flashY, flashZ);
-  }
+  // 剑气扇形 / 闪电杆 / 火环常驻光晕 / lightning flash light 全部迁出至 vfx/WeaponTransientVfx.ts。
 
   private spawnDeathBurst(x: number, y: number, z: number): void {
-    this.emitDeathBurst(x, y, z, 'generic');
+    this.particlePool.emitDeathBurst(x, y, z, 'generic');
   }
 
   private spawnLevelUpBurst(x: number, y: number, z: number): void {
     // 粒子爆发 + 头顶星光 + 上升光柱：整套仪式特效已由 emitLevelUpBurst →
     // emitCompensationBurst('gold') 提供。早先这里又额外 spawn 了一遍 star+light billboard，
     // 导致每次升级星光/光柱被双绘（参数略不同的叠加），已移除该重复。
-    this.emitLevelUpBurst(x, y, z);
+    this.particlePool.emitLevelUpBurst(x, y, z);
   }
 
   private triggerScreenFlash(color: string, duration: number): void {
@@ -7070,215 +6699,15 @@ export class GameScene {
   }
 
   // ===========================================================================
-  // VFX Particle System
+  // VFX HUD-coupled wrappers
   // ===========================================================================
-
-  private static readonly WEAPON_VFX_COLORS: Record<string, [number, number, number]> = {
-    sword: [0.56, 0.85, 1.0],
-    bone_bouncer: [0.95, 0.9, 0.8],
-    axe: [1.0, 0.6, 0.1],
-    pistol: [0.8, 1.0, 0.3],
-    lightning_staff: [0.3, 0.8, 1.0],
-    flame_ring: [1.0, 0.5, 0.0],
-    shotgun: [1.0, 0.8, 0.2],
-    ray_gun: [1.0, 0.25, 0.45],
-    poison_bomb: [0.35, 0.8, 0.25],
-    paralysis_gun: [1.0, 0.88, 0.15],
-    void_ripple: [0.0, 1.0, 1.0],
-    scorch_boots: [1.0, 0.5, 0.12],
-  };
-
-  private static readonly PICKUP_VFX_COLORS: Record<string, [number, number, number]> = {
-    xp_green: [0.2, 1.0, 0.4],
-    xp_blue: [0.2, 0.7, 1.0],
-    xp_purple: [0.8, 0.3, 1.0],
-    xp_orange: [1.0, 0.7, 0.0],
-    gold: [1.0, 0.8, 0.15],
-    silver: [0.9, 0.9, 0.9],
-  };
-
-  private spawnParticle(
-    x: number, y: number, z: number,
-    vx: number, vy: number, vz: number,
-    size: number, life: number,
-    r: number, g: number, b: number,
-  ): void {
-    // Find an inactive particle in the pool
-    for (let i = 0; i < this.MAX_PARTICLES; i++) {
-      const p = this.vfxParticles[i];
-      if (!p.active) {
-        p.x = x; p.y = y; p.z = z;
-        p.vx = vx; p.vy = vy; p.vz = vz;
-        p.size = size;
-        p.life = life;
-        p.maxLife = life;
-        p.r = r; p.g = g; p.b = b;
-        p.active = true;
-        return;
-      }
-    }
-  }
-
-  private emitHitSparks(x: number, y: number, z: number, weaponType: string): void {
-    const color = GameScene.WEAPON_VFX_COLORS[weaponType] ?? [1.0, 0.9, 0.5];
-    const count = 10 + Math.floor(Math.random() * 8);
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const elevation = Math.random() * Math.PI * 0.6;
-      const speed = 4 + Math.random() * 6;
-      const vx = Math.cos(angle) * Math.cos(elevation) * speed;
-      const vy = Math.sin(elevation) * speed + 2;
-      const vz = Math.sin(angle) * Math.cos(elevation) * speed;
-      const size = 1.0 + Math.random() * 1.5;
-      const life = 0.4 + Math.random() * 0.4;
-      const cr = Math.min(1.0, color[0] + (Math.random() - 0.5) * 0.2);
-      const cg = Math.min(1.0, color[1] + (Math.random() - 0.5) * 0.2);
-      const cb = Math.min(1.0, color[2] + (Math.random() - 0.5) * 0.2);
-      this.spawnParticle(x, y, z, vx, vy, vz, size, life, cr, cg, cb);
-    }
-    // Billboard: 一闪而过的撞击光晕（朝相机），跟武器染色一致
-    const colorHex = ((Math.round(color[0] * 255) << 16) | (Math.round(color[1] * 255) << 8) | Math.round(color[2] * 255)) >>> 0;
-    this.billboardPool.spawn({
-      texture: 'muzzle',
-      x, y, z,
-      scale: 1.6,
-      endScale: 2.4,
-      lifetime: 0.18,
-      opacityCurve: 'flash',
-      opacity: 1.0,
-      color: colorHex,
-      rotation: Math.random() * Math.PI * 2,
-    });
-  }
-
-  private emitDeathBurst(x: number, y: number, z: number, _enemyType: string): void {
-    // 极简死亡爆点：稀疏粒子、超短寿命、近距扩散，避免叠加产生半透糊感
-    const count = 5 + Math.floor(Math.random() * 3);    // 5–7（原 12–15）
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const elevation = (Math.random() - 0.3) * Math.PI;
-      const speed = 2 + Math.random() * 1.5;            // 2–3.5（原 3–6）
-      const vx = Math.cos(angle) * Math.cos(elevation) * speed;
-      const vy = Math.abs(Math.sin(elevation)) * speed + 1.5;
-      const vz = Math.sin(angle) * Math.cos(elevation) * speed;
-      const size = 2.2 + Math.random() * 1.3;           // 2.2–3.5（原 2.4–4.2）
-      const life = 0.14 + Math.random() * 0.1;          // 0.14–0.24s（原 0.25–0.45s）
-      // Red/orange death particles
-      const r = 0.8 + Math.random() * 0.2;
-      const g = 0.2 + Math.random() * 0.4;
-      const b = Math.random() * 0.15;
-      this.spawnParticle(x, y + 0.5, z, vx, vy, vz, size, life, r, g, b);
-    }
-    // Billboard: 一团短命烟雾 + 地面烧痕，让死亡有"实体痕迹"
-    this.billboardPool.spawn({
-      texture: 'smoke',
-      x, y: y + 0.6, z,
-      scale: 1.2,
-      endScale: 2.4,
-      lifetime: 0.5,
-      opacityCurve: 'fadeOut',
-      opacity: 0.7,
-      color: 0x553322,
-      rotation: Math.random() * Math.PI * 2,
-      blending: 'normal',
-    });
-    this.billboardPool.spawn({
-      texture: 'scorch',
-      x, y: y + 0.05, z,
-      scale: 1.4,
-      endScale: 1.8,
-      lifetime: 1.5,
-      opacityCurve: 'fadeOut',
-      opacity: 0.55,
-      color: 0x000000,
-      facing: 'up',
-      rotation: Math.random() * Math.PI * 2,
-      blending: 'normal',
-    });
-  }
-
-  private emitPickupSparkle(x: number, y: number, z: number, pickupType: string): void {
-    const color = GameScene.PICKUP_VFX_COLORS[pickupType] ?? [0.5, 1.0, 0.5];
-    const count = 3 + Math.floor(Math.random() * 3);
-    for (let i = 0; i < count; i++) {
-      const vx = (Math.random() - 0.5) * 1.5;
-      const vy = 2 + Math.random() * 2;
-      const vz = (Math.random() - 0.5) * 1.5;
-      const size = 0.2 + Math.random() * 0.3;
-      const life = 0.3 + Math.random() * 0.3;
-      this.spawnParticle(x, y, z, vx, vy, vz, size, life, color[0], color[1], color[2]);
-    }
-    // Billboard: 一颗小星星，金色拾取仪式感
-    const colorHex = ((Math.round(color[0] * 255) << 16) | (Math.round(color[1] * 255) << 8) | Math.round(color[2] * 255)) >>> 0;
-    this.billboardPool.spawn({
-      texture: 'star',
-      x, y: y + 0.3, z,
-      scale: 0.5,
-      endScale: 1.0,
-      lifetime: 0.35,
-      opacityCurve: 'flash',
-      opacity: 0.85,
-      color: colorHex,
-      rotationSpeed: 6.0,
-    });
-  }
-
-  private emitLevelUpBurst(x: number, y: number, z: number): void {
-    this.emitCompensationBurst(x, y, z, 'gold');
-  }
-
-  /** 空池升级补偿粒子：金币金黄、银币蓝白。 */
-  private emitCompensationBurst(x: number, y: number, z: number, kind: 'gold' | 'silver'): void {
-    const count = kind === 'silver' ? 36 : 30;
-    for (let i = 0; i < count; i++) {
-      const angle = (i / count) * Math.PI * 2;
-      const speed = 3 + Math.random() * 2.5;
-      const vx = Math.cos(angle) * speed;
-      const vy = 1.8 + Math.random() * 2;
-      const vz = Math.sin(angle) * speed;
-      const size = 0.55 + Math.random() * 0.55;
-      const life = 0.65 + Math.random() * 0.45;
-      let r: number, g: number, b: number;
-      if (kind === 'silver') {
-        r = 0.75 + Math.random() * 0.2;
-        g = 0.85 + Math.random() * 0.15;
-        b = 1.0;
-      } else {
-        r = 1.0;
-        g = 0.8 + Math.random() * 0.2;
-        b = 0.1 + Math.random() * 0.2;
-      }
-      this.spawnParticle(x, y + 0.5, z, vx, vy, vz, size, life, r, g, b);
-    }
-    // 中心星光 + 光柱（与正常升级类似的仪式感，颜色按奖励类型区分）
-    const color = kind === 'silver' ? 0xaaccff : 0xffd866;
-    this.billboardPool.spawn({
-      texture: 'star',
-      x, y: y + 1.4, z,
-      scale: 1.2,
-      endScale: 4.0,
-      lifetime: 0.65,
-      opacityCurve: 'flash',
-      opacity: 1.0,
-      color,
-      rotationSpeed: 5.0,
-    });
-    this.billboardPool.spawn({
-      texture: 'light',
-      x, y: y + 0.4, z,
-      scale: 1.8,
-      endScale: 3.2,
-      lifetime: 0.75,
-      opacityCurve: 'fadeOut',
-      opacity: 0.8,
-      color: kind === 'silver' ? 0xccdfff : 0xffe080,
-    });
-  }
+  // 粒子 / billboard 通用 emit 已迁出至 vfx/ParticlePool.ts；
+  // 这里只保留 HUD（screen flash / 顶栏徽章 / 浮字）耦合的入口。
 
   private playCompensationLevelUpFx(evt: LevelUpCompensationEvent): void {
     this.levelUpAnimTimer = 0.45;
     this.levelCompPulseTimer = 0.9;
-    this.emitCompensationBurst(evt.x, evt.y, evt.z, evt.kind);
+    this.particlePool.emitCompensationBurst(evt.x, evt.y, evt.z, evt.kind);
     this.triggerScreenFlash(evt.kind === 'silver' ? '#8899ff' : '#ffcc00', 0.22);
     this.spawnCompensationFloatText(evt);
     this.showCompensationToast(evt);
@@ -7293,7 +6722,7 @@ export class GameScene {
   }
 
   private playChestOpenFx(evt: ChestOpenEvent): void {
-    this.emitCompensationBurst(evt.x, evt.y, evt.z, 'gold');
+    this.particlePool.emitCompensationBurst(evt.x, evt.y, evt.z, 'gold');
     this.triggerScreenFlash(RARITY_COLORS[evt.rarity] ?? '#ffcc00', 0.18);
     if (this.goldLabel) {
       this.goldLabel.style.transition = 'transform 0.15s';
@@ -7522,25 +6951,6 @@ export class GameScene {
     gsapAnimations.showToast(toast, 1.2);
   }
 
-  private emitFlameRingParticles(x: number, y: number, z: number, radius: number): void {
-    const count = 2 + Math.floor(Math.random() * 2);
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const px = x + Math.cos(angle) * radius;
-      const pz = z + Math.sin(angle) * radius;
-      const vx = (Math.random() - 0.5) * 0.5;
-      const vy = 1 + Math.random() * 1.5;
-      const vz = (Math.random() - 0.5) * 0.5;
-      const size = 0.2 + Math.random() * 0.2;
-      const life = 0.2 + Math.random() * 0.2;
-      // Orange-red fire
-      const r = 1.0;
-      const g = 0.3 + Math.random() * 0.3;
-      const b = Math.random() * 0.1;
-      this.spawnParticle(px, y + 0.3, pz, vx, vy, vz, size, life, r, g, b);
-    }
-  }
-
   private createReadableChestObject(): THREE.Object3D {
     const group = new THREE.Group();
 
@@ -7678,7 +7088,7 @@ export class GameScene {
         } else {
           // 已选完（pendingChestReward 已清空）：移除并撒金色粒子。
           this.removeChestObject(chest.id);
-          this.spawnPickupBurst(chest.x, (chest.y ?? 0) + 0.6, chest.z, 0xffdd00);
+          this.particlePool.spawnPickupBurst(chest.x, (chest.y ?? 0) + 0.6, chest.z, 0xffdd00);
           continue;
         }
       } else {
@@ -8077,23 +7487,6 @@ export class GameScene {
     this.syncInGameTouchControlsEnabled();
   }
 
-  private spawnPickupBurst(x: number, y: number, z: number, color: number): void {
-    const c = new THREE.Color(color);
-    for (let i = 0; i < 8; i++) {
-      const p = this.vfxParticles.find(pp => !pp.active);
-      if (!p) break;
-      p.active = true;
-      p.x = x; p.y = y; p.z = z;
-      p.vx = (Math.random() - 0.5) * 3;
-      p.vy = 2 + Math.random() * 3;
-      p.vz = (Math.random() - 0.5) * 3;
-      p.r = c.r; p.g = c.g; p.b = c.b;
-      p.size = 3 + Math.random() * 2;
-      p.life = 0.8;
-      p.maxLife = 0.8;
-    }
-  }
-
   /**
    * 渲染区域特效（毒气云 / 虚空涟漪 / 灼地痕迹 / 激光线）。
    * 按 id 维护 Mesh，新增即创建、消失即移除，每帧更新位置 / 半径 / 透明度。
@@ -8169,7 +7562,7 @@ export class GameScene {
           if (state.tick % 3 === 0) {
             const a = Math.random() * Math.PI * 2;
             const r = Math.random() * ae.radius;
-            this.spawnParticle(
+            this.particlePool.spawn(
               ae.x + Math.cos(a) * r, ae.y + 0.3 + Math.random() * 0.8, ae.z + Math.sin(a) * r,
               0, 0.3 + Math.random() * 0.4, 0,
               0.5, 0.5, 0.25, 0.7, 0.12,
@@ -8382,7 +7775,7 @@ export class GameScene {
       if (e.hp <= 0) continue;
       if ((e.poisonTimer ?? 0) > 0 && state.tick % 4 === 0) {
         const a = Math.random() * Math.PI * 2;
-        this.spawnParticle(
+        this.particlePool.spawn(
           e.x + Math.cos(a) * 0.4, e.y + 0.6 + Math.random() * 0.6, e.z + Math.sin(a) * 0.4,
           0, 0.4 + Math.random() * 0.4, 0,
           0.4, 0.45, 0.3, 0.85, 0.2,
@@ -8390,7 +7783,7 @@ export class GameScene {
       }
       if ((e.slowTimer ?? 0) > 0 && state.tick % 5 === 0) {
         const a = Math.random() * Math.PI * 2;
-        this.spawnParticle(
+        this.particlePool.spawn(
           e.x + Math.cos(a) * 0.5, e.y + 0.8 + Math.random() * 0.5, e.z + Math.sin(a) * 0.5,
           (Math.random() - 0.5) * 1.2, 0.6, (Math.random() - 0.5) * 1.2,
           0.4, 0.18, 1.0, 0.85, 0.1,
@@ -8496,7 +7889,7 @@ export class GameScene {
         });
         this.arcaneBurstOrbs.push({ sprite, from, to, t: 0, life: 0.42 });
       } else if (evt.kind === 'ember_explode') {
-        this.emitEmberExplosion(evt.x, evt.y, evt.z);
+        this.particlePool.emitEmberExplosion(evt.x, evt.y, evt.z);
       }
     }
   }
@@ -8521,7 +7914,7 @@ export class GameScene {
         const tx = orb.from.x + (orb.to.x - orb.from.x) * kk + (Math.random() - 0.5) * 0.25;
         const ty = orb.from.y + (orb.to.y - orb.from.y) * kk + Math.sin(kk * Math.PI) * 0.8 + (Math.random() - 0.5) * 0.25;
         const tz = orb.from.z + (orb.to.z - orb.from.z) * kk + (Math.random() - 0.5) * 0.25;
-        this.spawnParticle(
+        this.particlePool.spawn(
           tx, ty, tz,
           (Math.random() - 0.5) * 0.6, (Math.random() - 0.3) * 0.6, (Math.random() - 0.5) * 0.6,
           1.4 + Math.random() * 0.8, 0.3 + Math.random() * 0.2,
@@ -8543,73 +7936,12 @@ export class GameScene {
       });
 
       if (k >= 1) {
-        this.emitArcaneSmoke(orb.to.x, orb.to.y, orb.to.z);
+        this.particlePool.emitArcaneSmoke(orb.to.x, orb.to.y, orb.to.z);
         this.scene.remove(orb.sprite);
         orb.sprite.material.dispose(); // 贴图为共享缓存，不 dispose
         this.arcaneBurstOrbs.splice(i, 1);
       }
     }
-  }
-
-  /** 蓝紫色范围烟雾（奥秘爆发命中点）。 */
-  private emitArcaneSmoke(x: number, y: number, z: number): void {
-    for (let i = 0; i < 18; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const sp = 2.2 + Math.random() * 3.0;
-      this.spawnParticle(
-        x, y, z,
-        Math.cos(a) * sp, 0.6 + Math.random() * 2.2, Math.sin(a) * sp,
-        2.6 + Math.random() * 1.8, 0.45 + Math.random() * 0.35,
-        0.55 + Math.random() * 0.2, 0.4 + Math.random() * 0.2, 0.98,
-      );
-    }
-    // 命中爆闪（朝相机，强对比强调命中）
-    this.billboardPool.spawn({
-      texture: 'muzzle', x, y, z, scale: 2.0, endScale: 3.6, lifetime: 0.22,
-      opacityCurve: 'flash', opacity: 1.0, color: 0xc8a0ff,
-      rotation: Math.random() * Math.PI * 2, blending: 'additive',
-    });
-    this.billboardPool.spawn({
-      texture: 'light', x, y, z, scale: 2.8, endScale: 5.0, lifetime: 0.28,
-      opacityCurve: 'flash', opacity: 0.9, color: 0x8b7cff,
-      rotation: Math.random() * Math.PI * 2, blending: 'additive',
-    });
-    // 蓝紫扩散烟团
-    this.billboardPool.spawn({
-      texture: 'smoke', x, y, z, scale: 2.0, endScale: 4.4, lifetime: 0.6,
-      opacityCurve: 'fadeOut', opacity: 0.8, color: 0x8a5cff,
-      rotation: Math.random() * Math.PI * 2, blending: 'additive',
-    });
-    // 地面蓝紫光环
-    this.billboardPool.spawn({
-      texture: 'scorch', x, y: y - 1.0 + 0.06, z, scale: 1.6, endScale: 3.0, lifetime: 0.45,
-      opacityCurve: 'fadeOut', opacity: 0.6, color: 0x6a4cff,
-      facing: 'up', rotation: Math.random() * Math.PI * 2, blending: 'additive',
-    });
-    this.billboardPool.spawn({
-      texture: 'magic_circle', x, y: y - 1.0 + 0.08, z, scale: 1.2, endScale: 3.4, lifetime: 0.5,
-      opacityCurve: 'fadeOut', opacity: 0.5, color: 0xb16dff,
-      facing: 'up', rotation: Math.random() * Math.PI * 2, blending: 'additive',
-    });
-  }
-
-  /** 红色爆炸烟雾（余烬羁绊敌人爆炸）。 */
-  private emitEmberExplosion(x: number, y: number, z: number): void {
-    for (let i = 0; i < 8; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const sp = 2 + Math.random() * 2.5;
-      this.spawnParticle(
-        x, y, z,
-        Math.cos(a) * sp, 0.8 + Math.random() * 1.8, Math.sin(a) * sp,
-        2.4 + Math.random() * 1.5, 0.3 + Math.random() * 0.25,
-        0.95, 0.25 + Math.random() * 0.2, 0.12,
-      );
-    }
-    this.billboardPool.spawn({
-      texture: 'smoke', x, y, z, scale: 1.8, endScale: 3.6, lifetime: 0.55,
-      opacityCurve: 'fadeOut', opacity: 0.8, color: 0xcc2a1a,
-      rotation: Math.random() * Math.PI * 2, blending: 'normal',
-    });
   }
 
   private updateVFX(state: GameState, dt: number, eventsFresh = true): void {
@@ -8636,17 +7968,17 @@ export class GameScene {
       );
 
       if (isDeath) {
-        this.emitDeathBurst(event.x, event.y - 1.0, event.z, 'generic');
+        this.particlePool.emitDeathBurst(event.x, event.y - 1.0, event.z, 'generic');
       } else {
         // Prefer the event's source weapon for spark color; fall back to first equipped weapon
         const weaponType = event.weaponType
           ?? (player.weapons.length > 0 ? player.weapons[0].type : 'sword');
-        this.emitHitSparks(event.x, event.y + 0.5, event.z, weaponType);
+        this.particlePool.emitHitSparks(event.x, event.y + 0.5, event.z, weaponType);
       }
 
       // Lightning staff: drop a column at each strike
       if (event.weaponType === 'lightning_staff') {
-        this.spawnLightningBolt(event.x, event.y - 1.0, event.z);
+        this.weaponTransientVfx.spawnLightningBolt(event.x, event.y - 1.0, event.z);
       }
     }
     }
@@ -8661,30 +7993,18 @@ export class GameScene {
         const idx = Math.max(0, Math.min(weapon.level - 1, table.length - 1));
         flameRingRadius = table[idx]?.aoeRadius ?? 3.5;
         // 火焰粒子沿真实判定边界喷出，而非固定 2.5。
-        this.emitFlameRingParticles(player.x, player.y, player.z, flameRingRadius);
+        this.particlePool.emitFlameRingParticles(player.x, player.y, player.z, flameRingRadius);
         hasFlameRing = true;
       }
     }
 
-    // Flame ring persistent decal (lazy-create + follow player)
-    if (hasFlameRing && player.alive) {
-      const disk = this.ensureFlameRingDisk();
-      disk.visible = true;
-      disk.position.set(player.x, player.y + 0.05, player.z);
-      this.flameRingTime += dt;
-      // 光晕外缘对齐到实际 aoeRadius 边界：plane 边长 = 2 * radius / tipNorm。
-      const breathe = 1 + Math.sin(this.flameRingTime * 4) * 0.04;
-      const size = (flameRingRadius * 2 / GameScene.FLAME_AURA_TIP_NORM) * breathe;
-      // 满不透明发光、缓慢自转，作为范围边界提示。
-      const star = this.flameRingLayers[0];
-      if (star) {
-        star.scale.set(size, size, 1);
-        star.rotation.z = this.flameRingTime * 0.6;
-        (star.material as THREE.MeshBasicMaterial).opacity = 1;
-      }
-    } else if (this.flameRingDisk) {
-      this.flameRingDisk.visible = false;
-    }
+    // Flame ring persistent decal (lazy-create + follow player) → WeaponTransientVfx 内部处理。
+    this.weaponTransientVfx.updateFlameRing(
+      hasFlameRing && player.alive,
+      flameRingRadius,
+      player.x, player.y, player.z,
+      dt,
+    );
 
     // === Weapon Trail VFX (#12) ===
     // Projectile trails for player weapons
@@ -8693,10 +8013,10 @@ export class GameScene {
 
       // Other player projectiles: short trail dot every 2 ticks
       if (state.tick % 2 === 0) {
-        const color = GameScene.WEAPON_VFX_COLORS[proj.weaponType] ?? [1, 1, 1];
+        const color = WEAPON_VFX_COLORS[proj.weaponType] ?? [1, 1, 1];
         // Shotgun: brighter, larger trail to read as buckshot
         const isShotgun = proj.weaponType === 'shotgun';
-        this.spawnParticle(
+        this.particlePool.spawn(
           proj.x, proj.y, proj.z,
           0, 0, 0,
           isShotgun ? 0.6 : 0.4,
@@ -8738,7 +8058,7 @@ export class GameScene {
         const swipeCount = Math.max(1, Math.round(swordStats.projectileCount));
         for (let s = 0; s < swipeCount; s++) {
           const sweepAngle = slashAngle + (s - (swipeCount - 1) / 2) * 0.3;
-          this.spawnSlashSector(player.x, player.y + 0.05, player.z, sweepAngle, swordRange);
+          this.weaponTransientVfx.spawnSlashSector(player.x, player.y + 0.05, player.z, sweepAngle, swordRange);
         }
 
         // 12 lightweight particles streaking along the arc for extra punch
@@ -8747,7 +8067,7 @@ export class GameScene {
           const dist = 1.5 + Math.random() * 0.6;
           const px = player.x + Math.sin(arcAngle) * dist;
           const pz = player.z + Math.cos(arcAngle) * dist;
-          this.spawnParticle(
+          this.particlePool.spawn(
             px, player.y + 1.0, pz,
             Math.sin(arcAngle) * 1.8, 0.8 + Math.random() * 0.6, Math.cos(arcAngle) * 1.8,
             0.5,
@@ -8761,53 +8081,10 @@ export class GameScene {
     }
 
     // Drive transient mesh effects (slash arcs, lightning bolts)
-    this.updateTransientEffects(dt);
+    this.weaponTransientVfx.updateTransient(dt, this.camera);
 
-    // --- Update particle physics ---
-    const positions = this.vfxGeometry.attributes.position as THREE.BufferAttribute;
-    const sizes = this.vfxGeometry.attributes.aSize as THREE.BufferAttribute;
-    const lifes = this.vfxGeometry.attributes.aLife as THREE.BufferAttribute;
-    const colors = this.vfxGeometry.attributes.aColor as THREE.BufferAttribute;
-
-    let activeCount = 0;
-    for (let i = 0; i < this.MAX_PARTICLES; i++) {
-      const p = this.vfxParticles[i];
-      if (!p.active) continue;
-
-      p.life -= dt;
-      if (p.life <= 0) {
-        p.active = false;
-        continue;
-      }
-
-      // Update position
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.z += p.vz * dt;
-      p.vy -= 3.0 * dt; // slight gravity
-
-      // Write to buffers
-      const lifeRatio = p.life / p.maxLife;
-      positions.setXYZ(activeCount, p.x, p.y, p.z);
-      sizes.setX(activeCount, p.size * lifeRatio);
-      lifes.setX(activeCount, lifeRatio);
-      colors.setXYZ(activeCount, p.r, p.g, p.b);
-      activeCount++;
-    }
-
-    // Fill rest with invisible positions
-    for (let i = activeCount; i < this.MAX_PARTICLES; i++) {
-      positions.setXYZ(i, 0, -100, 0);
-      sizes.setX(i, 0);
-      lifes.setX(i, 0);
-      colors.setXYZ(i, 0, 0, 0);
-    }
-
-    positions.needsUpdate = true;
-    sizes.needsUpdate = true;
-    lifes.needsUpdate = true;
-    colors.needsUpdate = true;
-    this.vfxGeometry.setDrawRange(0, activeCount);
+    // --- Particle physics → ParticlePool ---
+    this.particlePool.update(dt);
   }
 
   private updateCamera(state: GameState): void {

@@ -8,20 +8,20 @@
  *
  * 数学等价于 fireBow，由 `__tests__/parity.test.ts` 锁定。
  */
-import { normalizeDirection } from '../physics.ts';
+import { normalizeDirection } from '../helpers/physics.ts';
 import { computeWeaponDamage } from '../stats/index.ts';
 import { AOE_MAX_Y_DELTA } from '../config.ts';
-import { playerProjectileY } from '../combatHeight.ts';
-import { findNearestEnemy } from './queries.ts';
+import { playerProjectileY } from '../helpers/combatHeight.ts';
+import { findNearestTarget } from './queries.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
 
 export function forwardArrow(_world: GameWorld, ctx: BehaviorContext): void {
-  const { player, enemies, def, stats, effects } = ctx;
+  const { player, enemies, boss, def, stats, effects } = ctx;
   const count = stats.projectileCount;
 
   for (let i = 0; i < count; i++) {
-    const target = findNearestEnemy(player.x, player.z, enemies, stats.range, player.y, AOE_MAX_Y_DELTA);
+    const target = findNearestTarget(player.x, player.z, enemies, boss, stats.range, player.y, AOE_MAX_Y_DELTA);
     let vx: number, vz: number;
     if (target && i === 0) {
       const dir = normalizeDirection(target.x - player.x, target.z - player.z);

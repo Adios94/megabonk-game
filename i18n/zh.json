@@ -2,6 +2,9 @@
   "game": {
     "title": "梆了个梆"
   },
+  "boot": {
+    "loading": "加载中…"
+  },
   "menu": {
     "start": "开始游戏",
     "shop": "商店",
@@ -94,10 +97,10 @@
     "silver": "银币: {{count}}",
     "finalSwarm": "最终狂潮！",
     "combo": "连击 x{{count}}",
-    "quest": "找到祭坛，召唤并击败BOSS！",
+    "quest": "找到飞碟，召唤并击败BOSS！",
     "weaponSlotLocked": "完成「装备 7 把不同武器」任务后解锁",
     "compass": {
-      "altar": "祭坛",
+      "altar": "飞碟",
       "portal": "传送门"
     }
   },
@@ -404,7 +407,7 @@
   },
   "altar": {
     "summoning": "正在召唤 Boss...",
-    "cooldown": "祭坛冷却中 {{seconds}}s",
+    "cooldown": "飞碟冷却中 {{seconds}}s",
     "prompt": {
       "summon": "[E] 召唤 Boss",
       "enterPortal": "[E] 进入传送门"
@@ -420,7 +423,80 @@
   "chest": {
     "rewardTitle": "宝箱遗物",
     "discard": "丢弃",
-    "keep": "留下"
+    "keep": "留下",
+    "bossFreeOpen": "Boss 宝箱 · 免费开启",
+    "cost": "消耗 {{cost}} 金币",
+    "prompt": {
+      "openBoss": "开启 Boss 宝箱",
+      "openBossKey": "[E] 开启 Boss 宝箱",
+      "open": "开启宝箱 {{cost}}",
+      "openKey": "[E] 开启宝箱 - {{cost}} 金币",
+      "needGold": "金币不足 {{have}}/{{need}}"
+    }
+  },
+  "relic": {
+    "keen_lens": {
+      "name": "锐眼透镜",
+      "desc": "暴击率 +3%"
+    },
+    "small_shield_charm": {
+      "name": "小盾护符",
+      "desc": "护盾值 +2，最大护盾值 +5"
+    },
+    "blood_fang": {
+      "name": "嗜血牙",
+      "desc": "击杀回 2 HP（精英 +3）"
+    },
+    "pact_coin": {
+      "name": "契约硬币",
+      "desc": "击杀敌人额外 +1 金币"
+    },
+    "arsenal_badge": {
+      "name": "武库徽章",
+      "desc": "每把 Lv10 武器全局伤害 +4%"
+    },
+    "elite_writ": {
+      "name": "精英猎令",
+      "desc": "对精英伤害 +10%"
+    },
+    "regen_core": {
+      "name": "再生核心",
+      "desc": "生命恢复 +0.5/s"
+    },
+    "magazine_expander": {
+      "name": "弹匣扩槽",
+      "desc": "投射物 +1"
+    },
+    "hourglass": {
+      "name": "时间沙漏",
+      "desc": "Overtime 内全伤 +0.12%/s（按层累加）"
+    },
+    "iron_heart": {
+      "name": "铁心",
+      "desc": "最大生命 +12%；护甲 +2"
+    },
+    "stat": {
+      "shield": "护盾值",
+      "maxShield": "最大护盾",
+      "killHeal": "击杀回复",
+      "eliteKillHeal": "精英击杀回复",
+      "killGold": "击杀金币",
+      "perLv10Weapon": "每把 Lv10 武器",
+      "perLv10WeaponValue": "{{pct}} 伤害",
+      "currentTotalDamage": "当前总伤害",
+      "eliteDamage": "对精英伤害",
+      "lifeRegen": "生命恢复",
+      "overtimePerSec": "Overtime 每秒全伤",
+      "currentOvertime": "当前全伤"
+    }
+  },
+  "tooltip": {
+    "tome": {
+      "subtitle": "Lv.{{level}}/{{max}} · 强度 {{power}}"
+    },
+    "weapon": {
+      "cooldownLabel": "剩余冷却"
+    }
   },
   "shrine": {
     "title": "充能神殿奖励",
@@ -428,7 +504,7 @@
     "indicator_charging": "充能中... {{percent}}%",
     "rarity": {
       "common": "普通",
-      "uncommon": "罕见",
+      "uncommon": "优秀",
       "rare": "稀有",
       "legendary": "传说"
     },
@@ -479,6 +555,14 @@
     "mvp": "MVP",
     "weaponKills": "{{count}}杀",
     "weaponDamage": "{{damage}}伤害",
+    "gameOverTitle": "游戏结束",
+    "confirm": "确定",
+    "silverSuffix": "银币！",
+    "damageTitle": "伤害统计",
+    "colSource": "伤害来源",
+    "colLevel": "等级",
+    "colDamage": "伤害",
+    "colKills": "击杀数",
     "retry": "再来一次",
     "menu": "返回菜单"
   },

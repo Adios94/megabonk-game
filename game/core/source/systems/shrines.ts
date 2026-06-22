@@ -4,7 +4,7 @@
  * 状态机:
  *   inactive   -- 仅占位，目前不会出现 (生成时直接 charging)
  *   charging   -- 玩家在 SHRINE_RADIUS 内累计 chargeTimer
- *                 玩家离开 → chargeTimer 立刻归零 (megabonk 设计：必须连续站满)
+ *                 玩家离开 → chargeTimer 按 SHRINE_CHARGE_DECAY_RATE 缓慢回落（非立刻归零）
  *                 chargeTimer >= chargeDuration → ready
  *   ready      -- 4 个 reward option roll 出, GameState.phase = 'shrine_reward',
  *                 activeShrineId 锁定本 shrine
@@ -13,17 +13,18 @@
  * 同一时间只允许有一个 ready/active 的 shrine（避免 phase 冲突）。
  * 当 phase = 'shrine_reward' 时，主循环跳过其它 system（与 level_up 同处理）。
  */
-import { distanceBetween } from '../physics.ts';
+import { distanceBetween } from '../helpers/physics.ts';
 import {
   SHRINE_COUNT,
   SHRINE_RADIUS,
   SHRINE_CHARGE_DURATION,
+  SHRINE_CHARGE_DECAY_RATE,
   SHRINE_REWARD_COUNT,
   STEP_HEIGHT,
 } from '../config.ts';
 import { rollShrineOptions } from '../data/shrineRewards.ts';
-import { getTerrainHeightAt, isBlockedHorizontallyAt, type LevelGeometry } from './collision.ts';
-import { selectShrineMarkerPoints } from '../levelMarkerSelection.ts';
+import { getTerrainHeightAt, isBlockedHorizontallyAt, type LevelGeometry } from './levelGeometry.ts';
+import { selectShrineMarkerPoints } from '../helpers/levelMarkerSelection.ts';
 import type { ShrineState, GameConfig, PlayerState } from '../types.ts';
 import type { Engine } from './types.ts';
 
@@ -150,7 +151,7 @@ export function generateShrines(config: GameConfig, geo?: LevelGeometry): Shrine
 /**
  * 每帧 tick:
  *   - 玩家在范围内: chargeTimer += dt
- *   - 离开范围: chargeTimer 立即归零（必须连续充能）
+ *   - 离开范围: chargeTimer 按 SHRINE_CHARGE_DECAY_RATE 缓慢回落（归零前可重新进入续充）
  *   - 充满: phase=ready, roll 4 options, 进入 shrine_reward phase（占用主循环）
  *
  * 注意：
@@ -181,8 +182,10 @@ export function tickShrines(engine: Engine, dt: number): void {
         // 否则保留在 chargeTimer = chargeDuration，下一帧再检查（队列等待）
       }
     } else {
-      // 玩家离开 → 立即归零 (megabonk 设计)
-      if (shrine.chargeTimer > 0) shrine.chargeTimer = 0;
+      // 玩家离开 → 进度按 SHRINE_CHARGE_DECAY_RATE 缓慢回落（不立刻归零）
+      if (shrine.chargeTimer > 0) {
+        shrine.chargeTimer = Math.max(0, shrine.chargeTimer - dt * SHRINE_CHARGE_DECAY_RATE);
+      }
     }
   }
 }

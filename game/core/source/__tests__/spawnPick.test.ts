@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { pickRandomOne, pickRandomSubset } from '../spawnPick.ts';
+import { pickRandomOne, pickRandomSubset } from '../factories/spawnPick.ts';
 
 describe('spawnPick', () => {
   beforeEach(() => vi.spyOn(Math, 'random').mockReturnValue(0.5));

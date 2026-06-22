@@ -3,14 +3,14 @@
   "hooks": {
     "preToolUse": [
       {
-        "command": ".cursor/hooks/guard-contract.sh",
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/guard-contract.ps1",
         "matcher": "Write|StrReplace",
         "timeout": 10
       }
     ],
     "sessionStart": [
       {
-        "command": ".cursor/hooks/check-trunk-sync.sh",
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/check-trunk-sync.ps1",
         "timeout": 8
       }
     ]

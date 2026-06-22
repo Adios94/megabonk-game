@@ -12,8 +12,8 @@
  * 不处理碰撞 —— 那是 collisions.ts 的事。
  */
 import { TICK_INTERVAL_MS } from '../config.ts';
-import { updateOrbitingProjectile } from '../weapons.ts';
-import { getTerrainHeightAt, isProjectileBlockedAt } from './collision.ts';
+import { updateOrbitingProjectile } from '../helpers/projectileMath.ts';
+import { getTerrainHeightAt, isProjectileBlockedAt } from './levelGeometry.ts';
 import type { ProjectileState } from '../types.ts';
 import type { Engine } from './types.ts';
 

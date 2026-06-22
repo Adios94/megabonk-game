@@ -14,7 +14,7 @@
  *
  * 定位：慢、肉、范围大，强迫玩家持续走位躲炮击与冲击波。
  */
-import { distanceBetween } from '../../physics.ts';
+import { distanceBetween } from '../../helpers/physics.ts';
 import { MAX_ENEMIES } from '../../config.ts';
 import { ENEMIES } from '../../data/enemies.ts';
 import type { BossState } from '../../types.ts';

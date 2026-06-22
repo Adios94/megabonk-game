@@ -4,7 +4,7 @@
  * 验证 4 层平台几何 + 斜坡过渡 + max 取代叠加。
  */
 import { describe, it, expect } from 'vitest';
-import { getTerrainHeightAt, NEON_CRUCIBLE_GEOMETRY } from '../collision.ts';
+import { getTerrainHeightAt, NEON_CRUCIBLE_GEOMETRY } from '../levelGeometry.ts';
 
 // 旧 terrain.getTerrainHeight 已删除（deprecated shim）；改用 collision 的显式几何查询，
 // 固定查询内置 Neon Crucible，保留原有地形高度覆盖。

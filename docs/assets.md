@@ -140,7 +140,7 @@
 | `scorch.png` | 死亡烧痕（地面贴花） | 怪物死亡，持续 1.5s |
 | `star.png` | 星光 | 升级 burst、拾取 sparkle |
 | `light.png` | 光环 | 升级 burst |
-| `magic_circle.png` | 旋转魔法圆 | 祭坛 ready / summoning 阶段地面 decal |
+| `magic_circle.png` | 旋转魔法圆 | 飞碟 ready / summoning 阶段地面 decal |
 | `portal_swirl.png` | 紫色漩涡 | Boss 死亡后传送门（portal_ready） |
 | `dirt.png` | 尘土（预留） | 落地踢起灰尘等场景，待接入 |
 | `flame.png` | 火焰（预留） | flame_ring 武器升级特效，待接入 |

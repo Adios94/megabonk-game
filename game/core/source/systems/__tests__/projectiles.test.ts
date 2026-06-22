@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { tickProjectiles } from '../projectiles.ts';
 import { makeEngine } from './_fixtures.ts';
-import { makeLevelGeometry } from '../collision.ts';
+import { makeLevelGeometry } from '../levelGeometry.ts';
 import type { ProjectileState } from '../../types.ts';
 
 function makeProj(overrides: Partial<ProjectileState> = {}): ProjectileState {

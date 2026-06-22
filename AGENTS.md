@@ -13,7 +13,7 @@
 
 1. 框架契约（`docs/contract.md`）—— 最高，违反必被阻断
 2. `CLAUDE.md` —— 项目结构与改动检查清单
-3. `KUBEE.md` —— 模板背景（参考）
+3. `docs/kubee-template.md` —— 模板背景（参考）
 4. `CONTRIBUTING.md` —— 协作流程
 
 ## 自检命令

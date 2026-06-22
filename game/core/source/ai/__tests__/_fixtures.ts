@@ -13,7 +13,7 @@ import type {
   BossState,
 } from '../../types.ts';
 import type { AiContext, AiEffects } from '../types.ts';
-import { NEON_CRUCIBLE_GEOMETRY } from '../../systems/collision.ts';
+import { NEON_CRUCIBLE_GEOMETRY } from '../../systems/levelGeometry.ts';
 
 export function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {
   return {

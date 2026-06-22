@@ -9,7 +9,7 @@
  */
 import type { PlayerState, EnemyState, BossState, EnemyType } from '../types.ts';
 import type { BehaviorEffects } from '../behaviors/types.ts';
-import type { LevelGeometry } from '../systems/collision.ts';
+import type { LevelGeometry } from '../systems/levelGeometry.ts';
 
 export interface AiEffects extends BehaviorEffects {
   /**

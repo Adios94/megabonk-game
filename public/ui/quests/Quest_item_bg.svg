@@ -1,0 +1,29 @@
+<svg width="10019" height="1301" viewBox="0 0 10019 1301" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<rect y="87" width="10019" height="1214" rx="92" fill="#8B8B8B" fill-opacity="0.3"/>
+<rect x="32.5" y="13.5" width="9954" height="1241" rx="105.5" fill="url(#paint0_linear_55_26)"/>
+<rect x="32.5" y="13.5" width="9954" height="1241" rx="105.5" fill="url(#pattern0_55_26)" fill-opacity="0.2"/>
+<rect x="32.5" y="13.5" width="9954" height="1241" rx="105.5" stroke="black" stroke-width="27"/>
+<path d="M46 1070C46 1070 3911.55 1240.21 6416.82 1201.51C8089.36 1175.68 9973 1070 9973 1070V1149C9973 1199.81 9931.81 1241 9881 1241H138C87.1895 1241 46 1199.81 46 1149V1070Z" fill="#44A1F4"/>
+<rect x="61" y="42" width="9897" height="1184" rx="77" stroke="url(#paint2_linear_55_26)" stroke-width="30"/>
+<defs>
+<linearGradient id="paint0_linear_55_26" x1="5009.5" y1="27" x2="5009.5" y2="1241" gradientUnits="userSpaceOnUse">
+<stop stop-color="#2983FE"/>
+<stop offset="1" stop-color="#57B6FC"/>
+</linearGradient>
+<linearGradient id="paint2_linear_55_26" x1="5009.5" y1="27" x2="5009.5" y2="1241" gradientUnits="userSpaceOnUse">
+<stop stop-color="#89C3FC"/>
+<stop offset="1" stop-color="#5CA5FA"/>
+</linearGradient>
+<pattern id="pattern0_55_26" patternUnits="userSpaceOnUse" patternTransform="matrix(1496.68 0 0 748.339 4786.78 411.28)" preserveAspectRatio="none" viewBox="0 0 1720.32 860.16" width="1" height="1">
+<use xlink:href="#pattern0_55_26_inner" transform="translate(0 -860.16)"/>
+<use xlink:href="#pattern0_55_26_inner" transform="translate(860.16 -430.08)"/>
+<g id="pattern0_55_26_inner">
+<path d="M20.625 15.9999C18.885 16.0519 17.669 16.3939 17.031 17.0299C6.83102 27.2329 75.681 187.88 93.531 195.53C98.551 197.682 109.396 191.967 122.251 182.25H122.281L196 256L122.28 329.75C109.417 320.024 98.552 314.317 93.53 316.47C75.68 324.12 6.83002 484.767 17.03 494.97C27.233 505.17 187.88 436.32 195.53 418.47C197.683 413.448 191.976 402.583 182.25 389.72L256 316L329.75 389.75C320.033 402.605 314.318 413.45 316.47 418.47C324.12 436.32 484.767 505.17 494.97 494.97C505.17 484.767 436.32 324.12 418.47 316.47C413.45 314.318 402.605 320.033 389.75 329.75L316 256L389.75 182.25C402.605 191.967 413.45 197.682 418.47 195.53C436.32 187.88 505.17 27.2329 494.97 17.0299C484.767 6.82993 324.12 75.6799 316.47 93.5299C314.317 98.5519 320.024 109.417 329.75 122.28L256 196L182.25 122.28C182.255 122.274 182.245 122.257 182.25 122.25C191.967 109.395 197.682 98.5499 195.53 93.5299C188.36 76.7959 46.709 15.2249 20.625 15.9999Z" fill="url(#paint1_linear_55_26)"/>
+</g>
+<use xlink:href="#pattern0_55_26_inner" transform="translate(860.16 430.08)"/>
+</pattern><linearGradient id="paint1_linear_55_26" x1="256" y1="15.9927" x2="256" y2="495.995" gradientUnits="userSpaceOnUse">
+<stop stop-color="white"/>
+<stop offset="1" stop-color="white" stop-opacity="0.2"/>
+</linearGradient>
+</defs>
+</svg>

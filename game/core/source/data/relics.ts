@@ -1,95 +1,25 @@
 import type { PlayerState, RelicId, RelicRarity } from '../types.ts';
 
+// 名称 / 描述全部走 i18n —— 读 `i18n/{en,zh}.json` 的 `relic.<id>.name` / `relic.<id>.desc`。
+// 这里只保留运行时需要的元数据（稀有度、emoji fallback、稳定 code），不要再把文案塞回来。
 export interface RelicDef {
   id: RelicId;
   code: string;
-  name: string;
   rarity: RelicRarity;
   emoji: string;
-  description: string;
 }
 
 export const RELICS: Record<RelicId, RelicDef> = {
-  keen_lens: {
-    id: 'keen_lens',
-    code: 'R01',
-    name: '锐眼透镜',
-    rarity: 'common',
-    emoji: '🔍',
-    description: '暴击率 +3%',
-  },
-  small_shield_charm: {
-    id: 'small_shield_charm',
-    code: 'R02',
-    name: '小盾护符',
-    rarity: 'common',
-    emoji: '🔰',
-    description: '护盾值 +2，最大护盾值 +5',
-  },
-  blood_fang: {
-    id: 'blood_fang',
-    code: 'R03',
-    name: '嗜血牙',
-    rarity: 'uncommon',
-    emoji: '🦷',
-    description: '击杀回 2 HP（精英 +3）',
-  },
-  pact_coin: {
-    id: 'pact_coin',
-    code: 'R04',
-    name: '契约硬币',
-    rarity: 'common',
-    emoji: '🪙',
-    description: '击杀敌人额外 +1 金币',
-  },
-  arsenal_badge: {
-    id: 'arsenal_badge',
-    code: 'R05',
-    name: '武库徽章',
-    rarity: 'rare',
-    emoji: '🎖️',
-    description: '每把 Lv10 武器全局伤害 +4%',
-  },
-  elite_writ: {
-    id: 'elite_writ',
-    code: 'R06',
-    name: '精英猎令',
-    rarity: 'uncommon',
-    emoji: '📜',
-    description: '对精英伤害 +10%',
-  },
-  regen_core: {
-    id: 'regen_core',
-    code: 'R07',
-    name: '再生核心',
-    rarity: 'uncommon',
-    emoji: '💚',
-    description: 'hpRegen +0.5/s',
-  },
-  magazine_expander: {
-    id: 'magazine_expander',
-    code: 'R08',
-    name: '弹匣扩槽',
-    rarity: 'rare',
-    emoji: '🧰',
-    description: 'projectileBonus +1',
-  },
-  hourglass: {
-    id: 'hourglass',
-    code: 'R09',
-    name: '时间沙漏',
-    rarity: 'legendary',
-    emoji: '⏳',
-    description: 'overtime 内全伤 +0.12%/s（按层累加）',
-  },
-  iron_heart: {
-    id: 'iron_heart',
-    code: 'R10',
-    name: '铁心',
-    rarity: 'legendary',
-    emoji: '🫀',
-    description: 'maxHp +12%；护甲 +2',
-  },
+  keen_lens: { id: 'keen_lens', code: 'R01', rarity: 'common', emoji: '🔍' },
+  small_shield_charm: { id: 'small_shield_charm', code: 'R02', rarity: 'common', emoji: '🔰' },
+  blood_fang: { id: 'blood_fang', code: 'R03', rarity: 'uncommon', emoji: '🦷' },
+  pact_coin: { id: 'pact_coin', code: 'R04', rarity: 'common', emoji: '🪙' },
+  arsenal_badge: { id: 'arsenal_badge', code: 'R05', rarity: 'rare', emoji: '🎖️' },
+  elite_writ: { id: 'elite_writ', code: 'R06', rarity: 'uncommon', emoji: '📜' },
+  regen_core: { id: 'regen_core', code: 'R07', rarity: 'uncommon', emoji: '💚' },
+  magazine_expander: { id: 'magazine_expander', code: 'R08', rarity: 'rare', emoji: '🧰' },
+  hourglass: { id: 'hourglass', code: 'R09', rarity: 'legendary', emoji: '⏳' },
+  iron_heart: { id: 'iron_heart', code: 'R10', rarity: 'legendary', emoji: '🫀' },
 };
 
 export const ALL_RELIC_IDS = Object.keys(RELICS) as RelicId[];

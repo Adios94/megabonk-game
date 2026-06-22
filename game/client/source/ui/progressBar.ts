@@ -21,7 +21,9 @@ function clipForPercent(percent: number): string {
 
 /** 直接设置填充层进度（0–100）。 */
 export function setSvgBarPercent(fill: HTMLElement, percent: number): void {
-  fill.style.clipPath = clipForPercent(percent);
+  const clip = clipForPercent(percent);
+  fill.style.clipPath = clip;
+  fill.style.setProperty('-webkit-clip-path', clip);
 }
 
 export interface SvgBarLayers {
@@ -41,6 +43,7 @@ export function mountSvgBar(
   trackSrc: string,
   fillSrc: string,
   overlaySrc?: string,
+  initialPercent = 0,
 ): SvgBarLayers {
   const track = document.createElement('img');
   track.src = trackSrc;
@@ -53,7 +56,7 @@ export function mountSvgBar(
   fill.alt = '';
   fill.draggable = false;
   fill.style.cssText = FILL_STYLE;
-  fill.style.clipPath = clipForPercent(0);
+  setSvgBarPercent(fill, initialPercent);
 
   container.appendChild(track);
   container.appendChild(fill);

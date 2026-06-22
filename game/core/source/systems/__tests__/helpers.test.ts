@@ -149,7 +149,7 @@ describe('checkGameOver', () => {
     engine.state.phase = 'boss_fight';
     engine.state.running = true;
     engine.state.stats.silverEarned = 100;
-    // 准备一个 boss_active 祭坛，验证它会被翻成 portal_ready
+    // 准备一个 boss_active 飞碟，验证它会被翻成 portal_ready
     engine.state.altars = [{
       x: 0, z: 0, phase: 'boss_active', summonTimer: 0, summonDuration: 1,
     }];
@@ -169,7 +169,7 @@ describe('checkGameOver', () => {
     }));
   });
 
-  it('第二关 boss hp ≤ 0 → 回到 playing，祭坛进入冷却', () => {
+  it('第二关 boss hp ≤ 0 → 回到 playing，飞碟进入冷却', () => {
     const engine = makeEngine();
     engine.state.stage = 2;
     engine.state.boss = makeBoss();

@@ -6,11 +6,11 @@
  *
  * 这样 GameInstance 缩成 thin facade：构造 → start → 每帧 dispatch → 公开 API。
  */
-import type { BondId, GameConfig, GameState, InputState, WeaponType } from '../types.ts';
+import type { BondId, EnemyState, GameConfig, GameState, InputState, WeaponType } from '../types.ts';
 import type { GameWorld } from '../world.ts';
 import type { AiEffects } from '../ai/types.ts';
-import type { SpatialHash } from '../spatial-hash.ts';
-import type { LevelGeometry } from './collision.ts';
+import type { SpatialHash } from '../helpers/spatialHash.ts';
+import type { LevelGeometry } from './levelGeometry.ts';
 
 export interface Engine {
   // ─── 核心状态 ───
@@ -23,6 +23,17 @@ export interface Engine {
   world: GameWorld;
   effects: AiEffects;
   spatialHash: SpatialHash;
+  /**
+   * 与 spatialHash 同步重建的 id→enemy 索引。命中投射物 / AOE 等系统按 id O(1) 取敌人，
+   * 取代 findEnemyById 的 O(n) 线性扫描。仅在 `ensureSpatialIndex` 内重填。
+   */
+  enemyById: Map<number, EnemyState>;
+  /**
+   * spatialHash + enemyById 最近一次重建对应的 `state.tick`。
+   * `ensureSpatialIndex(engine)` 按这个去重，使同一 tick 内多次调用只 rebuild 一次。
+   * 初值用 -1（永远不等于 state.tick=0），保证第一帧必 rebuild。
+   */
+  spatialIndexTick: number;
   /** 当前关卡几何（碰撞 / 高度查询） */
   geo: LevelGeometry;
 

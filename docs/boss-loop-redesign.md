@@ -1,4 +1,4 @@
-# Boss Loop Redesign（祭坛 → Boss → 传送门 → 下一关）
+# Boss Loop Redesign（飞碟 → Boss → 传送门 → 下一关）
 
 > 状态：Draft v1
 > 最后更新：2026-06-02
@@ -6,17 +6,17 @@
 
 ## 1. 设计目标
 
-- 把 *"找到祭坛 → 召唤 Boss → 通关 → 解锁更高难度"* 升级为玩家的主线动词；生存计时器降为节奏背景。
+- 把 *"找到飞碟 → 召唤 Boss → 通关 → 解锁更高难度"* 升级为玩家的主线动词；生存计时器降为节奏背景。
 - 三档难度统一玩法结构，差异只体现在数值与 overtime 系数，不再有 "Normal 纯靠时间触发 Boss" 的特例。
 - 给敢留下来的玩家一个 overtime 刺激：放弃传送门 = 用风险换更多收益。
 
 ## 2. 玩家视角的核心循环
 
 ```
-出生 → 探索 / 清怪 / 升级 → 找到祭坛
-  → 走到祭坛旁 → [E] 或 手机"激活 Boss" 按钮
+出生 → 探索 / 清怪 / 升级 → 找到飞碟
+  → 走到飞碟旁 → [E] 或 手机"激活 Boss" 按钮
   → Boss intro → Boss 战
-  → 击败 Boss → 祭坛变传送门
+  → 击败 Boss → 飞碟变传送门
        ├─ A：走进传送门 + [E] → tier++（暂留当前场景，但数值升级）
        └─ B：留在场上：
               · 原 540s 计时已用完 → 切换为 overtime 正向计时
@@ -25,18 +25,18 @@
               · 死亡 → defeat
 ```
 
-## 3. 祭坛 / 传送门状态机
+## 3. 飞碟 / 传送门状态机
 
-把现有 `TeleporterPhase` 重构为 `AltarPhase`（同一个对象在 Boss 前是祭坛，Boss 后是传送门）：
+把现有 `TeleporterPhase` 重构为 `AltarPhase`（同一个对象在 Boss 前是飞碟，Boss 后是传送门）：
 
 ```
 ready          (玩家在交互半径内 → UI 提示 "[E] 召唤 Boss")
   ↓ 玩家按 E
 summoning      (短读条 1.0s 防误触；玩家走出半径 → 回 ready)
   ↓ 读条满
-boss_active    (Boss 已生成；祭坛锁住、不可再交互)
+boss_active    (Boss 已生成；飞碟锁住、不可再交互)
   ↓ Boss 死亡（boss.hp ≤ 0）
-portal_ready   (祭坛变传送门，UI 提示 "[E] 进入下一关")
+portal_ready   (飞碟变传送门，UI 提示 "[E] 进入下一关")
   ↓ 玩家按 E + 在半径内
 portal_used    (终态；触发 next-tier 流程后被清掉)
 ```
@@ -60,25 +60,25 @@ export interface AltarState {
 }
 ```
 
-> **类型迁移策略**：保留 `TeleporterPhase` / `TeleporterState` 类型导出做向后兼容（type alias 指向 Altar 等价），同时新增 `AltarPhase` / `AltarState`。`GameState.teleporters` 字段同步保留，但语义改为新祭坛状态机。这样旧的 client 渲染代码不会一次性全断。
+> **类型迁移策略**：保留 `TeleporterPhase` / `TeleporterState` 类型导出做向后兼容（type alias 指向 Altar 等价），同时新增 `AltarPhase` / `AltarState`。`GameState.teleporters` 字段同步保留，但语义改为新飞碟状态机。这样旧的 client 渲染代码不会一次性全断。
 
-## 4. 三档难度的祭坛配置
+## 4. 三档难度的飞碟配置
 
-| Tier | 祭坛数 | 必须全部激活才出 Boss？ |
+| Tier | 飞碟数 | 必须全部激活才出 Boss？ |
 |---|---|---|
 | 1 Normal | 1 | — |
 | 2 Hard | 1 | — |
 | 3 Nightmare | 1 | — |
 
-> 原本 tier 3 的"2 个祭坛全激活"取消。差异化交给数值（`enemyHpMultiplier` / `bossHpMultiplier` / overtime 系数）承担。`TIER_CONFIGS[*].teleporterCount` 三档统一 `1`。
+> 原本 tier 3 的"2 个飞碟全激活"取消。差异化交给数值（`enemyHpMultiplier` / `bossHpMultiplier` / overtime 系数）承担。`TIER_CONFIGS[*].teleporterCount` 三档统一 `1`。
 
-## 5. 祭坛位置 & 可发现性
+## 5. 飞碟位置 & 可发现性
 
 - **生成时机**：开局立即生成（不再等 `TELEPORTER_APPEAR_TIME = 300s`）。
 - **位置算法**：随机角度 + 距出生点 25–`halfMap*0.6` 的距离，clamp 在地图内。
 - **可视提示**：
-  - 祭坛本身：底座 + 持续向上的光柱 / 烟雾，远距离可见。
-  - HUD：右上指南针 / 屏幕边缘箭头指向祭坛。
+  - 飞碟本身：底座 + 持续向上的光柱 / 烟雾，远距离可见。
+  - HUD：右上指南针 / 屏幕边缘箭头指向飞碟。
 - **交互半径**：`ALTAR_INTERACT_RADIUS = 2.0` (沿用)。
 - **UI prompt**：进入半径时弹出 `[E] altar.prompt.summon` / 移动端弹圆形按钮。
 
@@ -136,7 +136,7 @@ menu → playing → (level_up | boss_intro | boss_fight) → portal_open
 - **输入（Mobile）**：交互半径内时显示屏幕中下方圆形按钮，文案随阶段切换：
   - `ready` / `summoning` → `altar.prompt.summon`
   - `portal_ready` → `altar.prompt.enterPortal`
-- **HUD**：祭坛指南针（屏幕边缘箭头 + 距离数字）；overtime 横幅。
+- **HUD**：飞碟指南针（屏幕边缘箭头 + 距离数字）；overtime 横幅。
 - **i18n keys**（en / zh 同步）：
   - `altar.prompt.summon`
   - `altar.prompt.enterPortal`
@@ -158,14 +158,14 @@ menu → playing → (level_up | boss_intro | boss_fight) → portal_open
 
 - 真正的"下一关"地图 / 主题切换（仍留同场景）。
 - 多种 Boss / 多套 Boss 攻击模板（沿用 SkeletonKing）。
-- 祭坛探索奖励（找祭坛途中给宝箱等）。
+- 飞碟探索奖励（找飞碟途中给宝箱等）。
 - 联机 / 跨局存档解锁。
 
 ## 13. 验收标准
 
-- [ ] 三档难度都需要找祭坛 + 按 E 才能召唤 Boss；不再有"时间到自动出 Boss"。
-- [ ] 祭坛激活 1s 内可被走出半径打断。
-- [ ] Boss 死亡后祭坛变成传送门，玩家按 E 可进入下一关；玩家进度（武器/等级/silver/HP）保留。
+- [ ] 三档难度都需要找飞碟 + 按 E 才能召唤 Boss；不再有"时间到自动出 Boss"。
+- [ ] 飞碟激活 1s 内可被走出半径打断。
+- [ ] Boss 死亡后飞碟变成传送门，玩家按 E 可进入下一关；玩家进度（武器/等级/silver/HP）保留。
 - [ ] 玩家拒绝传送门 + 时间过 540s → overtime 开始计时；敌人难度按 30s 一档递增。
 - [ ] Overtime 中死亡 → defeat 结算。
 - [ ] PC 用 KeyE 交互；Mobile 弹按钮交互。
@@ -177,10 +177,10 @@ menu → playing → (level_up | boss_intro | boss_fight) → portal_open
 1. 写本文档（你正在看的这份）。
 2. 改类型与公开导出（`types.ts` / `index.ts`），跑 check-contract。
 3. 重写 `systems/teleporters.ts` → `systems/altars.ts`，加 `tickAltars` + `triggerAltarSummon` + `triggerPortalEnter`。
-4. 改 `systems/spawning.ts` 的 `checkBossSpawn`，移除 `BOSS_SPAWN_TIME` 强触发，改为响应祭坛 `summoning` 完成事件。
+4. 改 `systems/spawning.ts` 的 `checkBossSpawn`，移除 `BOSS_SPAWN_TIME` 强触发，改为响应飞碟 `summoning` 完成事件。
 5. 加 overtime 系统（`systems/overtime.ts` 或塞进 spawning 一起），改 `factories/spawnEnemy.ts` / 敌人系数应用处，让 overtime factor 叠到 enemy stat。
 6. 实现 portal 进下一关的 tier 推进（`GameInstance.applyAction` 或专门 `systems/tierTransition.ts`）。
-7. 客户端：input 加 `interact`，HUD 加指南针 + overtime banner，3D 表现切换祭坛↔传送门。
+7. 客户端：input 加 `interact`，HUD 加指南针 + overtime banner，3D 表现切换飞碟↔传送门。
 8. i18n en + zh 同步。
 9. 单测：`altars.test.ts`、overtime 系数测试、tier 推进测试；改旧 `spawning.test.ts` 中跟 `BOSS_SPAWN_TIME` 强触发相关的断言。
 10. 跑 `tsc --noEmit` / `pnpm build` / `check-contract`。

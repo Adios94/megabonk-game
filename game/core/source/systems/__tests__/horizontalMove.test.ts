@@ -5,7 +5,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { tryMoveHorizontally } from '../horizontalMove.ts';
-import { makeLevelGeometry, type LevelGeometry } from '../collision.ts';
+import { makeLevelGeometry, type LevelGeometry } from '../levelGeometry.ts';
 import type { LevelData } from '../../types.ts';
 
 function levelWithWall(wall: { cx: number; cz: number; halfW: number; halfD: number; bottomY: number; topY: number }): LevelGeometry {

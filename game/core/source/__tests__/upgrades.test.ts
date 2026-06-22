@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeActiveWeaponSlots, xpForLevel } from '../upgrades.ts';
+import { computeActiveWeaponSlots, xpForLevel } from '../data/upgrades.ts';
 
 describe('xpForLevel', () => {
   it('L ≤ 10 沿用早期线性公式', () => {

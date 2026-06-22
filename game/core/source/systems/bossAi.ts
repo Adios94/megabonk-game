@@ -14,12 +14,12 @@
  *   - 重置 attackTimer: 1 random
  *   - attack 内部消费见各 BossScript.attacks
  */
-import { distanceBetween, normalizeDirection } from '../physics.ts';
+import { distanceBetween, normalizeDirection } from '../helpers/physics.ts';
 import type { BossState } from '../types.ts';
 import type { AiContext } from '../ai/types.ts';
 import { chooseAttack, resolvePhase } from '../ai/bosses/common.ts';
 import { BOSS_SCRIPTS } from '../ai/bosses/registry.ts';
-import { getSupportHeightAt } from './collision.ts';
+import { getSupportHeightAt } from './levelGeometry.ts';
 import { tryMoveHorizontally } from './horizontalMove.ts';
 
 /** 攻击 clip 播放窗口（秒），与客户端 renderBoss 动画切换共用语义。 */

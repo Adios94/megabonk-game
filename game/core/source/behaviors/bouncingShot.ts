@@ -9,19 +9,19 @@
  *
  * 数学等价于 fireBoneBouncer，由 parity 测试锁定。
  */
-import { normalizeDirection } from '../physics.ts';
+import { normalizeDirection } from '../helpers/physics.ts';
 import { computeWeaponDamage } from '../stats/index.ts';
-import { BONE_BOUNCER_MAX_Y_DELTA, playerProjectileY } from '../combatHeight.ts';
-import { findNearestEnemy } from './queries.ts';
+import { BONE_BOUNCER_MAX_Y_DELTA, playerProjectileY } from '../helpers/combatHeight.ts';
+import { findNearestTarget } from './queries.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
 
 export function bouncingShot(_world: GameWorld, ctx: BehaviorContext): void {
-  const { player, enemies, def, stats, effects } = ctx;
+  const { player, enemies, boss, def, stats, effects } = ctx;
   const count = stats.projectileCount;
 
   for (let i = 0; i < count; i++) {
-    const target = findNearestEnemy(player.x, player.z, enemies, Infinity, player.y, BONE_BOUNCER_MAX_Y_DELTA);
+    const target = findNearestTarget(player.x, player.z, enemies, boss, Infinity, player.y, BONE_BOUNCER_MAX_Y_DELTA);
     let vx: number, vz: number;
     if (target) {
       const dir = normalizeDirection(target.x - player.x, target.z - player.z);

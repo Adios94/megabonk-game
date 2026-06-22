@@ -16,7 +16,7 @@
  * 与方案 A 之前的弹丸语义在「单次调用」层面等价，便于单元测试。
  */
 import { computeWeaponDamage } from '../stats/index.ts';
-import { playerProjectileY } from '../combatHeight.ts';
+import { playerProjectileY } from '../helpers/combatHeight.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
 

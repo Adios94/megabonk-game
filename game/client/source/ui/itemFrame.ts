@@ -150,16 +150,36 @@ export function itemFrameAccentLine(text: string, color: string, extraCss = ''):
 /** 升级卡 SVG viewBox 尺寸（用于 aspect-ratio）。 */
 export const UPGRADE_FRAME_SIZE = { w: 1897, h: 2642 } as const;
 
+// 注意：升级框 SVG 资产的"uncommon / rare"文件名是反的——
+// frame_upgrade_uncommon.svg 实际是蓝色调，frame_upgrade_rare.svg 实际是绿色调。
+// 全局 RARITY_COLORS 与 frame_item_*.svg 走 uncommon=绿 / rare=蓝 的常规约定，
+// 这里把映射 swap 回来，让升级卡的框色 + 数字色 + 稀有度 tab 与项目其他 UI 一致。
 const UPGRADE_FRAME_SRC: Record<ItemFrameRarity, string> = {
   common: '/ui/panel/svg/frame_upgrade_common.svg',
-  uncommon: '/ui/panel/svg/frame_upgrade_uncommon.svg',
-  rare: '/ui/panel/svg/frame_upgrade_rare.svg',
+  uncommon: '/ui/panel/svg/frame_upgrade_rare.svg',
+  rare: '/ui/panel/svg/frame_upgrade_uncommon.svg',
   legendary: '/ui/panel/svg/frame_upgrade_legendary.svg',
   bond: '/ui/panel/svg/frame_upgrade_bond.svg',
 };
 
+export function upgradeFrameUrl(rarity: ItemFrameRarity): string {
+  return UPGRADE_FRAME_SRC[rarity] ?? UPGRADE_FRAME_SRC.common;
+}
+
 const UPGRADE_TITLE_BAR_PCT = `${(371 / UPGRADE_FRAME_SIZE.h) * 100}%`; // 14.04% — banner 区（含 divider）
 const UPGRADE_RARITY_BAR_PCT = `${((2642 - 2289) / UPGRADE_FRAME_SIZE.h) * 100}%`; // 13.36% — tab 区
+
+function upgradeXPct(x: number): string {
+  return `${(x / UPGRADE_FRAME_SIZE.w) * 100}%`;
+}
+
+function upgradeYPct(y: number): string {
+  return `${(y / UPGRADE_FRAME_SIZE.h) * 100}%`;
+}
+
+const UPGRADE_BODY_TOP_Y = 371;
+const UPGRADE_STATS_SLOT = { x: 132, y: 1309, w: 1607, h: 764 } as const;
+const UPGRADE_LEVEL_SLOT = { y: 2073, h: 216 } as const;
 
 export interface UpgradeFrameOptions {
   rarity: ItemFrameRarity;
@@ -181,7 +201,7 @@ export interface UpgradeFrameOptions {
    */
   rarityPaddingBottom?: string;
   /**
-   * 等级行 margin-top（负值→等级行往上贴近数值面板）。默认 '-2px'。
+   * 等级行垂直微调（正值→在数值框与稀有度 tab 中间略往下）。默认 '0px'。
    */
   levelMarginTop?: string;
 }
@@ -212,14 +232,14 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
     interactive = false,
     titlePaddingTop = '4px',
     rarityPaddingBottom = '4px',
-    levelMarginTop = '-2px',
+    levelMarginTop = '0px',
   } = opts;
 
   const card = document.createElement('div');
   card.style.cssText = `
     width:${width};aspect-ratio:${UPGRADE_FRAME_SIZE.w} / ${UPGRADE_FRAME_SIZE.h};box-sizing:border-box;
-    background:url(${UPGRADE_FRAME_SRC[rarity] ?? UPGRADE_FRAME_SRC.common}) center / 100% 100% no-repeat;
-    display:flex;flex-direction:column;align-items:stretch;
+    background:url(${upgradeFrameUrl(rarity)}) center / 100% 100% no-repeat;
+    position:relative;display:block;flex:0 0 ${width};max-width:${width};min-width:0;overflow:hidden;
     filter:drop-shadow(0 4px 10px rgba(0,0,0,0.5));
     ${interactive ? 'cursor:pointer;touch-action:manipulation;user-select:none;transition:transform 0.15s;' : ''}
   `;
@@ -228,62 +248,65 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
   // banner 容器覆盖 SVG y 0~371（含黑色 divider），可视色带为 y 25~346，中心 y≈186
   const titleBar = document.createElement('div');
   titleBar.style.cssText = `
-    flex:0 0 ${UPGRADE_TITLE_BAR_PCT};min-height:0;display:flex;align-items:center;justify-content:center;
+    position:absolute;left:0;top:0;width:100%;height:${UPGRADE_TITLE_BAR_PCT};
+    display:flex;align-items:center;justify-content:center;
     padding:${titlePaddingTop} 12% 0;box-sizing:border-box;overflow:hidden;
   `;
   const titleEl = document.createElement('div');
   titleEl.style.cssText = uiPlainTextCrisp(
-    'font-size:clamp(11px,3.2vw,14px);font-weight:bold;line-height:1.05;text-align:center;width:100%;',
+    'font-size:clamp(11px,3.2vw,14px);font-weight:bold;line-height:1.05;text-align:center;width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;',
   );
   titleEl.textContent = title;
   titleBar.appendChild(titleEl);
 
-  // === 中部主体（icon + desc + stats + level）===
-  const mid = document.createElement('div');
-  mid.style.cssText = `
-    flex:1 1 auto;min-height:0;display:flex;flex-direction:column;align-items:center;
-    padding:5% 9% 3%;box-sizing:border-box;gap:3px;
+  // === 中部主体上半区（icon + desc）===
+  // 数值预览和等级行需要分别对齐 SVG 的深色槽 / 下方留白，不能参与这里的 flex 排版。
+  const topBody = document.createElement('div');
+  topBody.style.cssText = `
+    position:absolute;left:9%;right:9%;top:${upgradeYPct(UPGRADE_BODY_TOP_Y)};
+    height:${upgradeYPct(UPGRADE_STATS_SLOT.y - UPGRADE_BODY_TOP_Y)};
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    box-sizing:border-box;gap:clamp(3px,1.1vw,6px);overflow:hidden;
   `;
 
   const iconSlot = document.createElement('div');
   iconSlot.style.cssText = `
     display:flex;align-items:center;justify-content:center;
-    width:100%;font-size:clamp(28px,8vw,36px);line-height:1;
+    width:100%;font-size:clamp(28px,8vw,38px);line-height:1;flex:0 0 auto;
   `;
 
   const descEl = document.createElement('div');
   descEl.style.cssText = uiPlainTextCrisp(
-    'font-size:clamp(10px,2.7vw,11px);line-height:1.3;text-align:center;width:100%;',
+    'font-size:clamp(10px,2.7vw,11px);line-height:1.3;text-align:center;width:100%;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;',
   );
 
   // 数值面板：SVG 自带内嵌槽（y=1309~2073，已有描边和浅色填充），CSS 这层只做内部布局，
   // 不再叠加自己的 background 和 border，避免与 SVG 内嵌槽出现"框中框"。
   const statsBox = document.createElement('div');
   statsBox.style.cssText = `
-    width:100%;padding:4px 7px;box-sizing:border-box;
-    display:flex;flex-direction:column;gap:1px;
+    position:absolute;left:${upgradeXPct(UPGRADE_STATS_SLOT.x)};top:${upgradeYPct(UPGRADE_STATS_SLOT.y)};
+    width:${upgradeXPct(UPGRADE_STATS_SLOT.w)};height:${upgradeYPct(UPGRADE_STATS_SLOT.h)};
+    padding:clamp(4px,2.2vw,10px) clamp(7px,3vw,14px);box-sizing:border-box;
+    display:flex;flex-direction:column;justify-content:center;gap:1px;overflow:hidden;
   `;
-
-  const grow = document.createElement('div');
-  grow.style.cssText = 'flex:1 1 auto;min-height:0;';
 
   const levelEl = document.createElement('div');
   levelEl.style.cssText = uiPlainTextCrisp(
-    `font-size:clamp(10px,2.7vw,12px);font-weight:bold;line-height:1.2;text-align:center;width:100%;margin-top:${levelMarginTop};`,
+    `position:absolute;left:9%;right:9%;top:${upgradeYPct(UPGRADE_LEVEL_SLOT.y)};height:${upgradeYPct(UPGRADE_LEVEL_SLOT.h)};
+    display:flex;align-items:center;justify-content:center;transform:translateY(${levelMarginTop});
+    font-size:clamp(9px,2.35vw,10.5px);font-weight:bold;line-height:1.15;text-align:center;`,
   );
 
-  mid.appendChild(iconSlot);
-  mid.appendChild(descEl);
-  mid.appendChild(statsBox);
-  mid.appendChild(grow);
-  mid.appendChild(levelEl);
+  topBody.appendChild(iconSlot);
+  topBody.appendChild(descEl);
 
   // === 底部 tab（稀有度）===
   // tab 容器覆盖 SVG y 2289~2642（13.36%），tab 可视范围 y 2289~2585，中心 y≈2437
   // 容器中心 y≈2465，略低于 tab 中心，用 padding-bottom 往上推少量
   const rarityBar = document.createElement('div');
   rarityBar.style.cssText = `
-    flex:0 0 ${UPGRADE_RARITY_BAR_PCT};min-height:0;display:flex;align-items:center;justify-content:center;
+    position:absolute;left:0;bottom:0;width:100%;height:${UPGRADE_RARITY_BAR_PCT};
+    display:flex;align-items:center;justify-content:center;
     padding:0 25% ${rarityPaddingBottom};box-sizing:border-box;overflow:hidden;
   `;
   const rarityEl = document.createElement('div');
@@ -293,7 +316,9 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
   rarityBar.appendChild(rarityEl);
 
   card.appendChild(titleBar);
-  card.appendChild(mid);
+  card.appendChild(topBody);
+  card.appendChild(statsBox);
+  card.appendChild(levelEl);
   card.appendChild(rarityBar);
 
   if (interactive) {
@@ -307,12 +332,12 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
 /** 升级卡数值面板的一行（左标签 / 右数值），值用稀有度色。 */
 export function upgradeStatRow(label: string, value: string, accentColor: string): HTMLDivElement {
   const row = document.createElement('div');
-  row.style.cssText = 'display:flex;justify-content:space-between;gap:6px;line-height:1.45;';
+  row.style.cssText = 'display:flex;justify-content:space-between;gap:6px;line-height:1.45;min-width:0;';
   const lab = document.createElement('span');
-  lab.style.cssText = uiPlainTextCrisp('font-size:clamp(9px,2.6vw,11px);line-height:1.45;');
+  lab.style.cssText = uiPlainTextCrisp('font-size:clamp(9px,2.6vw,11px);line-height:1.45;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;');
   lab.textContent = label;
   const val = document.createElement('span');
-  val.style.cssText = uiColoredTextCrisp(accentColor, '') + 'font-size:clamp(9px,2.6vw,11px);font-weight:bold;line-height:1.45;';
+  val.style.cssText = uiColoredTextCrisp(accentColor, '') + 'font-size:clamp(9px,2.6vw,11px);font-weight:bold;line-height:1.45;flex:0 0 auto;white-space:nowrap;';
   val.textContent = value;
   row.appendChild(lab);
   row.appendChild(val);

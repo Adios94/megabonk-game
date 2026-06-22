@@ -756,6 +756,21 @@ export interface LevelUpCompensationEvent {
   amount: number;
 }
 
+export interface XpPickupEvent {
+  x: number;
+  y: number;
+  z: number;
+  amount: number;
+  type: PickupType;
+}
+
+export interface FallDamageEvent {
+  x: number;
+  y: number;
+  z: number;
+  damage: number;
+}
+
 // --- Damage Events (for rendering feedback) ---
 export interface DamageEvent {
   x: number;
@@ -842,6 +857,10 @@ export interface GameState {
   bondVfxEvents: BondVfxEvent[];
   /** 空池升级补偿事件（client 读完后由 tick 清空）。 */
   levelUpCompensationEvents: LevelUpCompensationEvent[];
+  /** XP 拾取事件（client 读完后由 tick 清空，用于播放音效 / VFX）。 */
+  xpPickupEvents: XpPickupEvent[];
+  /** 摔落伤害事件（client 读完后由 tick 清空，用于播放音效）。 */
+  fallDamageEvents: FallDamageEvent[];
   /** 宝箱开启事件（client 读完后由 tick 清空，用于揭示动画）。 */
   chestOpenEvents: ChestOpenEvent[];
   /** 已消耗金币和宝箱、等待玩家留下/丢弃的遗物。 */

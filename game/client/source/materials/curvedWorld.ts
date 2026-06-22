@@ -5,6 +5,7 @@ import * as THREE from 'three';
  *
  * 在所有材质的 vertex shader 中注入「以 uWarpCenter 为中心，半径 1/uWarpStrength
  * 的球面卷曲」变换。视觉上让远处场景顺着地平线弯下去，营造「滚动地平线」效果。
+ * 弯曲角度会被限制在地平线前，避免超大关卡远端建筑绕过球面后折回玩家附近。
  *
  * 通过全局 patch THREE.Material.prototype.onBeforeCompile 实现，对所有支持的材质
  * 类型（Basic / Toon / Standard / Physical / Sprite / Phong / Lambert）自动生效。
@@ -15,6 +16,8 @@ export const curvedWorldUniforms = {
   uWarpCenter: { value: new THREE.Vector3(0, 0, 0) },
   uWarpStrength: { value: 0.015 } // adjustable! Default to 1/66.6 radius
 };
+
+const MAX_CURVED_WORLD_THETA = '1.45';
 
 let installed = false;
 
@@ -69,7 +72,7 @@ export function installCurvedWorldShaderPatch(): void {
           float d = length(diff.xz);
 
           if (d > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
-              float theta = d * uWarpStrength;
+              float theta = min(d * uWarpStrength, ${MAX_CURVED_WORLD_THETA});
               float sinTheta = sin(theta);
               float cosTheta = cos(theta);
               vec2 dir = diff.xz / d;
@@ -107,7 +110,7 @@ export function installCurvedWorldShaderPatch(): void {
           float d = length(diff.xz);
 
           if (d > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
-              float theta = d * uWarpStrength;
+              float theta = min(d * uWarpStrength, ${MAX_CURVED_WORLD_THETA});
               float sinTheta = sin(theta);
               float cosTheta = cos(theta);
               vec2 dir = diff.xz / d;
@@ -136,7 +139,7 @@ export function installCurvedWorldShaderPatch(): void {
           float dForNormal = length(diffForNormal.xz);
 
           if (dForNormal > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
-              float theta = dForNormal * uWarpStrength;
+              float theta = min(dForNormal * uWarpStrength, ${MAX_CURVED_WORLD_THETA});
               vec2 dir = diffForNormal.xz / dForNormal;
               vec3 viewAxis = normalize( mat3(viewMatrix) * vec3( -dir.y, 0.0, dir.x ) );
 

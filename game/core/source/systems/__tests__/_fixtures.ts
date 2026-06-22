@@ -40,7 +40,7 @@ function defaultState(
     phase: 'playing',
     player,
     enemies: [], projectiles: [], areaEffects: [], pickups: [], consumablePickups: [], goldMotes: [], boss: null,
-    upgradeOptions: null, damageEvents: [], bondVfxEvents: [], levelUpCompensationEvents: [],
+    upgradeOptions: null, damageEvents: [], bondVfxEvents: [], levelUpCompensationEvents: [], xpPickupEvents: [], fallDamageEvents: [],
     chestOpenEvents: [], pendingChestReward: null,
     stats: { killCount: 0, damageDealt: 0, damageTaken: 0, shieldAbsorbed: 0, silverEarned: 0 },
     weaponDamageStats: [],

@@ -237,6 +237,9 @@ export class GameInstance {
     engine.miniBossTimer = 0;
     engine.stageTwoBossSummonCount = 0;
     engine.weaponDamageWindows = {};
+    engine.spatialIndexTick = -1;
+    engine.enemyById.clear();
+    engine.spatialHash.clear();
   }
 
   tick(): boolean {

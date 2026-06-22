@@ -100,6 +100,8 @@ export class GameInstance {
       damageEvents: [],
       bondVfxEvents: [],
       levelUpCompensationEvents: [],
+      xpPickupEvents: [],
+      fallDamageEvents: [],
       chestOpenEvents: [],
       pendingChestReward: null,
       stats: { killCount: 0, damageDealt: 0, damageTaken: 0, shieldAbsorbed: 0, silverEarned: 0 },
@@ -200,6 +202,8 @@ export class GameInstance {
     state.damageEvents = [];
     state.bondVfxEvents = [];
     state.levelUpCompensationEvents = [];
+    state.xpPickupEvents = [];
+    state.fallDamageEvents = [];
     state.chestOpenEvents = [];
     state.pendingChestReward = null;
     state.boss = null;
@@ -267,6 +271,8 @@ export class GameInstance {
     state.damageEvents = [];
     state.bondVfxEvents = [];
     state.levelUpCompensationEvents = [];
+    state.xpPickupEvents = [];
+    state.fallDamageEvents = [];
     state.chestOpenEvents = [];
 
     state.gameTime += dt;

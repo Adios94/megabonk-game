@@ -131,6 +131,20 @@ import {
 } from './ui/layout.ts';
 import { createPauseDataPanel, PAUSE_SIDE_PANEL_WIDTH } from './ui/pauseDataPanel.ts';
 import { playTransition } from './ui/sceneTransition.ts';
+import {
+  applyGameStartAudioPolicy,
+  fadeOutMenuMusic,
+  getAudioSettings,
+  installButtonClickSfx,
+  onAudioSettingsChange,
+  playCombatMusic,
+  playMenuMusic,
+  playSfx,
+  setFlameRingSfxActive,
+  toggleMusicMuted,
+  toggleSfxMuted,
+  type AudioSettings,
+} from './audio/musicManager.ts';
 import type { I18nMode } from '@minigame/i18n';
 import { EventEmitter } from './session/EventEmitter.ts';
 
@@ -812,6 +826,7 @@ function titleImageWidthStyle(): string {
   return `width:${width};height:auto;object-fit:contain;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.65));user-select:none;`;
 }
 const LOBBY_BG_PATH = '/ui/common/bg_lobby.webp';
+const LOBBY_BG_VIDEO_PATH = '/ui/common/bg_lobby.mp4';
 const UI_COMMON_BG_PATH = '/ui/common/bg_ui_common.webp';
 const TIER_SELECT_PAGE_BG_IMAGE = '/ui/common/bg_tier_select.webp';
 const SHOP_QUEST_PAGE_BG_IMAGE = '/ui/common/bg_city.webp';
@@ -963,6 +978,95 @@ function createSilverBadge(count: number, prefix = ''): HTMLDivElement {
 function setSilverBadgeAmount(badge: HTMLDivElement, count: number, prefix = ''): void {
   const amount = badge.querySelector('.silver-badge-amount');
   if (amount) amount.textContent = `${prefix}${count}`;
+}
+
+type AudioToggleKind = 'music' | 'sfx';
+
+function isAudioToggleMuted(kind: AudioToggleKind, settings = getAudioSettings()): boolean {
+  return kind === 'music' ? settings.musicMuted : settings.sfxMuted;
+}
+
+function audioToggleLabel(kind: AudioToggleKind, muted: boolean): string {
+  if (kind === 'music') return muted ? '播放背景音乐' : '静音背景音乐';
+  return muted ? '播放音效' : '静音音效';
+}
+
+function audioToggleIconSvg(kind: AudioToggleKind, muted: boolean): string {
+  const color = muted ? '#9eb1cc' : '#fff4a8';
+  const slash = muted
+    ? '<path d="M7 7L25 25" stroke="#ff6b6b" stroke-width="3.2" stroke-linecap="round"/>'
+    : '';
+  if (kind === 'music') {
+    return `
+      <svg viewBox="0 0 32 32" width="100%" height="100%" aria-hidden="true">
+        <path d="M20 7v15.5a4.2 4.2 0 1 1-2.7-3.9V10l9-2v12.5a4.2 4.2 0 1 1-2.7-3.9V6.2L20 7z"
+          fill="${color}" stroke="#1a2340" stroke-width="1.4" stroke-linejoin="round"/>
+        ${slash}
+      </svg>
+    `;
+  }
+  return `
+    <svg viewBox="0 0 32 32" width="100%" height="100%" aria-hidden="true">
+      <path d="M5 19h5.2L18 25V7l-7.8 6H5v6z"
+        fill="${color}" stroke="#1a2340" stroke-width="1.6" stroke-linejoin="round"/>
+      ${muted ? '' : '<path d="M21.5 12.2a6 6 0 0 1 0 7.6M24.5 9.5a10 10 0 0 1 0 13" fill="none" stroke="#fff4a8" stroke-width="2.2" stroke-linecap="round"/>'}
+      ${slash}
+    </svg>
+  `;
+}
+
+function syncAudioToggleButton(button: HTMLButtonElement, settings = getAudioSettings()): void {
+  const kind = button.dataset.audioToggleKind as AudioToggleKind | undefined;
+  if (kind !== 'music' && kind !== 'sfx') return;
+  const muted = isAudioToggleMuted(kind, settings);
+  button.dataset.audioMuted = muted ? 'true' : 'false';
+  button.setAttribute('aria-label', audioToggleLabel(kind, muted));
+  button.title = audioToggleLabel(kind, muted);
+  button.innerHTML = audioToggleIconSvg(kind, muted);
+  button.style.opacity = muted ? '0.62' : '1';
+  button.style.boxShadow = muted
+    ? '0 2px 0 rgba(0,0,0,0.45), inset 0 0 0 2px rgba(255,255,255,0.12)'
+    : '0 3px 0 rgba(0,0,0,0.45), 0 0 12px rgba(255,217,59,0.32), inset 0 0 0 2px rgba(255,255,255,0.18)';
+}
+
+function syncAudioToggleButtons(settings = getAudioSettings()): void {
+  document
+    .querySelectorAll<HTMLButtonElement>('button[data-audio-toggle-kind]')
+    .forEach(button => syncAudioToggleButton(button, settings));
+}
+
+onAudioSettingsChange((settings: AudioSettings) => syncAudioToggleButtons(settings));
+
+function createAudioToggleButton(kind: AudioToggleKind, compact = false): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.dataset.audioToggleKind = kind;
+  button.style.cssText = `
+    width:${compact ? 'clamp(30px,6vmin,36px)' : 'clamp(34px,7vw,40px)'};
+    height:${compact ? 'clamp(30px,6vmin,36px)' : 'clamp(34px,7vw,40px)'};
+    border:2px solid rgba(20,30,58,0.92);border-radius:9999px;
+    background:linear-gradient(180deg,rgba(48,83,145,0.96),rgba(22,42,86,0.96));
+    padding:${compact ? '5px' : '6px'};box-sizing:border-box;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;user-select:none;touch-action:manipulation;pointer-events:auto;transition:transform 0.12s,opacity 0.12s,box-shadow 0.12s;
+  `;
+  button.addEventListener('mouseenter', () => { button.style.transform = 'scale(1.06)'; });
+  button.addEventListener('mouseleave', () => { button.style.transform = 'scale(1)'; });
+  button.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (kind === 'music') toggleMusicMuted();
+    else toggleSfxMuted();
+  });
+  syncAudioToggleButton(button);
+  return button;
+}
+
+function createSilverMusicControls(count: number, includeSfx = false): HTMLDivElement {
+  const controls = document.createElement('div');
+  controls.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:8px;box-sizing:border-box;';
+  controls.appendChild(createSilverBadge(count));
+  if (includeSfx) controls.appendChild(createAudioToggleButton('sfx'));
+  controls.appendChild(createAudioToggleButton('music'));
+  return controls;
 }
 
 function createGoldBadge(count: number): HTMLDivElement {
@@ -3330,6 +3434,7 @@ export class GameScene {
   }
 
   playStartIntro(onComplete: () => void): void {
+    playCombatMusic();
     const state = this.session.getRenderState();
     const p = state.player;
     const overlay = document.createElement('div');
@@ -3366,6 +3471,7 @@ export class GameScene {
   }
 
   destroy(): void {
+    setFlameRingSfxActive(false);
     if (this.animationId !== null) {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
@@ -5311,6 +5417,7 @@ export class GameScene {
 
     // === Level Up Animation ===
     if (state.phase === 'level_up' && this.lastPhase !== 'level_up') {
+      playSfx('levelup');
       this.levelUpAnimTimer = 0.3;
       this.spawnLevelUpBurst(p.x, p.y, p.z);
       this.triggerScreenFlash('#ffcc00', 0.2);
@@ -7413,6 +7520,7 @@ export class GameScene {
     if (isShrinePhase && !this.shrinePanel && state.activeShrineId != null) {
       const shrine = state.shrines.find(s => s.id === state.activeShrineId);
       if (shrine && shrine.options) {
+        playSfx('powerup');
         this.showShrineRewardPanel(shrine.options);
       }
     } else if (!isShrinePhase && this.shrinePanel) {
@@ -7529,6 +7637,7 @@ export class GameScene {
     if (eventsFresh) {
     for (const event of state.damageEvents) {
       if (event.isPlayerDamage) continue;
+      playSfx('hit');
 
       // Death detection
       const isDeath = event.damage > 10 && !enemies.some(e =>
@@ -7573,6 +7682,7 @@ export class GameScene {
       player.x, player.y, player.z,
       dt,
     );
+    setFlameRingSfxActive(hasFlameRing && player.alive);
 
     // === Weapon Trail VFX (#12) ===
     // Projectile trails for player weapons
@@ -7602,6 +7712,14 @@ export class GameScene {
       const curr = weapon.cooldownTimer;
       // cooldownTimer just jumped UP → weapon fired this frame
       const justFired = curr > prev + 0.05 && player.alive;
+
+      if (justFired) {
+        if (weapon.type === 'sword') playSfx('sword');
+        else if (weapon.type === 'ray_gun') playSfx('raygun');
+        else if (weapon.type === 'pistol' || weapon.type === 'shotgun' || weapon.type === 'paralysis_gun') playSfx('gun');
+        else if (weapon.type === 'void_ripple') playSfx('ripple');
+        else if (weapon.type === 'scorch_boots') playSfx('burn');
+      }
 
       if (justFired && weapon.type === 'sword') {
         // Find nearest enemy for slash direction
@@ -8044,6 +8162,12 @@ export class GameScene {
       for (const evt of state.damageEvents) {
         this.spawnDamageNumber(evt);
       }
+      for (const evt of state.xpPickupEvents) {
+        playSfx('getexp', evt.amount >= 10 ? 0.546 : 0.434);
+      }
+      for (const evt of state.fallDamageEvents) {
+        playSfx('fall', evt.damage >= 10 ? 0.574 : 0.476);
+      }
     }
 
     // 空池升级补偿特效（银币/金币）
@@ -8059,6 +8183,7 @@ export class GameScene {
       if (this.seenChestOpenEvents.has(key)) continue;
       this.seenChestOpenEvents.add(key);
       if (this.seenChestOpenEvents.size > 80) this.seenChestOpenEvents.clear();
+      playSfx('openchest');
       this.playChestOpenFx(evt);
 
       // 玩家开箱动画：用 Punch 表达"敲开"的动作（仅当玩家存活；移动中也会被立刻打断，符合手感）
@@ -9100,6 +9225,8 @@ export class GameScene {
 
   private showGameOver(result: GameResult): void {
     if (this.gameOverPanel) return;
+    setFlameRingSfxActive(false);
+    if (!result.victory) playSfx('gameover');
     this.cameraOrbit.setEnabled(false);
 
     const state = this.session.getRenderState();
@@ -9425,6 +9552,12 @@ export class GameScene {
     title.style.cssText = uiPlainText(`flex:0 0 auto;width:100%;text-align:center;font-size:clamp(${uiPx(32)}px,8vmin,${uiPx(46)}px);font-weight:bold;line-height:1.05;padding:0;transform:translateY(-${uiPx(6)}px);`);
     title.textContent = t('pause.title');
     centerGroup.appendChild(title);
+
+    const audioRow = document.createElement('div');
+    audioRow.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:8px;margin:-2px 0 2px;';
+    audioRow.appendChild(createAudioToggleButton('sfx', true));
+    audioRow.appendChild(createAudioToggleButton('music', true));
+    centerGroup.appendChild(audioRow);
 
     const buttonStack = document.createElement('div');
     buttonStack.style.cssText = 'display:flex;flex-direction:column;align-items:center;width:100%;gap:clamp(4px,1vh,6px);';
@@ -10016,6 +10149,7 @@ function mountCharacterSelectSlots(host: HTMLElement): void {
     const frames = CHARACTER_AVATAR_FRAME_PATHS[char];
 
     const slot = document.createElement('div');
+    if (isUnlocked) slot.dataset.audioClick = 'true';
     slot.style.cssText = `
       position:relative;width:clamp(46px,12vw,56px);min-width:44px;min-height:44px;
       cursor:${isUnlocked ? 'pointer' : 'not-allowed'};flex-shrink:0;transition:transform 0.15s;
@@ -10058,6 +10192,7 @@ function mountCharacterSelectSlots(host: HTMLElement): void {
 
 function createShopBuyButton(cost: number, affordable: boolean, onClick?: () => void): HTMLDivElement {
   const btn = document.createElement('div');
+  if (affordable && onClick) btn.dataset.audioClick = 'true';
   btn.style.cssText = `
     position:relative;width:100%;max-width:100%;
     cursor:${affordable ? 'pointer' : 'default'};user-select:none;
@@ -10134,6 +10269,7 @@ function createFramedLabelButton(
 ): HTMLDivElement {
   const btn = document.createElement('div');
   btn.dataset.cameraBlock = 'true';
+  btn.dataset.audioClick = 'true';
   btn.style.cssText = `
     position:relative;display:block;width:${width};min-width:${uiPx(40)}px;min-height:${uiPx(40)}px;flex-shrink:0;
     cursor:pointer;user-select:none;touch-action:manipulation;
@@ -10751,7 +10887,7 @@ function showCharacterSelectScreen(): void {
 
   const silverWrap = document.createElement('div');
   silverWrap.dataset.region = 'silver';
-  silverWrap.appendChild(createSilverBadge(loadSave().silver));
+  silverWrap.appendChild(createSilverMusicControls(loadSave().silver));
   header.appendChild(silverWrap);
   characterSelectEl.appendChild(header);
 
@@ -10857,7 +10993,7 @@ function showTierSelectScreen(): void {
 
   const silverWrap = document.createElement('div');
   silverWrap.dataset.region = 'silver';
-  silverWrap.appendChild(createSilverBadge(loadSave().silver));
+  silverWrap.appendChild(createSilverMusicControls(loadSave().silver));
   header.appendChild(silverWrap);
   tierSelectEl.appendChild(header);
 
@@ -10893,6 +11029,8 @@ function showTierSelectScreen(): void {
         return;
       }
       const character = selectedCharacter;
+      applyGameStartAudioPolicy();
+      fadeOutMenuMusic(800);
       playTransition(
         () => {
           destroyTierSelectScreen();
@@ -11105,6 +11243,7 @@ function createMainMenuButton(
   pressedFrame?: string,
 ): HTMLDivElement {
   const btn = document.createElement('div');
+  btn.dataset.audioClick = 'true';
   btn.style.cssText = `
     position:relative;width:min(${uiPx(140)}px,58vw);max-width:100%;min-height:44px;cursor:pointer;user-select:none;
     touch-action:manipulation;transition:transform 0.15s;
@@ -11171,6 +11310,7 @@ function createMainMenuButton(
 }
 
 function showMainMenu(): void {
+  playMenuMusic();
   mainMenuEl = document.createElement('div');
   mainMenuEl.style.cssText = `
     position:fixed;top:0;left:0;width:100%;height:100%;
@@ -11182,23 +11322,44 @@ function showMainMenu(): void {
     padding-bottom:max(24px,env(safe-area-inset-bottom,0px));
   `;
 
+  const bgVideo = document.createElement('video');
+  bgVideo.src = LOBBY_BG_VIDEO_PATH;
+  bgVideo.poster = LOBBY_BG_PATH;
+  bgVideo.autoplay = true;
+  bgVideo.muted = true;
+  bgVideo.loop = true;
+  bgVideo.playsInline = true;
+  bgVideo.disablePictureInPicture = true;
+  bgVideo.setAttribute('aria-hidden', 'true');
+  bgVideo.style.cssText = `
+    position:absolute;inset:0;width:100%;height:100%;
+    object-fit:cover;pointer-events:none;z-index:0;
+  `;
+  mainMenuEl.appendChild(bgVideo);
+  bgVideo.play().catch(() => {
+    // 静态 CSS background + poster 作为兜底；自动播放失败不影响菜单可用性。
+  });
+
   const save = loadSave();
-  const silverDisplay = createSilverBadge(save.silver);
-  silverDisplay.style.position = 'absolute';
-  silverDisplay.style.top = 'max(16px, env(safe-area-inset-top, 0px))';
-  silverDisplay.style.right = 'max(16px, env(safe-area-inset-right, 0px))';
-  mainMenuEl.appendChild(silverDisplay);
+  const topRightControls = createSilverMusicControls(save.silver, true);
+  topRightControls.style.position = 'absolute';
+  topRightControls.style.top = 'max(16px, env(safe-area-inset-top, 0px))';
+  topRightControls.style.right = 'max(16px, env(safe-area-inset-right, 0px))';
+  topRightControls.style.zIndex = '2';
+  mainMenuEl.appendChild(topRightControls);
 
   const langBtn = createLanguageSwitcherButton();
   if (langBtn) {
     langBtn.style.position = 'absolute';
     langBtn.style.left = 'max(12px, env(safe-area-inset-left, 0px))';
     langBtn.style.bottom = 'max(12px, env(safe-area-inset-bottom, 0px))';
+    langBtn.style.zIndex = '2';
     mainMenuEl.appendChild(langBtn);
   }
 
   const centerGroup = document.createElement('div');
   centerGroup.style.cssText = `
+    position:relative;z-index:1;
     flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
     gap:clamp(10px,2.5vh,14px);width:100%;min-height:0;
     overflow-y:${isUiShort() ? 'auto' : 'visible'};
@@ -12109,6 +12270,7 @@ async function main(): Promise<void> {
     mode: i18nMode,
     locale: i18nLocale,
   });
+  installButtonClickSfx();
 
   showBootLoadingOverlay();
   // 进度封顶 95%，留最后 5% 给关卡解析 / 主菜单构建，hide 时补满到 100%。

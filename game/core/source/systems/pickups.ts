@@ -211,6 +211,13 @@ function collectPickup(engine: Engine, pickup: PickupState): void {
   // Tier multiplier
   xpValue = Math.floor(xpValue * TIER_CONFIGS[engine.config.tier].xpMultiplier);
   player.xp += xpValue;
+  engine.state.xpPickupEvents.push({
+    x: pickup.x,
+    y: pickup.y,
+    z: pickup.z,
+    amount: xpValue,
+    type: pickup.type,
+  });
 }
 
 function tickGoldMotes(engine: Engine, dt: number): void {

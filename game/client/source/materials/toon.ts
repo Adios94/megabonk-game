@@ -15,6 +15,8 @@
 import * as THREE from 'three';
 import { curvedWorldUniforms } from './curvedWorld.ts';
 
+const MAX_CURVED_WORLD_THETA = '1.45';
+
 /**
  * Multi-step toon gradient map (UltimateToon「stylized.gdshader」的 stepped-light 移植)。
  *
@@ -258,7 +260,7 @@ export function applyStylizedToonShading(mat: THREE.MeshToonMaterial, specStreng
         float d = length(diff.xz);
 
         if (d > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
-            float theta = d * uWarpStrength;
+            float theta = min(d * uWarpStrength, ${MAX_CURVED_WORLD_THETA});
             float sinTheta = sin(theta);
             float cosTheta = cos(theta);
             vec2 dir = diff.xz / d;
@@ -289,7 +291,7 @@ export function applyStylizedToonShading(mat: THREE.MeshToonMaterial, specStreng
         float dForNormal = length(diffForNormal.xz);
 
         if (dForNormal > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
-            float theta = dForNormal * uWarpStrength;
+            float theta = min(dForNormal * uWarpStrength, ${MAX_CURVED_WORLD_THETA});
             vec2 dir = diffForNormal.xz / dForNormal;
             vec3 viewAxis = normalize( mat3(viewMatrix) * vec3( -dir.y, 0.0, dir.x ) );
             
@@ -308,7 +310,7 @@ export function applyStylizedToonShading(mat: THREE.MeshToonMaterial, specStreng
         `${STYLIZED_TOON_GLSL}\n\t#include <opaque_fragment>`,
       );
   };
-  mat.customProgramCacheKey = () => 'stylized-toon-v10-stepeps';
+  mat.customProgramCacheKey = () => 'stylized-toon-v11-clamped-warp';
 }
 
 /**

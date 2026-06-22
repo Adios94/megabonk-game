@@ -6,3 +6,6 @@ dist
 level-editor/loulnet-assets/
 .claude/settings.local.json
 .cursor/settings.local.json
+
+# Blender 中间产物（由 scripts/blender/*.py 生成，不进版本库）
+scripts/blender/out/

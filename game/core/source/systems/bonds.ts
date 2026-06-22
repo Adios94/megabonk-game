@@ -14,10 +14,10 @@ import {
   BONDS, ALL_BOND_IDS, BONDS_BY_WEAPON,
   evalBondCounts, getBondTier, bondThresholds, bondUpgradeTargets,
 } from '../data/bonds.ts';
-import { loadSave, saveSave } from '../save.ts';
-import { distanceSqBetween } from '../physics.ts';
+import { loadSave, saveSave } from '../services/save.ts';
+import { distanceSqBetween } from '../helpers/physics.ts';
 import { AOE_MAX_Y_DELTA } from '../config.ts';
-import { bossDamageEventY, enemyDamageEventY } from '../combatHeight.ts';
+import { bossDamageEventY, enemyDamageEventY } from '../helpers/combatHeight.ts';
 import { recordBondDamage } from './weaponDamageStats.ts';
 import type { Engine } from './types.ts';
 import type {

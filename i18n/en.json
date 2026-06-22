@@ -2,6 +2,9 @@
   "game": {
     "title": "BONK of BONK"
   },
+  "boot": {
+    "loading": "Loading…"
+  },
   "menu": {
     "start": "Start Game",
     "shop": "Shop",
@@ -94,10 +97,10 @@
     "silver": "Silver: {{count}}",
     "finalSwarm": "FINAL SWARM!",
     "combo": "COMBO x{{count}}",
-    "quest": "Find the altar, summon and defeat the BOSS!",
+    "quest": "Find the UFO, summon and defeat the BOSS!",
     "weaponSlotLocked": "Unlocked after completing the \"equip 7 different weapons\" quest",
     "compass": {
-      "altar": "Altar",
+      "altar": "UFO",
       "portal": "Portal"
     }
   },
@@ -404,7 +407,7 @@
   },
   "altar": {
     "summoning": "Summoning Boss...",
-    "cooldown": "Altar cooldown {{seconds}}s",
+    "cooldown": "UFO cooldown {{seconds}}s",
     "prompt": {
       "summon": "[E] Summon Boss",
       "enterPortal": "[E] Enter Portal"
@@ -420,7 +423,80 @@
   "chest": {
     "rewardTitle": "Chest Relic",
     "discard": "Discard",
-    "keep": "Keep"
+    "keep": "Keep",
+    "bossFreeOpen": "Boss Chest · Free Open",
+    "cost": "Costs {{cost}} Gold",
+    "prompt": {
+      "openBoss": "Open Boss Chest",
+      "openBossKey": "[E] Open Boss Chest",
+      "open": "Open Chest {{cost}}",
+      "openKey": "[E] Open Chest - {{cost}} Gold",
+      "needGold": "Need Gold {{have}}/{{need}}"
+    }
+  },
+  "relic": {
+    "keen_lens": {
+      "name": "Keen Lens",
+      "desc": "Crit Chance +3%"
+    },
+    "small_shield_charm": {
+      "name": "Small Shield Charm",
+      "desc": "Shield +2, Max Shield +5"
+    },
+    "blood_fang": {
+      "name": "Blood Fang",
+      "desc": "Restore 2 HP on kill (Elite +3)"
+    },
+    "pact_coin": {
+      "name": "Pact Coin",
+      "desc": "+1 Gold per kill"
+    },
+    "arsenal_badge": {
+      "name": "Arsenal Badge",
+      "desc": "Every Lv10 weapon: +4% global damage"
+    },
+    "elite_writ": {
+      "name": "Elite Writ",
+      "desc": "+10% damage to elites"
+    },
+    "regen_core": {
+      "name": "Regen Core",
+      "desc": "HP Regen +0.5/s"
+    },
+    "magazine_expander": {
+      "name": "Magazine Expander",
+      "desc": "+1 Projectile"
+    },
+    "hourglass": {
+      "name": "Hourglass",
+      "desc": "Overtime: +0.12% all damage/s (stacks)"
+    },
+    "iron_heart": {
+      "name": "Iron Heart",
+      "desc": "Max HP +12%; Armor +2"
+    },
+    "stat": {
+      "shield": "Shield",
+      "maxShield": "Max Shield",
+      "killHeal": "Kill Heal",
+      "eliteKillHeal": "Elite Kill Heal",
+      "killGold": "Gold per Kill",
+      "perLv10Weapon": "Per Lv10 Weapon",
+      "perLv10WeaponValue": "{{pct}} damage",
+      "currentTotalDamage": "Current Total Damage",
+      "eliteDamage": "Elite Damage",
+      "lifeRegen": "Life Regen",
+      "overtimePerSec": "Overtime DMG/s",
+      "currentOvertime": "Current Overtime DMG"
+    }
+  },
+  "tooltip": {
+    "tome": {
+      "subtitle": "Lv.{{level}}/{{max}} · Power {{power}}"
+    },
+    "weapon": {
+      "cooldownLabel": "Cooldown"
+    }
   },
   "shrine": {
     "title": "Charge Shrine Rewards",

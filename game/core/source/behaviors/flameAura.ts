@@ -9,9 +9,9 @@
  * 数学等价于 fireFlameRing，由 parity 测试锁定。
  */
 import { computeWeaponDamage } from '../stats/index.ts';
-import { distanceSqBetween } from '../physics.ts';
+import { distanceSqBetween } from '../helpers/physics.ts';
 import { AOE_MAX_Y_DELTA } from '../config.ts';
-import { bossDamageEventY, enemyDamageEventY } from '../combatHeight.ts';
+import { bossDamageEventY, enemyDamageEventY } from '../helpers/combatHeight.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
 

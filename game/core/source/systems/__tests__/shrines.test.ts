@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_GAME_CONFIG, SHRINE_COUNT } from '../../config.ts';
-import { makeLevelGeometry } from '../collision.ts';
+import { makeLevelGeometry } from '../levelGeometry.ts';
 import { generateShrines, isShrineSpotWalkable } from '../shrines.ts';
 import type { LevelData } from '../../types.ts';
 import { makeEngine } from './_fixtures.ts';

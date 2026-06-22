@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { grantRelic, applyRelicKillEffects, applyRelicTargetDamage } from '../relics.ts';
 import { applyShrineReward } from '../shrines.ts';
 import { recomputePlayerStats } from '../../stats/recomputePlayerStats.ts';
-import { getShopBonuses } from '../../shop.ts';
+import { getShopBonuses } from '../../data/shop.ts';
 import { makeEngine, makeEnemy } from './_fixtures.ts';
 
 describe('grantRelic', () => {

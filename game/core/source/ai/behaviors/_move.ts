@@ -9,8 +9,8 @@
 import type { EnemyState } from '../../types.ts';
 import type { AiContext } from '../types.ts';
 import { tryMoveHorizontally } from '../../systems/horizontalMove.ts';
-import { isBlockedHorizontallyAt, getSupportHeightAt } from '../../systems/collision.ts';
-import { getTomePower } from '../../tomeProgression.ts';
+import { isBlockedHorizontallyAt, getSupportHeightAt } from '../../systems/levelGeometry.ts';
+import { getTomePower } from '../../data/tomeProgression.ts';
 import { getSlowMultiplier } from '../../systems/statusEffects.ts';
 import { FINAL_SWARM_SPEED_MULTIPLIER, STEP_HEIGHT } from '../../config.ts';
 

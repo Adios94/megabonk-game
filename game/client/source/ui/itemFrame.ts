@@ -150,10 +150,14 @@ export function itemFrameAccentLine(text: string, color: string, extraCss = ''):
 /** 升级卡 SVG viewBox 尺寸（用于 aspect-ratio）。 */
 export const UPGRADE_FRAME_SIZE = { w: 1897, h: 2642 } as const;
 
+// 注意：升级框 SVG 资产的"uncommon / rare"文件名是反的——
+// frame_upgrade_uncommon.svg 实际是蓝色调，frame_upgrade_rare.svg 实际是绿色调。
+// 全局 RARITY_COLORS 与 frame_item_*.svg 走 uncommon=绿 / rare=蓝 的常规约定，
+// 这里把映射 swap 回来，让升级卡的框色 + 数字色 + 稀有度 tab 与项目其他 UI 一致。
 const UPGRADE_FRAME_SRC: Record<ItemFrameRarity, string> = {
   common: '/ui/panel/svg/frame_upgrade_common.svg',
-  uncommon: '/ui/panel/svg/frame_upgrade_uncommon.svg',
-  rare: '/ui/panel/svg/frame_upgrade_rare.svg',
+  uncommon: '/ui/panel/svg/frame_upgrade_rare.svg',
+  rare: '/ui/panel/svg/frame_upgrade_uncommon.svg',
   legendary: '/ui/panel/svg/frame_upgrade_legendary.svg',
   bond: '/ui/panel/svg/frame_upgrade_bond.svg',
 };

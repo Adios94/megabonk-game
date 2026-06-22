@@ -13,7 +13,7 @@
  * 同一时间只允许有一个 ready/active 的 shrine（避免 phase 冲突）。
  * 当 phase = 'shrine_reward' 时，主循环跳过其它 system（与 level_up 同处理）。
  */
-import { distanceBetween } from '../physics.ts';
+import { distanceBetween } from '../helpers/physics.ts';
 import {
   SHRINE_COUNT,
   SHRINE_RADIUS,
@@ -23,8 +23,8 @@ import {
   STEP_HEIGHT,
 } from '../config.ts';
 import { rollShrineOptions } from '../data/shrineRewards.ts';
-import { getTerrainHeightAt, isBlockedHorizontallyAt, type LevelGeometry } from './collision.ts';
-import { selectShrineMarkerPoints } from '../levelMarkerSelection.ts';
+import { getTerrainHeightAt, isBlockedHorizontallyAt, type LevelGeometry } from './levelGeometry.ts';
+import { selectShrineMarkerPoints } from '../helpers/levelMarkerSelection.ts';
 import type { ShrineState, GameConfig, PlayerState } from '../types.ts';
 import type { Engine } from './types.ts';
 

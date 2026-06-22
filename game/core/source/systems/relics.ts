@@ -1,7 +1,7 @@
-import { getTomePower } from '../tomeProgression.ts';
+import { getTomePower } from '../data/tomeProgression.ts';
 import { RELICS, getRelicStack, rollRelic, type RelicDef } from '../data/relics.ts';
 import { recomputePlayerStats } from '../stats/recomputePlayerStats.ts';
-import { getShopBonuses } from '../shop.ts';
+import { getShopBonuses } from '../data/shop.ts';
 import type { EnemyState, RelicId } from '../types.ts';
 import type { Engine } from './types.ts';
 

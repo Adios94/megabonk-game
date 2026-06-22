@@ -1,5 +1,5 @@
 /**
- * altars.ts 单元测试 —— 祭坛 / 传送门状态机。
+ * altars.ts 单元测试 —— 飞碟 / 传送门状态机。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
@@ -33,7 +33,7 @@ describe('generateAltars', () => {
   beforeEach(() => vi.spyOn(Math, 'random').mockReturnValue(0.5));
   afterEach(() => vi.restoreAllMocks());
 
-  it('每个 tier 都生成 teleporterCount 个祭坛（设计统一为 1）', () => {
+  it('每个 tier 都生成 teleporterCount 个飞碟（设计统一为 1）', () => {
     const config = makeEngine().config;
     for (const tier of [1, 2, 3] as const) {
       const altars = generateAltars({ ...config, tier });
@@ -211,7 +211,7 @@ describe('onBossDefeated', () => {
 });
 
 describe('hasReadyBossTrigger', () => {
-  it('任意祭坛 boss_active → true', () => {
+  it('任意飞碟 boss_active → true', () => {
     const engine = makeEngine();
     engine.state.altars = [altar({ phase: 'boss_active' })];
     expect(hasReadyBossTrigger(engine)).toBe(true);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getUpgradePreviewLines } from '../upgradePreview.ts';
+import { getUpgradePreviewLines } from '../data/upgradePreview.ts';
 import { emptyWeaponGrowth } from '../systems/weapons.ts';
 import type { PlayerState, UpgradeOption } from '../types.ts';
 

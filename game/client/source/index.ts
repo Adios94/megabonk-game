@@ -2,7 +2,11 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 // @ts-ignore
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+// @ts-ignore
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
+// @ts-ignore
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 // @ts-ignore
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
@@ -83,8 +87,8 @@ import { initI18n, t, getLocale, setLocale, getAvailableLocales, getMode } from 
 import { CameraOrbit } from './systems/cameraOrbit.ts';
 import { PlayerInvincibilityFx } from './systems/playerFx.ts';
 import { BlobShadowPool } from './systems/blobShadows.ts';
-import { gsapAnimations } from './gsap-animations.ts';
-import { uiPlainText, uiColoredText, UI_PLAIN_TEXT_STYLE, UI_TEXT_OUTLINE_SHADOW, UI_BAR_TEXT_LAYER } from './ui/textStyle.ts';
+import { gsapAnimations } from './gsapAnimations.ts';
+import { uiPlainText, uiPlainTextBold, uiColoredText, uiColoredTextBold, UI_PLAIN_TEXT_STYLE, UI_TEXT_OUTLINE_SHADOW, UI_BAR_TEXT_LAYER } from './ui/textStyle.ts';
 import {
   createUpgradeFrameCard,
   upgradeFrameUrl,
@@ -126,6 +130,7 @@ import {
   UI_SCROLLBAR_TRANSPARENT_CLASS,
 } from './ui/layout.ts';
 import { createPauseDataPanel, PAUSE_SIDE_PANEL_WIDTH } from './ui/pauseDataPanel.ts';
+import { playTransition } from './ui/sceneTransition.ts';
 import type { I18nMode } from '@minigame/i18n';
 import { EventEmitter } from './session/EventEmitter.ts';
 
@@ -133,142 +138,79 @@ import zhLocale from '../../../i18n/zh.json';
 import enLocale from '../../../i18n/en.json';
 
 // =============================================================================
-// GPU Curved World (Rolling Horizon) System
+// Pool Caps & Resource Disposal
 // =============================================================================
+// 对象池上限：超过这个数量的"空闲"实例不再缓存，直接释放。
+// 之所以要设上限：游戏过程中如果某个瞬间有很多敌人/投射物同时存在，池子会被
+// 撑大；当后续不再需要那么多时，多余的实例若不释放，会一直占据内存（材质/
+// 骨架包装器/动画 mixer 都会留在 GPU/JS 堆里），最终触发 Major GC 大暂停。
+const ENEMY_POOL_CAP_PER_TYPE = 24;
+const PROJECTILE_POOL_CAP = 16;
+import { OWNED_CLONE_KEY, disposeOwnedResources } from './materials/disposeOwned.ts';
 
-export const curvedWorldUniforms = {
-  uWarpCenter: { value: new THREE.Vector3(0, 0, 0) },
-  uWarpStrength: { value: 0.015 } // adjustable! Default to 1/66.6 radius
-};
+// GPU Curved World (Rolling Horizon) — see materials/curvedWorld.ts
+// Auto-installs onBeforeCompile patch on all material types when imported.
+import { curvedWorldUniforms } from './materials/curvedWorld.ts';
+export { curvedWorldUniforms };
 
-// Global patch on THREE.Material to inject GPU curved world warp on all meshes and sprites!
-const originalOnBeforeCompile = THREE.Material.prototype.onBeforeCompile;
-THREE.Material.prototype.onBeforeCompile = function (shader, renderer) {
-  if (originalOnBeforeCompile) {
-    originalOnBeforeCompile.call(this, shader, renderer);
-  }
+// Toon / cel-shading — see materials/toon.ts
+import {
+  toonGradientMap,
+  stylizedUniforms,
+  applyStylizedToonShading,
+  convertToToonMaterials,
+  brightenWeaponMaterials,
+  applyChestGoldMaterials,
+  tuneToonTexture,
+  boostMaterialSaturation,
+  capMaterialLightness,
+  smoothstep01,
+} from './materials/toon.ts';
 
-  const allowedTypes = [
-    'MeshBasicMaterial',
-    'MeshToonMaterial',
-    'MeshStandardMaterial',
-    'MeshPhysicalMaterial',
-    'SpriteMaterial',
-    'MeshPhongMaterial',
-    'MeshLambertMaterial'
-  ];
+// Post-process passes — see materials/postProcessPasses.ts
+import {
+  type OutlineMode,
+  SceneOutlinePass,
+  ColorGradePass,
+  DarkComicPass,
+  GRADE_SATURATION,
+  GRADE_CONTRAST,
+  GRADE_BRIGHTNESS,
+} from './materials/postProcessPasses.ts';
 
-  if (this.isMaterial && (allowedTypes.includes(this.type) || (this as any).isMeshStandardMaterial || (this as any).isMeshBasicMaterial || (this as any).isSpriteMaterial || (this as any).isMeshToonMaterial)) {
-    if (!this.userData) this.userData = {};
-    if (!this.userData.uIsBackground) {
-      this.userData.uIsBackground = { value: this.userData.isBackground ? 1.0 : 0.0 };
-    }
+// Billboard VFX pool — see vfx/BillboardPool.ts
+import {
+  BillboardPool,
+  type VfxTextureKey,
+  type BillboardSpawnOpts,
+} from './vfx/BillboardPool.ts';
 
-    shader.uniforms['uWarpCenter'] = curvedWorldUniforms.uWarpCenter;
-    shader.uniforms['uWarpStrength'] = curvedWorldUniforms.uWarpStrength;
-    shader.uniforms['uIsBackground'] = this.userData.uIsBackground;
+// Particle pool + emit helpers — see vfx/ParticlePool.ts
+import { ParticlePool } from './vfx/ParticlePool.ts';
 
-    shader.vertexShader = shader.vertexShader
-      .replace(
-        'void main() {',
-        `uniform vec3 uWarpCenter;\nuniform float uWarpStrength;\nuniform float uIsBackground;\nvoid main() {`
-      );
+// 武器瞬态 VFX（剑气 / 闪电 / 火环）— 见 vfx/WeaponTransientVfx.ts
+import { WeaponTransientVfx } from './vfx/WeaponTransientVfx.ts';
 
-    if (this.type === 'SpriteMaterial') {
-      shader.vertexShader = shader.vertexShader.replace(
-        '#include <project_vertex>',
-        `
-        vec4 mvPosition = modelViewMatrix * vec4( 0.0, 0.0, 0.0, 1.0 );
-        #ifdef USE_INSTANCING
-          mvPosition = instanceMatrix * mvPosition;
-        #endif
+// 区域特效（毒气 / 虚空涟漪 / 灼地痕迹 / 激光线）— 见 vfx/AreaEffectVfx.ts
+import { AreaEffectVfx } from './vfx/AreaEffectVfx.ts';
 
-        vec4 gpWorldPos = modelMatrix * vec4( 0.0, 0.0, 0.0, 1.0 );
-        vec3 diff = gpWorldPos.xyz - uWarpCenter;
-        float d = length(diff.xz);
+// 羁绊 / 状态 VFX（奥秘数字 / 奥术光球 / bond 事件 / 敌人状态粒子）— 见 vfx/BondAndStatusVfx.ts
+import { BondAndStatusVfx } from './vfx/BondAndStatusVfx.ts';
 
-        if (d > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
-            float theta = d * uWarpStrength;
-            float sinTheta = sin(theta);
-            float cosTheta = cos(theta);
-            vec2 dir = diff.xz / d;
+// 武器 / 拾取 VFX 颜色查表 — 见 vfx/weaponColors.ts
+import { WEAPON_VFX_COLORS, PICKUP_VFX_COLORS } from './vfx/weaponColors.ts';
 
-            vec3 normal = vec3(sinTheta * dir.x, cosTheta, sinTheta * dir.y);
-            float r = (1.0 / uWarpStrength) + diff.y;
-            vec3 warpedPos = r * normal;
-            warpedPos.y -= (1.0 / uWarpStrength);
+// Damage number overlay — see ui/damageNumbers.ts
+import { DamageNumbersOverlay } from './ui/damageNumbers.ts';
 
-            gpWorldPos.xyz = uWarpCenter + warpedPos;
-            mvPosition = viewMatrix * gpWorldPos;
-        }
-
-        vec2 scale = vec2( length( modelMatrix[ 0 ].xyz ), length( modelMatrix[ 1 ].xyz ) );
-        #ifndef USE_SIZEATTENUATION
-          bool isPerspective = isPerspectiveMatrix( projectionMatrix );
-          if ( isPerspective ) scale *= - mvPosition.z;
-        #endif
-
-        mvPosition.xy += position.xy * scale;
-        gl_Position = projectionMatrix * mvPosition;
-        `
-      );
-    } else {
-      shader.vertexShader = shader.vertexShader.replace(
-        '#include <project_vertex>',
-        `
-        vec4 localPos = vec4( transformed, 1.0 );
-        #ifdef USE_INSTANCING
-          localPos = instanceMatrix * localPos;
-        #endif
-        vec4 gpWorldPos = modelMatrix * localPos;
-
-        vec3 diff = gpWorldPos.xyz - uWarpCenter;
-        float d = length(diff.xz);
-
-        if (d > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
-            float theta = d * uWarpStrength;
-            float sinTheta = sin(theta);
-            float cosTheta = cos(theta);
-            vec2 dir = diff.xz / d;
-
-            vec3 normal = vec3(sinTheta * dir.x, cosTheta, sinTheta * dir.y);
-            float r = (1.0 / uWarpStrength) + diff.y;
-            vec3 warpedPos = r * normal;
-            warpedPos.y -= (1.0 / uWarpStrength);
-
-            gpWorldPos.xyz = uWarpCenter + warpedPos;
-        }
-
-        vec4 mvPosition = viewMatrix * gpWorldPos;
-        gl_Position = projectionMatrix * mvPosition;
-        `
-      );
-
-      // Normal rotation for non-basic lighted materials to align with spherical curvature
-      shader.vertexShader = shader.vertexShader.replace(
-        '#include <defaultnormal_vertex>',
-        `
-        #include <defaultnormal_vertex>
-
-        vec3 gpWorldPosForNormal = (modelMatrix * vec4(position, 1.0)).xyz;
-        vec3 diffForNormal = gpWorldPosForNormal - uWarpCenter;
-        float dForNormal = length(diffForNormal.xz);
-
-        if (dForNormal > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
-            float theta = dForNormal * uWarpStrength;
-            vec2 dir = diffForNormal.xz / dForNormal;
-            vec3 viewAxis = normalize( mat3(viewMatrix) * vec3( -dir.y, 0.0, dir.x ) );
-            
-            float cosA = cos(theta);
-            float sinA = sin(theta);
-            transformedNormal = transformedNormal * cosA + cross(viewAxis, transformedNormal) * sinA + viewAxis * dot(viewAxis, transformedNormal) * (1.0 - cosA);
-            transformedNormal = normalize(transformedNormal);
-        }
-        `
-      );
-    }
-  }
-};
+// Hit flash system — see render/HitFlashSystem.ts
+import {
+  HitFlashSystem,
+  type HitFlashMaterial,
+  PLAYER_SHIELD_HIT_FLASH_COLOR,
+  PLAYER_HP_HIT_FLASH_COLOR,
+  PLAYER_HIT_FLASH_DURATION,
+} from './render/HitFlashSystem.ts';
 
 // =============================================================================
 // Runtime Event Types
@@ -281,102 +223,11 @@ export type GameRuntimeEvents = {
   game_reset: null;
 };
 
-// =============================================================================
-// Billboard VFX 类型
-// =============================================================================
+// Billboard VFX 类型 / 池 → 见 vfx/BillboardPool.ts（VfxTextureKey / VFX_TEXTURE_FILES /
+// BillboardVfxItem / BillboardSpawnOpts / BillboardPool）。
 
-/**
- * 已注册的 VFX 贴图 key（对应 public/textures/vfx/<key>.png）。
- * 增加新贴图时同步更新 `VFX_TEXTURE_FILES` 和此 union。
- */
-type VfxTextureKey =
-  | 'spark' | 'star' | 'smoke' | 'light' | 'slash'
-  | 'muzzle' | 'magic_circle' | 'portal_swirl' | 'scorch' | 'dirt' | 'flame'
-  | 'twirl' | 'slash_fill' | 'flame_aura' | 'lightning' | 'flare' | 'void_ripple'
-  | 'scorch_boots' | 'enemy_bullet';
-
-const VFX_TEXTURE_FILES: Record<VfxTextureKey, string> = {
-  spark: '/textures/vfx/spark.png',
-  star: '/textures/vfx/star.png',
-  smoke: '/textures/vfx/smoke.png',
-  light: '/textures/vfx/light.png',
-  slash: '/textures/vfx/slash.png',
-  muzzle: '/textures/vfx/muzzle.png',
-  magic_circle: '/textures/vfx/magic_circle.png',
-  portal_swirl: '/textures/vfx/portal_swirl.png',
-  scorch: '/textures/vfx/scorch.png',
-  dirt: '/textures/vfx/dirt.png',
-  flame: '/textures/vfx/flame.png',
-  twirl: '/textures/particle_twirl.png',
-  flare: '/textures/particle_flare.png',
-  void_ripple: '/textures/vfx/void_ripple.png',
-  // ↓ 以下 5 个 key 的贴图当前与另一 key 字节完全相同（同一占位图被复制了两份）。
-  // 去重：删掉重复文件，让这些 key 复用对应的「主」文件，省发布体积。
-  // ⚠️ 若将来要给某个特效做专属贴图（让它与主文件分化），请：
-  //    1) 在 public/textures/vfx/ 放回独立文件（如 lightning.png）；2) 把这里的路径改回去。
-  slash_fill: '/textures/vfx/portal_swirl.png', // 原 slash_fill.png == portal_swirl.png
-  flame_aura: '/textures/vfx/light.png',        // 原 flame_aura.png == light.png
-  lightning: '/textures/vfx/spark.png',         // 原 lightning.png == spark.png
-  scorch_boots: '/textures/vfx/scorch.png',     // 原 scorch_boots.png == scorch.png
-  enemy_bullet: '/textures/vfx/muzzle.png',     // 原 enemy_bullet.png == muzzle.png
-};
-
-/** Billboard 池中每个槽位的运行时状态。 */
-interface BillboardVfxItem {
-  mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
-  active: boolean;
-  age: number;
-  lifetime: number;
-  startScale: number;
-  endScale: number;
-  startOpacity: number;
-  /** 'fadeOut' = 起始 opacity → 0；'flash' = 0 → 起始 → 0；'constant' = 不变。 */
-  opacityCurve: 'fadeOut' | 'flash' | 'constant';
-  rotationSpeed: number;
-  /** 'camera' = 始终面向相机；'up' = 平躺地面（不旋转）。 */
-  facing: 'camera' | 'up';
-}
-
-/** spawnBillboard 选项。 */
-interface BillboardSpawnOpts {
-  texture: VfxTextureKey;
-  x: number;
-  y: number;
-  z: number;
-  /** 起始大小（m）。 */
-  scale: number;
-  /** 终止大小，默认 = scale（不缩放）。 */
-  endScale?: number;
-  /** 持续时间（s）。 */
-  lifetime: number;
-  /** 起始透明度，默认 1。 */
-  opacity?: number;
-  /** 渐隐曲线，默认 'fadeOut'。 */
-  opacityCurve?: 'fadeOut' | 'flash' | 'constant';
-  /** 染色，默认 0xffffff。 */
-  color?: number;
-  /** 初始旋转（弧度）。 */
-  rotation?: number;
-  /** 旋转速度（弧度/秒），默认 0。 */
-  rotationSpeed?: number;
-  /** 朝向：'camera' 面向相机，'up' 平躺地面（地面贴花用）。默认 'camera'。 */
-  facing?: 'camera' | 'up';
-  /** Blending 模式，默认 'additive'（光效）；'normal' 适合烧痕等不发光贴花。 */
-  blending?: 'additive' | 'normal';
-}
-
-type HitFlashMaterial = THREE.Material & {
-  color?: THREE.Color;
-  emissive?: THREE.Color;
-};
-
-const HIT_FLASH_BASE_COLOR_KEY = '__hitFlashBaseColor';
-const HIT_FLASH_BASE_EMISSIVE_KEY = '__hitFlashBaseEmissive';
-const HIT_FLASH_TINT_INTENSITY = 0.88;
-const HIT_FLASH_EMISSIVE_STRENGTH = 0.2;
-const PLAYER_SHIELD_HIT_FLASH_COLOR = 0x9edcff;
-const PLAYER_HP_HIT_FLASH_COLOR = 0xff3333;
-const PLAYER_HIT_FLASH_DURATION = 0.18;
+// HitFlash types / constants → see render/HitFlashSystem.ts
+//   (HitFlashMaterial / PLAYER_SHIELD_HIT_FLASH_COLOR / PLAYER_HP_HIT_FLASH_COLOR / PLAYER_HIT_FLASH_DURATION)
 
 const START_INTRO_FADE_TO_BLACK_SECONDS = 0.28;
 const START_INTRO_WALK_SECONDS = 1.55;
@@ -497,334 +348,34 @@ export class LocalGameSession {
 // Constants
 // =============================================================================
 
-const ENEMY_COLORS: Record<string, number> = {
-  skeleton_soldier: 0xd4a574,
-  zombie: 0x44cc55,
-  skeleton_archer: 0xc87533,
-  skeleton_knight: 0xdd4444,
-  necromancer: 0x9944cc,
-  gargoyle: 0x667788,
-};
+import {
+  ENEMY_COLORS,
+  ENEMY_HOVER_OFFSET,
+  ENEMY_ANIM_LOD_NEAR,
+  ENEMY_ANIM_LOD_FAR,
+  ENEMY_ANIM_LOD_NEAR_SQ,
+  ENEMY_ANIM_LOD_FAR_SQ,
+  ENEMY_ANIM_LOD_MID_STRIDE,
+  ENEMY_ANIM_LOD_FAR_STRIDE,
+  ENEMY_VISIBLE_CULL_DIST,
+  ENEMY_VISIBLE_CULL_SQ,
+  CHARGE_COOLDOWN_STRIKE_THRESHOLD,
+  WEAPON_PROJECTILE_COLORS,
+  PICKUP_COLORS,
+  MAX_CONSUMABLE_PICKUPS,
+  CONSUMABLE_COLORS,
+  CONSUMABLE_EMOJI,
+  consumableIconSrc,
+} from './data/visualConfig.ts';
 
-// 视觉离地高度（米）—— 纯渲染偏移，不影响 core 逻辑（碰撞 / preferredRange 走水平 x/z）。
-// 用飞行/飘浮模型的地面单位（dragon / ghost）抬离地面更自然。gargoyle 的飞行高度由
-// core 的 dive 行为（y=1.8）控制，不在此叠加。
-const ENEMY_HOVER_OFFSET: Record<string, number> = {
-  // skeleton_archer 现用 KayKit 法师（落地人形），不再悬浮；仅 necromancer(ghost) 飘浮
-  necromancer: 1.0,     // 幽灵 — 飘浮（离地 1m）
-};
-
-// ── 敌人动画 LOD（同屏大量怪：按到相机距离 + 视锥分档降频 mixer.update）─────────
-// 蒙皮动画的骨骼矩阵重算是同屏 100 怪时的主 CPU 开销，且与是否在屏幕内无关。
-// 近处满帧、中/远降频、视锥外冻结；降频时累积 dt 一次性补上，保证动画速率不变。
-const ENEMY_ANIM_LOD_NEAR = 16;        // 米：此距离内每帧更新
-const ENEMY_ANIM_LOD_FAR = 34;         // 米：NEAR..FAR 隔帧，超过则每 4 帧
-const ENEMY_ANIM_LOD_NEAR_SQ = ENEMY_ANIM_LOD_NEAR * ENEMY_ANIM_LOD_NEAR;
-const ENEMY_ANIM_LOD_FAR_SQ = ENEMY_ANIM_LOD_FAR * ENEMY_ANIM_LOD_FAR;
-const ENEMY_ANIM_LOD_MID_STRIDE = 2;   // 中距：每 2 帧更新一次
-const ENEMY_ANIM_LOD_FAR_STRIDE = 4;   // 远距：每 4 帧更新一次
-
-const WEAPON_PROJECTILE_COLORS: Record<string, number> = {
-  sword: 0xcccccc,
-  bone_bouncer: 0xf5f5dc,
-  axe: 0x888888,
-  pistol: 0xffcc44, // gold/brass bullet
-  lightning_staff: 0x44aaff,
-  flame_ring: 0xff6600,
-  shotgun: 0xffee44,
-  ray_gun: 0xff3366,        // 激光红
-  poison_bomb: 0x4caf3a,    // 深绿
-  paralysis_gun: 0xffdd22,  // 麻痹黄
-  void_ripple: 0x00ffff,    // 青色虚空涟漪
-  scorch_boots: 0xff7a1a,   // 灼地橙
-};
-
-const PICKUP_COLORS: Record<string, number> = {
-  xp_green: 0x00ff66,
-  xp_blue: 0x22aaff,
-  xp_purple: 0xcc44ff,
-  xp_orange: 0xffaa00,
-  gold: 0xffcc33,
-  silver: 0xeeeeee,
-  health: 0xff2222,
-  health_small: 0xff6666,
-};
-
-const MAX_CONSUMABLE_PICKUPS = 50;
-
-const CONSUMABLE_COLORS: Record<string, number> = {
-  wild_berry: 0xcc44aa,
-  hot_soup: 0xff8844,
-  mint_candy: 0x66ddff,
-  hard_bread: 0xddbb88,
-  energy_bar: 0xffcc33,
-  magnet: 0x4488ff,
-  iron_meal: 0x8899aa,
-  rage_potion: 0xff3344,
-  prophecy_book: 0xaa66ff,
-  craftsman_hammer: 0xffaa44,
-};
-
-const CONSUMABLE_EMOJI: Record<string, string> = {
-  wild_berry: '🫐',
-  hot_soup: '🍲',
-  mint_candy: '🍬',
-  hard_bread: '🥖',
-  energy_bar: '🍫',
-  magnet: '🧲',
-  iron_meal: '🍱',
-  rage_potion: '💢',
-  prophecy_book: '📖',
-  craftsman_hammer: '🔨',
-};
-
-const consumableEmojiTextureCache = new Map<string, THREE.Texture>();
-let paralysisTriangleTexture: THREE.Texture | null = null;
-let neuroTriangleTexture: THREE.Texture | null = null;
-let hunterCrosshairTexture: THREE.Texture | null = null;
-let conductorGlowTexture: THREE.Texture | null = null;
-let arcaneOrbTexture: THREE.Texture | null = null;
-const DAMAGE_NUMBER_FONT_FAMILY = "'Lilita One', 'Press Start 2P', monospace";
-
-function getConsumableEmojiTexture(consumableId: string): THREE.Texture {
-  const cached = consumableEmojiTextureCache.get(consumableId);
-  if (cached) return cached;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d')!;
-  ctx.clearRect(0, 0, 128, 128);
-
-  const glow = CONSUMABLE_COLORS[consumableId] ?? 0xcc66ff;
-  const r = ((glow >> 16) & 0xff);
-  const g = ((glow >> 8) & 0xff);
-  const b = (glow & 0xff);
-  const grad = ctx.createRadialGradient(64, 64, 10, 64, 64, 58);
-  grad.addColorStop(0, `rgba(${r},${g},${b},0.55)`);
-  grad.addColorStop(0.55, `rgba(${r},${g},${b},0.22)`);
-  grad.addColorStop(1, 'rgba(20,10,40,0.05)');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(64, 64, 56, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.strokeStyle = `rgba(${r},${g},${b},0.75)`;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(64, 64, 54, 0, Math.PI * 2);
-  ctx.stroke();
-
-  const drawEmojiFallback = () => {
-    ctx.font = '68px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(CONSUMABLE_EMOJI[consumableId] ?? '✨', 64, 66);
-  };
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  consumableEmojiTextureCache.set(consumableId, texture);
-
-  // PNG 图标异步加载：加载完绘制到画布中心并刷新纹理；失败则回退 emoji。
-  const iconImg = new Image();
-  iconImg.onload = () => {
-    const box = 88;
-    const ar = iconImg.width / iconImg.height || 1;
-    let w = box, h = box;
-    if (ar > 1) h = box / ar; else w = box * ar;
-    ctx.drawImage(iconImg, 64 - w / 2, 64 - h / 2, w, h);
-    texture.needsUpdate = true;
-  };
-  iconImg.onerror = () => {
-    drawEmojiFallback();
-    texture.needsUpdate = true;
-  };
-  iconImg.src = consumableIconSrc(consumableId);
-
-  return texture;
-}
-
-function getParalysisTriangleTexture(): THREE.Texture {
-  if (paralysisTriangleTexture) return paralysisTriangleTexture;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d')!;
-  ctx.clearRect(0, 0, 128, 128);
-
-  ctx.shadowColor = 'rgba(0,0,0,0.75)';
-  ctx.shadowBlur = 10;
-  ctx.fillStyle = 'rgba(30,20,8,0.95)';
-  ctx.beginPath();
-  ctx.moveTo(20, 26);
-  ctx.lineTo(108, 26);
-  ctx.lineTo(64, 110);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = 'rgba(194,128,32,0.92)';
-  ctx.beginPath();
-  ctx.moveTo(29, 34);
-  ctx.lineTo(99, 34);
-  ctx.lineTo(64, 98);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle = 'rgba(12,8,4,0.98)';
-  ctx.lineWidth = 8;
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  ctx.moveTo(20, 26);
-  ctx.lineTo(108, 26);
-  ctx.lineTo(64, 110);
-  ctx.closePath();
-  ctx.stroke();
-
-  ctx.strokeStyle = 'rgba(238,190,72,0.85)';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(38, 43);
-  ctx.lineTo(90, 43);
-  ctx.stroke();
-
-  paralysisTriangleTexture = new THREE.CanvasTexture(canvas);
-  paralysisTriangleTexture.colorSpace = THREE.SRGBColorSpace;
-  return paralysisTriangleTexture;
-}
-
-/** 毒师神经毒素：墨绿色倒三角标记（形似麻痹三角，配色改墨绿）。 */
-function getNeuroTriangleTexture(): THREE.Texture {
-  if (neuroTriangleTexture) return neuroTriangleTexture;
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d')!;
-  ctx.clearRect(0, 0, 128, 128);
-
-  ctx.shadowColor = 'rgba(0,0,0,0.7)';
-  ctx.shadowBlur = 10;
-  ctx.fillStyle = 'rgba(6,28,12,0.95)';
-  ctx.beginPath();
-  ctx.moveTo(20, 26);
-  ctx.lineTo(108, 26);
-  ctx.lineTo(64, 110);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = 'rgba(31,94,42,0.95)'; // 墨绿
-  ctx.beginPath();
-  ctx.moveTo(29, 34);
-  ctx.lineTo(99, 34);
-  ctx.lineTo(64, 98);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle = 'rgba(4,18,8,0.98)';
-  ctx.lineWidth = 8;
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  ctx.moveTo(20, 26);
-  ctx.lineTo(108, 26);
-  ctx.lineTo(64, 110);
-  ctx.closePath();
-  ctx.stroke();
-
-  ctx.strokeStyle = 'rgba(120,200,110,0.85)';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(38, 43);
-  ctx.lineTo(90, 43);
-  ctx.stroke();
-
-  neuroTriangleTexture = new THREE.CanvasTexture(canvas);
-  neuroTriangleTexture.colorSpace = THREE.SRGBColorSpace;
-  return neuroTriangleTexture;
-}
-
-/** 猎标烙印：红色狙击瞄准标识（圆环 + 十字）。 */
-function getHunterCrosshairTexture(): THREE.Texture {
-  if (hunterCrosshairTexture) return hunterCrosshairTexture;
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d')!;
-  ctx.clearRect(0, 0, 128, 128);
-
-  ctx.shadowColor = 'rgba(255,40,40,0.7)';
-  ctx.shadowBlur = 8;
-  ctx.strokeStyle = 'rgba(255,40,40,0.95)';
-  ctx.lineWidth = 7;
-  ctx.beginPath();
-  ctx.arc(64, 64, 40, 0, Math.PI * 2);
-  ctx.stroke();
-
-  ctx.shadowBlur = 0;
-  ctx.lineWidth = 5;
-  // 十字（四段，留出中心空隙）
-  ctx.beginPath();
-  ctx.moveTo(64, 8); ctx.lineTo(64, 40);
-  ctx.moveTo(64, 88); ctx.lineTo(64, 120);
-  ctx.moveTo(8, 64); ctx.lineTo(40, 64);
-  ctx.moveTo(88, 64); ctx.lineTo(120, 64);
-  ctx.stroke();
-
-  // 中心点
-  ctx.fillStyle = 'rgba(255,60,60,0.95)';
-  ctx.beginPath();
-  ctx.arc(64, 64, 5, 0, Math.PI * 2);
-  ctx.fill();
-
-  hunterCrosshairTexture = new THREE.CanvasTexture(canvas);
-  hunterCrosshairTexture.colorSpace = THREE.SRGBColorSpace;
-  return hunterCrosshairTexture;
-}
-
-/** 弧光导体：蓝色径向发光（加色混合贴敌人身上）。 */
-function getConductorGlowTexture(): THREE.Texture {
-  if (conductorGlowTexture) return conductorGlowTexture;
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d')!;
-  ctx.clearRect(0, 0, 128, 128);
-  const grad = ctx.createRadialGradient(64, 64, 4, 64, 64, 62);
-  grad.addColorStop(0, 'rgba(120,200,255,0.85)');
-  grad.addColorStop(0.4, 'rgba(40,120,255,0.45)');
-  grad.addColorStop(1, 'rgba(20,60,200,0.0)');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(64, 64, 62, 0, Math.PI * 2);
-  ctx.fill();
-  conductorGlowTexture = new THREE.CanvasTexture(canvas);
-  conductorGlowTexture.colorSpace = THREE.SRGBColorSpace;
-  return conductorGlowTexture;
-}
-
-/** 奥术奥秘爆发光球：蓝紫径向发光。 */
-function getArcaneOrbTexture(): THREE.Texture {
-  if (arcaneOrbTexture) return arcaneOrbTexture;
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d')!;
-  ctx.clearRect(0, 0, 128, 128);
-  const grad = ctx.createRadialGradient(64, 64, 2, 64, 64, 62);
-  grad.addColorStop(0, 'rgba(220,210,255,0.95)');
-  grad.addColorStop(0.35, 'rgba(150,90,255,0.8)');
-  grad.addColorStop(0.7, 'rgba(80,60,230,0.35)');
-  grad.addColorStop(1, 'rgba(60,40,180,0.0)');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(64, 64, 62, 0, Math.PI * 2);
-  ctx.fill();
-  arcaneOrbTexture = new THREE.CanvasTexture(canvas);
-  arcaneOrbTexture.colorSpace = THREE.SRGBColorSpace;
-  return arcaneOrbTexture;
-}
+import {
+  getConsumableEmojiTexture,
+  getParalysisTriangleTexture,
+  getNeuroTriangleTexture,
+  getHunterCrosshairTexture,
+  getConductorGlowTexture,
+  getArcaneOrbTexture,
+} from './materials/proceduralTextures.ts';
 
 const RARITY_COLORS: Record<string, string> = {
   common: '#aaaaaa',
@@ -894,87 +445,9 @@ const CHARACTER_FULL_PATHS: Record<CharacterType, string> = {
 
 const CHARACTER_LOCKED_OVERLAY_PATH = '/ui/characters/locked_character.png';
 
-// ZLabs Pixel 12px (EN/Latin) + ZLabs RoundPix 12px (ZH/CJK), split via unicode-range
-const UI_FONT_FACE = '"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif';
+import { UI_FONT_FACE, GAME_UI_FONT_FILES, installGameUIFonts, ensureGameUIFontsLoaded } from './ui/fonts.ts';
 
-const GAME_UI_FONT_FILES = {
-  pixelEnWoff2: '/fonts/zlabs-pixel-hc.woff2',
-  roundCnTtf: '/fonts/zlabs-roundpix-m-cn.ttf',
-} as const;
-
-function installGameUIFonts(): void {
-  if (!document.getElementById('megabonk-ui-fonts-lilita')) {
-    const preconnect1 = document.createElement('link');
-    preconnect1.rel = 'preconnect';
-    preconnect1.href = 'https://fonts.googleapis.com';
-    document.head.appendChild(preconnect1);
-    const preconnect2 = document.createElement('link');
-    preconnect2.rel = 'preconnect';
-    preconnect2.href = 'https://fonts.gstatic.com';
-    preconnect2.crossOrigin = 'anonymous';
-    document.head.appendChild(preconnect2);
-    const lilita = document.createElement('link');
-    lilita.id = 'megabonk-ui-fonts-lilita';
-    lilita.rel = 'stylesheet';
-    lilita.href = 'https://fonts.googleapis.com/css2?family=Lilita+One&family=Noto+Sans+SC:wght@400;700&display=swap';
-    document.head.appendChild(lilita);
-  }
-  if (document.getElementById('megabonk-ui-fonts')) return;
-  const style = document.createElement('style');
-  style.id = 'megabonk-ui-fonts';
-  style.textContent = `
-@font-face {
-  font-family: 'MegaBonk UI';
-  src: url('${GAME_UI_FONT_FILES.pixelEnWoff2}') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
-}
-@font-face {
-  font-family: 'MegaBonk UI';
-  src: url('${GAME_UI_FONT_FILES.pixelEnWoff2}') format('woff2');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
-}
-@font-face {
-  font-family: 'MegaBonk UI';
-  src: url('${GAME_UI_FONT_FILES.roundCnTtf}') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-  unicode-range: U+3000-303F,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF,U+FF00-FFEF;
-}
-@font-face {
-  font-family: 'MegaBonk UI';
-  src: url('${GAME_UI_FONT_FILES.roundCnTtf}') format('truetype');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-  unicode-range: U+3000-303F,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF,U+FF00-FFEF;
-}
-body {
-  font-synthesis: none;
-}
-  `.trim();
-  document.head.appendChild(style);
-}
-
-async function ensureGameUIFontsLoaded(): Promise<void> {
-  installGameUIFonts();
-  await Promise.all([
-    document.fonts.load(`12px ${UI_FONT_FACE}`),
-    document.fonts.load(`bold 60px ${UI_FONT_FACE}`),
-    document.fonts.load(`16px "Lilita One"`),
-    document.fonts.load(`bold 60px "Lilita One"`),
-    document.fonts.load(`16px "Noto Sans SC"`),
-    document.fonts.load(`bold 16px "Noto Sans SC"`),
-  ]);
-}
-
-const CHARACTER_SELECT_BACK_ICON = '/ui/button/back.png';
+const CHARACTER_SELECT_BACK_ICON = '/ui/button/back.svg';
 const LANG_BUTTON_CN = '/ui/button/btn_lang_cn.png';
 const LANG_BUTTON_EN = '/ui/button/btn_lang_en.png';
 const CHARACTER_DETAIL_PANEL_BG = '/ui/panel/svg/character_detail.svg';
@@ -1116,7 +589,7 @@ function tierInsetXPct(valueSvgPx: number): string {
 }
 
 const SHOP_ITEM_LIST_PANEL_BG = '/ui/shop/event-bg.svg';
-/** event-bg.svg 原图 8346×4715 */
+/** event-bg.svg 原图 8342×4700 */
 /** 商店商品卡与 event-bg 整体显示倍率（相对基准尺寸） */
 const SHOP_DISPLAY_SCALE = 1.3;
 /** shop_item_bg 内文字/图标/按钮等内容相对网格字号的缩放 */
@@ -1241,7 +714,8 @@ function createShopLevelSegments(currentLevel: number, maxLevel: number): HTMLDi
   const litCount = Math.max(0, Math.min(maxLevel, currentLevel));
   for (let i = 0; i < maxLevel; i++) {
     const seg = document.createElement('img');
-    seg.src = i < litCount ? BAR_ASSETS.stat.fill : BAR_ASSETS.stat.trackSingle;
+    // 商店进度条用橙色填充（和 stat_fill.svg 同结构，仅换色），与角色面板的蓝色 stat 条做视觉区分。
+    seg.src = i < litCount ? '/ui/bar/stat_fill_orange.svg' : BAR_ASSETS.stat.trackSingle;
     seg.alt = '';
     seg.draggable = false;
     // 每段宽度均分；`stat_track_single.svg` / `stat_fill.svg` 都带
@@ -1267,7 +741,7 @@ const weaponIconSrc = (type: string): string => `/ui/icon/weapon/${type}.png`;
 const tomeIconSrc = (type: string): string => `/ui/icon/tome/${type}.png`;
 const relicIconSrc = (id: string): string => `/ui/icon/artifact/${id}.png`;
 const bondIconSrc = (id: string): string => `/ui/icon/bond/${id}.png`;
-const consumableIconSrc = (id: string): string => `/ui/icon/consumable_items/${id}.png`;
+// `consumableIconSrc` exported from `./data/visualConfig.ts`
 const shrineRewardIconSrc = (reward: string): string => `/ui/icon/Shrine_Reward/${reward}.png`;
 
 /**
@@ -1307,7 +781,7 @@ const CHARACTER_STAT_BAR_MAX = {
 // 角色选择整页背景：低多边形沙漠场景，覆盖整个 characterSelectEl；
 // 中间 stage 走透明，让主角立绘直接站在沙漠地平线上。
 // 共用的 PREP_SCREEN_STYLE（其他 prep 页面也吃）保持原样不动，避免影响 tier select / shop。
-const CHARACTER_SELECT_PAGE_BG_IMAGE = '/ui/characters/select_bg.png';
+const CHARACTER_SELECT_PAGE_BG_IMAGE = '/ui/characters/select_bg.webp';
 const CHARACTER_PREVIEW_STAGE_BG = 'transparent';
 
 const TITLE_IMAGE_PATH_ZH = '/ui/title/title_cn.webp';
@@ -1339,31 +813,34 @@ function titleImageWidthStyle(): string {
 }
 const LOBBY_BG_PATH = '/ui/common/bg_lobby.webp';
 const UI_COMMON_BG_PATH = '/ui/common/bg_ui_common.webp';
+const TIER_SELECT_PAGE_BG_IMAGE = '/ui/common/bg_tier_select.webp';
+const SHOP_QUEST_PAGE_BG_IMAGE = '/ui/common/bg_city.webp';
 /**
  * 任务面板复用商店一套 SVG（与 SHOP_ITEM_LIST_PANEL_BG / SHOP_ITEM_PANEL_BG 同源），
  * 让首页 / 商店 / 任务三处主蓝面板视觉统一。
  *
- * 外框 event-bg.svg viewBox 8346×4715，几何：
- * - 外圈黑描边圆角矩形：(28, 24) 8290×4586, rx=179, stroke-width=48（外缘 ≈ x=4, y=0）
- * - 内蓝深色板：(52, 48) 8242×4538, rx=155 —— 内容必须落在这块板里
- *   · 横向 inset = 52/8346 ≈ 0.62%
- *   · 顶部 inset = 48/4715 ≈ 1.02%
- *   · 底部 inset = (4715-4586)/4715 ≈ 2.74%（底部比顶部厚，给阴影留位）
+ * 外框 event-bg.svg viewBox 8342×4700，几何：
+ * - 外圈黑描边圆角矩形：(24, 24) 8290×4586, rx=179, stroke-width=48
+ * - 内蓝主板：(48, 48) 8242×4538, rx=155 —— 内容必须落在这块板里
+ *   · 横向 inset = 48/8342 ≈ 0.58%
+ *   · 顶部 inset = 48/4700 ≈ 1.02%
+ *   · 底部 inset = (4700-4586)/4700 ≈ 2.43%（底部比顶部厚，给阴影留位）
  *
  * scroll-area 在内蓝板基础上再加 ~3% 呼吸 padding；底部多留 1% 给 row 阴影下溢。
  */
 const QUEST_LIST_PANEL_BG = '/ui/shop/event-bg.svg';
 const QUEST_LIST_PANEL_SIZE = { w: 8346, h: 4715 } as const;
 /**
- * 任务行背景 Quest_item_bg.svg viewBox 5894×1301（landscape AR ≈ 4.53），几何：
+ * 任务行背景 Quest_item_bg.svg viewBox 10019×1301（landscape AR ≈ 7.70），几何：
  * - 灰阴影底层 `y=87..1301`（向下偏移 +87 制造 drop shadow，约占总高 6.7%）
- * - 蓝色主板    `(13.5,13.5)→5867×1241`, rx=105.5
- * - 内描边      `(42,42)→5810×1184`, rx=77
+ * - 蓝色主板    `(32.5,13.5)→9954×1241`, rx=105.5
+ * - 内描边      `(61,42)→9897×1184`, rx=77
  * - 底部装饰浪 `y=1070..1241`（占 SVG 高 13.1%）—— row 内容 padding-bottom
  *   至少要 13.1% × rowHeight + 安全余量，否则文字/进度条会压到深蓝浪上。
  *
- * SVG 已加 `preserveAspectRatio="none"`，row 容器走 background-size:100% 100%
- * 时内容会真正拉伸贴合 row 形状（默认 meet 会被 letterbox 到 4.53:1 AR）。
+ * SVG 加 `preserveAspectRatio="none"`，row 容器走 background-size:100% 100%
+ * 时内容会真正拉伸贴合 row 形状（默认 meet 会按 7.70:1 AR letterbox，
+ * 已领取行 AR≈10:1 时左右会出现 ~12% 透明带）。
  */
 const QUEST_ITEM_BG = '/ui/quests/Quest_item_bg.svg';
 const QUEST_LIST_SCROLL_INSET = { top: 0.04, right: 0.04, bottom: 0.06, left: 0.04 } as const;
@@ -1405,7 +882,6 @@ const MENU_BUTTON_ICONS = {
 
 const GOLD_COIN_ICON_PATH = '/ui/icon/coin_gold.png';
 const SILVER_COIN_ICON_PATH = '/ui/icon/coin_silver.png';
-const STOPWATCH_ICON_PATH = '/ui/icon/stopwatch.png';
 const KILL_COUNT_ICON_PATH = '/ui/icon/icon_killcount.png';
 const CHEST_ICON_PATH = '/ui/icon/in_game_HUD/treasure_chest.png';
 
@@ -1413,14 +889,17 @@ const CHEST_ICON_PATH = '/ui/icon/in_game_HUD/treasure_chest.png';
 function chestIconHtml(): string {
   return `<img src="${CHEST_ICON_PATH}" draggable="false" style="height:1.25em;width:auto;object-fit:contain;vertical-align:-0.22em;margin-right:2px;" />`;
 }
-const HUD_TASK_TRACK_BG = '/ui/panel/hud_task_track_bg.png';
-const HUD_TASK_TRACK_SIZE = { w: 1172, h: 276 } as const;
-/** 背景图左侧星形图标占位（原图宽度比例，文字从此之后开始） */
-const HUD_TASK_TRACK_TEXT_INSET_LEFT = 0.25;
+const HUD_TASK_TRACK_BG = '/ui/panel/hud_task_track_bg.svg';
+const HUD_TASK_TRACK_SIZE = { w: 1207, h: 337 } as const;
+/** 背景图左侧齿轮图标占位（齿轮右边缘约 290/1207 ≈ 24%，给文字留点边距取 26%） */
+const HUD_TASK_TRACK_TEXT_INSET_LEFT = 0.26;
+/** 任务条整体相对 topLeft 的横向偏移（负值=向左推）。 */
+const HUD_TASK_TRACK_OFFSET_LEFT = 'clamp(-10px,-3vw,-10px)';
 /** 局内底部经验条宽度。 */
 const HUD_XP_BAR_WIDTH = 'min(86vw,560px)';
 const HUD_XP_BAR_HEIGHT = 'clamp(8px,2.1vw,11px)';
 const HUD_RELIC_BAR_BG = '/ui/panel/svg/hud_relic_bar_bg.svg';
+const HUD_RELIC_SLOT_BG = '/ui/panel/svg/hud_relic_slot.svg';
 const HUD_RELIC_BAR_VIEWBOX = { w: 404, h: 44 } as const;
 const HUD_RELIC_BAR_SLOT_COUNT = 10;
 const HUD_RELIC_SLOT_VIEWBOX = { x: 4, y: 4, w: 36, h: 36, pitch: 40 } as const;
@@ -1584,313 +1063,7 @@ function createLanguageSwitcherButton(): HTMLButtonElement | null {
   return btn;
 }
 
-const DAMAGE_NUM_POOL_SIZE = 30;
-
 // =============================================================================
-// Toon/Cel-Shading Utilities
-// =============================================================================
-
-/**
- * Multi-step toon gradient map (UltimateToon「stylized.gdshader」的 stepped-light 移植)。
- *
- * Godot 的 light() 用如下公式把连续 NdotL 量化成 `steps` 段、段间以 `step_smoothness` 做软过渡：
- *     light_mult   = light * steps
- *     step_base    = floor(light_mult)
- *     light_factor = smoothstep(0.5 - s, 0.5 + s, light_mult - step_base)
- *     light        = (step_base + light_factor) / steps
- * 这里把同一公式烘焙进一张高分辨率 ramp（LinearFilter），MeshToonMaterial 会按
- * NdotL∈[-1,1]→[0,1] 采样它的 .r 通道，于是得到「至少四层」的明暗台阶 + Godot 同款软边。
- *
- * steps=4 ⇒ 5 个亮度平台（阴影 / 暗部 / 中间调 / 亮部 / 高光），满足「至少四层」。
- * shadowFloor 抬高最暗台阶，避免背光面发死黑；highlightCap 给高光留头，白模不顶纯白。
- */
-const TOON_STEPS = 5;            // 分层台阶数（5 层，过渡更细）—— 对应 Godot uniform `steps`
-const TOON_STEP_SMOOTHNESS = 0.12; // 层间软过渡半宽 —— 对应 Godot `step_smoothness`
-const TOON_SHADOW_FLOOR = 0.18; // 最暗台阶的亮度地板（背光面不死黑）
-const TOON_HIGHLIGHT_CAP = 0.94; // 高光台阶封顶（受光面留头，浅色模不顶纯白）
-
-function smoothstep01(edge0: number, edge1: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
-}
-
-function createToonGradientMap(
-  steps = TOON_STEPS,
-  smoothness = TOON_STEP_SMOOTHNESS,
-  shadowFloor = TOON_SHADOW_FLOOR,
-  highlightCap = TOON_HIGHLIGHT_CAP,
-): THREE.DataTexture {
-  const width = 256; // 高分辨率：软过渡才平滑，台阶内部仍是纯平色块（cel 观感）
-  const data = new Uint8Array(width * 4);
-  const s = Math.max(0.0001, smoothness);
-  for (let i = 0; i < width; i++) {
-    const x = i / (width - 1); // 采样坐标 == 量化前的 NdotL（已 remap 到 0..1）
-    const lightMult = x * steps;
-    const stepBase = Math.floor(lightMult);
-    const factor = smoothstep01(0.5 - s, 0.5 + s, lightMult - stepBase);
-    let v = (stepBase + factor) / steps; // 0..1 阶梯化亮度
-    // 把 [0,1] 重映射到 [shadowFloor, highlightCap]：暗部不死黑、亮部留头。
-    v = shadowFloor + v * (highlightCap - shadowFloor);
-    const c = Math.round(Math.min(1, Math.max(0, v)) * 255);
-    const o = i * 4;
-    data[o] = c;
-    data[o + 1] = c;
-    data[o + 2] = c;
-    data[o + 3] = 255;
-  }
-  const gradMap = new THREE.DataTexture(data, width, 1, THREE.RGBAFormat);
-  // LinearFilter：让烘焙好的 smoothstep 软过渡平滑呈现（台阶边缘软、台阶内部平）。
-  gradMap.minFilter = THREE.LinearFilter;
-  gradMap.magFilter = THREE.LinearFilter;
-  gradMap.needsUpdate = true;
-  return gradMap;
-}
-
-const toonGradientMap = createToonGradientMap();
-
-/**
- * Convert all mesh materials in a scene to MeshToonMaterial (cel-shading).
- * Preserves color/map/normalMap from original materials.
- */
-/** 提升颜色饱和度（HSL 的 s ×factor），用于 toon 的"饱满高饱和纯色块"观感。 */
-function boostMaterialSaturation(color: THREE.Color, factor: number): void {
-  const hsl = { h: 0, s: 0, l: 0 };
-  color.getHSL(hsl);
-  color.setHSL(hsl.h, Math.min(1, hsl.s * factor), hsl.l);
-}
-
-/**
- * 明度封顶（HSL 的 L ≤ maxL）。浅灰白材质（如关卡白模）反照率接近 1，被照亮后线性亮度冲到 ~1.9，
- * 在色调映射里顶死成纯白、还会触发 bloom 晕开 → 整片"翻白"无细节。把明度压到中间调后，
- * 高光不再溢出，gradientMap 的阶梯断层 + 网点 + 黑描边才显得出来（参考图那种中间调质感）。
- */
-function capMaterialLightness(color: THREE.Color, maxL: number): void {
-  const hsl = { h: 0, s: 0, l: 0 };
-  color.getHSL(hsl);
-  if (hsl.l > maxL) color.setHSL(hsl.h, hsl.s, maxL);
-}
-
-/** 贴图过滤：各向异性 + mipmap，提升近景 / 斜视下的贴图清晰度（PR #56）。 */
-function tuneToonTexture(tex: THREE.Texture | null | undefined): void {
-  if (!tex) return;
-  tex.anisotropy = 8;
-  tex.minFilter = THREE.LinearMipmapLinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.needsUpdate = true;
-}
-
-/**
- * 全局共享的风格化光照参数（uniform 引用）。所有 stylized 材质在 onBeforeCompile 里都指向
- * 同一份对象，因此运行时改任一 `.value`，整场景的卡通表现实时跟着变 —— 这就是游戏内调参面板
- * 的数据源（见 createStylizedDebugPanel）。改这里的初值 = 改默认外观。
- *
- * 注意：uShadowTint / uLightTint / uRimColor 是「线性空间乘子」，分量可 >1（受光台阶要提亮就 >1）。
- * 所以面板用三个独立滑块而非取色器（取色器表达不了 >1）。
- */
-const stylizedUniforms = {
-  uSteps: { value: 5.0 },                                   // 分层台阶数（Godot steps）
-  uStepSmooth: { value: 0.0 },                              // 台阶软过渡半宽（0=硬切、纯色块；Godot step_smoothness）
-  uHalftoneTiling: { value: 11.0 },                         // 网点像素间距（大=点大且疏）
-  uHalftoneSmooth: { value: 0.10 },                         // 网点边缘脆度（小=硬）
-  uHalftoneDark: { value: 0.6 },                            // 网点压暗强度
-  uHalftoneBlend: { value: 0.85 },                          // 网点整体强度（0=关）
-  uShadowTint: { value: new THREE.Vector3(0.30, 0.37, 0.66) }, // 冷暗阴影色乘子
-  uLightTint: { value: new THREE.Vector3(1.10, 1.02, 0.88) },  // 暖亮受光色乘子
-  // 世界空间主光向（俯视/侧视相机的左上前太阳）。每帧 shader 内用 viewMatrix 转到视空间再点法线，
-  // 这样镜头平移/旋转时，世界中物体的明暗台阶与网点强度保持稳定 —— 不再"网点跟着镜头漂"。
-  // +Y 给到 0.92 让水平面（地面 / 白盒顶）的 ndotl≈0.92 落入顶端台阶（亮度 1.0）→ 网点 gate 直接归零。
-  uLightDirWorld: { value: new THREE.Vector3(-0.22, 0.92, 0.32).normalize() },
-  // 网点显示阈值：light 高于 uHalftoneCutLow 开始衰减，高于 uHalftoneCutHigh 完全消失。
-  // 漫画 halftone 的惯例 —— 网点只在阴影 / 半阴影区，亮面留作纯色块。
-  uHalftoneCutLow: { value: 0.55 },
-  uHalftoneCutHigh: { value: 0.78 },
-};
-
-/** stylized 片元需要的 uniform 声明（注入到 main 前）。 */
-const STYLIZED_UNIFORM_DECL = `
-uniform float uSpec;
-uniform float uHalftone;
-uniform float uSteps;
-uniform float uStepSmooth;
-uniform float uHalftoneTiling;
-uniform float uHalftoneSmooth;
-uniform float uHalftoneDark;
-uniform float uHalftoneBlend;
-uniform vec3 uShadowTint;
-uniform vec3 uLightTint;
-uniform vec3 uLightDirWorld;
-uniform float uHalftoneCutLow;
-uniform float uHalftoneCutHigh;
-`;
-
-/**
- * 风格化光照 GLSL —— UltimateToon「stylized.gdshader」的 light() 完整移植，注入 MeshToon 片元的
- * <opaque_fragment> 前并「完全接管 outgoingLight」。
- *
- * 关键：旧版只在引擎算好的 outgoingLight 上"修补"，场景的环境光/半球光/自发光一抬，分层台阶就被
- * 压到顶端、糊成一片 → 看不出卡通感。新版无视场景灯光，自己用固定视空间光向重新算一遍光照，
- * 因此分层/网点/染色/rim 始终强烈可见，逐字对应 Godot 的 light()：
- *
- *   第 0 层 stepped light：light = (floor(L*steps) + smoothstep(.5±s, frac)) / steps —— ≥4 段台阶
- *   第 1 层 halftone      ：暗台阶网点大、亮台阶网点消失，pattern_blend 混入 light（Godot pattern）
- *   第 2 层 colored shadow：col = mix(albedo×冷暗, albedo×暖亮, light)（Godot shadow_tint）
- *   第 3 层 toon specular ：硬边塑料高光（per-material uSpec，主角/武器>0）
- *   末尾叠回 totalEmissiveRadiance —— 霓虹/发光贴图不丢。
- *   （rim 边缘光已移除：轮廓由屏幕空间深度描边负责，省掉每像素的菲涅尔运算。）
- *
- * 所有调参项都是 uniform（见 stylizedUniforms）：可在游戏内面板实时拖，也可改 stylizedUniforms 初值定基线。
- */
-const STYLIZED_TOON_GLSL = `
-	{
-		vec3 N = normalize( normal );
-		vec3 V = normalize( vViewPosition );                       // 片元 -> 相机(视空间)
-		// 主光向：世界空间固定 → 用 viewMatrix 转到视空间再做点法线。
-		// （旧版直接写死视空间向量，结果光相对相机固定，镜头一转，世界里的明暗面跟着扫，halftone 网点像在物体上爬。）
-		vec3 LDIR = normalize( ( viewMatrix * vec4( uLightDirWorld, 0.0 ) ).xyz );
-		float ndotl = saturate( dot( N, LDIR ) );
-
-		// —— 第 0 层 stepped light（Godot 量化公式，uSteps 段台阶 + 软过渡） ——
-		// uStepSmooth 可为 0（硬切纯色块），用 max(.,1e-4) 兜底避免 smoothstep edge0>=edge1 的 UB。
-		float steppedLight;
-		{
-			float lm = ndotl * uSteps;
-			float sb = floor( lm );
-			float ss = max( uStepSmooth, 1e-4 );
-			float lf = smoothstep( 0.5 - ss, 0.5 + ss, lm - sb );
-			steppedLight = ( sb + lf ) / uSteps;
-		}
-		float light = steppedLight;
-
-		// —— 第 1 层 halftone 网点（对应 Godot pattern）：暗台阶点大、亮台阶点消失 ——
-		// 漫画 halftone 惯例：网点只在阴影 / 半阴影区，亮面留作纯色块。
-		// brightGate = 1 - smoothstep(low, high, light)，light≥high 时网点完全消失（白盒顶 / 地面纯色）。
-		vec2 cell = fract( gl_FragCoord.xy / uHalftoneTiling ) - 0.5;
-		float dotDist = length( cell ) * 2.0;                      // 0=点心 ~1=邻边
-		float dotRadius = ( 1.0 - light ) * 0.95;                  // 越暗点越大
-		float dotInside = 1.0 - smoothstep( dotRadius - uHalftoneSmooth, dotRadius + uHalftoneSmooth, dotDist );
-		float brightGate = 1.0 - smoothstep( uHalftoneCutLow, uHalftoneCutHigh, light );
-		dotInside *= brightGate;
-		float patLight = light * ( 1.0 - dotInside * uHalftoneDark ); // 点内把局部亮度压暗
-		light = mix( light, patLight, uHalftoneBlend * uHalftone );
-
-		// —— 第 2 层 colored shadow（Godot shadow_tint）：暗部染冷、亮部染暖，全程乘 albedo ——
-		vec3 albedo = diffuseColor.rgb;
-		vec3 col = mix( albedo * uShadowTint, albedo * uLightTint, light );
-
-		// —— 第 3 层 toon specular（硬边塑料高光，仅 uSpec>0 的主角/武器） ——
-		vec3 H = normalize( LDIR + V );
-		float sp = smoothstep( 0.5, 0.53, pow( saturate( dot( N, H ) ), 48.0 ) ) * uSpec * saturate( ndotl );
-		col += vec3( sp );
-
-		outgoingLight = col + totalEmissiveRadiance;               // 完全接管光照 + 叠回自发光
-	}
-`;
-
-/**
- * 给 MeshToonMaterial 挂上风格化光照（接管 outgoingLight：stepped + halftone + 染色 + rim + spec）。
- * specStrength：toon 高光强度（per-material uniform）。怪物/场景传 0（哑光），主角/武器传 >0 留塑料光泽。
- * halftone：是否启用屏幕空间网点（per-material uniform）。
- * 其余风格化参数全部指向共享的 stylizedUniforms（同一引用 → 面板实时改一个值全场景生效）。
- * 幂等（userData 标记）；共享同一编译程序（uniform 值差异不影响 program 缓存）。
- */
-function applyStylizedToonShading(mat: THREE.MeshToonMaterial, specStrength = 0, halftone = true): void {
-  if (mat.userData['__stylized']) return;
-  mat.userData['__stylized'] = true;
-  mat.onBeforeCompile = (shader) => {
-    shader.uniforms['uSpec'] = { value: specStrength };          // per-material
-    shader.uniforms['uHalftone'] = { value: halftone ? 1.0 : 0.0 }; // per-material
-    // 共享引用：改 stylizedUniforms.*.value → 所有材质同步更新
-    shader.uniforms['uSteps'] = stylizedUniforms.uSteps;
-    shader.uniforms['uStepSmooth'] = stylizedUniforms.uStepSmooth;
-    shader.uniforms['uHalftoneTiling'] = stylizedUniforms.uHalftoneTiling;
-    shader.uniforms['uHalftoneSmooth'] = stylizedUniforms.uHalftoneSmooth;
-    shader.uniforms['uHalftoneDark'] = stylizedUniforms.uHalftoneDark;
-    shader.uniforms['uHalftoneBlend'] = stylizedUniforms.uHalftoneBlend;
-    shader.uniforms['uShadowTint'] = stylizedUniforms.uShadowTint;
-    shader.uniforms['uLightTint'] = stylizedUniforms.uLightTint;
-    shader.uniforms['uLightDirWorld'] = stylizedUniforms.uLightDirWorld;
-    shader.uniforms['uHalftoneCutLow'] = stylizedUniforms.uHalftoneCutLow;
-    shader.uniforms['uHalftoneCutHigh'] = stylizedUniforms.uHalftoneCutHigh;
-
-    if (!mat.userData.uIsBackground) {
-      mat.userData.uIsBackground = { value: mat.userData.isBackground ? 1.0 : 0.0 };
-    }
-
-    shader.uniforms['uWarpCenter'] = curvedWorldUniforms.uWarpCenter;
-    shader.uniforms['uWarpStrength'] = curvedWorldUniforms.uWarpStrength;
-    shader.uniforms['uIsBackground'] = mat.userData.uIsBackground;
-
-    shader.vertexShader = shader.vertexShader
-      .replace(
-        'void main() {',
-        `uniform vec3 uWarpCenter;\nuniform float uWarpStrength;\nuniform float uIsBackground;\nvoid main() {`
-      )
-      .replace(
-        '#include <project_vertex>',
-        `
-        vec4 localPos = vec4( transformed, 1.0 );
-        #ifdef USE_INSTANCING
-          localPos = instanceMatrix * localPos;
-        #endif
-        vec4 gpWorldPos = modelMatrix * localPos;
-
-        vec3 diff = gpWorldPos.xyz - uWarpCenter;
-        float d = length(diff.xz);
-
-        if (d > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
-            float theta = d * uWarpStrength;
-            float sinTheta = sin(theta);
-            float cosTheta = cos(theta);
-            vec2 dir = diff.xz / d;
-
-            vec3 normal = vec3(sinTheta * dir.x, cosTheta, sinTheta * dir.y);
-            float r = (1.0 / uWarpStrength) + diff.y;
-            vec3 warpedPos = r * normal;
-            warpedPos.y -= (1.0 / uWarpStrength);
-
-            gpWorldPos.xyz = uWarpCenter + warpedPos;
-        }
-
-        vec4 mvPosition = viewMatrix * gpWorldPos;
-        gl_Position = projectionMatrix * mvPosition;
-        vViewPosition = - mvPosition.xyz;
-        #ifdef USE_FOG
-          vFogDepth = - mvPosition.z;
-        #endif
-        `
-      )
-      .replace(
-        '#include <defaultnormal_vertex>',
-        `
-        #include <defaultnormal_vertex>
-
-        vec3 gpWorldPosForNormal = (modelMatrix * vec4(position, 1.0)).xyz;
-        vec3 diffForNormal = gpWorldPosForNormal - uWarpCenter;
-        float dForNormal = length(diffForNormal.xz);
-
-        if (dForNormal > 1e-5 && uWarpStrength > 0.0 && uIsBackground < 0.5) {
-            float theta = dForNormal * uWarpStrength;
-            vec2 dir = diffForNormal.xz / dForNormal;
-            vec3 viewAxis = normalize( mat3(viewMatrix) * vec3( -dir.y, 0.0, dir.x ) );
-            
-            float cosA = cos(theta);
-            float sinA = sin(theta);
-            transformedNormal = transformedNormal * cosA + cross(viewAxis, transformedNormal) * sinA + viewAxis * dot(viewAxis, transformedNormal) * (1.0 - cosA);
-            transformedNormal = normalize(transformedNormal);
-        }
-        `
-      );
-
-    shader.fragmentShader = shader.fragmentShader
-      .replace('void main() {', `${STYLIZED_UNIFORM_DECL}\nvoid main() {`)
-      .replace(
-        '#include <opaque_fragment>',
-        `${STYLIZED_TOON_GLSL}\n\t#include <opaque_fragment>`,
-      );
-  };
-  mat.customProgramCacheKey = () => 'stylized-toon-v10-stepeps';
-}
-
 /**
  * 游戏内风格化调参面板（仅 dev）。把 stylizedUniforms + 雾 + bloom 全部接上滑块，实时拖动即时生效，
  * 不用改代码重编译。按 ` 键（反引号）或点右上角按钮开关。"复制参数"把当前值导成可粘回代码的片段。
@@ -1900,6 +1073,7 @@ function createStylizedDebugPanel(opts: {
   bloom: UnrealBloomPass | null;
   renderer: THREE.WebGLRenderer;
   colorGrade: ColorGradePass | null;
+  darkComic?: DarkComicPass | null;
   cameraOrbit?: CameraOrbit | null;
   onSkyModeChange?: (mode: 'photo' | 'color') => void;
 }): void {
@@ -1909,6 +1083,7 @@ function createStylizedDebugPanel(opts: {
   const bloom = opts.bloom;
   const renderer = opts.renderer;
   const colorGrade = opts.colorGrade;
+  const darkComic = opts.darkComic ?? null;
   const cameraOrbit = opts.cameraOrbit;
 
   type Ctl = { label: string; min: number; max: number; step: number; get: () => number; set: (v: number) => void };
@@ -2010,6 +1185,17 @@ function createStylizedDebugPanel(opts: {
       ],
     });
   }
+  if (darkComic) {
+    sections.push({
+      title: '暗黑漫画 DarkComic (Final Swarm)', ctls: [
+        { label: 'Enabled 开关', min: 0, max: 1, step: 1, get: () => darkComic.enabled ? 1 : 0, set: (v) => { darkComic.enabled = v >= 0.5; } },
+        { label: '去饱和最大值', min: 0, max: 1, step: 0.01, get: () => darkComic.desaturateMax, set: (v) => { darkComic.desaturateMax = v; } },
+        { label: '噪点最大值', min: 0, max: 0.3, step: 0.005, get: () => darkComic.noiseMax, set: (v) => { darkComic.noiseMax = v; } },
+        { label: '渐变时长(s)', min: 1, max: 120, step: 1, get: () => darkComic.rampDurationSeconds, set: (v) => { darkComic.rampDurationSeconds = v; } },
+        { label: '当前进度 ramp', min: 0, max: 1, step: 0.01, get: () => darkComic.ramp01, set: (v) => { darkComic.ramp01 = v; } },
+      ],
+    });
+  }
   if (fog) {
     sections.push({
       title: '雾 Fog', ctls: [
@@ -2098,6 +1284,7 @@ function createStylizedDebugPanel(opts: {
       fog ? `// fog: new THREE.Fog('#87CEEB', ${fog.near}, ${fog.far})` : '',
       bloom ? `// bloom: strength=${bloom.strength}, radius=${bloom.radius}, threshold=${bloom.threshold}` : '',
       colorGrade ? `// ColorGrade: saturation=${colorGrade.saturation.toFixed(3)}, contrast=${colorGrade.contrast.toFixed(3)}, brightness=${colorGrade.brightness.toFixed(3)}` : '',
+      darkComic ? `// DarkComic: enabled=${darkComic.enabled}, desatMax=${darkComic.desaturateMax.toFixed(2)}, noiseMax=${darkComic.noiseMax.toFixed(3)}, rampDuration=${darkComic.rampDurationSeconds}s, ramp01=${darkComic.ramp01.toFixed(2)}` : '',
     ].filter(Boolean).join('\n');
     navigator.clipboard?.writeText(snippet).catch(() => { /* ignore */ });
     console.log('[stylized] 当前参数：\n' + snippet);
@@ -2128,153 +1315,6 @@ function createStylizedDebugPanel(opts: {
   });
 }
 
-/**
- * 描边模式：
- *  - screenSpace：基于深度的屏幕空间描边，固定一道全屏 pass，开销与怪数无关。保留卡通黑轮廓。
- *    （替代旧的逐网格 OutlineEffect——后者放大翻面把不透明场景再画一遍，draw call 翻倍、
- *    开销随怪数线性增长，是手机掉帧元凶。已于本次性能优化移除。）
- *  - none：不描边（仅平涂着色，cel 来自材质本身，与描边无关）。
- */
-type OutlineMode = 'screenSpace' | 'none';
-
-const OUTLINE_EDGE_VERT = /* glsl */`
-  varying vec2 vUv;
-  void main() {
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-// 深度边缘检测：线性化深度(viewZ)后做 Roberts-cross 4-tap，差超阈值即描黑。
-// 阈值随距离放宽(近处细线/远处粗或无)；天空背景(viewZ≈-far)处抑制，避免天边整圈黑。
-const OUTLINE_EDGE_FRAG = /* glsl */`
-  precision highp float;
-  uniform sampler2D tColor;
-  uniform highp sampler2D tDepth;   // 必须 highp，否则移动端 mediump 截断 → 满屏黑边/噪点
-  uniform vec2 uResolution;
-  uniform float uCameraNear;
-  uniform float uCameraFar;
-  uniform float uThickness;
-  uniform float uOutlineAlpha;
-  varying vec2 vUv;
-
-  // perspectiveDepthToViewZ：NDC 深度[0,1] → 视空间 z（负值，-near..-far）
-  float toViewZ(float d) {
-    return (uCameraNear * uCameraFar) / ((uCameraFar - uCameraNear) * d - uCameraFar);
-  }
-  float sampleZ(vec2 uv) { return toViewZ(texture2D(tDepth, uv).r); }
-
-  void main() {
-    vec4 color = texture2D(tColor, vUv);
-    vec2 texel = uThickness / uResolution;
-    float c = sampleZ(vUv);
-    float n = sampleZ(vUv + vec2(0.0,  texel.y));
-    float s = sampleZ(vUv + vec2(0.0, -texel.y));
-    float e = sampleZ(vUv + vec2( texel.x, 0.0));
-    float w = sampleZ(vUv + vec2(-texel.x, 0.0));
-    float hor = abs(e - w);
-    float ver = abs(n - s);
-    float delta = sqrt(hor * hor + ver * ver);
-    float threshold = abs(c) * 0.02 + 0.05;          // 距离自适应阈值（k、floor 可调）
-    float edge = smoothstep(threshold, threshold * 2.0, delta);
-    float depthMask = 1.0 - step(uCameraFar * 0.9, -c); // 极远(天空/far 区)不描边
-    edge *= depthMask;
-    gl_FragColor = vec4(mix(color.rgb, vec3(0.0), edge * uOutlineAlpha), color.a);
-  }
-`;
-
-/**
- * EffectComposer 首道 pass：把场景渲进 composer 缓冲，并按 mode 叠加描边。
- * 渲到 RT 时引擎自动禁 in-material tonemap → 缓冲为线性 HDR，描边在线性空间 mix 向黑，
- * tonemap 交末端 OutputPass(Neutral + sRGB)。needsSwap=false，合成结果写 readBuffer。
- */
-class SceneOutlinePass extends Pass {
-  mode: OutlineMode = 'screenSpace';
-
-  private readonly sceneRT: THREE.WebGLRenderTarget;
-  private readonly fsqMaterial: THREE.ShaderMaterial;
-  private readonly fsq: FullScreenQuad;
-
-  constructor(
-    private readonly scene: THREE.Scene,
-    private readonly camera: THREE.PerspectiveCamera,
-    w: number, // 有效像素（CSS × dpr）
-    h: number,
-  ) {
-    super();
-    this.needsSwap = false;
-    this.clear = true;
-
-    // 深度纹理用默认 DepthFormat + UnsignedIntType（→ GL DEPTH_COMPONENT24），不要 HalfFloat / stencil。
-    const depthTexture = new THREE.DepthTexture(w, h);
-    this.sceneRT = new THREE.WebGLRenderTarget(w, h, {
-      type: THREE.HalfFloatType,   // 颜色：线性 HDR，匹配 composer 缓冲
-      depthTexture,
-      depthBuffer: true,
-      stencilBuffer: false,
-    });
-
-    this.fsqMaterial = new THREE.ShaderMaterial({
-      uniforms: {
-        tColor: { value: this.sceneRT.texture },
-        tDepth: { value: this.sceneRT.depthTexture },
-        uResolution: { value: new THREE.Vector2(w, h) },
-        uCameraNear: { value: camera.near },
-        uCameraFar: { value: camera.far },
-        uThickness: { value: 1.5 },
-        uOutlineAlpha: { value: 0.85 },
-      },
-      vertexShader: OUTLINE_EDGE_VERT,
-      fragmentShader: OUTLINE_EDGE_FRAG,
-      depthTest: false,
-      depthWrite: false,
-    });
-    this.fsq = new FullScreenQuad(this.fsqMaterial);
-  }
-
-  override setSize(width: number, height: number): void {
-    // width/height 由 EffectComposer 传入，已是 CSS×dpr 像素。深度纹理随 setSize 自动重建。
-    this.sceneRT.setSize(width, height);
-    this.fsqMaterial.uniforms.uResolution.value.set(width, height);
-  }
-
-  override render(renderer: THREE.WebGLRenderer, _writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget): void {
-    this.fsqMaterial.uniforms.uCameraNear.value = this.camera.near;
-    this.fsqMaterial.uniforms.uCameraFar.value = this.camera.far;
-
-    // 先把场景渲到带深度的 sceneRT
-    renderer.setRenderTarget(this.sceneRT);
-    renderer.clear();
-    renderer.render(this.scene, this.camera);
-
-    // 合成到 pass 输出（readBuffer，交 OutputPass tonemap）
-    renderer.setRenderTarget(this.renderToScreen ? null : readBuffer);
-    if (this.clear) renderer.clear();
-    if (this.mode === 'none') {
-      const prev = this.fsqMaterial.uniforms.uOutlineAlpha.value;
-      this.fsqMaterial.uniforms.uOutlineAlpha.value = 0.0; // 只 blit 颜色，不叠边
-      this.fsq.render(renderer);
-      this.fsqMaterial.uniforms.uOutlineAlpha.value = prev;
-    } else {
-      this.fsq.render(renderer);
-    }
-  }
-
-  override dispose(): void {
-    this.sceneRT.dispose(); // 链式释放 depthTexture
-    this.fsqMaterial.dispose();
-    this.fsq.dispose(); // 仅释放几何，材质已单独 dispose
-  }
-}
-
-/**
- * 末端调色 pass（美漫风格强化）：在 OutputPass 之后对最终显示色做
- * 饱和度 / 对比度 / 亮度提升，让整体更鲜亮、色块更"跳"、明暗更分明。
- * 全屏单 draw call，开销极低；参数集中在 GRADE_* 常量便于调。
- */
-const GRADE_SATURATION = 1.28; // 饱和度（>1 更艳）
-const GRADE_CONTRAST = 1.14;   // 对比度（绕中灰 0.5 拉伸）
-const GRADE_BRIGHTNESS = 1.05; // 整体亮度微提
 const WEATHER_DAY_EXPOSURE = 1.85;
 const WEATHER_NIGHT_EXPOSURE = 1.35;
 const WEATHER_NIGHT_GRADE_SATURATION = 1.04;
@@ -2295,188 +1335,6 @@ const WEATHER_DAY_SKY_BOTTOM = new THREE.Color('#dceeff');
 const WEATHER_NIGHT_SKY_TOP = new THREE.Color('#0f1628');
 const WEATHER_NIGHT_SKY_MID = new THREE.Color('#1a2945');
 const WEATHER_NIGHT_SKY_BOTTOM = new THREE.Color('#22385a');
-
-class ColorGradePass extends Pass {
-  private readonly material: THREE.ShaderMaterial;
-  private readonly fsQuad: FullScreenQuad;
-
-  constructor(saturation: number, contrast: number, brightness: number) {
-    super();
-    this.material = new THREE.ShaderMaterial({
-      uniforms: {
-        tDiffuse: { value: null },
-        uSaturation: { value: saturation },
-        uContrast: { value: contrast },
-        uBrightness: { value: brightness },
-      },
-      vertexShader: `
-        varying vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }`,
-      fragmentShader: `
-        varying vec2 vUv;
-        uniform sampler2D tDiffuse;
-        uniform float uSaturation;
-        uniform float uContrast;
-        uniform float uBrightness;
-        void main() {
-          vec4 tex = texture2D(tDiffuse, vUv);
-          vec3 c = tex.rgb * uBrightness;
-          c = (c - 0.5) * uContrast + 0.5;            // 对比度：绕中灰拉伸
-          float l = dot(c, vec3(0.2126, 0.7152, 0.0722)); // 感知亮度
-          c = mix(vec3(l), c, uSaturation);            // 饱和度：朝灰度反向外推
-          gl_FragColor = vec4(clamp(c, 0.0, 1.0), tex.a);
-        }`,
-    });
-    this.fsQuad = new FullScreenQuad(this.material);
-  }
-
-  get saturation(): number { return this.material.uniforms.uSaturation.value; }
-  set saturation(v: number) { this.material.uniforms.uSaturation.value = v; }
-
-  get contrast(): number { return this.material.uniforms.uContrast.value; }
-  set contrast(v: number) { this.material.uniforms.uContrast.value = v; }
-
-  get brightness(): number { return this.material.uniforms.uBrightness.value; }
-  set brightness(v: number) { this.material.uniforms.uBrightness.value = v; }
-
-  render(renderer: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget): void {
-    this.material.uniforms.tDiffuse.value = readBuffer.texture;
-    if (this.renderToScreen) {
-      renderer.setRenderTarget(null);
-    } else {
-      renderer.setRenderTarget(writeBuffer);
-      if (this.clear) renderer.clear();
-    }
-    this.fsQuad.render(renderer);
-  }
-
-  override dispose(): void {
-    this.material.dispose();
-    this.fsQuad.dispose?.();
-  }
-}
-
-function convertToToonMaterials(root: THREE.Object3D, halftone = true): void {
-  root.traverse((child) => {
-    if (!(child as THREE.Mesh).isMesh) return;
-    const mesh = child as THREE.Mesh;
-    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    const toonMats = materials.map((mat) => {
-      if (mat instanceof THREE.MeshToonMaterial) {
-        tuneToonTexture(mat.map);
-        tuneToonTexture(mat.emissiveMap);
-        if (mat.color) capMaterialLightness(mat.color, 0.55); // 已是 toon 也封顶：贴图×color，压暗白模
-        
-        if (mesh.userData.isBackground) {
-          mat.userData.isBackground = true;
-        }
-        applyStylizedToonShading(mat, 0, halftone); // 已是 toon：补挂风格化叠加
-        return mat;
-      }
-      const oldMat = mat as THREE.MeshStandardMaterial | THREE.MeshPhongMaterial | THREE.MeshLambertMaterial;
-      const color = (oldMat.color ?? new THREE.Color(0xffffff)).clone();
-      boostMaterialSaturation(color, 1.5); // 敌人/场景/道具统一高饱和（与玩家 ×1.6 对齐）
-      capMaterialLightness(color, 0.55);   // 明度封顶：白模白色多来自贴图，用 color 乘子压暗（贴图×color），不再顶白糊成一片
-      // 保留 emissive / emissiveMap：霓虹屏幕、发光贴图在 toon 转换后不丢（PR #56）。
-      const map = oldMat.map ?? null;
-      const emissiveMap = oldMat.emissiveMap ?? null;
-      tuneToonTexture(map);
-      tuneToonTexture(emissiveMap);
-      const toon = new THREE.MeshToonMaterial({
-        color,
-        map,
-        emissive: oldMat.emissive ?? new THREE.Color(0x000000),
-        emissiveMap,
-        gradientMap: toonGradientMap,
-        side: oldMat.side ?? THREE.FrontSide,
-        transparent: oldMat.transparent ?? false,
-        opacity: oldMat.opacity ?? 1,
-        vertexColors: oldMat.vertexColors, // 100% 继承并保留原始网格的顶点颜色（Vertex Colors）支持
-      });
-      toon.name = oldMat.name || 'ToonMat';
-      
-      // 传递背景标记到新创建的 Toon 材质
-      if (mesh.userData.isBackground || (oldMat.userData && oldMat.userData.isBackground)) {
-        toon.userData.isBackground = true;
-      }
-      
-      applyStylizedToonShading(toon, 0, halftone); // rim + toon spec + 染色阴影
-      return toon;
-    });
-    mesh.material = toonMats.length === 1 ? toonMats[0] : toonMats;
-  });
-}
-
-/**
- * Lift weapon materials so they don't collapse to near-black under our 3-step
- * toon ramp. Applies a gamma curve (darks brighten more than brights) plus a
- * small emissive floor so the shadow side stays readable.
- *
- * IMPORTANT: only call this on weapon meshes. Chests, scenery, and player
- * models intentionally keep their original tones.
- */
-function brightenWeaponMaterials(root: THREE.Object3D): void {
-  const gamma = 0.55;
-  const emissiveFloor = 0.18;
-  root.traverse((child) => {
-    if (!(child as THREE.Mesh).isMesh) return;
-    const mesh = child as THREE.Mesh;
-    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    const lifted = mats.map((mat) => {
-      const m = mat as THREE.MeshToonMaterial;
-      const original = (m.color ?? new THREE.Color(0xffffff)).clone();
-      const c = new THREE.Color(
-        Math.pow(original.r, gamma),
-        Math.pow(original.g, gamma),
-        Math.pow(original.b, gamma),
-      );
-      const newMat = new THREE.MeshToonMaterial({
-        color: c,
-        emissive: c.clone().multiplyScalar(emissiveFloor),
-        map: m.map ?? null,
-        gradientMap: m.gradientMap ?? toonGradientMap,
-        side: m.side ?? THREE.FrontSide,
-        transparent: m.transparent ?? false,
-        opacity: m.opacity ?? 1,
-      });
-      newMat.name = m.name || 'WeaponToon';
-      applyStylizedToonShading(newMat, 0.35); // 武器留一点高光
-      return newMat;
-    });
-    mesh.material = lifted.length === 1 ? lifted[0] : lifted;
-  });
-}
-
-function applyChestGoldMaterials(root: THREE.Object3D): void {
-  let meshIndex = 0;
-  root.traverse((child) => {
-    if (!(child as THREE.Mesh).isMesh) return;
-    const mesh = child as THREE.Mesh;
-    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    const lifted = mats.map((mat, matIndex) => {
-      const source = mat as THREE.MeshToonMaterial;
-      const sourceColor = source.color ?? new THREE.Color(0x8a4a20);
-      const isMetal = meshIndex % 3 === 0 || matIndex > 0 || sourceColor.r > sourceColor.g;
-      const color = isMetal ? new THREE.Color(0xffc44d) : new THREE.Color(0x9a5528);
-      const emissive = isMetal ? new THREE.Color(0x7a4a10) : new THREE.Color(0x261006);
-      const chestMat = new THREE.MeshToonMaterial({
-        color,
-        emissive,
-        gradientMap: toonGradientMap,
-        side: source.side ?? THREE.FrontSide,
-        transparent: source.transparent ?? false,
-        opacity: source.opacity ?? 1,
-      });
-      chestMat.name = `ChestReadable_${meshIndex}_${matIndex}`;
-      return chestMat;
-    });
-    mesh.material = lifted.length === 1 ? lifted[0] : lifted;
-    meshIndex++;
-  });
-}
 
 const WEAPON_ICONS: Record<string, string> = {
   sword: '🗡️',
@@ -2568,13 +1426,9 @@ interface LoadedModels {
   teleporter: THREE.Group | null;
 }
 
-/**
- * 启动期共享 LoadingManager：所有 boot 阶段的 GLTF/OBJ/MTL/Texture 加载都挂到它上面，
- * 借 onProgress 汇总「已加载 / 总数」驱动启动 loading 进度条（解决「白屏无反馈」）。
- * 运行期（进对局后）GameScene 内部新建的 loader 不挂它，避免进度条已移除后还触发回调。
- */
-const bootLoadingManager = new THREE.LoadingManager();
-const gltfLoader = new GLTFLoader(bootLoadingManager);
+import { bootLoadingManager, sharedDracoLoader, createGltfLoader } from './loaders/gltfLoader.ts';
+
+const gltfLoader = createGltfLoader(bootLoadingManager);
 const loadedModels: LoadedModels = {
   zombie_basic: null,
   monster_bat: null,
@@ -2589,29 +1443,6 @@ const loadedModels: LoadedModels = {
 
 // Animation clips storage per model key
 const loadedAnimClips: Map<string, THREE.AnimationClip[]> = new Map();
-
-// =============================================================================
-// KayKit 手持武器（挂到角色 handslot 骨）
-// =============================================================================
-// KayKit 骷髅角色共用 Rig_Medium 骨架，手部有专用挂点骨 handslot.r / handslot.l，
-// 武器模型原点即握把，直接 add 到挂点骨（identity 变换）即落位。武器单独导出（gltf+bin
-// +共享 skeleton_texture.png），加载后做 toon 转换并缓存，按敌人类型克隆挂载。
-const loadedKayKitWeapons: Record<string, THREE.Group> = {};
-
-const KAYKIT_WEAPON_FILES: Record<string, string> = {
-  blade: '/models/skins/kaykit/weapons/Skeleton_Blade.gltf',
-  axe: '/models/skins/kaykit/weapons/Skeleton_Axe.gltf',
-  staff: '/models/skins/kaykit/weapons/Skeleton_Staff.gltf',
-  shield: '/models/skins/kaykit/weapons/Skeleton_Shield_Large_A.gltf',
-};
-
-// 敌人类型 → 手持武器配置（right=handslot.r，left=handslot.l）。
-// 仅当克隆出的模型确实带 handslot 骨（即 KayKit 角色）时才会真正挂上，其它皮肤天然跳过。
-const KAYKIT_WEAPON_LOADOUT: Record<string, { right?: string; left?: string }> = {
-  skeleton_knight: { right: 'blade', left: 'shield' }, // 战士：剑 + 大盾
-  skeleton_archer: { right: 'staff' },                 // 法师：法杖
-  skeleton_soldier: { right: 'axe' },                  // 小兵：斧
-};
 
 // 把 Rig_Medium 通用动画 clip 名映射到游戏敌人动画状态机要的名字。
 // KayKit FREE 包没有近战挥砍，用 Throw（手臂前送）当攻击替身（playEnemyAnim 找 'Punch'）。
@@ -2713,25 +1544,6 @@ async function loadSkinModels(): Promise<void> {
         console.log(`[Skin] Loaded ${key} (${path})`);
       } catch (err) {
         console.warn(`[Skin] Failed ${key} (${path}):`, err);
-      }
-    }),
-    // KayKit 手持武器（gltf + bin + 共享 skeleton_texture.png）
-    ...Object.entries(KAYKIT_WEAPON_FILES).map(async ([key, path]) => {
-      try {
-        const gltf = await gltfLoader.loadAsync(path);
-        const g = gltf.scene;
-        convertToToonMaterials(g, true);
-        g.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) {
-            const mesh = child as THREE.Mesh;
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-          }
-        });
-        loadedKayKitWeapons[key] = g;
-        console.log(`[Skin] Loaded weapon ${key} (${path})`);
-      } catch (err) {
-        console.warn(`[Skin] Failed weapon ${key} (${path}):`, err);
       }
     }),
     // Rig_Medium 动画：抽取需要的 clip，重命名为游戏状态机用的名字
@@ -3318,6 +2130,158 @@ function applySceneryMode(root: THREE.Object3D, mode: 'toon' | 'pbr'): void {
 }
 
 /**
+ * 关卡静态几何运行时合批（空间网格 × 材质签名）。
+ *
+ * 输入约定：在 tryLoadLevel 末尾、convertToToonMaterials + applySceneryMode 之后调用。
+ * 算法：
+ *   1. traverse 收集所有静态 Mesh（跳过 SkinnedMesh / 多 material / morph target）
+ *   2. 计算每个 mesh 的世界包围盒中心，按 `cellSize` 网格分桶 → (cellX, cellZ)
+ *   3. 同 cell 内再按 (背景? × 材质签名) 二次分桶
+ *   4. 每桶把子 geometry 烘焙 matrixWorld，统一 indexed/非 indexed + attribute 交集
+ *   5. mergeGeometries 合成单 BufferGeometry → 单 Mesh
+ *
+ * 为什么不能只按材质分桶（早期版本踩过的坑）：
+ *   - 合成一个超大 mesh 后 bounding box 包整张关卡，相机永远在它的 bbox 内 → frustum 剔除失效
+ *     → 顶点处理量 / shadowmap pass 翻几倍（whitebox tessellated 后顶点 1M+ 量级），FPS 反降
+ *   - 用空间网格切碎后，远 cell 的合批 mesh 在 frustum 外能正常被剔除，draw call 下降的同时顶点量也下降
+ *
+ * 调参 `cellSize`：
+ *   - 越小：culling 越精细，合批程度越低（draw 偏多但顶点少）
+ *   - 越大：合批越多，culling 越粗（draw 少但顶点多，回到老问题）
+ *   - whitebox 是 100m × 100m 量级 → 默认 40m（相机视域约覆盖 4-6 cell，正好平衡）
+ *
+ * 注意事项：
+ *   - sceneryMeshId 失效 → applySceneryMode('pbr') 在合批后的 mesh 上无效（dev tweakpane 切换不再回 PBR）
+ *     这是个 dev-only 控件，已写在注释里；如需恢复，方案：合批前 clone 一份原 scene 当 PBR 视觉源。
+ *   - 阴影 caster：背景桶 castShadow=false（保持原行为），前景桶 castShadow=true。
+ *   - cameraOccluder 仍 work：Raycaster 沿 root traverse 抓 mesh，合批后命中点与之前等价。
+ */
+function batchLevelGeometry(
+  root: THREE.Object3D,
+  options: { cellSize?: number } = {},
+): { before: number; after: number; skipped: number; buckets: number } {
+  const cellSize = options.cellSize ?? 40;
+  type Bucket = {
+    isBackground: boolean;
+    material: THREE.Material;
+    geos: THREE.BufferGeometry[];
+  };
+  const buckets = new Map<string, Bucket>();
+  const toRemove: THREE.Mesh[] = [];
+  let skipped = 0;
+  let processed = 0;
+
+  root.updateMatrixWorld(true);
+
+  const _bboxTmp = new THREE.Box3();
+  const _centerTmp = new THREE.Vector3();
+
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    if ((mesh as unknown as THREE.SkinnedMesh).isSkinnedMesh) { skipped++; return; }
+    if (Array.isArray(mesh.material)) { skipped++; return; }
+    const geo = mesh.geometry;
+    if (!geo || !geo.attributes.position) { skipped++; return; }
+    if (geo.morphAttributes && Object.keys(geo.morphAttributes).length > 0) { skipped++; return; }
+
+    // 用世界包围盒中心定位空间 cell（matrixWorld 已 update）
+    _bboxTmp.setFromObject(mesh);
+    _bboxTmp.getCenter(_centerTmp);
+    const cx = Math.floor(_centerTmp.x / cellSize);
+    const cz = Math.floor(_centerTmp.z / cellSize);
+
+    const isBg = mesh.userData.isBackground === true;
+    const sig =
+      `${cx}|${cz}|${isBg ? 'bg' : 'fg'}|` + materialBatchSignature(mesh.material);
+
+    let bucket = buckets.get(sig);
+    if (!bucket) {
+      bucket = { isBackground: isBg, material: mesh.material, geos: [] };
+      buckets.set(sig, bucket);
+    }
+    // 烘焙世界变换；clone 防污染原 BufferGeometry（关卡 cache 可能共享）。
+    const baked = geo.clone();
+    baked.applyMatrix4(mesh.matrixWorld);
+    bucket.geos.push(baked);
+    processed++;
+    toRemove.push(mesh);
+  });
+
+  for (const m of toRemove) m.parent?.remove(m);
+
+  const mergedRoot = new THREE.Group();
+  mergedRoot.name = 'BatchedLevelMeshes';
+  let mergedCount = 0;
+
+  for (const bucket of buckets.values()) {
+    // mergeGeometries 要求 attribute 名 / itemSize / indexed 完全一致。
+    // 步骤：(1) 取所有 geos attribute 名的交集；(2) 删多余 attribute；(3) 统一非 indexed。
+    const commonAttrs = intersectGeometryAttributes(bucket.geos);
+    const normalized = bucket.geos.map((g) => {
+      for (const k of Object.keys(g.attributes)) {
+        if (!commonAttrs.has(k)) g.deleteAttribute(k);
+      }
+      return g.index ? g.toNonIndexed() : g;
+    });
+
+    const merged = mergeGeometries(normalized, false);
+    if (!merged) {
+      // attribute itemSize 不一致等罕见情形：退回单 mesh，不打断流程
+      for (const g of normalized) {
+        const m = new THREE.Mesh(g, bucket.material);
+        m.castShadow = !bucket.isBackground;
+        m.receiveShadow = !bucket.isBackground;
+        if (bucket.isBackground) m.userData.isBackground = true;
+        mergedRoot.add(m);
+        mergedCount++;
+      }
+      continue;
+    }
+
+    const m = new THREE.Mesh(merged, bucket.material);
+    m.name = `Batched_${bucket.isBackground ? 'bg' : 'fg'}_${mergedCount}`;
+    m.castShadow = !bucket.isBackground;
+    m.receiveShadow = !bucket.isBackground;
+    if (bucket.isBackground) m.userData.isBackground = true;
+    mergedRoot.add(m);
+    mergedCount++;
+  }
+  root.add(mergedRoot);
+  return { before: processed, after: mergedCount, skipped, buckets: buckets.size };
+}
+
+/** 合批分桶用的材质签名：相同签名 → 渲染状态等价，可合并。 */
+function materialBatchSignature(mat: THREE.Material): string {
+  const tm = mat as THREE.MeshToonMaterial;
+  if (tm.isMeshToonMaterial) {
+    return [
+      'toon',
+      tm.color?.getHexString() ?? '-',
+      tm.map?.uuid ?? '-',
+      tm.gradientMap?.uuid ?? '-',
+      tm.emissive?.getHexString() ?? '-',
+      tm.emissiveMap?.uuid ?? '-',
+      tm.transparent ? 't' : 'o',
+      String(tm.side),
+      String(tm.alphaTest ?? 0),
+    ].join('|');
+  }
+  // 其它材质（罕见：背景天空盒 / 自定义 shader）按 uuid 走"自成一桶不合并"
+  return `uniq:${mat.uuid}`;
+}
+
+function intersectGeometryAttributes(geos: THREE.BufferGeometry[]): Set<string> {
+  if (geos.length === 0) return new Set();
+  const common = new Set(Object.keys(geos[0].attributes));
+  for (let i = 1; i < geos.length; i++) {
+    const cur = new Set(Object.keys(geos[i].attributes));
+    for (const k of [...common]) if (!cur.has(k)) common.delete(k);
+  }
+  return common;
+}
+
+/**
  * 加载唯一关卡 glb。强制双文件模式：
  *   - level_${name}.glb       视觉高模（缺则用 col 当视觉，纯灰盒）
  *   - level_${name}_col.glb   碰撞低模（必须，关卡逻辑 / spawn_* 只从这里解析）
@@ -3430,6 +2394,14 @@ async function tryLoadLevel(name: string = DEFAULT_LEVEL_NAME): Promise<void> {
 
   // 3. 应用当前的关卡视觉材质模式
   applySceneryMode(renderScene, sceneryMode);
+
+  // 4. 运行时合批（空间网格 × 材质签名）：把 draw call 从 mesh 数压到桶数，同时保留 frustum culling。
+  //    见 batchLevelGeometry 注释；对任意 glb 通用（whitebox / 新关卡都受益）。
+  const batchStats = batchLevelGeometry(renderScene, { cellSize: 40 });
+  console.log(
+    `[Level] Batched: ${batchStats.before} static mesh → ${batchStats.after} merged mesh ` +
+      `(${batchStats.skipped} skipped: skinned/multi-mat/morph)`,
+  );
 
   const data = parseLevelGltf(colSource);
   loadedLevel = { data, scene: renderScene };
@@ -3665,15 +2637,22 @@ async function loadObjItems(): Promise<void> {
   // (which runs convertToToonMaterials and caps lightness — fine for flat-color
   // models but darkens hand-painted textures), this rebuilds a white-tinted
   // toon material that lets the embedded diffuse map carry the color verbatim.
+  //
+  // tint：可选，作用在 toon material 的 color 上（乘到贴图上做染色）。默认
+  // 0xffffff 即"保留贴图原色"；传非白色相当于不动 .glb 也能换色（poison_bomb
+  // / coin 就是这条路）。如需按 mesh 分别染色，再扩成 (mesh)=>Color 形式。
   const loadTexturedGlbWeaponModel = async (
     name: string,
     glbPath: string,
     targetSize: number,
+    tint: THREE.ColorRepresentation = 0xffffff,
   ): Promise<THREE.Group | null> => {
     try {
       const gltf = await gltfLoader.loadAsync(glbPath);
       const obj = gltf.scene as THREE.Group;
       obj.name = name;
+
+      const tintColor = new THREE.Color(tint);
 
       obj.traverse((child) => {
         if (!(child as THREE.Mesh).isMesh) return;
@@ -3682,8 +2661,11 @@ async function loadObjItems(): Promise<void> {
           THREE.MeshStandardMaterial | undefined;
         const map = src?.map ?? null;
         tuneToonTexture(map);
+        const baseColor = map
+          ? tintColor.clone()
+          : (src?.color?.clone().multiply(tintColor) ?? tintColor.clone());
         const toon = new THREE.MeshToonMaterial({
-          color: map ? 0xffffff : (src?.color?.clone() ?? new THREE.Color(0xffffff)),
+          color: baseColor,
           map,
           gradientMap: toonGradientMap,
           side: THREE.FrontSide,
@@ -3769,7 +2751,9 @@ async function loadObjItems(): Promise<void> {
     // Magic weapon floater models (previously VFX-only)
     loadTexturedGlbWeaponModel('LightningStaffModel', '/models/items/lightning_staff.glb', 1.0),
     loadGlbWeaponModel('FlameRingModel', '/models/items/Ring3.glb', 0.45, true),
-    loadTexturedGlbWeaponModel('PoisonBombModel', '/models/items/poison_bomb.glb', 0.5),
+    // 瓶身染绿（visualConfig.WEAPON_HUD_COLORS.poison_bomb 同色）；贴图里偏白
+    // 的玻璃面会被染成毒绿，瓶塞那种偏暗区会变深绿——可接受就保留。
+    loadTexturedGlbWeaponModel('PoisonBombModel', '/models/items/poison_bomb.glb', 0.5, 0x4caf3a),
     loadGlbWeaponModel('VoidRippleModel', '/models/items/Book4_Closed.glb', 0.5, true),
     loadGlbWeaponModel('RayGunModel', '/models/items/ray_gun.glb', 0.7, true),
     loadPaletteObjWeaponModel('ShotgunModel', '/models/items/shotgun_2.obj', '/models/items/uv_palette.png', 0.8),
@@ -3806,7 +2790,9 @@ async function loadObjItems(): Promise<void> {
   paralysisGunModel = pgun;
   scorchBootsModel = sboots;
 
-  silverCoinModel = await loadTexturedGlbWeaponModel('SilverCoinModel', '/models/items/coin.glb', 0.45);
+  // 原 glb 是金色硬币，乘一个冷调浅灰把它压成"银白色"。
+  // 注：贴图饱和度高时乘法染色压不掉颜色，需要去 Blender 改贴图。
+  silverCoinModel = await loadTexturedGlbWeaponModel('SilverCoinModel', '/models/items/coin.glb', 0.45, 0xdcdce4);
 
   // Load chest model — Sci-Fi Essentials Prop_Chest (glTF + textures)
   try {
@@ -3837,6 +2823,7 @@ export class GameScene {
   private outlinePass: SceneOutlinePass | null = null; // 屏幕空间描边 pass（screenSpace/none，dev 下 O 键切换）
   private bloomPass: UnrealBloomPass | null = null;
   private colorGradePass: ColorGradePass | null = null;
+  private darkComicPass: DarkComicPass | null = null; // 末端"暗黑漫画"风格 post-fx；DARK_COMIC_ENABLED 控制
   private blobShadows: BlobShadowPool | null = null;
   private readonly scene: THREE.Scene;
   private readonly camera: THREE.PerspectiveCamera;
@@ -3849,7 +2836,8 @@ export class GameScene {
   private readonly _dummy = new THREE.Object3D();
   private readonly _tempVec = new THREE.Vector3();
   private readonly _tempColor = new THREE.Color();
-  private readonly _hitFlashColor = new THREE.Color();
+  // HitFlash 受击 tint 系统 — 见 render/HitFlashSystem.ts
+  private hitFlash!: HitFlashSystem;
   // 敌人弹幕火焰 billboard 朝向计算的临时量（避免每帧每弹分配）
   private readonly _camWorldPos = new THREE.Vector3();
   private readonly _vfxNormal = new THREE.Vector3();
@@ -3863,8 +2851,7 @@ export class GameScene {
   private playerMesh!: THREE.Mesh;
   private playerRing!: THREE.Mesh;
   private groundMesh!: THREE.Mesh;
-  private playerHitFlashTimer = 0;
-  private playerHitFlashTint: number | null = null;
+  // 玩家 hit-flash 残余时长 / 当前 tint 已迁至 this.hitFlash.{playerTimer,playerTint}
   private bossMesh: THREE.Mesh | null = null;
   /** bossMesh 当前是用哪一关的模型构建的（关卡切换时需重建）。 */
   private bossMeshStage: 1 | 2 | null = null;
@@ -3878,16 +2865,14 @@ export class GameScene {
   private bossAnimState: string | null = null;
   /** Boss 上一帧 XZ + 静止时长（移动判定，逻辑同敌人）。 */
   private bossPrevPos: { x: number; z: number; stillTime: number } | null = null;
-  private bossHitFlashTint: string | null = null;
+  // Boss hit-flash 当前 tint 已迁至 this.hitFlash.bossTint
   private ambientLight!: THREE.AmbientLight;
   private hemiLight!: THREE.HemisphereLight;
   private playerSpotLight!: THREE.SpotLight;
   private dirLight!: THREE.DirectionalLight;
   private weatherBlend = 0;
   private weatherTarget = 0;
-  // 常驻共享闪电闪光灯：永远在场景里、待命强度 0。闪电复用它而非每道新建/移除 PointLight
-  // —— 场景光源数恒定，避免每次触发引发全场材质 shader 重编译（掉帧主因）。
-  private lightningFlashLight!: THREE.PointLight;
+  // 闪电常驻共享 PointLight 已迁至 weaponTransientVfx.lightningFlashLight（避免动态光源增减触发 shader 重编译）。
 
   // Weapon floaters — physical weapons orbit the player as visual indicator
   // Magic weapons (lightning_staff / flame_ring) use VFX only
@@ -3899,28 +2884,8 @@ export class GameScene {
     'lightning_staff', 'flame_ring', 'poison_bomb', 'void_ripple', 'ray_gun', 'paralysis_gun', 'scorch_boots',
   ];
 
-  // Transient mesh-based VFX (sword slash sectors, lightning columns)
-  // 剑气实心扇形：与 sweepArc 判定区一一对应（圆心=玩家 / 外缘=range / 108° / 内缘≈0），
-  // 叠在 slash.png 月牙之下作为"扫过的填充面积"底光。
-  private slashSectors: Array<{ mesh: THREE.Mesh; life: number; maxLife: number; baseOpacity: number }> = [];
-  // Textured lightning: glow/core 贴图竖直面片(lightning.png) + impact light + ground ring
-  private lightningBolts: Array<{
-    core: THREE.Mesh; // 窄白亮芯面片
-    glow: THREE.Mesh; // 宽蓝外晕面片
-    ring: THREE.Mesh;
-    endX: number;
-    endY: number;
-    endZ: number;
-    height: number;
-    life: number;
-    maxLife: number;
-    flickerTimer: number;
-  }> = [];
-  // Persistent flame_ring decal centered on player while equipped.
-  // 两层星形符文（外圈深橙 / 内核亮黄）反向旋转 + 呼吸脉动，尺寸吻合实际 aoeRadius。
-  private flameRingDisk: THREE.Group | null = null;
-  private flameRingLayers: THREE.Mesh[] = [];
-  private flameRingTime = 0;
+  // Transient mesh-based VFX：剑气扇形 / 闪电杆 / 火环常驻光晕 — 见 vfx/WeaponTransientVfx.ts
+  private weaponTransientVfx!: WeaponTransientVfx;
   // Edge-detect weapon firing for one-shot VFX
   private lastWeaponCooldown: Map<string, number> = new Map();
   private levelScene: THREE.Object3D | null = null;
@@ -3959,7 +2924,7 @@ export class GameScene {
   private teleporterMeshes: THREE.Mesh[] = [];
   private teleporterGlowMeshes: THREE.Mesh[] = [];
   /**
-   * 祭坛 / 传送门的地面 decal（魔法圆 / 漩涡），与祭坛索引一一对应。
+   * 飞碟 / 传送门的地面 decal（魔法圆 / 漩涡），与飞碟索引一一对应。
    * 每帧根据 altar.phase 切换贴图（magic_circle ↔ portal_swirl）+ 旋转。
    */
   private altarDecals: THREE.Mesh[] = [];
@@ -4001,50 +2966,37 @@ export class GameScene {
   // modelKey → 把该模型几何高度归一化到 1 单位高的系数（= 1 / 实际包围盒高度）。
   // 用于让来源尺寸各异的敌人模型统一缩放到目标高度（参考玩家），首次用到时按 loadedModels 实测缓存。
   private enemyModelNormHeight: Map<string, number> = new Map();
-  private enemyHitFlashTints: Map<number, string | null> = new Map(); // id → current material tint weapon
+  // 敌人 hit-flash 当前 tint map 已迁至 this.hitFlash.enemyTints
   private paralysisTriangleSprites: Map<number, THREE.Sprite[]> = new Map(); // enemy id → paralysis marker sprites
   private neuroMarkerSprites: Map<number, THREE.Sprite> = new Map(); // 毒师神经毒素 墨绿倒三角
   private hunterMarkerSprites: Map<number, THREE.Sprite> = new Map(); // 猎标烙印 红色瞄准圈
   private conductorGlowSprites: Map<number, THREE.Sprite> = new Map(); // 弧光导体 蓝色发光
-  private mysteryNumberSprite: THREE.Sprite | null = null; // 奥术奥秘计数（玩家头顶）
-  private mysteryNumberValue = -1;
-  private mysteryNumberPulse = 0;
-  private arcaneBurstOrbs: { sprite: THREE.Sprite; from: THREE.Vector3; to: THREE.Vector3; t: number; life: number }[] = [];
+  // 奥术奥秘头顶数字 + 奥术光球 + bond 事件 + 敌人状态粒子 — 见 vfx/BondAndStatusVfx.ts
+  private bondStatusVfx!: BondAndStatusVfx;
   private projectileMesh!: THREE.InstancedMesh;
   private enemyProjectileMesh!: THREE.InstancedMesh; // 敌人弹幕：朝相机的火焰 billboard
   private axeObjects: Map<number, THREE.Object3D> = new Map(); // axe projectile id → cloned model
   private weaponObjects: Map<number, THREE.Object3D> = new Map(); // other weapon projectiles → cloned model
   private bossProjectileObjects: Map<number, THREE.Object3D> = new Map(); // boss（机器人）弹丸 → bullet.glb 克隆
-  private areaEffectObjects: Map<number, THREE.Object3D> = new Map(); // area effect id → mesh (gas/ripple/scorch/beam)
+  // 投射物对象池：投射物消失时回收实例避免每发都 model.clone()。带容量上限，超
+  // 限实例直接释放，防止池子被某次峰值无限撑大。
+  private axePool: THREE.Object3D[] = [];
+  private weaponPool: Map<string, THREE.Object3D[]> = new Map(); // weaponType → 池
+  private bossProjPool: THREE.Object3D[] = [];
+  // 区域特效渲染（id → mesh / 按 kind 分池）— 见 vfx/AreaEffectVfx.ts
+  private areaEffectVfx!: AreaEffectVfx;
   private pickupMeshes: Map<PickupType, THREE.InstancedMesh> = new Map();
   private silverPickupObjects: Map<number, THREE.Object3D> = new Map();
   private consumableSprites: Map<number, THREE.Sprite> = new Map();
   private goldMoteTexture!: THREE.Texture;
   private goldMoteSprites: Map<number, THREE.Sprite> = new Map();
 
-  // VFX Particle System
-  private readonly MAX_PARTICLES = 500;
-  private vfxParticles: {
-    x: number; y: number; z: number;
-    vx: number; vy: number; vz: number;
-    size: number;
-    life: number;
-    maxLife: number;
-    r: number; g: number; b: number;
-    active: boolean;
-  }[] = [];
-  private vfxGeometry!: THREE.BufferGeometry;
-  private vfxMaterial!: THREE.ShaderMaterial;
-  private vfxPoints!: THREE.Points;
-  private vfxTexture!: THREE.Texture;
-
-  // === Billboard VFX system ===
-  // 给"单帧贴图特效"用：剑气、撞击、魔法圆、烧痕、枪口火光等。
-  // 池化 Plane Mesh，每帧渐隐 + 缩放 + 旋转 + 生命到了归还。
-  // 与上面 vfxPoints 的点云粒子互补：点云适合大量 sparkle，billboard 适合少量"漂亮"贴图。
-  private vfxTextures: Record<VfxTextureKey, THREE.Texture> = {} as Record<VfxTextureKey, THREE.Texture>;
-  private readonly MAX_BILLBOARDS = 64;
-  private billboardPool: BillboardVfxItem[] = [];
+  // === VFX systems ===
+  // 点云粒子池（500 槽，shader 点云）+ 各种 emit* 辅助 — 见 vfx/ParticlePool.ts。
+  // Billboard VFX 池（plane mesh + 贴图）— 见 vfx/BillboardPool.ts。
+  // 两者互补：点云适合大量 sparkle，billboard 适合少量"漂亮"贴图（剑气 / 烧痕 / 魔法圆）。
+  private particlePool!: ParticlePool;
+  private billboardPool!: BillboardPool;
 
   // DOM overlays
   private hudContainer!: HTMLDivElement;
@@ -4069,7 +3021,7 @@ export class GameScene {
   /** 局内任务条（武器槽下方）。 */
   private questRow!: HTMLDivElement;
   private questLabel!: HTMLDivElement;
-  /** 局内主线任务条是否已触发完成消失动画（祭坛 Boss 被击败后）。 */
+  /** 局内主线任务条是否已触发完成消失动画（飞碟 Boss 被击败后）。 */
   private questHudDismissStarted = false;
   /** 经验条上方的 buff 行：左消耗品 / 右羁绊。 */
   private buffRow!: HTMLDivElement;
@@ -4107,8 +3059,8 @@ export class GameScene {
   private gameOverPanel: HTMLDivElement | null = null;
   private pausePanel: HTMLDivElement | null = null;
   private questCompleteAtRunStart: Set<string> = new Set();
-  private damageNums: HTMLDivElement[] = [];
-  private damageNumIndex = 0;
+  // 浮动伤害数字 / 升级补偿浮字 DOM 池 — 见 ui/damageNumbers.ts
+  private damageNumbers!: DamageNumbersOverlay;
   private finalSwarmBorder: HTMLDivElement | null = null;
   private wasFinalSwarm = false;
   private lastNoticeTier: DifficultyTier | null = null;
@@ -4135,7 +3087,7 @@ export class GameScene {
   private jumpKeyDown = false;
   /**
    * 交互按键的边缘状态。`interactKeyPressed` 在按下的那一帧为 true，
-   * 发完一帧后立即清零，避免长按反复触发祭坛召唤。
+   * 发完一帧后立即清零，避免长按反复触发飞碟召唤。
    */
   private interactKeyPressed = false;
   /** 移动端交互按钮被按下时由 UI 设置一次 true，发送一帧后清零（同 interactKeyPressed）。 */
@@ -4319,13 +3271,16 @@ export class GameScene {
     );
     this.setupLighting();
     this.setupGround();
+    // ⚠️ HitFlashSystem / DamageNumbersOverlay 必须在 setupPlayer 之前构造：
+    // setupPlayer 内部会调用 cacheHitFlashMaterialBases → this.hitFlash.cacheBases(...)。
+    this.hitFlash = new HitFlashSystem(WEAPON_VFX_COLORS);
+    this.damageNumbers = new DamageNumbersOverlay(this.camera);
     this.setupPlayer();
     this.setupProjectileMesh();
     this.setupPickupMesh();
     this.setupGoldMoteMesh();
     this.setupVFX();
     this.setupHUD();
-    this.setupDamageNumbers();
     this.setupPerfStats();
 
     this.setupComposer();
@@ -4337,6 +3292,7 @@ export class GameScene {
         bloom: this.bloomPass,
         renderer: this.renderer,
         colorGrade: this.colorGradePass,
+        darkComic: this.darkComicPass,
         cameraOrbit: this.cameraOrbit,
         onSkyModeChange: (mode) => {
           this.applySkyMode(mode);
@@ -4448,6 +3404,7 @@ export class GameScene {
     // session 后，旧 GameScene 整棵场景图与 GL 上下文已无引用，可被 GC 连同 GPU 资源回收。
     this.composer?.dispose();
     this.outlinePass?.dispose(); // EffectComposer.dispose 不级联各 pass，手动释放 sceneRT / 深度纹理 / 描边材质
+    this.darkComicPass?.dispose();
     this.blobShadows?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -4491,7 +3448,7 @@ export class GameScene {
     this.closeBondDetail();
     this.bondDetailOverlay?.remove();
     this.comboLabel?.remove();
-    for (const el of this.damageNums) el.remove();
+    this.damageNumbers?.dispose();
   }
 
   // ===========================================================================
@@ -4540,11 +3497,7 @@ export class GameScene {
     this.scene.add(this.playerSpotLight);
     this.scene.add(this.playerSpotLight.target);
 
-    // 常驻闪电闪光灯（强度 0 待命）：闪电复用它，避免动态增删光源触发全场 shader 重编译。
-    this.lightningFlashLight = new THREE.PointLight(0x88ccff, 0, 10, 2);
-    this.lightningFlashLight.name = 'LightningFlashLight';
-    this.lightningFlashLight.visible = true; // 必须始终可见，否则光源数变化仍会重编译
-    this.scene.add(this.lightningFlashLight);
+    // 常驻闪电闪光灯已迁至 WeaponTransientVfx 内部（构造时自动加入 scene）。
   }
 
   private applySkyMode(mode: 'photo' | 'color'): void {
@@ -4864,6 +3817,30 @@ export class GameScene {
     }
   }
 
+  /**
+   * 最终狂潮 / 超时 → DarkComic 后期渐进。
+   * - `state.finalSwarm` true（gameTime 480-540）：ramp01 在 `rampDurationSeconds` 内线性从 0 → 1
+   * - `state.overtimeSeconds > 0`（超时进 overtime）：继续保持 / 继续 ramp 到 1，避免一过 540 立刻被冲掉
+   *   ——核心要点：spawning 系统在 gameTime≥540 会把 finalSwarm 重置为 false，所以这里必须额外看 overtime
+   * - 其它情况或 defeat/victory：~2s 内快速回落到 0，结算/失败画面立刻清爽
+   * 实际去饱和/噪点上限由 darkComicPass.desaturateMax / noiseMax 控制（🎨 调试面板可调）。
+   */
+  private updateDarkComic(state: GameState, dt: number): void {
+    const dc = this.darkComicPass;
+    if (!dc) return;
+    const interactive = state.phase !== 'defeat' && state.phase !== 'victory';
+    const inFinalSwarm = !!state.finalSwarm && interactive;
+    const inOvertime = state.overtimeSeconds > 0 && interactive;
+    if (inFinalSwarm || inOvertime) {
+      const dur = Math.max(0.5, dc.rampDurationSeconds);
+      dc.ramp01 = Math.min(1, dc.ramp01 + dt / dur);
+    } else {
+      // 退出时 2s 内回落，避免胜利/失败屏还带灰阶颗粒
+      const fallback = 2.0;
+      dc.ramp01 = Math.max(0, dc.ramp01 - dt / fallback);
+    }
+  }
+
   private applyWeatherVisuals(): void {
     const t = this.weatherBlend;
 
@@ -4934,6 +3911,16 @@ export class GameScene {
     const colorGrade = new ColorGradePass(GRADE_SATURATION, GRADE_CONTRAST, GRADE_BRIGHTNESS);
     composer.addPass(colorGrade);
     this.colorGradePass = colorGrade;
+
+    // feat/dark-comic-postfx：末端"暗黑漫画"风格 pass。开关常量在这里，关掉就是回到主分支观感。
+    // 实际去饱和/噪点强度由 GameScene.updateDarkComic 每帧根据 state.finalSwarm 渐进驱动。
+    const DARK_COMIC_ENABLED = true;
+    if (DARK_COMIC_ENABLED) {
+      const darkComic = new DarkComicPass();
+      darkComic.setSize(Math.round(w * dpr), Math.round(h * dpr));
+      composer.addPass(darkComic);
+      this.darkComicPass = darkComic;
+    }
 
     this.composer = composer;
   }
@@ -5036,7 +4023,7 @@ export class GameScene {
     this.scene.add(this.playerMesh);
 
     // Attempt to load and replace with GLTF model
-    const loader = new GLTFLoader();
+    const loader = createGltfLoader();
     loader.load(modelPath, (gltf) => {
       const model = gltf.scene;
       model.name = 'Player';
@@ -5079,7 +4066,7 @@ export class GameScene {
 
       // Replace the fallback mesh
       this.scene.remove(this.playerMesh);
-      const activePlayerTint = this.playerHitFlashTint;
+      const activePlayerTint = this.hitFlash.playerTint;
       this.setPlayerHitFlashTint(undefined);
       this.playerMesh = model as unknown as THREE.Mesh;
       if (activePlayerTint !== null) this.setPlayerHitFlashTint(activePlayerTint);
@@ -5212,32 +4199,52 @@ export class GameScene {
     }
   }
 
-  // KayKit 骷髅：把配置的手持武器克隆并挂到角色的 handslot.r / handslot.l 骨。
-  // 武器原点即握把，挂点骨已摆好朝向，identity 变换即落位；武器随角色统一缩放。
-  // 模型若没有 handslot 骨（非 KayKit 皮肤）则什么都不做。
-  private attachEnemyWeapons(obj: THREE.Object3D, enemyType: string): void {
-    const loadout = KAYKIT_WEAPON_LOADOUT[enemyType];
-    if (!loadout) return;
-    // GLTFLoader 会去掉骨名里的保留字符（handslot.r → handslotr），按归一化后名字匹配，
-    // 兼容两种命名。
-    const norm = (s: string) => s.replace(/[\s[\].:/]/g, '');
-    const findBone = (target: string): THREE.Object3D | undefined => {
-      const want = norm(target);
-      let found: THREE.Object3D | undefined;
-      obj.traverse((c) => { if (!found && norm(c.name) === want) found = c; });
-      return found;
-    };
-    const mount = (slotBone: string, weaponKey?: string): void => {
-      if (!weaponKey) return;
-      const bone = findBone(slotBone);
-      const weapon = loadedKayKitWeapons[weaponKey];
-      if (!bone || !weapon) return;
-      const inst = weapon.clone(true);
-      inst.name = `Weapon_${weaponKey}`;
-      bone.add(inst);
-    };
-    mount('handslot.r', loadout.right);
-    mount('handslot.l', loadout.left);
+  /**
+   * 为一个敌人对象建立或复用 AnimationMixer + AnimationAction 表，并播放 Idle。
+   *
+   * 优化点：从对象池捞起来的 obj 在死亡时调用了 mixer.stopAllAction()，但 mixer 本
+   * 身和它的所有 clipAction（含 LinearInterpolant）都还能复用。原版每次复用都
+   * `new AnimationMixer(obj)` + 重建 actionsMap，每个动作动辄 ~45 个 LinearInterpolant，
+   * 几百次复用后堆里 LinearInterpolant 上六万。这里把 mixer/actionsMap 挂在 obj.userData
+   * 上跨复用周期保留，节省大量分配。
+   */
+  private setupEnemyAnimationsFor(obj: THREE.Object3D, enemyId: number, enemyType: string): void {
+    const cachedMixer = obj.userData['mixer'] as THREE.AnimationMixer | undefined;
+    const cachedActions = obj.userData['actionsMap'] as Map<string, THREE.AnimationAction> | undefined;
+
+    let mixer: THREE.AnimationMixer;
+    let actionsMap: Map<string, THREE.AnimationAction>;
+
+    if (cachedMixer && cachedActions) {
+      mixer = cachedMixer;
+      actionsMap = cachedActions;
+    } else {
+      const modelKey = getEnemyModelMap()[enemyType];
+      const clips = modelKey ? loadedAnimClips.get(modelKey) : undefined;
+      if (!clips || clips.length === 0) return;
+
+      mixer = new THREE.AnimationMixer(obj);
+      actionsMap = new Map<string, THREE.AnimationAction>();
+      for (const clip of clips) {
+        actionsMap.set(clip.name, mixer.clipAction(clip));
+      }
+      obj.userData['mixer'] = mixer;
+      obj.userData['actionsMap'] = actionsMap;
+    }
+
+    this.enemyMixers.set(enemyId, mixer);
+    this.enemyAnimActions.set(enemyId, actionsMap);
+
+    // 选 Idle 动画（带退化链：Idle → Walk → Flying → 任意第一个）。
+    // .reset() 是关键：池复用时 action 处于 stop 后状态，不 reset 直接 play 会停在 0 帧不动。
+    const idleAction = actionsMap.get('Idle')
+      ?? actionsMap.get('Walk')
+      ?? actionsMap.get('Flying')
+      ?? actionsMap.values().next().value;
+    if (idleAction) {
+      idleAction.reset().play();
+      this.enemyAnimStates.set(enemyId, idleAction.getClip().name);
+    }
   }
 
   private playEnemyAnim(enemyId: number, name: string): void {
@@ -5250,13 +4257,16 @@ export class GameScene {
       const fallbacks: Record<string, string[]> = {
         'Run_Attack': ['Run_Arms', 'Run'],
         'Run_Arms': ['Run', 'Walk'],
-        'Punch': ['Idle_Attack', 'Run_Attack', 'Idle'],
-        'HitReact': ['Idle'],
-        'Idle_Attack': ['Punch', 'Idle'],
+        // 'Attack' 兜底是给 Quaternius 系（Bat_Attack → Attack 这种）用的：
+        // Bat 没有 Punch/Idle_Attack，但有 Attack/Attack2，加上后 gargoyle 咬完会真的播挥击。
+        'Punch': ['Idle_Attack', 'Run_Attack', 'Attack', 'Attack2', 'Idle'],
+        // Bat_Hit → Hit：飞行怪受击红闪期间能看到挨打反应，而不是定身在 Idle。
+        'HitReact': ['Hit', 'Idle'],
+        'Idle_Attack': ['Punch', 'Attack', 'Idle'],
         // 施法 / 召唤（necromancer→ghost 模型无专用 spellcast clip，
         // 用 attack-melee / interact 这类伸手动作替代；其它皮肤回落到 Punch/Idle）
-        'Cast': ['Attack-melee-right', 'Attack-melee-left', 'Interact-right', 'Spellcast', 'Punch', 'Idle'],
-        'Summon': ['Interact-right', 'Interact-left', 'Attack-melee-right', 'Spellcast', 'Punch', 'Idle'],
+        'Cast': ['Attack-melee-right', 'Attack-melee-left', 'Interact-right', 'Spellcast', 'Punch', 'Attack', 'Idle'],
+        'Summon': ['Interact-right', 'Interact-left', 'Attack-melee-right', 'Spellcast', 'Punch', 'Attack', 'Idle'],
       };
       const chain = fallbacks[name];
       if (chain) {
@@ -5379,237 +4389,21 @@ export class GameScene {
   }
 
   private setupVFX(): void {
-    // Pre-allocate particle pool
-    for (let i = 0; i < this.MAX_PARTICLES; i++) {
-      this.vfxParticles.push({
-        x: 0, y: -100, z: 0,
-        vx: 0, vy: 0, vz: 0,
-        size: 1,
-        life: 0,
-        maxLife: 1,
-        r: 1, g: 1, b: 1,
-        active: false,
-      });
-    }
-
-    // Load particle texture（升级到 Kenney spark：比 circle 更有"火花感"）
-    const textureLoader = new THREE.TextureLoader();
-    this.vfxTexture = textureLoader.load('/textures/vfx/spark.png');
-
-    // Create buffer geometry with per-particle attributes
-    this.vfxGeometry = new THREE.BufferGeometry();
-    const positions = new Float32Array(this.MAX_PARTICLES * 3);
-    const sizes = new Float32Array(this.MAX_PARTICLES);
-    const lifes = new Float32Array(this.MAX_PARTICLES);
-    const colors = new Float32Array(this.MAX_PARTICLES * 3);
-
-    this.vfxGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    this.vfxGeometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
-    this.vfxGeometry.setAttribute('aLife', new THREE.BufferAttribute(lifes, 1));
-    this.vfxGeometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
-
-    // Custom ShaderMaterial
-    this.vfxMaterial = new THREE.ShaderMaterial({
-      uniforms: {
-        uTexture: { value: this.vfxTexture },
-        uWarpCenter: curvedWorldUniforms.uWarpCenter,
-        uWarpStrength: curvedWorldUniforms.uWarpStrength,
-      },
-      vertexShader: `
-        uniform vec3 uWarpCenter;
-        uniform float uWarpStrength;
-
-        attribute float aSize;
-        attribute float aLife;
-        attribute vec3 aColor;
-
-        varying float vLife;
-        varying vec3 vColor;
-
-        void main() {
-          vLife = aLife;
-          vColor = aColor;
-
-          vec3 worldPos = position;
-          vec3 diff = worldPos - uWarpCenter;
-          float d = length(diff.xz);
-          if (d > 1e-5 && uWarpStrength > 0.0) {
-              float theta = d * uWarpStrength;
-              float sinTheta = sin(theta);
-              float cosTheta = cos(theta);
-              vec2 dir = diff.xz / d;
-
-              vec3 normal = vec3(sinTheta * dir.x, cosTheta, sinTheta * dir.y);
-              float r = (1.0 / uWarpStrength) + diff.y;
-              vec3 warpedPos = r * normal;
-              warpedPos.y -= (1.0 / uWarpStrength);
-
-              worldPos = uWarpCenter + warpedPos;
-          }
-
-          vec4 mvPosition = viewMatrix * vec4(worldPos, 1.0);
-          gl_PointSize = aSize * (400.0 / -mvPosition.z);
-          gl_Position = projectionMatrix * mvPosition;
-        }
-      `,
-      fragmentShader: `
-        uniform sampler2D uTexture;
-        varying float vLife;
-        varying vec3 vColor;
-
-        void main() {
-          vec4 texColor = texture2D(uTexture, gl_PointCoord);
-          float alpha = texColor.a * vLife;
-          gl_FragColor = vec4(vColor * texColor.rgb, alpha);
-          if (gl_FragColor.a < 0.01) discard;
-        }
-      `,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-
-    this.vfxPoints = new THREE.Points(this.vfxGeometry, this.vfxMaterial);
-    this.vfxPoints.name = 'VFXParticles';
-    this.vfxPoints.frustumCulled = false;
-    this.scene.add(this.vfxPoints);
-
-    // ─── Billboard VFX：预加载贴图 + 预分配 plane 池 ───
-    const billboardLoader = new THREE.TextureLoader();
-    for (const key of Object.keys(VFX_TEXTURE_FILES) as VfxTextureKey[]) {
-      const tex = billboardLoader.load(VFX_TEXTURE_FILES[key]);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      this.vfxTextures[key] = tex;
-    }
-
-    const planeGeo = new THREE.PlaneGeometry(1, 1);
-    for (let i = 0; i < this.MAX_BILLBOARDS; i++) {
-      const mat = new THREE.MeshBasicMaterial({
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        side: THREE.DoubleSide,
-      });
-      const mesh = new THREE.Mesh(planeGeo, mat);
-      mesh.visible = false;
-      mesh.frustumCulled = false;
-      mesh.renderOrder = 5;  // 在 outline 之上、HUD 之下
-      this.scene.add(mesh);
-      this.billboardPool.push({
-        mesh,
-        active: false,
-        age: 0,
-        lifetime: 1,
-        startScale: 1,
-        endScale: 1,
-        startOpacity: 1,
-        opacityCurve: 'fadeOut',
-        rotationSpeed: 0,
-        facing: 'camera',
-      });
-    }
+    // ─── Billboard VFX：贴图预载 + 64 槽 plane mesh 池 ───
+    this.billboardPool = new BillboardPool(this.scene);
+    // ─── 点云粒子池：500 槽 + shader 自渲染 ───
+    //（emitDeathBurst / emitHitSparks 等会同时调 billboardPool，所以必须在它之后）
+    this.particlePool = new ParticlePool(this.scene, this.billboardPool);
+    // ─── 武器瞬态 VFX（剑气 / 闪电 / 火环）+ 自带常驻 lightningFlashLight ───
+    this.weaponTransientVfx = new WeaponTransientVfx(this.scene, this.billboardPool, this.particlePool);
+    // ─── 区域特效（毒气 / 虚空涟漪 / 灼地痕迹 / 激光线）+ 按 kind 对象池 ───
+    this.areaEffectVfx = new AreaEffectVfx(this.scene, this.billboardPool, this.particlePool);
+    // ─── 羁绊 / 状态 VFX（奥秘头顶数字 / 奥术光球 / bond 事件 / 敌人状态粒子）───
+    this.bondStatusVfx = new BondAndStatusVfx(this.scene, this.billboardPool, this.particlePool);
   }
 
-  /**
-   * 触发一个一次性贴图特效。从 billboard 池里取一个 plane，
-   * 配置好材质 / 位置 / 朝向 / 缩放 / 透明度曲线，由 updateBillboardVfx 每帧推进。
-   *
-   * 池满时静默丢弃（不阻塞，不报错）。VFX 帧丢失对体感几乎无影响。
-   */
-  spawnBillboard(opts: BillboardSpawnOpts): void {
-    const slot = this.billboardPool.find(b => !b.active);
-    if (!slot) return;
-
-    slot.active = true;
-    slot.age = 0;
-    slot.lifetime = Math.max(0.05, opts.lifetime);
-    slot.startScale = opts.scale;
-    slot.endScale = opts.endScale ?? opts.scale;
-    slot.startOpacity = opts.opacity ?? 1;
-    slot.opacityCurve = opts.opacityCurve ?? 'fadeOut';
-    slot.rotationSpeed = opts.rotationSpeed ?? 0;
-    slot.facing = opts.facing ?? 'camera';
-
-    const mat = slot.mesh.material;
-    mat.map = this.vfxTextures[opts.texture];
-    mat.color.setHex(opts.color ?? 0xffffff);
-    mat.opacity = slot.startOpacity;
-    mat.blending = opts.blending === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending;
-    mat.needsUpdate = true;
-
-    slot.mesh.position.set(opts.x, opts.y, opts.z);
-    slot.mesh.scale.set(slot.startScale, slot.startScale, slot.startScale);
-    slot.mesh.visible = true;
-
-    if (slot.facing === 'up') {
-      // 平躺地面：plane 默认面向 +Z，绕 X 轴 -90° 让法线朝 +Y
-      slot.mesh.rotation.set(-Math.PI / 2, 0, opts.rotation ?? 0);
-    } else {
-      // 朝向相机：每帧在 update 里 lookAt(camera)；初始 rotation 仅决定贴图自旋
-      slot.mesh.rotation.set(0, 0, opts.rotation ?? 0);
-    }
-  }
-
-  /**
-   * 每帧推进所有 active billboard：
-   *   - lerp scale (start → end)
-   *   - lerp opacity 按曲线
-   *   - 自旋
-   *   - facing='camera' 时 lookAt(相机)
-   *   - lifetime 到了归还槽位
-   */
-  private updateBillboardVfx(dt: number): void {
-    const cam = this.camera;
-    const _camPos = new THREE.Vector3();
-    cam.getWorldPosition(_camPos);
-
-    for (const b of this.billboardPool) {
-      if (!b.active) continue;
-      b.age += dt;
-      if (b.age >= b.lifetime) {
-        b.active = false;
-        b.mesh.visible = false;
-        continue;
-      }
-
-      const t = b.age / b.lifetime;  // 0..1
-      const scale = b.startScale + (b.endScale - b.startScale) * t;
-      b.mesh.scale.set(scale, scale, scale);
-
-      let alpha: number;
-      switch (b.opacityCurve) {
-        case 'flash':
-          // 0 → start → 0 (sin 曲线)
-          alpha = b.startOpacity * Math.sin(t * Math.PI);
-          break;
-        case 'constant':
-          alpha = b.startOpacity;
-          break;
-        case 'fadeOut':
-        default:
-          alpha = b.startOpacity * (1 - t);
-          break;
-      }
-      b.mesh.material.opacity = Math.max(0, alpha);
-
-      if (b.rotationSpeed !== 0) {
-        if (b.facing === 'up') {
-          b.mesh.rotation.z += b.rotationSpeed * dt;
-        } else {
-          // camera-facing 时由 lookAt 接管 X/Y rotation；自旋走 Z
-          // 但 lookAt 之后我们再叠 Z rotation
-          b.mesh.rotation.z += b.rotationSpeed * dt;
-        }
-      }
-
-      if (b.facing === 'camera') {
-        // 让 plane 法线指向相机（保留 z 自旋）
-        const zRot = b.mesh.rotation.z;
-        b.mesh.lookAt(_camPos);
-        b.mesh.rotation.z = zRot;
-      }
-    }
-  }
+  // spawnBillboard / updateBillboardVfx 已迁出至 BillboardPool；
+  // 调用方改为 this.billboardPool.spawn(...) / this.billboardPool.update(camera, dt)。
 
   // ===========================================================================
   // HUD
@@ -5617,7 +4411,7 @@ export class GameScene {
 
   private setupHUD(): void {
     this.hudContainer = document.createElement('div');
-    this.hudContainer.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:100;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);box-sizing:border-box;';
+    this.hudContainer.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:100;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);box-sizing:border-box;';
     document.body.appendChild(this.hudContainer);
 
     // ---------------------------------------------------------------------
@@ -5662,6 +4456,7 @@ export class GameScene {
       position:relative;width:${HUD_QUEST_TRACK_WIDTH};max-width:100%;flex-shrink:0;pointer-events:none;overflow:visible;
       aspect-ratio:${HUD_TASK_TRACK_SIZE.w}/${HUD_TASK_TRACK_SIZE.h};
       background:url(${HUD_TASK_TRACK_BG}) center center/100% 100% no-repeat;
+      margin-left:${HUD_TASK_TRACK_OFFSET_LEFT};
     `;
     this.questLabel = document.createElement('div');
     this.questLabel.style.cssText = uiPlainText(`
@@ -5696,19 +4491,16 @@ export class GameScene {
     this.stageBadge.style.cssText = 'color:#ffe08a;font-size:clamp(11px,2.8vw,15px);font-weight:900;text-shadow:0 1px 3px rgba(0,0,0,0.9);letter-spacing:1px;white-space:nowrap;';
     rightHudStack.appendChild(this.stageBadge);
 
-    // Timer (no background box)
+    // Timer 改为屏幕顶部居中的独立胶囊（参考 megabonk 风格 UI）
+    const timerCenterWrap = document.createElement('div');
+    timerCenterWrap.style.cssText = 'position:absolute;top:max(12px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:1;';
     this.timerLabel = document.createElement('div');
-    this.timerLabel.style.cssText = uiPlainText('display:flex;align-items:center;gap:5px;font-size:clamp(11px,2.8vw,18px);font-weight:bold;font-variant-numeric:tabular-nums;white-space:nowrap;');
-    const timerIcon = document.createElement('img');
-    timerIcon.src = STOPWATCH_ICON_PATH;
-    timerIcon.alt = '';
-    timerIcon.draggable = false;
-    timerIcon.style.cssText = 'height:clamp(14px,3.2vw,22px);width:auto;aspect-ratio:1/1;object-fit:contain;flex-shrink:0;display:block;';
+    this.timerLabel.style.cssText = 'display:flex;align-items:center;justify-content:center;padding:clamp(2px,0.6vw,5px) clamp(10px,2.6vw,16px);background:rgba(40,30,55,0.82);border-radius:9999px;box-shadow:0 2px 6px rgba(0,0,0,0.38),inset 0 1px 0 rgba(255,255,255,0.04);font-size:clamp(11px,2.8vw,15px);font-weight:bold;color:#fff;text-shadow:0 2px 0 rgba(0,0,0,0.7),0 0 3px rgba(0,0,0,0.55);font-variant-numeric:tabular-nums;letter-spacing:0.5px;line-height:1;white-space:nowrap;';
     this.timerTimeEl = document.createElement('span');
     this.timerTimeEl.textContent = '00:00';
-    this.timerLabel.appendChild(timerIcon);
     this.timerLabel.appendChild(this.timerTimeEl);
-    rightHudStack.appendChild(this.timerLabel);
+    timerCenterWrap.appendChild(this.timerLabel);
+    this.hudContainer.appendChild(timerCenterWrap);
 
     // Gold this run (moved into the top-right cluster, no background box)
     this.goldLabel = createGoldBadge(0);
@@ -5875,7 +4667,7 @@ export class GameScene {
     applyShrineChargeHudLayout(this.shrineIndicator);
     this.hudContainer.appendChild(this.shrineIndicator);
 
-    // Boss 召唤祭坛圆形进度（与充能神殿进度共用位置）
+    // Boss 召唤飞碟圆形进度（与充能神殿进度共用位置）
     this.bossSummonWidget = createBossSummonIndicator();
     this.bossSummonIndicator = this.bossSummonWidget.root;
     this.bossSummonIndicator.style.position = 'absolute';
@@ -5885,7 +4677,7 @@ export class GameScene {
     applyShrineChargeHudLayout(this.bossSummonIndicator);
     this.hudContainer.appendChild(this.bossSummonIndicator);
 
-    // 移动端交互按钮（宝箱 / 祭坛）；PC 统一 KeyE
+    // 移动端交互按钮（宝箱 / 飞碟）；PC 统一 KeyE
     this.interactBtn = document.createElement('div');
     this.interactBtn.dataset.cameraBlock = 'true';
     const onInteractTap = (ev: Event) => { ev.preventDefault(); this.mobileInteractPressed = true; };
@@ -5923,16 +4715,6 @@ export class GameScene {
     this.comboLabel = document.createElement('div');
     this.comboLabel.style.cssText = `position:absolute;top:35%;left:50%;transform:translate(-50%,-50%);color:#ffd700;font-size:${uiPx(Math.round(HUD_COMBO_FONT_BASE * HUD_COMBO_SCALE))}px;font-weight:bold;text-shadow:0 0 ${uiPx(8)}px rgba(255,215,0,0.8),0 ${uiPx(2)}px ${uiPx(3)}px rgba(0,0,0,0.9);pointer-events:none;opacity:0;transition:opacity 0.3s ease-out;white-space:nowrap;`;
     this.hudContainer.appendChild(this.comboLabel);
-  }
-
-  private setupDamageNumbers(): void {
-    for (let i = 0; i < DAMAGE_NUM_POOL_SIZE; i++) {
-      const el = document.createElement('div');
-      el.style.cssText = `position:fixed;pointer-events:none;font-size:16px;font-weight:bold;opacity:0;transition:none;z-index:200;text-shadow:${UI_TEXT_OUTLINE_SHADOW};white-space:nowrap;padding-inline:3px;box-sizing:border-box;font-family:${DAMAGE_NUMBER_FONT_FAMILY};`;
-      el.dataset.animId = String(i);  // 稳定 id：GSAP 按元素 keying，池复用时 cancel 上一个 tween
-      document.body.appendChild(el);
-      this.damageNums.push(el);
-    }
   }
 
   /**
@@ -6024,9 +4806,13 @@ export class GameScene {
     }
     const b = this.perfDrawBreakdown;
     const bSum = b.enemy + b.shadow + b.level + b.other;
+    // alive 来自 enemyObjects（含 dying 动画前的所有挂载对象），culled = 因 >ENEMY_VISIBLE_CULL_DIST
+    // 被强制 visible=false 的；alive - culled 即「画面附近实际尝试渲染的怪」（再被视锥过滤就是 b.enemy）。
+    const culled = this.perfEnemyCulledFar;
     this.perfStatsEl.textContent =
       `FPS: ${this.perfFpsDisplay}\nDraw: ${drawCalls}\nTris: ${(tris / 1000).toFixed(0)}k\n` +
       `Enemies: ${this.perfEnemyCount} → ${this.perfEnemyMeshes} draws\n` +
+      `  far-culled (>${ENEMY_VISIBLE_CULL_DIST}m): ${culled}\n` +
       `merge tex→ ${this.perfEnemyMerged} / sig→ ${this.perfEnemyMergedSig}\n` +
       `real draws (frustum):\n` +
       `  enemy ${b.enemy}  shadow ${b.shadow}\n` +
@@ -6078,6 +4864,10 @@ export class GameScene {
   private perfEnemyMerged = 0;
   private perfEnemyMergedSig = 0;
   private perfEnemyCount = 0;
+  // 每帧 updateEnemyObjects 累加：被 ENEMY_VISIBLE_CULL_DIST 远距剔除掉的敌人数。
+  // 写在 perf 字段里方便 overlay 立刻显示「活着但不可见」的怪有多少 —— 帮玩家分辨
+  // 「真的没怪」vs「怪都在 35m 外被剔除」。
+  private perfEnemyCulledFar = 0;
   private perfDrawBreakdown = { enemy: 0, shadow: 0, level: 0, other: 0 };
 
   // ===========================================================================
@@ -6098,7 +4888,7 @@ export class GameScene {
 
   // GM debug: 强制在指定坐标劈一道闪电（测试用）
   debugSpawnLightning(x: number, y: number, z: number): void {
-    this.spawnLightningBolt(x, y, z);
+    this.weaponTransientVfx.spawnLightningBolt(x, y, z);
   }
 
   /**
@@ -6312,13 +5102,14 @@ export class GameScene {
     this.renderChests(state);
     this.renderShrines(state.shrines, state.player.x, state.player.z);
     this.updateVFX(state, dt, eventsFresh);
-    this.updateBillboardVfx(dt);
+    this.billboardPool.update(this.camera, dt);
     if (introFullWorld) {
       this.updateStartIntroCamera(state);
     } else if (!introJustCompleted) {
       this.updateCamera(state);
     }
     this.updateWeather(state, dt);
+    this.updateDarkComic(state, dt);
 
     // 游戏已结束（失败 / 胜利）后不再触发新的镜头晃动，避免"死后被打仍在晃"的违和感
     const isGameEnded = state.phase === 'defeat' || state.phase === 'victory';
@@ -6445,9 +5236,9 @@ export class GameScene {
     // 死亡后保持 mesh 可见，让 Death 动画播完并把尸体定格在地上
     this.playerMesh.visible = true;
 
-    if (this.playerHitFlashTimer > 0) {
-      this.playerHitFlashTimer = Math.max(0, this.playerHitFlashTimer - this.frameDt);
-      if (this.playerHitFlashTimer <= 0) this.setPlayerHitFlashTint(undefined);
+    if (this.hitFlash.playerTimer > 0) {
+      this.hitFlash.playerTimer = Math.max(0, this.hitFlash.playerTimer - this.frameDt);
+      if (this.hitFlash.playerTimer <= 0) this.setPlayerHitFlashTint(undefined);
     }
 
     // === Death Animation ===
@@ -6691,266 +5482,17 @@ export class GameScene {
   }
 
   // === Magic weapon VFX ===
-
-  // Sword slash filled sector: 与 sweepArc 命中区精确对应的实心扇形底光。
-  //   - 圆心 = 玩家 (x,z)；外缘 = range（击杀边界）；内缘 ≈ 0（贴近玩家）
-  //   - 扇形角 = Math.PI*0.6 (108°)，对称居中在该刀方向 angle 上
-  //   - 横躺地面，叠在 slash.png 月牙之下（更暗、更柔，表达"扫过的面积"）
-  private spawnSlashSector(x: number, y: number, z: number, angle: number, range: number): void {
-    const thetaLength = Math.PI * 0.944; // 170°，与 sweepArc arcAngle 一致
-    // 高分段：thetaSegs 让弧线圆滑、phiSegs 让径向 alpha 渐变平滑。
-    const thetaSegs = 48;
-    const phiSegs = 8;
-    // 内缘留极小值避免退化三角面在玩家脚下糊成一点
-    const geo = new THREE.RingGeometry(0.2, range, thetaSegs, phiSegs, -thetaLength / 2, thetaLength);
-
-    // 逐顶点 alpha 羽化：消除扇形的硬边界。
-    //   - 角度方向：两条直边 18% 处淡出到 0（凹口两侧不再是硬切线）
-    //   - 径向方向：外缘 30% 处淡出到 0（外圈融入地面，不再是硬弧线）
-    // RingGeometry 顶点顺序：外层 j(内→外) × 内层 i(沿角度)，索引 = j*(thetaSegs+1)+i。
-    const ANG_FEATHER = 0.18; // 角度边羽化带宽（占整段比例）
-    const OUT_FEATHER = 0.30; // 外缘羽化带宽（占径向比例）
-    const colors = new Float32Array(geo.attributes.position.count * 4);
-    let vi = 0;
-    for (let j = 0; j <= phiSegs; j++) {
-      const v = j / phiSegs;                                   // 0 内缘 → 1 外缘
-      const fr = Math.min(1, (1 - v) / OUT_FEATHER);           // 外缘淡出
-      for (let i = 0; i <= thetaSegs; i++) {
-        const u = i / thetaSegs;                               // 0..1 跨角度
-        const fa = Math.min(1, Math.min(u, 1 - u) / ANG_FEATHER); // 两侧淡出
-        const a = Math.max(0, fr) * Math.max(0, fa);
-        colors[vi * 4 + 0] = 1;
-        colors[vi * 4 + 1] = 1;
-        colors[vi * 4 + 2] = 1;
-        colors[vi * 4 + 3] = a;
-        vi++;
-      }
-    }
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 4));
-    geo.rotateX(-Math.PI / 2); // 躺平到地面（法线朝 +Y）
-
-    // RingGeometry 的 UV 是径向映射（贴图中心↔几何圆心，向外铺到外缘），
-    // 所以放射状贴图能贴成"从玩家朝外发散"的扇形切片。想换风格改这一行即可：
-    //   'scorch'(放射条纹) / 'magic_circle'(法术) / 也可用 particle_* 系列。
-    const SLASH_SECTOR_TEXTURE: VfxTextureKey = 'slash_fill';
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0x3aa0ff, // 偏蓝
-      map: this.vfxTextures[SLASH_SECTOR_TEXTURE] ?? null,
-      vertexColors: true, // 顶点 alpha 羽化边界（附加混合用 SrcAlpha，alpha 调制贡献）
-      transparent: true,
-      opacity: 1.0, // 最亮（附加混合，opacity 直接放大亮度）
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x, y, z);
-    // 扇形中心射线（local +X）对齐该刀的 swing 方向：rotation.y = angle - π/2
-    mesh.rotation.y = angle - Math.PI / 2;
-    mesh.renderOrder = 2; // 低于 slash.png 月牙
-    this.scene.add(mesh);
-    this.slashSectors.push({ mesh, life: 0.18, maxLife: 0.18, baseOpacity: 1.0 });
-  }
-
-  // Lightning bolt: textured billboard quad (lightning.png) with double-layer glow, impact light, ground ring
-  private spawnLightningBolt(x: number, y: number, z: number): void {
-    const height = 8;
-    const maxLife = 0.25;       // 适中寿命，不长不短
-
-    // 竖直贴图面片：lightning.png 为白色闪电 + 透明底，加色混合自然发光。
-    // 两层叠加：glow=宽蓝外晕、core=窄白亮芯 → "白热芯 + 蓝边"的电弧观感。
-    // 面片仅绕 Y 轴朝相机（在 updateTransientEffects 里每帧更新），始终保持竖直。
-    const tex = this.vfxTextures.lightning ?? null;
-    const makeBolt = (width: number, color: number, opacity: number, name: string): THREE.Mesh => {
-      const geo = new THREE.PlaneGeometry(width, height);
-      const mat = new THREE.MeshBasicMaterial({
-        map: tex,
-        color,
-        transparent: true,
-        opacity,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(x, y + height / 2, z);
-      mesh.name = name;
-      // 随机水平镜像，让每道电弧形态不同
-      if (Math.random() < 0.5) mesh.scale.x = -1;
-      return mesh;
-    };
-
-    const glow = makeBolt(3.4, 0x66bbff, 1.0, 'LightningGlow');
-    const core = makeBolt(1.7, 0xffffff, 1.0, 'LightningCore');
-
-    // 闪光由常驻共享灯负责（不再每道新建 PointLight）：定位 + 点亮，强度在 update 里衰减。
-    this.lightningFlashLight.position.set(x, y + 0.5, z);
-    this.lightningFlashLight.intensity = 6;
-
-    // ---- Ground impact ring: expands outward and fades ----
-    const ringGeo = new THREE.RingGeometry(0.3, 0.5, 32);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: 0xaaddff,
-      transparent: true,
-      opacity: 1.0,
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.set(x, y + 0.02, z);
-    ring.name = 'LightningRing';
-
-    this.scene.add(glow);
-    this.scene.add(core);
-    this.scene.add(ring);
-
-    this.lightningBolts.push({
-      core, glow, ring,
-      endX: x, endY: y, endZ: z, height,
-      life: maxLife, maxLife,
-      flickerTimer: 0.05,
-    });
-
-    // Spark burst at impact — light blue/white
-    const sparkCount = 14;
-    for (let i = 0; i < sparkCount; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const speed = 4 + Math.random() * 4;
-      const sg = 0.85 + Math.random() * 0.15;
-      const sb = 1.0;
-      const sr = 0.6 + Math.random() * 0.4;
-      this.spawnParticle(
-        x, y + 0.4, z,
-        Math.cos(a) * speed, 4 + Math.random() * 3, Math.sin(a) * speed,
-        1.4 + Math.random() * 0.6,
-        0.3 + Math.random() * 0.2,
-        sr, sg, sb,
-      );
-    }
-  }
-
-  // Persistent flame ring disk — created lazily, follows player while equipped
-  // 柔光贴图淡出到不可见的归一化半径（相对贴图半宽）。
-  // 用它把光晕外缘对齐到实际 aoeRadius：plane 边长 = 2 * radius / 此值。
-  private static readonly FLAME_AURA_TIP_NORM = 0.85;
-
-  private ensureFlameRingDisk(): THREE.Group {
-    if (this.flameRingDisk) return this.flameRingDisk;
-    const group = new THREE.Group();
-    group.name = 'FlameRingDisk';
-    // 平铺在地面上：组整体绕 X 转 -90°，子 plane 绕 Z 自转。
-    group.rotation.x = -Math.PI / 2;
-
-    // 单位尺寸 plane（每帧按 aoeRadius 缩放）；贴图为灰度柔光晕，可染色。
-    // 仅作"范围边界"用——半透明叠加发光，不做不透明的实心填充。
-    const planeGeo = new THREE.PlaneGeometry(1, 1);
-    const mat = new THREE.MeshBasicMaterial({
-      map: this.vfxTextures.flame_aura ?? null,
-      color: 0xff6a22,
-      transparent: true,
-      opacity: 1,
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const mesh = new THREE.Mesh(planeGeo, mat);
-    group.add(mesh);
-
-    this.flameRingLayers = [mesh];
-    this.scene.add(group);
-    this.flameRingDisk = group;
-    return group;
-  }
-
-  // Drive transient meshes (slash arcs, lightning bolts): fade and dispose
-  private updateTransientEffects(dt: number): void {
-    // Slash sectors: 固定尺寸（保持与 range 对齐，不放大），仅渐隐后回收。
-    for (let i = this.slashSectors.length - 1; i >= 0; i--) {
-      const e = this.slashSectors[i];
-      e.life -= dt;
-      if (e.life <= 0) {
-        this.scene.remove(e.mesh);
-        e.mesh.geometry.dispose();
-        (e.mesh.material as THREE.Material).dispose();
-        this.slashSectors.splice(i, 1);
-        continue;
-      }
-      const t = e.life / e.maxLife; // 1 → 0
-      (e.mesh.material as THREE.MeshBasicMaterial).opacity = e.baseOpacity * t;
-    }
-
-    // Lightning bolts: 贴图面片镜像翻转 + 抖动模拟电弧跳动，面片绕 Y 朝相机。闪光交给常驻共享灯。
-    let flashIntensity = 0; // 本帧所有闪电对共享灯的最强贡献
-    let flashX = 0, flashY = 0, flashZ = 0;
-    const lightningCamPos = new THREE.Vector3();
-    this.camera.getWorldPosition(lightningCamPos);
-    for (let i = this.lightningBolts.length - 1; i >= 0; i--) {
-      const e = this.lightningBolts[i];
-      e.life -= dt;
-      e.flickerTimer -= dt;
-
-      if (e.life <= 0) {
-        this.scene.remove(e.core);
-        this.scene.remove(e.glow);
-        this.scene.remove(e.ring);
-        e.core.geometry.dispose();
-        (e.core.material as THREE.Material).dispose();
-        e.glow.geometry.dispose();
-        (e.glow.material as THREE.Material).dispose();
-        e.ring.geometry.dispose();
-        (e.ring.material as THREE.Material).dispose();
-        this.lightningBolts.splice(i, 1);
-        continue;
-      }
-
-      const t = e.life / e.maxLife;
-      const inv = 1 - t;
-      // 标准二次衰减
-      const fade = t * t;
-
-      // 1. 面片绕 Y 朝相机（保持竖直，仅水平转向）
-      const yaw = Math.atan2(lightningCamPos.x - e.endX, lightningCamPos.z - e.endZ);
-      e.core.rotation.y = yaw;
-      e.glow.rotation.y = yaw;
-
-      // 2. Flicker: 周期性水平镜像，让电弧形态跳变（贴图廉价，无需重建几何）
-      if (e.flickerTimer <= 0) {
-        e.flickerTimer = 0.04 + Math.random() * 0.03;
-        const flip = Math.random() < 0.5 ? -1 : 1;
-        e.core.scale.x = Math.abs(e.core.scale.x) * flip;
-        e.glow.scale.x = Math.abs(e.glow.scale.x) * flip;
-      }
-
-      // 3. Opacity：在衰减之上叠一层随机闪烁，营造电流频闪
-      const flick = 0.6 + Math.random() * 0.4;
-      (e.core.material as THREE.MeshBasicMaterial).opacity = fade * flick;
-      (e.glow.material as THREE.MeshBasicMaterial).opacity = fade * flick;
-
-      // 4. 收集对共享闪光灯的贡献（取最亮的一道定位）
-      const lit = 6 * fade;
-      if (lit > flashIntensity) { flashIntensity = lit; flashX = e.endX; flashY = e.endY + 0.5; flashZ = e.endZ; }
-
-      // 5. Ground ring: expand and fade
-      const ringScale = 0.3 + inv * 5;
-      e.ring.scale.set(ringScale, ringScale, 1);
-      (e.ring.material as THREE.MeshBasicMaterial).opacity = fade;
-    }
-    // 驱动常驻共享灯：有闪电就跟最亮那道，否则归零（光源数始终不变，无重编译）。
-    this.lightningFlashLight.intensity = flashIntensity;
-    if (flashIntensity > 0) this.lightningFlashLight.position.set(flashX, flashY, flashZ);
-  }
+  // 剑气扇形 / 闪电杆 / 火环常驻光晕 / lightning flash light 全部迁出至 vfx/WeaponTransientVfx.ts。
 
   private spawnDeathBurst(x: number, y: number, z: number): void {
-    this.emitDeathBurst(x, y, z, 'generic');
+    this.particlePool.emitDeathBurst(x, y, z, 'generic');
   }
 
   private spawnLevelUpBurst(x: number, y: number, z: number): void {
     // 粒子爆发 + 头顶星光 + 上升光柱：整套仪式特效已由 emitLevelUpBurst →
     // emitCompensationBurst('gold') 提供。早先这里又额外 spawn 了一遍 star+light billboard，
     // 导致每次升级星光/光柱被双绘（参数略不同的叠加），已移除该重复。
-    this.emitLevelUpBurst(x, y, z);
+    this.particlePool.emitLevelUpBurst(x, y, z);
   }
 
   private triggerScreenFlash(color: string, duration: number): void {
@@ -6958,135 +5500,33 @@ export class GameScene {
     gsapAnimations.screenFlash(color, duration);
   }
 
+  // ─── Hit flash delegates — 实现已迁至 render/HitFlashSystem.ts ───
   private cloneHitFlashMaterial(mat: THREE.Material): THREE.Material {
-    const cloned = mat.clone();
-
-    // material.clone() copies userData, but not every custom shader callback reliably.
-    // Re-apply the stylized toon patch to cloned enemy materials so per-enemy tinting
-    // does not mutate shared source materials.
-    if (cloned instanceof THREE.MeshToonMaterial) {
-      delete cloned.userData['__stylized'];
-      applyStylizedToonShading(cloned, cloned.name.startsWith('Weapon') ? 0.35 : 0, true);
-      cloned.needsUpdate = true;
-    }
-
-    const tintable = cloned as HitFlashMaterial;
-    if (tintable.color) {
-      cloned.userData[HIT_FLASH_BASE_COLOR_KEY] = tintable.color.clone();
-    }
-    if (tintable.emissive) {
-      cloned.userData[HIT_FLASH_BASE_EMISSIVE_KEY] = tintable.emissive.clone();
-    }
-    return cloned;
+    return this.hitFlash.cloneMaterial(mat);
   }
-
   private prepareHitFlashMaterials(root: THREE.Object3D): void {
-    root.traverse((child) => {
-      const mesh = child as THREE.Mesh;
-      if (!mesh.isMesh || !mesh.material) return;
-      if (Array.isArray(mesh.material)) {
-        mesh.material = mesh.material.map((mat) => this.cloneHitFlashMaterial(mat));
-      } else {
-        mesh.material = this.cloneHitFlashMaterial(mesh.material);
-      }
-    });
+    this.hitFlash.prepareMaterials(root);
   }
-
   private cacheHitFlashMaterialBases(root: THREE.Object3D): void {
-    root.traverse((child) => {
-      const mesh = child as THREE.Mesh;
-      if (!mesh.isMesh || !mesh.material) return;
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      for (const mat of materials) {
-        const tintable = mat as HitFlashMaterial;
-        if (tintable.color && !mat.userData[HIT_FLASH_BASE_COLOR_KEY]) {
-          mat.userData[HIT_FLASH_BASE_COLOR_KEY] = tintable.color.clone();
-        }
-        if (tintable.emissive && !mat.userData[HIT_FLASH_BASE_EMISSIVE_KEY]) {
-          mat.userData[HIT_FLASH_BASE_EMISSIVE_KEY] = tintable.emissive.clone();
-        }
-      }
-    });
+    this.hitFlash.cacheBases(root);
   }
-
   private applyObjectHitFlashTint(root: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
-    const vfxColor = hitFlashColor !== undefined
-      ? this._hitFlashColor.setHex(hitFlashColor)
-      : weaponType
-        ? GameScene.WEAPON_VFX_COLORS[weaponType]
-        : undefined;
-    if (Array.isArray(vfxColor)) this._hitFlashColor.setRGB(vfxColor[0], vfxColor[1], vfxColor[2]);
-
-    root.traverse((child) => {
-      const mesh = child as THREE.Mesh;
-      if (!mesh.isMesh || !mesh.material) return;
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      for (const mat of materials) {
-        const tintable = mat as HitFlashMaterial;
-        const baseColor = mat.userData[HIT_FLASH_BASE_COLOR_KEY] as THREE.Color | undefined;
-        if (tintable.color && baseColor) {
-          if (vfxColor) {
-            tintable.color.copy(baseColor).lerp(this._hitFlashColor, HIT_FLASH_TINT_INTENSITY);
-          } else {
-            tintable.color.copy(baseColor);
-          }
-        }
-
-        const baseEmissive = mat.userData[HIT_FLASH_BASE_EMISSIVE_KEY] as THREE.Color | undefined;
-        if (tintable.emissive && baseEmissive) {
-          if (vfxColor) {
-            tintable.emissive.copy(this._hitFlashColor).multiplyScalar(HIT_FLASH_EMISSIVE_STRENGTH);
-          } else {
-            tintable.emissive.copy(baseEmissive);
-          }
-        }
-      }
-    });
+    this.hitFlash.applyTint(root, weaponType, hitFlashColor);
   }
-
   private setEnemyHitFlashTint(enemyId: number, obj: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
-    const next = hitFlashColor !== undefined ? `color:${hitFlashColor}` : (weaponType ?? null);
-    if ((this.enemyHitFlashTints.get(enemyId) ?? null) === next) return;
-    this.enemyHitFlashTints.set(enemyId, next);
-    this.applyObjectHitFlashTint(obj, weaponType, hitFlashColor);
+    this.hitFlash.setEnemyTint(enemyId, obj, weaponType, hitFlashColor);
   }
-
   private setBossHitFlashTint(obj: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
-    const next = hitFlashColor !== undefined ? `color:${hitFlashColor}` : (weaponType ?? null);
-    if (this.bossHitFlashTint === next) return;
-    this.bossHitFlashTint = next;
-    this.applyObjectHitFlashTint(obj, weaponType, hitFlashColor);
+    this.hitFlash.setBossTint(obj, weaponType, hitFlashColor);
   }
-
   private triggerPlayerHitFlash(color: number): void {
-    this.playerHitFlashTimer = PLAYER_HIT_FLASH_DURATION;
-    this.setPlayerHitFlashTint(color);
+    this.hitFlash.triggerPlayer(this.playerMesh, color);
   }
-
   private setPlayerHitFlashTint(color?: number): void {
-    const next = color ?? null;
-    if (this.playerHitFlashTint === next) return;
-    this.playerHitFlashTint = next;
-    this.applyObjectHitFlashTint(this.playerMesh, undefined, color);
+    this.hitFlash.setPlayerTint(this.playerMesh, color);
   }
-
   private findDeathHitFlashTint(obj: THREE.Object3D, damageEvents: readonly DamageEvent[]): { weaponType?: string; hitFlashColor?: number } {
-    let bestTint: { weaponType?: string; hitFlashColor?: number } = {};
-    let bestDistSq = 2.25; // tolerate a little knockback / render-tick drift
-
-    for (let i = damageEvents.length - 1; i >= 0; i--) {
-      const evt = damageEvents[i];
-      if (evt.isPlayerDamage || (!evt.weaponType && evt.hitFlashColor === undefined)) continue;
-      const dx = evt.x - obj.position.x;
-      const dz = evt.z - obj.position.z;
-      const distSq = dx * dx + dz * dz;
-      if (distSq <= bestDistSq) {
-        bestDistSq = distSq;
-        bestTint = { weaponType: evt.weaponType, hitFlashColor: evt.hitFlashColor };
-      }
-    }
-
-    return bestTint;
+    return this.hitFlash.findDeathTint(obj, damageEvents);
   }
 
   private renderEnemies(enemies: EnemyState[], damageEvents: readonly DamageEvent[]): void {
@@ -7096,6 +5536,9 @@ export class GameScene {
     const camX = this.camera.position.x;
     const camY = this.camera.position.y;
     const camZ = this.camera.position.z;
+
+    // 每帧重置远距剔除计数（用于 perf overlay 显示「活着但 >35m 不渲染」的怪数）
+    this.perfEnemyCulledFar = 0;
 
     // 玩家坐标（敌人朝向用）只需每帧读一次，避免在循环内对每个敌人重复 getRenderState。
     const playerPos = this.session.getRenderState().player;
@@ -7112,7 +5555,7 @@ export class GameScene {
         // Start death animation
         const deathTint = this.findDeathHitFlashTint(obj, damageEvents);
         this.setEnemyHitFlashTint(id, obj, deathTint.weaponType, deathTint.hitFlashColor);
-        this.enemyHitFlashTints.delete(id);
+        this.hitFlash.enemyTints.delete(id);
         this.playEnemyAnim(id, 'Death');
         this.dyingEnemies.set(id, { obj, timer: 0.6, type: obj.userData['enemyType'] as string });
         this.enemyObjects.delete(id);
@@ -7142,11 +5585,16 @@ export class GameScene {
         this.enemyAnimAccum.delete(id);
         this.enemyPrevPos.delete(id);
         this.applyObjectHitFlashTint(dying.obj, undefined);
-        this.enemyHitFlashTints.delete(id);
-        // Return to pool
+        this.hitFlash.enemyTints.delete(id);
+        // Return to pool（带容量上限，超限直接释放避免无限累积）
         const pool = this.enemyPool.get(dying.type) ?? [];
-        pool.push(dying.obj);
-        this.enemyPool.set(dying.type, pool);
+        if (pool.length < ENEMY_POOL_CAP_PER_TYPE) {
+          pool.push(dying.obj);
+          this.enemyPool.set(dying.type, pool);
+        } else {
+          this.scene.remove(dying.obj);
+          disposeOwnedResources(dying.obj);
+        }
         this.dyingEnemies.delete(id);
       }
     }
@@ -7155,11 +5603,14 @@ export class GameScene {
     const enemyModelMap = getEnemyModelMap();
 
     // 目标世界高度（米）—— 模型按实际高度归一化后缩放到此值。整体比玩家(1.8)矮一截以凸显角色（约 ×0.8）。
+    // 注意：所有敌人共享 core 的 ENEMY_RADIUS=0.4 水平碰撞半径，视觉体型 ≫ 该半径时多只
+    // 同类（特别是 charge 行为）会在玩家脚下视觉重叠。各值已按此约束权衡。
     const enemyScales: Record<string, number> = {
       skeleton_soldier: 1.2,   // KayKit 小兵 — 略矮于玩家
       zombie: 1.1,             // 高 HP 僵尸
       skeleton_archer: 1.2,    // KayKit 法师 — 落地人形
-      skeleton_knight: 2.6,    // KayKit 战士 — 精英，明显更大
+      skeleton_knight: 1.6,    // KayKit 战士 — 精英 (再叠 isElite ×1.2 ≈ 1.92m)：明显大于小兵/法师，
+                               // 又不至于像之前 2.6 那样把 0.4m 碰撞半径远远撑爆、多只冲锋时严重穿模
       necromancer: 0.7,        // 法师 — 飘浮幽灵（小巧）
       gargoyle: 0.7,           // 蝙蝠 — 小型飞行
     };
@@ -7174,55 +5625,19 @@ export class GameScene {
         if (pool && pool.length > 0) {
           obj = pool.pop()!;
           this.applyObjectHitFlashTint(obj, undefined);
-          // Reset animation state for recycled object — create new mixer
-          const modelKey = enemyModelMap[enemy.type];
-          const clips = modelKey ? loadedAnimClips.get(modelKey) : undefined;
-          if (clips && clips.length > 0) {
-            const mixer = new THREE.AnimationMixer(obj);
-            this.enemyMixers.set(enemy.id, mixer);
-            const actionsMap = new Map<string, THREE.AnimationAction>();
-            for (const clip of clips) {
-              actionsMap.set(clip.name, mixer.clipAction(clip));
-            }
-            this.enemyAnimActions.set(enemy.id, actionsMap);
-            // Play idle by default — 退化链：Idle → Walk → Flying → 任意第一个 clip
-            const idleClip = clips.find(c => c.name === 'Idle')
-              ?? clips.find(c => c.name === 'Walk')
-              ?? clips.find(c => c.name === 'Flying')
-              ?? clips[0];
-            if (idleClip) {
-              mixer.clipAction(idleClip).play();
-              this.enemyAnimStates.set(enemy.id, idleClip.name);
-            }
-          }
+          // 池复用：mixer/actions 已挂在 obj.userData 上，setup helper 直接复用
+          this.setupEnemyAnimationsFor(obj, enemy.id, enemy.type);
         } else {
           // Clone from loaded model
           const modelKey = enemyModelMap[enemy.type];
           const model = modelKey ? loadedModels[modelKey] : null;
           if (model) {
             obj = cloneSkeleton(model) as THREE.Object3D;
-            // KayKit 角色：把手持武器挂到 handslot 骨（其它皮肤无此骨，自动跳过）
-            this.attachEnemyWeapons(obj, enemy.type);
+            // KayKit 角色：武器已烘焙进 SkinnedMesh（详见 scripts/blender/merge-kaykit.py），
+            // 不再需要运行时挂载到 handslot.r/.l 骨。
             this.prepareHitFlashMaterials(obj);
-            // Setup animation mixer for cloned model
-            const clips = modelKey ? loadedAnimClips.get(modelKey) : undefined;
-            if (clips && clips.length > 0) {
-              const mixer = new THREE.AnimationMixer(obj);
-              this.enemyMixers.set(enemy.id, mixer);
-              const actionsMap = new Map<string, THREE.AnimationAction>();
-              for (const clip of clips) {
-                actionsMap.set(clip.name, mixer.clipAction(clip));
-              }
-              this.enemyAnimActions.set(enemy.id, actionsMap);
-              const idleClip = clips.find(c => c.name === 'Idle')
-                ?? clips.find(c => c.name === 'Walk')
-                ?? clips.find(c => c.name === 'Flying')
-                ?? clips[0];
-              if (idleClip) {
-                mixer.clipAction(idleClip).play();
-                this.enemyAnimStates.set(enemy.id, idleClip.name);
-              }
-            }
+            // 首次创建：在 obj.userData 上建立 mixer/actions 缓存，未来池复用直接重用
+            this.setupEnemyAnimationsFor(obj, enemy.id, enemy.type);
           } else {
             // Fallback: colored box
             const geo = new THREE.BoxGeometry(0.9, 1.2, 0.9);
@@ -7259,6 +5674,19 @@ export class GameScene {
       const hoverOffset = ENEMY_HOVER_OFFSET[enemy.type] ?? 0;
       obj.position.set(enemy.x, enemy.y + hoverOffset, enemy.z);
       obj.scale.set(s, s, s);
+
+      // ── 视距剔除：超过 ENEMY_VISIBLE_CULL_DIST 直接 visible=false，跳过本帧所有
+      //    渲染相关工作（包括 Three.js 内部的 skeleton.update + boneTexture 上传）。
+      //    动画 dt 不累积 —— 重新进入可见区时从冻结姿势继续，过渡可接受。
+      const cullDx = enemy.x - camX;
+      const cullDy = (enemy.y + 1) - camY;
+      const cullDz = enemy.z - camZ;
+      const cullDistSq = cullDx * cullDx + cullDy * cullDy + cullDz * cullDz;
+      if (cullDistSq > ENEMY_VISIBLE_CULL_SQ) {
+        if (obj.visible) obj.visible = false;
+        this.perfEnemyCulledFar++;
+        continue;
+      }
       obj.visible = true;
 
       // Blob 阴影贴脚下（飞行的 gargoyle 不贴 —— 它在空中，脚位非地面）
@@ -7302,11 +5730,23 @@ export class GameScene {
         obj.visible = true;
       } else if (enemy.chargeState === 'windup') {
         this.playEnemyAnim(enemy.id, 'Idle');
+      } else if (enemy.chargeState === 'cooldown' && enemy.chargeTimer > CHARGE_COOLDOWN_STRIKE_THRESHOLD) {
+        // charging→cooldown 入口的 STRIKE_RECOVERY 窗口：core 把 enemy 站定，这里显式播
+        // Punch（KayKit Throw 映射，挥手前送）。靠 attackCooldown>threshold*max 的旧分支只有 ~0.4s
+        // 两端各被 0.2s crossfade 吃掉，几乎看不到攻击；用 chargeTimer 判定保证 0.7s 全程可见。
+        this.playEnemyAnim(enemy.id, 'Punch');
+      } else if (enemy.diveState === 'rising') {
+        // gargoyle 咬完起飞段（0.5s）：显式播 Punch → fallback 命中 Bat_Attack。
+        // 不靠 attackCooldown 阈值的原因：dive.ts 在 rising→flying 才把 cooldown 拉到 max，
+        // 那时 gargoyle 已经在巡航高度了，Punch 出现在半空中很违和；这里咬完直接接挥击姿态。
+        this.playEnemyAnim(enemy.id, 'Punch');
       } else if (enemy.type === 'necromancer' && enemy.summonCooldown > 7.0) {
         // 刚召唤完小兵（summonCooldown 每 8s 重置为 8）→ 召唤施法姿态（窗口 1s 便于看清）
         this.playEnemyAnim(enemy.id, 'Summon');
-      } else if (enemy.attackCooldown > enemy.attackCooldownMax * 0.8) {
-        // Just attacked (cooldown just reset) — necromancer 走施法动作，近战怪用 Punch
+      } else if (enemy.attackCooldown > enemy.attackCooldownMax * 0.7) {
+        // Just attacked (cooldown 刚 reset) — necromancer 走施法动作，近战怪用 Punch。
+        // 阈值 0.7：留出 30% 的窗口播攻击姿态（soldier 0.45s / zombie 0.75s / archer 0.9s /
+        // necromancer Cast 1.2s），避免被 fade-in 0.2s + fade-out 0.2s 吞掉看不见。
         this.playEnemyAnim(enemy.id, enemy.type === 'necromancer' ? 'Cast' : 'Punch');
       } else if (isMoving) {
         // Moving enemy — prefer Run_Arms (zombie arms out), fallback to Run/Walk
@@ -7511,16 +5951,20 @@ export class GameScene {
         activeAxeIds.add(proj.id);
         let axeObj = this.axeObjects.get(proj.id);
         if (!axeObj) {
-          const model = getWeaponModel('axe');
-          if (model) {
-            axeObj = model.clone();
-          } else {
-            const geo = new THREE.ConeGeometry(0.3, 0.6, 4);
-            const mat = new THREE.MeshToonMaterial({ color: 0x666688, gradientMap: toonGradientMap });
-            axeObj = new THREE.Mesh(geo, mat);
+          // 优先复用池中已有实例（池为空才走克隆，避免每发都 model.clone()）
+          axeObj = this.axePool.pop();
+          if (!axeObj) {
+            const model = getWeaponModel('axe');
+            if (model) {
+              axeObj = model.clone();
+            } else {
+              const geo = new THREE.ConeGeometry(0.3, 0.6, 4);
+              const mat = new THREE.MeshToonMaterial({ color: 0x666688, gradientMap: toonGradientMap });
+              axeObj = new THREE.Mesh(geo, mat);
+            }
+            axeObj.name = `Axe_${proj.id}`;
+            this.scene.add(axeObj);
           }
-          axeObj.name = `Axe_${proj.id}`;
-          this.scene.add(axeObj);
           this.axeObjects.set(proj.id, axeObj);
         }
         axeObj.position.set(proj.x, proj.y, proj.z);
@@ -7539,16 +5983,21 @@ export class GameScene {
         activeWeaponIds.add(proj.id);
         let obj = this.weaponObjects.get(proj.id);
         if (!obj) {
-          const model = hammerModel;
-          if (model) {
-            obj = model.clone();
-          } else {
-            const geo = new THREE.BoxGeometry(0.4, 0.4, 0.6);
-            const mat = new THREE.MeshToonMaterial({ color: 0x888888, gradientMap: toonGradientMap });
-            obj = new THREE.Mesh(geo, mat);
+          const hammerPool = this.weaponPool.get('hammer');
+          obj = hammerPool ? hammerPool.pop() : undefined;
+          if (!obj) {
+            const model = hammerModel;
+            if (model) {
+              obj = model.clone();
+            } else {
+              const geo = new THREE.BoxGeometry(0.4, 0.4, 0.6);
+              const mat = new THREE.MeshToonMaterial({ color: 0x888888, gradientMap: toonGradientMap });
+              obj = new THREE.Mesh(geo, mat);
+            }
+            obj.name = `Hammer_${proj.id}`;
+            obj.userData['weaponType'] = 'hammer';
+            this.scene.add(obj);
           }
-          obj.name = `Hammer_${proj.id}`;
-          this.scene.add(obj);
           this.weaponObjects.set(proj.id, obj);
         }
         obj.position.set(proj.x, proj.y, proj.z);
@@ -7567,19 +6016,25 @@ export class GameScene {
         activeWeaponIds.add(proj.id);
         let obj = this.weaponObjects.get(proj.id);
         if (!obj) {
-          const model = getWeaponModel(proj.weaponType);
-          if (model) {
-            obj = model.clone();
-          } else if (proj.weaponType === 'bone_bouncer' && boneGeometry) {
-            const mat = new THREE.MeshToonMaterial({ color: 0xf5f5dc, gradientMap: toonGradientMap });
-            obj = new THREE.Mesh(boneGeometry.clone(), mat);
-          } else {
-            const geo = new THREE.ConeGeometry(0.15, 0.5, 6);
-            const mat = new THREE.MeshToonMaterial({ color: 0xcccccc, gradientMap: toonGradientMap });
-            obj = new THREE.Mesh(geo, mat);
+          const wt = proj.weaponType as string;
+          const wpPool = this.weaponPool.get(wt);
+          obj = wpPool ? wpPool.pop() : undefined;
+          if (!obj) {
+            const model = getWeaponModel(proj.weaponType);
+            if (model) {
+              obj = model.clone();
+            } else if (proj.weaponType === 'bone_bouncer' && boneGeometry) {
+              const mat = new THREE.MeshToonMaterial({ color: 0xf5f5dc, gradientMap: toonGradientMap });
+              obj = new THREE.Mesh(boneGeometry, mat);
+            } else {
+              const geo = new THREE.ConeGeometry(0.15, 0.5, 6);
+              const mat = new THREE.MeshToonMaterial({ color: 0xcccccc, gradientMap: toonGradientMap });
+              obj = new THREE.Mesh(geo, mat);
+            }
+            obj.name = `Weapon_${proj.weaponType}_${proj.id}`;
+            obj.userData['weaponType'] = wt;
+            this.scene.add(obj);
           }
-          obj.name = `Weapon_${proj.weaponType}_${proj.id}`;
-          this.scene.add(obj);
           this.weaponObjects.set(proj.id, obj);
         }
         obj.position.set(proj.x, proj.y, proj.z);
@@ -7606,15 +6061,18 @@ export class GameScene {
         activeBossProjIds.add(proj.id);
         let obj = this.bossProjectileObjects.get(proj.id);
         if (!obj) {
-          if (bulletModel) {
-            obj = bulletModel.clone();
-          } else {
-            const geo = new THREE.SphereGeometry(0.3, 8, 6);
-            const mat = new THREE.MeshToonMaterial({ color: 0xff5522, gradientMap: toonGradientMap });
-            obj = new THREE.Mesh(geo, mat);
+          obj = this.bossProjPool.pop();
+          if (!obj) {
+            if (bulletModel) {
+              obj = bulletModel.clone();
+            } else {
+              const geo = new THREE.SphereGeometry(0.3, 8, 6);
+              const mat = new THREE.MeshToonMaterial({ color: 0xff5522, gradientMap: toonGradientMap });
+              obj = new THREE.Mesh(geo, mat);
+            }
+            obj.name = `BossProj_${proj.id}`;
+            this.scene.add(obj);
           }
-          obj.name = `BossProj_${proj.id}`;
-          this.scene.add(obj);
           this.bossProjectileObjects.set(proj.id, obj);
         }
         obj.position.set(proj.x, proj.y, proj.z);
@@ -7730,24 +6188,45 @@ export class GameScene {
     this.enemyProjectileMesh.instanceMatrix.needsUpdate = true;
     if (this.enemyProjectileMesh.instanceColor) this.enemyProjectileMesh.instanceColor.needsUpdate = true;
 
-    // Remove axe objects that are no longer active
+    // Recycle axe objects no longer active：进对象池（带上限）；超限直接 dispose
     for (const [id, obj] of this.axeObjects) {
       if (!activeAxeIds.has(id)) {
-        this.scene.remove(obj);
+        if (this.axePool.length < PROJECTILE_POOL_CAP) {
+          obj.visible = false;
+          this.axePool.push(obj);
+        } else {
+          this.scene.remove(obj);
+          disposeOwnedResources(obj);
+        }
         this.axeObjects.delete(id);
       }
     }
-    // Remove weapon objects that are no longer active
+    // Recycle weapon objects (按 weaponType 分池)
     for (const [id, obj] of this.weaponObjects) {
       if (!activeWeaponIds.has(id)) {
-        this.scene.remove(obj);
+        const wt = (obj.userData['weaponType'] as string | undefined) ?? '__unknown';
+        const pool = this.weaponPool.get(wt) ?? [];
+        if (pool.length < PROJECTILE_POOL_CAP) {
+          obj.visible = false;
+          pool.push(obj);
+          this.weaponPool.set(wt, pool);
+        } else {
+          this.scene.remove(obj);
+          disposeOwnedResources(obj);
+        }
         this.weaponObjects.delete(id);
       }
     }
-    // Remove boss projectile objects that are no longer active
+    // Recycle boss projectile objects
     for (const [id, obj] of this.bossProjectileObjects) {
       if (!activeBossProjIds.has(id)) {
-        this.scene.remove(obj);
+        if (this.bossProjPool.length < PROJECTILE_POOL_CAP) {
+          obj.visible = false;
+          this.bossProjPool.push(obj);
+        } else {
+          this.scene.remove(obj);
+          disposeOwnedResources(obj);
+        }
         this.bossProjectileObjects.delete(id);
       }
     }
@@ -7917,7 +6396,7 @@ export class GameScene {
         // Boss 离场：重置动画状态，下一个 boss 干净起播
         this.bossAnimState = null;
         this.bossPrevPos = null;
-        this.bossHitFlashTint = null;
+        this.hitFlash.bossTint = null;
       }
       return;
     }
@@ -7933,7 +6412,7 @@ export class GameScene {
       this.bossAnimActions.clear();
       this.bossAnimState = null;
       this.bossPrevPos = null;
-      this.bossHitFlashTint = null;
+      this.hitFlash.bossTint = null;
     }
 
     if (!this.bossMesh) {
@@ -8083,12 +6562,12 @@ export class GameScene {
       if (loadedModels.teleporter) {
         const tp = cloneSkeleton(loadedModels.teleporter) as THREE.Object3D;
         tp.name = 'Altar_Model';
-        tp.scale.set(1.5, 1.5, 1.5);
+        tp.scale.set(3.0, 3.0, 3.0);
         this.scene.add(tp);
         this.teleporterMeshes.push(tp as unknown as THREE.Mesh);
       } else {
         // Fallback: ring on ground
-        const ringGeo = new THREE.RingGeometry(1.5, 2.0, 24);
+        const ringGeo = new THREE.RingGeometry(3.0, 4.0, 24);
         const ringMat = new THREE.MeshBasicMaterial({
           color: 0x00ccff,
           side: THREE.DoubleSide,
@@ -8103,7 +6582,7 @@ export class GameScene {
       }
 
       // Glow pillar
-      const pillarGeo = new THREE.CylinderGeometry(0.3, 1.5, 4, 12);
+      const pillarGeo = new THREE.CylinderGeometry(0.6, 3.0, 8, 12);
       const pillarMat = new THREE.MeshBasicMaterial({
         color: 0x00ffff,
         transparent: true,
@@ -8115,9 +6594,9 @@ export class GameScene {
       this.teleporterGlowMeshes.push(pillar);
 
       // Ground decal: magic circle / portal swirl（按 phase 切贴图）
-      const decalGeo = new THREE.PlaneGeometry(5, 5);
+      const decalGeo = new THREE.PlaneGeometry(10, 10);
       const decalMat = new THREE.MeshBasicMaterial({
-        map: this.vfxTextures.magic_circle,
+        map: this.billboardPool.textures.magic_circle,
         transparent: true,
         opacity: 0.85,
         depthWrite: false,
@@ -8139,19 +6618,27 @@ export class GameScene {
         const pillar = this.teleporterGlowMeshes[i];
         const decal = this.altarDecals[i];
 
-        // 祭坛贴地：标记常摆在高平台上，y 由 core 的 getTerrainHeightAt 求得（缺省 0）。
+        // 飞碟贴地：标记常摆在高平台上，y 由 core 的 getTerrainHeightAt 求得（缺省 0）。
         const ay = tp.y ?? 0;
 
         ring.visible = true;
-        ring.position.set(tp.x, ay + 0.1, tp.z);
-        ring.rotation.z = time;
+        // 飞碟悬浮在光柱顶端上方（光柱 height=8，center y=ay+4，顶端约 ay+8）
+        // 飞碟模型绕 Y 轴自转；fallback ring 维持贴地姿态
+        const isUfo = ring.name === 'Altar_Model';
+        if (isUfo) {
+          ring.position.set(tp.x, ay + 7.0, tp.z);
+          ring.rotation.set(0, time * 1.2, 0);
+        } else {
+          ring.position.set(tp.x, ay + 0.2, tp.z);
+          ring.rotation.set(-Math.PI / 2, 0, 0);
+        }
 
         pillar.visible = true;
-        pillar.position.set(tp.x, ay + 2, tp.z);
+        pillar.position.set(tp.x, ay + 3, tp.z);
 
         // 地面 decal 始终可见（除 portal_used 终态）
         decal.visible = tp.phase !== 'portal_used';
-        decal.position.set(tp.x, ay + 0.06, tp.z);
+        decal.position.set(tp.x, ay + 0.12, tp.z);
 
         // Color based on phase.
         // 注意：ring 可能是 GLB 模型（Object3D，无 .material）也可能是 fallback 的
@@ -8170,14 +6657,14 @@ export class GameScene {
             ringMat?.color.setHex(0xffaa00);
             pillarMat.color.setHex(0xffcc00);
             pillarMat.opacity = pulse;
-            decalMat.map = this.vfxTextures.magic_circle;
+            decalMat.map = this.billboardPool.textures.magic_circle;
             decalMat.color.setHex(0xffcc44);
             decalMat.opacity = 0.95;
             decal.rotation.z = -time * 4;  // 加速旋转
             break;
           }
           case 'boss_active': {
-            // Boss 战进行中：祭坛沉默（decal 暗淡）
+            // Boss 战进行中：飞碟沉默（decal 暗淡）
             ringMat?.color.setHex(0xff2200);
             pillarMat.color.setHex(0xff4400);
             pillarMat.opacity = 0.4;
@@ -8191,7 +6678,7 @@ export class GameScene {
             ringMat?.color.setHex(0x5566aa);
             pillarMat.color.setHex(0x6677cc);
             pillarMat.opacity = 0.22 + Math.sin(time * 0.8) * 0.08;
-            decalMat.map = this.vfxTextures.magic_circle;
+            decalMat.map = this.billboardPool.textures.magic_circle;
             decalMat.color.setHex(0x6677cc);
             decalMat.opacity = 0.35;
             decal.rotation.z = -time * 0.4;
@@ -8203,7 +6690,7 @@ export class GameScene {
             ringMat?.color.setHex(0xaa44ff);
             pillarMat.color.setHex(0xcc66ff);
             pillarMat.opacity = 0.6 + Math.sin(time * 2) * 0.2;
-            decalMat.map = this.vfxTextures.portal_swirl;
+            decalMat.map = this.billboardPool.textures.portal_swirl;
             decalMat.color.setHex(0xcc66ff);
             decalMat.opacity = 0.95;
             decal.rotation.z = time * 6;
@@ -8215,7 +6702,7 @@ export class GameScene {
             ringMat?.color.setHex(0x00ccff);
             pillarMat.color.setHex(0x00ffff);
             pillarMat.opacity = 0.3 + Math.sin(time) * 0.1;
-            decalMat.map = this.vfxTextures.magic_circle;
+            decalMat.map = this.billboardPool.textures.magic_circle;
             decalMat.color.setHex(0x66ddff);
             decalMat.opacity = 0.7 + Math.sin(time * 0.8) * 0.15;
             decal.rotation.z = -time * 1.2;
@@ -8231,215 +6718,15 @@ export class GameScene {
   }
 
   // ===========================================================================
-  // VFX Particle System
+  // VFX HUD-coupled wrappers
   // ===========================================================================
-
-  private static readonly WEAPON_VFX_COLORS: Record<string, [number, number, number]> = {
-    sword: [0.56, 0.85, 1.0],
-    bone_bouncer: [0.95, 0.9, 0.8],
-    axe: [1.0, 0.6, 0.1],
-    pistol: [0.8, 1.0, 0.3],
-    lightning_staff: [0.3, 0.8, 1.0],
-    flame_ring: [1.0, 0.5, 0.0],
-    shotgun: [1.0, 0.8, 0.2],
-    ray_gun: [1.0, 0.25, 0.45],
-    poison_bomb: [0.35, 0.8, 0.25],
-    paralysis_gun: [1.0, 0.88, 0.15],
-    void_ripple: [0.0, 1.0, 1.0],
-    scorch_boots: [1.0, 0.5, 0.12],
-  };
-
-  private static readonly PICKUP_VFX_COLORS: Record<string, [number, number, number]> = {
-    xp_green: [0.2, 1.0, 0.4],
-    xp_blue: [0.2, 0.7, 1.0],
-    xp_purple: [0.8, 0.3, 1.0],
-    xp_orange: [1.0, 0.7, 0.0],
-    gold: [1.0, 0.8, 0.15],
-    silver: [0.9, 0.9, 0.9],
-  };
-
-  private spawnParticle(
-    x: number, y: number, z: number,
-    vx: number, vy: number, vz: number,
-    size: number, life: number,
-    r: number, g: number, b: number,
-  ): void {
-    // Find an inactive particle in the pool
-    for (let i = 0; i < this.MAX_PARTICLES; i++) {
-      const p = this.vfxParticles[i];
-      if (!p.active) {
-        p.x = x; p.y = y; p.z = z;
-        p.vx = vx; p.vy = vy; p.vz = vz;
-        p.size = size;
-        p.life = life;
-        p.maxLife = life;
-        p.r = r; p.g = g; p.b = b;
-        p.active = true;
-        return;
-      }
-    }
-  }
-
-  private emitHitSparks(x: number, y: number, z: number, weaponType: string): void {
-    const color = GameScene.WEAPON_VFX_COLORS[weaponType] ?? [1.0, 0.9, 0.5];
-    const count = 10 + Math.floor(Math.random() * 8);
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const elevation = Math.random() * Math.PI * 0.6;
-      const speed = 4 + Math.random() * 6;
-      const vx = Math.cos(angle) * Math.cos(elevation) * speed;
-      const vy = Math.sin(elevation) * speed + 2;
-      const vz = Math.sin(angle) * Math.cos(elevation) * speed;
-      const size = 1.0 + Math.random() * 1.5;
-      const life = 0.4 + Math.random() * 0.4;
-      const cr = Math.min(1.0, color[0] + (Math.random() - 0.5) * 0.2);
-      const cg = Math.min(1.0, color[1] + (Math.random() - 0.5) * 0.2);
-      const cb = Math.min(1.0, color[2] + (Math.random() - 0.5) * 0.2);
-      this.spawnParticle(x, y, z, vx, vy, vz, size, life, cr, cg, cb);
-    }
-    // Billboard: 一闪而过的撞击光晕（朝相机），跟武器染色一致
-    const colorHex = ((Math.round(color[0] * 255) << 16) | (Math.round(color[1] * 255) << 8) | Math.round(color[2] * 255)) >>> 0;
-    this.spawnBillboard({
-      texture: 'muzzle',
-      x, y, z,
-      scale: 1.6,
-      endScale: 2.4,
-      lifetime: 0.18,
-      opacityCurve: 'flash',
-      opacity: 1.0,
-      color: colorHex,
-      rotation: Math.random() * Math.PI * 2,
-    });
-  }
-
-  private emitDeathBurst(x: number, y: number, z: number, _enemyType: string): void {
-    // 极简死亡爆点：稀疏粒子、超短寿命、近距扩散，避免叠加产生半透糊感
-    const count = 5 + Math.floor(Math.random() * 3);    // 5–7（原 12–15）
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const elevation = (Math.random() - 0.3) * Math.PI;
-      const speed = 2 + Math.random() * 1.5;            // 2–3.5（原 3–6）
-      const vx = Math.cos(angle) * Math.cos(elevation) * speed;
-      const vy = Math.abs(Math.sin(elevation)) * speed + 1.5;
-      const vz = Math.sin(angle) * Math.cos(elevation) * speed;
-      const size = 2.2 + Math.random() * 1.3;           // 2.2–3.5（原 2.4–4.2）
-      const life = 0.14 + Math.random() * 0.1;          // 0.14–0.24s（原 0.25–0.45s）
-      // Red/orange death particles
-      const r = 0.8 + Math.random() * 0.2;
-      const g = 0.2 + Math.random() * 0.4;
-      const b = Math.random() * 0.15;
-      this.spawnParticle(x, y + 0.5, z, vx, vy, vz, size, life, r, g, b);
-    }
-    // Billboard: 一团短命烟雾 + 地面烧痕，让死亡有"实体痕迹"
-    this.spawnBillboard({
-      texture: 'smoke',
-      x, y: y + 0.6, z,
-      scale: 1.2,
-      endScale: 2.4,
-      lifetime: 0.5,
-      opacityCurve: 'fadeOut',
-      opacity: 0.7,
-      color: 0x553322,
-      rotation: Math.random() * Math.PI * 2,
-      blending: 'normal',
-    });
-    this.spawnBillboard({
-      texture: 'scorch',
-      x, y: y + 0.05, z,
-      scale: 1.4,
-      endScale: 1.8,
-      lifetime: 1.5,
-      opacityCurve: 'fadeOut',
-      opacity: 0.55,
-      color: 0x000000,
-      facing: 'up',
-      rotation: Math.random() * Math.PI * 2,
-      blending: 'normal',
-    });
-  }
-
-  private emitPickupSparkle(x: number, y: number, z: number, pickupType: string): void {
-    const color = GameScene.PICKUP_VFX_COLORS[pickupType] ?? [0.5, 1.0, 0.5];
-    const count = 3 + Math.floor(Math.random() * 3);
-    for (let i = 0; i < count; i++) {
-      const vx = (Math.random() - 0.5) * 1.5;
-      const vy = 2 + Math.random() * 2;
-      const vz = (Math.random() - 0.5) * 1.5;
-      const size = 0.2 + Math.random() * 0.3;
-      const life = 0.3 + Math.random() * 0.3;
-      this.spawnParticle(x, y, z, vx, vy, vz, size, life, color[0], color[1], color[2]);
-    }
-    // Billboard: 一颗小星星，金色拾取仪式感
-    const colorHex = ((Math.round(color[0] * 255) << 16) | (Math.round(color[1] * 255) << 8) | Math.round(color[2] * 255)) >>> 0;
-    this.spawnBillboard({
-      texture: 'star',
-      x, y: y + 0.3, z,
-      scale: 0.5,
-      endScale: 1.0,
-      lifetime: 0.35,
-      opacityCurve: 'flash',
-      opacity: 0.85,
-      color: colorHex,
-      rotationSpeed: 6.0,
-    });
-  }
-
-  private emitLevelUpBurst(x: number, y: number, z: number): void {
-    this.emitCompensationBurst(x, y, z, 'gold');
-  }
-
-  /** 空池升级补偿粒子：金币金黄、银币蓝白。 */
-  private emitCompensationBurst(x: number, y: number, z: number, kind: 'gold' | 'silver'): void {
-    const count = kind === 'silver' ? 36 : 30;
-    for (let i = 0; i < count; i++) {
-      const angle = (i / count) * Math.PI * 2;
-      const speed = 3 + Math.random() * 2.5;
-      const vx = Math.cos(angle) * speed;
-      const vy = 1.8 + Math.random() * 2;
-      const vz = Math.sin(angle) * speed;
-      const size = 0.55 + Math.random() * 0.55;
-      const life = 0.65 + Math.random() * 0.45;
-      let r: number, g: number, b: number;
-      if (kind === 'silver') {
-        r = 0.75 + Math.random() * 0.2;
-        g = 0.85 + Math.random() * 0.15;
-        b = 1.0;
-      } else {
-        r = 1.0;
-        g = 0.8 + Math.random() * 0.2;
-        b = 0.1 + Math.random() * 0.2;
-      }
-      this.spawnParticle(x, y + 0.5, z, vx, vy, vz, size, life, r, g, b);
-    }
-    // 中心星光 + 光柱（与正常升级类似的仪式感，颜色按奖励类型区分）
-    const color = kind === 'silver' ? 0xaaccff : 0xffd866;
-    this.spawnBillboard({
-      texture: 'star',
-      x, y: y + 1.4, z,
-      scale: 1.2,
-      endScale: 4.0,
-      lifetime: 0.65,
-      opacityCurve: 'flash',
-      opacity: 1.0,
-      color,
-      rotationSpeed: 5.0,
-    });
-    this.spawnBillboard({
-      texture: 'light',
-      x, y: y + 0.4, z,
-      scale: 1.8,
-      endScale: 3.2,
-      lifetime: 0.75,
-      opacityCurve: 'fadeOut',
-      opacity: 0.8,
-      color: kind === 'silver' ? 0xccdfff : 0xffe080,
-    });
-  }
+  // 粒子 / billboard 通用 emit 已迁出至 vfx/ParticlePool.ts；
+  // 这里只保留 HUD（screen flash / 顶栏徽章 / 浮字）耦合的入口。
 
   private playCompensationLevelUpFx(evt: LevelUpCompensationEvent): void {
     this.levelUpAnimTimer = 0.45;
     this.levelCompPulseTimer = 0.9;
-    this.emitCompensationBurst(evt.x, evt.y, evt.z, evt.kind);
+    this.particlePool.emitCompensationBurst(evt.x, evt.y, evt.z, evt.kind);
     this.triggerScreenFlash(evt.kind === 'silver' ? '#8899ff' : '#ffcc00', 0.22);
     this.spawnCompensationFloatText(evt);
     this.showCompensationToast(evt);
@@ -8454,7 +6741,7 @@ export class GameScene {
   }
 
   private playChestOpenFx(evt: ChestOpenEvent): void {
-    this.emitCompensationBurst(evt.x, evt.y, evt.z, 'gold');
+    this.particlePool.emitCompensationBurst(evt.x, evt.y, evt.z, 'gold');
     this.triggerScreenFlash(RARITY_COLORS[evt.rarity] ?? '#ffcc00', 0.18);
     if (this.goldLabel) {
       this.goldLabel.style.transition = 'transform 0.15s';
@@ -8516,12 +6803,11 @@ export class GameScene {
     overlay.style.cssText = inGameChoiceOverlayStyle(`
       z-index:320;pointer-events:auto;
       background:radial-gradient(circle at 50% 45%, rgba(255,220,120,0.16), rgba(0,0,0,0.78) 62%);
-      font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;
-    `);
+      font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;    `);
 
     const centerGroup = createInGameChoiceCenterGroup();
     const title = document.createElement('div');
-    title.style.cssText = uiPlainText('color:#ffcc00;font-size:clamp(20px,5.5vw,24px);font-weight:bold;margin-bottom:clamp(12px,3vh,20px);text-align:center;width:100%;');
+    title.style.cssText = uiColoredTextBold('#ffcc00') + 'font-size:clamp(20px,5.5vw,24px);font-weight:bold;margin-bottom:clamp(12px,3vh,20px);text-align:center;width:100%;';
     title.textContent = t('chest.rewardTitle');
     centerGroup.appendChild(title);
 
@@ -8547,15 +6833,22 @@ export class GameScene {
     rarityEl.textContent = '???';
     rarityEl.style.color = '#ffffff';
 
+    // 描述文案居中：用 white-space:pre-line + \n 强制按中文逗号 `，` 断行，
+    // 避免窄卡片自动换行时把末尾 "+N" 甩到第二行造成"伪左对齐"的视觉错觉。
+    // 单句描述（无逗号）保持单行渲染，只有多句描述（如"护盾值 +2，最大护盾值 +5"）才会拆行。
     const relicAttribute = document.createElement('div');
     relicAttribute.style.cssText = uiPlainText(
-      'font-size:clamp(12px,3.2vw,15px);line-height:1.35;text-align:center;width:100%;',
+      'font-size:11px;line-height:1.4;text-align:center;width:100%;white-space:pre-line;word-break:keep-all;overflow-wrap:break-word;',
     );
-    relicAttribute.textContent = reward.bossDrop || reward.cost <= 0 ? 'Boss 宝箱 · 免费开启' : `消耗 ${reward.cost} 金币`;
+    relicAttribute.textContent = reward.bossDrop || reward.cost <= 0
+      ? t('chest.bossFreeOpen')
+      : t('chest.cost', { cost: String(reward.cost) });
     statsBox.appendChild(relicAttribute);
 
+    // 按钮行宽度对齐卡片宽度（min(72vw,240px)），避免出现"按钮比卡片宽"的视觉断层。
+    // 单按钮 flex:1 平分行宽，再设最小可点击宽度防止文字被挤压。
     const buttonRow = document.createElement('div');
-    buttonRow.style.cssText = 'display:none;gap:clamp(10px,3vw,14px);margin-top:clamp(14px,4vw,18px);width:100%;max-width:min(92vw,300px);justify-content:center;align-items:stretch;';
+    buttonRow.style.cssText = 'display:none;gap:clamp(8px,2.4vw,12px);margin-top:clamp(10px,2.8vw,14px);width:min(72vw,240px);justify-content:center;align-items:stretch;';
 
     const discardBtn = createFramedLabelButton(
       t('chest.discard'),
@@ -8568,7 +6861,8 @@ export class GameScene {
       '100%',
       true,
     );
-    discardBtn.style.maxWidth = `${uiPx(130)}px`;
+    discardBtn.style.flex = '1 1 0';
+    discardBtn.style.minWidth = '0';
 
     const keepBtn = createFramedLabelButton(
       t('chest.keep'),
@@ -8581,7 +6875,8 @@ export class GameScene {
       '100%',
       true,
     );
-    keepBtn.style.maxWidth = `${uiPx(130)}px`;
+    keepBtn.style.flex = '1 1 0';
+    keepBtn.style.minWidth = '0';
 
     buttonRow.appendChild(discardBtn);
     buttonRow.appendChild(keepBtn);
@@ -8612,10 +6907,11 @@ export class GameScene {
         const finalColor = RARITY_COLORS[reward.rarity] ?? '#aaaaaa';
         card.style.backgroundImage = `url(${upgradeFrameUrl(finalRarity)})`;
         card.style.filter = `${baseGlow} drop-shadow(0 0 18px ${finalColor}cc)`;
-        titleEl.textContent = relic.name;
+        titleEl.textContent = t(`relic.${reward.relicId}.name`);
         rarityEl.textContent = t(`shrine.rarity.${reward.rarity}`);
         setIconImage(iconSlot, relicIconSrc(reward.relicId), relic.emoji);
-        relicAttribute.textContent = relic.description;
+        // 中文逗号 `，` 转换行符 → 在 white-space:pre-line 下强制断行，避免末尾 "+N" 被挤到孤行。
+        relicAttribute.textContent = t(`relic.${reward.relicId}.desc`).replace(/，\s*/g, '\n').replace(/,\s*/g, '\n');
         card.style.transform = 'scale(1.12) rotate(0deg)';
         setTimeout(() => { card.style.transform = 'scale(1) rotate(0deg)'; }, 140);
         buttonRow.style.display = 'flex';
@@ -8633,32 +6929,7 @@ export class GameScene {
   }
 
   private spawnCompensationFloatText(evt: LevelUpCompensationEvent): void {
-    const el = this.damageNums[this.damageNumIndex];
-    this.damageNumIndex = (this.damageNumIndex + 1) % DAMAGE_NUM_POOL_SIZE;
-
-    this._tempVec.set(evt.x, evt.y + 1.2, evt.z);
-    this._tempVec.project(this.camera);
-    const hw = window.innerWidth / 2;
-    const hh = window.innerHeight / 2;
-    const screenX = this._tempVec.x * hw + hw;
-    const screenY = -(this._tempVec.y * hh) + hh;
-
-    const isSilver = evt.kind === 'silver';
-    const label = isSilver
-      ? t('upgrade.compensationSilver', { amount: String(evt.amount) })
-      : t('upgrade.compensationGold', { amount: String(evt.amount) });
-
-    // 走 GSAP（与伤害数字共用同一池 + 同一 keying），避免 CSS transition 与 GSAP 争 transform。
-    gsapAnimations.showFloatText(el, {
-      text: label,
-      color: isSilver ? '#cce0ff' : '#ffd700',
-      x: screenX,
-      y: screenY,
-      fontSize: uiPx(20),
-      textShadow: isSilver
-        ? '0 0 8px rgba(120,160,255,0.9)'
-        : '0 0 8px rgba(255,200,0,0.9)',
-    });
+    this.damageNumbers.spawnCompensationFloat(evt);
   }
 
   private showCompensationToast(evt: LevelUpCompensationEvent): void {
@@ -8667,11 +6938,13 @@ export class GameScene {
     toast.style.cssText = `
       position:fixed;top:18%;left:50%;transform:translateX(-50%) scale(0.85);
       z-index:250;pointer-events:none;text-align:center;
-      font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;opacity:0;
+      font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;opacity:0;
     `;
 
     const title = document.createElement('div');
-    title.style.cssText = `color:${accent};font-size:clamp(22px,7vw,28px);font-weight:bold;letter-spacing:2px;text-shadow:0 0 20px ${accent}88,0 2px 8px rgba(0,0,0,0.8);`;
+    // 2px 8 向黑描边 + 原本的彩色 glow + 软投影：描边吃在最前保证字形锐利，glow/投影叠在外圈。
+    title.style.cssText = uiColoredTextBold(accent, `0 0 20px ${accent}88,0 2px 8px rgba(0,0,0,0.8)`)
+      + 'font-size:clamp(22px,7vw,28px);font-weight:bold;letter-spacing:2px;';
     title.textContent = t('upgrade.compensationTitle');
     toast.appendChild(title);
 
@@ -8681,7 +6954,8 @@ export class GameScene {
     toast.appendChild(levelLine);
 
     const rewardLine = document.createElement('div');
-    rewardLine.style.cssText = `color:${accent};font-size:clamp(18px,5.5vw,22px);font-weight:bold;margin-top:8px;text-shadow:0 0 12px ${accent}66;`;
+    rewardLine.style.cssText = uiColoredTextBold(accent, `0 0 12px ${accent}66`)
+      + 'font-size:clamp(18px,5.5vw,22px);font-weight:bold;margin-top:8px;';
     rewardLine.textContent = evt.kind === 'silver'
       ? t('upgrade.compensationSilver', { amount: String(evt.amount) })
       : t('upgrade.compensationGold', { amount: String(evt.amount) });
@@ -8696,25 +6970,6 @@ export class GameScene {
 
     // 使用 GSAP 吐司通知动画
     gsapAnimations.showToast(toast, 1.2);
-  }
-
-  private emitFlameRingParticles(x: number, y: number, z: number, radius: number): void {
-    const count = 2 + Math.floor(Math.random() * 2);
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const px = x + Math.cos(angle) * radius;
-      const pz = z + Math.sin(angle) * radius;
-      const vx = (Math.random() - 0.5) * 0.5;
-      const vy = 1 + Math.random() * 1.5;
-      const vz = (Math.random() - 0.5) * 0.5;
-      const size = 0.2 + Math.random() * 0.2;
-      const life = 0.2 + Math.random() * 0.2;
-      // Orange-red fire
-      const r = 1.0;
-      const g = 0.3 + Math.random() * 0.3;
-      const b = Math.random() * 0.1;
-      this.spawnParticle(px, y + 0.3, pz, vx, vy, vz, size, life, r, g, b);
-    }
   }
 
   private createReadableChestObject(): THREE.Object3D {
@@ -8854,7 +7109,7 @@ export class GameScene {
         } else {
           // 已选完（pendingChestReward 已清空）：移除并撒金色粒子。
           this.removeChestObject(chest.id);
-          this.spawnPickupBurst(chest.x, (chest.y ?? 0) + 0.6, chest.z, 0xffdd00);
+          this.particlePool.spawnPickupBurst(chest.x, (chest.y ?? 0) + 0.6, chest.z, 0xffdd00);
           continue;
         }
       } else {
@@ -9120,7 +7375,7 @@ export class GameScene {
   }
 
   /**
-   * 祭坛 phase==='summoning' 时显示圆形进度条（进度来自 summonTimer / summonDuration，0-100%）。
+   * 飞碟 phase==='summoning' 时显示圆形进度条（进度来自 summonTimer / summonDuration，0-100%）。
    * - 召唤成功（summoning → boss_active）时先把圆环补满 100% 再淡出消失。
    * - 玩家离开召唤区域后 core 会让进度缓慢回落，圆环随之逐渐减少，归零（回到 ready）后淡出。
    * - 与充能神殿进度共用 HUD 位置；神殿进度优先（suppress=true 时让位）。
@@ -9132,7 +7387,7 @@ export class GameScene {
 
     const activeAltar = suppress ? null : altars.find(a => a.phase === 'summoning') ?? null;
     if (!activeAltar) {
-      // 上一帧还在召唤、本帧已有祭坛进入 boss_active → 召唤成功：补满 100% 再淡出。
+      // 上一帧还在召唤、本帧已有飞碟进入 boss_active → 召唤成功：补满 100% 再淡出。
       if (this.bossSummonWasShowing && altars.some(a => a.phase === 'boss_active')) {
         widget.setPercent(100);
       }
@@ -9170,12 +7425,12 @@ export class GameScene {
     this.shrinePanel = document.createElement('div');
     this.shrinePanel.dataset.cameraBlock = 'true';
     this.shrinePanel.style.cssText = inGameChoiceOverlayStyle(
-      'background:radial-gradient(ellipse at center,rgba(40,30,80,0.85),rgba(0,0,0,0.85));z-index:300;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;',
+      'background:radial-gradient(ellipse at center,rgba(40,30,80,0.85),rgba(0,0,0,0.85));z-index:300;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;',
     );
 
     const centerGroup = createInGameChoiceCenterGroup('min(96vw,760px)');
     const title = document.createElement('div');
-    title.style.cssText = uiPlainText('color:#ffd966;font-size:clamp(20px,5.5vw,26px);font-weight:bold;margin-bottom:clamp(12px,3vh,20px);letter-spacing:1px;text-align:center;width:100%;');
+    title.style.cssText = uiColoredTextBold('#ffd966') + 'font-size:clamp(20px,5.5vw,26px);font-weight:bold;margin-bottom:clamp(12px,3vh,20px);letter-spacing:1px;text-align:center;width:100%;';
     title.textContent = t('shrine.title');
     centerGroup.appendChild(title);
 
@@ -9253,536 +7508,20 @@ export class GameScene {
     this.syncInGameTouchControlsEnabled();
   }
 
-  private spawnPickupBurst(x: number, y: number, z: number, color: number): void {
-    const c = new THREE.Color(color);
-    for (let i = 0; i < 8; i++) {
-      const p = this.vfxParticles.find(pp => !pp.active);
-      if (!p) break;
-      p.active = true;
-      p.x = x; p.y = y; p.z = z;
-      p.vx = (Math.random() - 0.5) * 3;
-      p.vy = 2 + Math.random() * 3;
-      p.vz = (Math.random() - 0.5) * 3;
-      p.r = c.r; p.g = c.g; p.b = c.b;
-      p.size = 3 + Math.random() * 2;
-      p.life = 0.8;
-      p.maxLife = 0.8;
-    }
-  }
+  // 区域特效（gas / ripple / scorch / beam）已迁出至 vfx/AreaEffectVfx.ts。
 
-  /**
-   * 渲染区域特效（毒气云 / 虚空涟漪 / 灼地痕迹 / 激光线）。
-   * 按 id 维护 Mesh，新增即创建、消失即移除，每帧更新位置 / 半径 / 透明度。
-   */
-  private updateAreaEffects(state: GameState, _dt: number): void {
-    const live = new Set<number>();
-
-    for (const ae of state.areaEffects) {
-      live.add(ae.id);
-      let obj = this.areaEffectObjects.get(ae.id);
-      const ratio = ae.maxLifetime > 0 ? Math.max(0, ae.lifetime / ae.maxLifetime) : 1;
-
-      if (!obj) {
-        obj = this.createAreaEffectMesh(ae);
-        this.scene.add(obj);
-        this.areaEffectObjects.set(ae.id, obj);
-      }
-
-      switch (ae.kind) {
-        case 'ray_beam': {
-          // 交叉光柱 + 核心：从玩家沿 dir 延伸 length，宽度 = width*2
-          const dx = ae.dirX ?? 0, dz = ae.dirZ ?? 1;
-          const len = ae.length ?? 40;
-          obj.position.set(ae.x + dx * len * 0.5, ae.y + 1.0, ae.z + dz * len * 0.5);
-          obj.rotation.set(0, Math.atan2(dx, dz), 0);
-          const w = (ae.width ?? 0.5) * 0.625;
-          obj.scale.set(w, w, len);
-          // 能量抖动：每帧轻微闪烁，核心更亮、辉光更柔
-          const flicker = 0.82 + Math.random() * 0.18;
-          for (const child of (obj as THREE.Group).children) {
-            const cm = (child as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
-            if (!cm) continue;
-            const base = 1.0;
-            cm.opacity = base * ratio * flicker;
-          }
-          break;
-        }
-        case 'gas_cloud': {
-          obj.position.set(ae.x, ae.y + 0.08, ae.z);
-          obj.scale.setScalar(ae.radius);
-          const group = obj as THREE.Group;
-          const fill = group.children[0] as THREE.Mesh;
-          const ring = group.children[1] as THREE.Mesh;
-          if (fill && ring) {
-            const fillMat = fill.material as THREE.MeshBasicMaterial;
-            const ringMat = ring.material as THREE.MeshBasicMaterial;
-            // 缓慢呼吸，营造翻腾的浓淡变化（不旋转）
-            const pulse = 0.85 + Math.sin(state.tick * 0.12) * 0.15;
-            fillMat.opacity = ratio * pulse;
-            ringMat.opacity = ratio;
-          }
-          // 上升的毒气团：稀疏的大号 smoke billboard 自地面缓缓升腾、外扩、渐隐
-          if (state.tick % 6 === 0) {
-            const a = Math.random() * Math.PI * 2;
-            const r = Math.sqrt(Math.random()) * ae.radius;
-            this.spawnBillboard({
-              texture: 'smoke',
-              x: ae.x + Math.cos(a) * r, y: ae.y + 0.4, z: ae.z + Math.sin(a) * r,
-              scale: ae.radius * 0.55, endScale: ae.radius * 0.95,
-              lifetime: 1.4, opacity: ratio, opacityCurve: 'fadeOut',
-              color: 0x5fbf32, rotation: Math.random() * Math.PI * 2,
-              rotationSpeed: (Math.random() - 0.5) * 0.6, blending: 'normal',
-            });
-          }
-          // 细碎上浮的毒粒，点缀云体内部
-          if (state.tick % 3 === 0) {
-            const a = Math.random() * Math.PI * 2;
-            const r = Math.random() * ae.radius;
-            this.spawnParticle(
-              ae.x + Math.cos(a) * r, ae.y + 0.3 + Math.random() * 0.8, ae.z + Math.sin(a) * r,
-              0, 0.3 + Math.random() * 0.4, 0,
-              0.5, 0.5, 0.25, 0.7, 0.12,
-            );
-          }
-          break;
-        }
-        case 'void_ripple': {
-          obj.position.set(ae.x, ae.y + 0.08, ae.z);
-          obj.scale.setScalar(Math.max(0.01, ae.radius));
-        const m = (obj as THREE.Mesh).material as THREE.MeshBasicMaterial;
-        m.color.setHex(0x00ffff);
-        m.opacity = ratio;
-          break;
-        }
-        case 'scorch_trail': {
-          obj.position.set(ae.x, ae.y + 0.06, ae.z);
-          obj.scale.setScalar(Math.max(0.01, ae.radius));
-          // 焦土底层随时间淡出；发光放射层在中后段更快收敛，呈现"先亮后焦"的余烬感
-          const burn = obj.getObjectByName('scorch_burn') as THREE.Mesh | null;
-          const glow = obj.getObjectByName('scorch_glow') as THREE.Mesh | null;
-          if (burn) (burn.material as THREE.MeshBasicMaterial).opacity = ratio * 0.85;
-          if (glow) {
-            (glow.material as THREE.MeshBasicMaterial).opacity = ratio * ratio * 0.9;
-          }
-          break;
-        }
-      }
-    }
-
-    // 清除已消失的区域特效 mesh
-    for (const [id, obj] of this.areaEffectObjects) {
-      if (!live.has(id)) {
-        this.scene.remove(obj);
-        // 遍历销毁（gas_cloud 等是 Group，需逐子网格 dispose；贴图共享，不在此释放）
-        obj.traverse((node) => {
-          const mesh = node as THREE.Mesh;
-          if (mesh.geometry) mesh.geometry.dispose?.();
-          const mat = mesh.material;
-          if (Array.isArray(mat)) mat.forEach((m) => m.dispose?.());
-          else mat?.dispose?.();
-        });
-        this.areaEffectObjects.delete(id);
-      }
-    }
-  }
-
-  private createAreaEffectMesh(ae: GameState['areaEffects'][number]): THREE.Object3D {
-    switch (ae.kind) {
-      case 'ray_beam': {
-        // 激光线：交叉两片"光柱辉光"(light 贴图) + 一条灼热高亮核心盒。
-        // 单位尺寸沿 z 长 1，靠 update 里的 scale(w,w,len) 拉伸。
-        const group = new THREE.Group();
-
-        // 把 plane 的"长度轴" UV 钉在贴图水平中线(0.5)，这样 light 的径向亮带沿光束
-        // 全长均匀发亮，只在宽度方向衰减 → 读起来是一根均匀发光的光柱。
-        const makeGlowGeo = (lengthAxis: 'x' | 'y'): THREE.PlaneGeometry => {
-          const g = new THREE.PlaneGeometry(1, 1);
-          const uv = g.attributes.uv as THREE.BufferAttribute;
-          for (let i = 0; i < uv.count; i++) {
-            if (lengthAxis === 'y') uv.setY(i, 0.5);
-            else uv.setX(i, 0.5);
-          }
-          uv.needsUpdate = true;
-          return g;
-        };
-        const makeGlow = (lengthAxis: 'x' | 'y'): THREE.Mesh => {
-          const mat = new THREE.MeshBasicMaterial({
-            map: this.vfxTextures.light, color: 0xff264d,
-            transparent: true, opacity: 1.0,
-            side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
-          });
-          const mesh = new THREE.Mesh(makeGlowGeo(lengthAxis), mat);
-          mesh.name = 'beam_glow';
-          return mesh;
-        };
-        // glowH 躺平(法线 +Y)：长度走局部 y；glowV 立起(法线 +X)：长度走局部 x
-        const glowH = makeGlow('y'); glowH.rotation.x = Math.PI / 2;
-        const glowV = makeGlow('x'); glowV.rotation.y = Math.PI / 2;
-        group.add(glowH, glowV);
-
-        // 灼热核心：细长高亮盒，近白粉，加色 → 一条刺眼实线
-        const core = new THREE.Mesh(
-          new THREE.BoxGeometry(1, 1, 1),
-          new THREE.MeshBasicMaterial({
-            color: 0xffc2d2, transparent: true, opacity: 1.0,
-            blending: THREE.AdditiveBlending, depthWrite: false,
-          }),
-        );
-        core.scale.set(0.28, 0.28, 1); // 比辉光更细
-        core.name = 'beam_core';
-        group.add(core);
-
-        // 一次性：起点光斑（每次开火放一发）
-        const mdx = ae.dirX ?? 0, mdz = ae.dirZ ?? 1;
-        this.spawnBillboard({
-          texture: 'flare',
-          x: ae.x + mdx * 0.4, y: ae.y + 1.0, z: ae.z + mdz * 0.4,
-          scale: 1.6, endScale: 2.4, lifetime: 0.16, opacity: 1.0,
-          opacityCurve: 'fadeOut', color: 0xff3366, blending: 'additive',
-        });
-
-        return group;
-      }
-      case 'gas_cloud': {
-        // 分层毒气云：地面毒液斑（smoke 贴图）+ 毒绿边界环（magic_circle）。
-        // Group 整体按 ae.radius 缩放，单位尺寸 = 直径 2 → 半径 1，缩放后正好覆盖 AoE。
-        const group = new THREE.Group();
-
-        // 1) 地面毒液斑：柔和的 smoke 贴图平铺贴地，毒绿染色，标示效果范围内的污染地面
-        const fillGeo = new THREE.PlaneGeometry(2, 2);
-        const fillMat = new THREE.MeshBasicMaterial({
-          map: this.vfxTextures.smoke,
-          color: 0x4faa2e, transparent: true, opacity: 1.0,
-          side: THREE.DoubleSide, depthWrite: false,
-        });
-        const fill = new THREE.Mesh(fillGeo, fillMat);
-        fill.rotation.x = -Math.PI / 2;
-        fill.renderOrder = 3;
-        fill.name = 'gas_fill';
-        group.add(fill);
-
-        // 2) 边界毒环：scorch 放射贴图染毒绿、加色发光，清晰勾出 AoE 半径
-        const ringGeo = new THREE.PlaneGeometry(2, 2);
-        const ringMat = new THREE.MeshBasicMaterial({
-          map: this.vfxTextures.scorch,
-          color: 0x7bff3a, transparent: true, opacity: 1.0,
-          side: THREE.DoubleSide, depthWrite: false,
-          blending: THREE.AdditiveBlending,
-        });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
-        ring.rotation.x = -Math.PI / 2;
-        ring.renderOrder = 4;
-        ring.name = 'gas_ring';
-        group.add(ring);
-
-        return group;
-      }
-      case 'void_ripple': {
-        // 同心波纹贴图（白环+透明底，alpha≈亮度），染青色加色发光；
-        // 单位 plane 直径 2（半径 1），靠 scale(radius) 放大覆盖 AoE。
-        const geo = new THREE.PlaneGeometry(2, 2);
-        const mat = new THREE.MeshBasicMaterial({
-          map: this.vfxTextures.void_ripple,
-          color: 0x00ffff, transparent: true, opacity: 1.0,
-          side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
-        });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.rotation.x = -Math.PI / 2;
-        return mesh;
-      }
-      case 'scorch_trail': {
-        // 灼地痕迹：贴地的双层贴花。
-        // 底层 = 暗橙焦土圆盘（普通混合），上层 = scorch_boots 放射状灼烧贴图（加色发光）。
-        // 单位尺寸半径 1，由 update 按 ae.radius 缩放，正好覆盖 AoE。
-        const group = new THREE.Group();
-
-        const scorchGeo = new THREE.CircleGeometry(1, 24);
-        const scorchMat = new THREE.MeshBasicMaterial({
-          map: this.vfxTextures.scorch_boots ?? null,
-          color: 0x5a1f06, transparent: true, opacity: 1.0,
-          side: THREE.DoubleSide, depthWrite: false,
-        });
-        const scorch = new THREE.Mesh(scorchGeo, scorchMat);
-        scorch.rotation.x = -Math.PI / 2;
-        scorch.renderOrder = 3;
-        scorch.name = 'scorch_burn';
-        group.add(scorch);
-
-        const glowGeo = new THREE.PlaneGeometry(2, 2);
-        const glowMat = new THREE.MeshBasicMaterial({
-          map: this.vfxTextures.scorch_boots ?? null,
-          color: 0xff7a1a, transparent: true, opacity: 1.0,
-          side: THREE.DoubleSide, depthWrite: false,
-          blending: THREE.AdditiveBlending,
-        });
-        const glow = new THREE.Mesh(glowGeo, glowMat);
-        glow.rotation.x = -Math.PI / 2;
-        glow.rotation.z = Math.random() * Math.PI * 2; // 随机初始朝向，避免每个痕迹放射纹理朝向一致
-        glow.renderOrder = 4;
-        glow.name = 'scorch_glow';
-        group.add(glow);
-
-        return group;
-      }
-      default: {
-        const geo = new THREE.CircleGeometry(1, 20);
-        const mat = new THREE.MeshBasicMaterial({
-          color: 0xff6a1a, transparent: true, opacity: 1.0,
-          side: THREE.DoubleSide, depthWrite: false,
-        });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.rotation.x = -Math.PI / 2;
-        return mesh;
-      }
-    }
-  }
-
-  /** 给中毒 / 麻痹的敌人喷少量状态粒子（绿色毒雾 / 黄色麻痹电花）。 */
-  private updateEnemyStatusVfx(state: GameState): void {
-    for (const e of state.enemies) {
-      if (e.hp <= 0) continue;
-      if ((e.poisonTimer ?? 0) > 0 && state.tick % 4 === 0) {
-        const a = Math.random() * Math.PI * 2;
-        this.spawnParticle(
-          e.x + Math.cos(a) * 0.4, e.y + 0.6 + Math.random() * 0.6, e.z + Math.sin(a) * 0.4,
-          0, 0.4 + Math.random() * 0.4, 0,
-          0.4, 0.45, 0.3, 0.85, 0.2,
-        );
-      }
-      if ((e.slowTimer ?? 0) > 0 && state.tick % 5 === 0) {
-        const a = Math.random() * Math.PI * 2;
-        this.spawnParticle(
-          e.x + Math.cos(a) * 0.5, e.y + 0.8 + Math.random() * 0.5, e.z + Math.sin(a) * 0.5,
-          (Math.random() - 0.5) * 1.2, 0.6, (Math.random() - 0.5) * 1.2,
-          0.4, 0.18, 1.0, 0.85, 0.1,
-        );
-      }
-    }
-  }
-
-  /** 生成奥术「奥秘」计数贴图（蓝紫渐变描边数字）。 */
-  private makeMysteryNumberTexture(value: number): THREE.Texture {
-    const canvas = document.createElement('canvas');
-    canvas.width = 128;
-    canvas.height = 96;
-    const ctx = canvas.getContext('2d')!;
-    ctx.clearRect(0, 0, 128, 96);
-    const text = String(value);
-    ctx.font = `bold 60px ${UI_FONT_FACE}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const grad = ctx.createLinearGradient(0, 18, 0, 78);
-    grad.addColorStop(0, '#f0d8ff');
-    grad.addColorStop(0.45, '#b06bff');
-    grad.addColorStop(1, '#4d8dff');
-    ctx.shadowColor = 'rgba(122,88,255,0.8)';
-    ctx.shadowBlur = 14;
-    ctx.lineWidth = 8;
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = 'rgba(10,4,30,0.92)';
-    ctx.strokeText(text, 64, 50);
-    ctx.fillStyle = grad;
-    ctx.fillText(text, 64, 50);
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
-  }
-
-  /** 奥术 T2+：在玩家头顶显示当前奥秘数值（蓝紫渐变）。 */
-  private updateMysteryNumber(state: GameState): void {
-    const player = state.player;
-    const arcaneTier = player.bonds?.find(b => b.bondId === 'arcane')?.tier ?? 0;
-    const value = Math.floor(player.bondMystery ?? 0);
-    if (arcaneTier < 2 || !player.alive) {
-      if (this.mysteryNumberSprite) this.mysteryNumberSprite.visible = false;
-      return;
-    }
-    if (!this.mysteryNumberSprite) {
-      const mat = new THREE.SpriteMaterial({ transparent: true, depthWrite: false, depthTest: false, opacity: 0.96 });
-      this.mysteryNumberSprite = new THREE.Sprite(mat);
-      this.mysteryNumberSprite.renderOrder = 20;
-      this.scene.add(this.mysteryNumberSprite);
-    }
-    const sprite = this.mysteryNumberSprite;
-    if (value !== this.mysteryNumberValue) {
-      if (this.mysteryNumberValue >= 0 && value > this.mysteryNumberValue) {
-        this.mysteryNumberPulse = 0.18;
-      }
-      this.mysteryNumberValue = value;
-      const oldMap = sprite.material.map;
-      sprite.material.map = this.makeMysteryNumberTexture(value);
-      sprite.material.needsUpdate = true;
-      oldMap?.dispose();
-    }
-    this.mysteryNumberPulse = Math.max(0, this.mysteryNumberPulse - this.frameDt);
-    const pulse = this.mysteryNumberPulse > 0
-      ? 1 + Math.sin((this.mysteryNumberPulse / 0.18) * Math.PI) * 0.22
-      : 1;
-    const arcaneParams = BONDS.arcane.params;
-    const threshold = arcaneTier >= 3 ? arcaneParams.thresholdT3 : arcaneParams.threshold;
-    const mysteryScale = 0.5 + Math.min(1, value / threshold) * 0.5;
-    const visualScale = Math.min(1, mysteryScale * pulse);
-    sprite.visible = true;
-    sprite.position.set(player.x, player.y + 2.5, player.z);
-    sprite.scale.set(1.15 * visualScale, 0.86 * visualScale, 1);
-  }
-
-  /** 消费羁绊 VFX 事件：奥术光球 / 余烬红色爆炸烟雾。 */
-  private processBondVfxEvents(state: GameState): void {
-    const player = state.player;
-    for (const evt of state.bondVfxEvents ?? []) {
-      if (evt.kind === 'arcane_burst') {
-        const from = new THREE.Vector3(player.x, player.y + 2.5, player.z);
-        const to = new THREE.Vector3(evt.x, evt.y, evt.z);
-        const mat = new THREE.SpriteMaterial({
-          map: getArcaneOrbTexture(), transparent: true, depthWrite: false,
-          blending: THREE.AdditiveBlending, opacity: 1,
-        });
-        const sprite = new THREE.Sprite(mat);
-        sprite.renderOrder = 18;
-        sprite.scale.setScalar(1.8);
-        sprite.position.copy(from);
-        this.scene.add(sprite);
-        // 起手闪光，强调发射
-        this.spawnBillboard({
-          texture: 'muzzle', x: from.x, y: from.y, z: from.z,
-          scale: 1.6, endScale: 2.6, lifetime: 0.22, opacityCurve: 'flash',
-          opacity: 0.95, color: 0xa97bff, rotation: Math.random() * Math.PI * 2,
-        });
-        this.spawnBillboard({
-          texture: 'light', x: from.x, y: from.y, z: from.z,
-          scale: 1.2, endScale: 2.2, lifetime: 0.28, opacityCurve: 'fadeOut',
-          opacity: 0.75, color: 0x6f7cff, rotation: Math.random() * Math.PI * 2,
-          blending: 'additive',
-        });
-        this.arcaneBurstOrbs.push({ sprite, from, to, t: 0, life: 0.42 });
-      } else if (evt.kind === 'ember_explode') {
-        this.emitEmberExplosion(evt.x, evt.y, evt.z);
-      }
-    }
-  }
-
-  /** 推进奥术光球；沿途留蓝紫尾迹，抵达目标时生成蓝紫烟雾。 */
-  private updateArcaneBurstOrbs(dt: number): void {
-    for (let i = this.arcaneBurstOrbs.length - 1; i >= 0; i--) {
-      const orb = this.arcaneBurstOrbs[i];
-      const prevK = Math.min(1, orb.t / orb.life);
-      orb.t += dt;
-      const k = Math.min(1, orb.t / orb.life);
-      orb.sprite.position.lerpVectors(orb.from, orb.to, k);
-      orb.sprite.position.y += Math.sin(k * Math.PI) * 0.8; // 抛物线小拱
-      // 脉动放大，强调存在感
-      orb.sprite.scale.setScalar(1.7 + Math.sin(orb.t * 40) * 0.25);
-
-      // 尾迹：在本帧位移区间补几颗蓝紫拖尾粒子（独立于帧率）
-      const pos = orb.sprite.position;
-      const trailCount = 3;
-      for (let s = 0; s < trailCount; s++) {
-        const kk = prevK + (k - prevK) * (s / trailCount);
-        const tx = orb.from.x + (orb.to.x - orb.from.x) * kk + (Math.random() - 0.5) * 0.25;
-        const ty = orb.from.y + (orb.to.y - orb.from.y) * kk + Math.sin(kk * Math.PI) * 0.8 + (Math.random() - 0.5) * 0.25;
-        const tz = orb.from.z + (orb.to.z - orb.from.z) * kk + (Math.random() - 0.5) * 0.25;
-        this.spawnParticle(
-          tx, ty, tz,
-          (Math.random() - 0.5) * 0.6, (Math.random() - 0.3) * 0.6, (Math.random() - 0.5) * 0.6,
-          1.4 + Math.random() * 0.8, 0.3 + Math.random() * 0.2,
-          0.62 + Math.random() * 0.2, 0.45 + Math.random() * 0.15, 1.0,
-        );
-      }
-      // 朝相机的发光拖影
-      this.spawnBillboard({
-        texture: 'smoke', x: pos.x, y: pos.y, z: pos.z,
-        scale: 1.3, endScale: 0.5, lifetime: 0.28, opacityCurve: 'fadeOut',
-        opacity: 0.65, color: 0x9a6bff, blending: 'additive',
-        rotation: Math.random() * Math.PI * 2,
-      });
-      this.spawnBillboard({
-        texture: 'light', x: pos.x, y: pos.y, z: pos.z,
-        scale: 0.85, endScale: 0.25, lifetime: 0.18, opacityCurve: 'fadeOut',
-        opacity: 0.55, color: 0x5f7cff, blending: 'additive',
-        rotation: Math.random() * Math.PI * 2,
-      });
-
-      if (k >= 1) {
-        this.emitArcaneSmoke(orb.to.x, orb.to.y, orb.to.z);
-        this.scene.remove(orb.sprite);
-        orb.sprite.material.dispose(); // 贴图为共享缓存，不 dispose
-        this.arcaneBurstOrbs.splice(i, 1);
-      }
-    }
-  }
-
-  /** 蓝紫色范围烟雾（奥秘爆发命中点）。 */
-  private emitArcaneSmoke(x: number, y: number, z: number): void {
-    for (let i = 0; i < 18; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const sp = 2.2 + Math.random() * 3.0;
-      this.spawnParticle(
-        x, y, z,
-        Math.cos(a) * sp, 0.6 + Math.random() * 2.2, Math.sin(a) * sp,
-        2.6 + Math.random() * 1.8, 0.45 + Math.random() * 0.35,
-        0.55 + Math.random() * 0.2, 0.4 + Math.random() * 0.2, 0.98,
-      );
-    }
-    // 命中爆闪（朝相机，强对比强调命中）
-    this.spawnBillboard({
-      texture: 'muzzle', x, y, z, scale: 2.0, endScale: 3.6, lifetime: 0.22,
-      opacityCurve: 'flash', opacity: 1.0, color: 0xc8a0ff,
-      rotation: Math.random() * Math.PI * 2, blending: 'additive',
-    });
-    this.spawnBillboard({
-      texture: 'light', x, y, z, scale: 2.8, endScale: 5.0, lifetime: 0.28,
-      opacityCurve: 'flash', opacity: 0.9, color: 0x8b7cff,
-      rotation: Math.random() * Math.PI * 2, blending: 'additive',
-    });
-    // 蓝紫扩散烟团
-    this.spawnBillboard({
-      texture: 'smoke', x, y, z, scale: 2.0, endScale: 4.4, lifetime: 0.6,
-      opacityCurve: 'fadeOut', opacity: 0.8, color: 0x8a5cff,
-      rotation: Math.random() * Math.PI * 2, blending: 'additive',
-    });
-    // 地面蓝紫光环
-    this.spawnBillboard({
-      texture: 'scorch', x, y: y - 1.0 + 0.06, z, scale: 1.6, endScale: 3.0, lifetime: 0.45,
-      opacityCurve: 'fadeOut', opacity: 0.6, color: 0x6a4cff,
-      facing: 'up', rotation: Math.random() * Math.PI * 2, blending: 'additive',
-    });
-    this.spawnBillboard({
-      texture: 'magic_circle', x, y: y - 1.0 + 0.08, z, scale: 1.2, endScale: 3.4, lifetime: 0.5,
-      opacityCurve: 'fadeOut', opacity: 0.5, color: 0xb16dff,
-      facing: 'up', rotation: Math.random() * Math.PI * 2, blending: 'additive',
-    });
-  }
-
-  /** 红色爆炸烟雾（余烬羁绊敌人爆炸）。 */
-  private emitEmberExplosion(x: number, y: number, z: number): void {
-    for (let i = 0; i < 8; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const sp = 2 + Math.random() * 2.5;
-      this.spawnParticle(
-        x, y, z,
-        Math.cos(a) * sp, 0.8 + Math.random() * 1.8, Math.sin(a) * sp,
-        2.4 + Math.random() * 1.5, 0.3 + Math.random() * 0.25,
-        0.95, 0.25 + Math.random() * 0.2, 0.12,
-      );
-    }
-    this.spawnBillboard({
-      texture: 'smoke', x, y, z, scale: 1.8, endScale: 3.6, lifetime: 0.55,
-      opacityCurve: 'fadeOut', opacity: 0.8, color: 0xcc2a1a,
-      rotation: Math.random() * Math.PI * 2, blending: 'normal',
-    });
-  }
+  // 奥秘头顶数字 / 奥术光球 / bond 事件 / 敌人状态粒子 已迁出至 vfx/BondAndStatusVfx.ts。
 
   private updateVFX(state: GameState, dt: number, eventsFresh = true): void {
     const enemies = state.enemies;
     const player = state.player;
 
-    this.updateAreaEffects(state, dt);
-    this.updateEnemyStatusVfx(state);
-    this.updateMysteryNumber(state);
+    this.areaEffectVfx.update(state);
+    this.bondStatusVfx.updateEnemyStatusVfx(state);
+    this.bondStatusVfx.updateMysteryNumber(state, this.frameDt);
     // 事件驱动的羁绊 VFX 只在新 tick 消费一次（高刷屏去重）。
-    if (eventsFresh) this.processBondVfxEvents(state);
-    this.updateArcaneBurstOrbs(dt);
+    if (eventsFresh) this.bondStatusVfx.processBondVfxEvents(state);
+    this.bondStatusVfx.updateArcaneBurstOrbs(dt);
 
     // --- Emit particles based on game events ---
 
@@ -9797,17 +7536,17 @@ export class GameScene {
       );
 
       if (isDeath) {
-        this.emitDeathBurst(event.x, event.y - 1.0, event.z, 'generic');
+        this.particlePool.emitDeathBurst(event.x, event.y - 1.0, event.z, 'generic');
       } else {
         // Prefer the event's source weapon for spark color; fall back to first equipped weapon
         const weaponType = event.weaponType
           ?? (player.weapons.length > 0 ? player.weapons[0].type : 'sword');
-        this.emitHitSparks(event.x, event.y + 0.5, event.z, weaponType);
+        this.particlePool.emitHitSparks(event.x, event.y + 0.5, event.z, weaponType);
       }
 
       // Lightning staff: drop a column at each strike
       if (event.weaponType === 'lightning_staff') {
-        this.spawnLightningBolt(event.x, event.y - 1.0, event.z);
+        this.weaponTransientVfx.spawnLightningBolt(event.x, event.y - 1.0, event.z);
       }
     }
     }
@@ -9822,30 +7561,18 @@ export class GameScene {
         const idx = Math.max(0, Math.min(weapon.level - 1, table.length - 1));
         flameRingRadius = table[idx]?.aoeRadius ?? 3.5;
         // 火焰粒子沿真实判定边界喷出，而非固定 2.5。
-        this.emitFlameRingParticles(player.x, player.y, player.z, flameRingRadius);
+        this.particlePool.emitFlameRingParticles(player.x, player.y, player.z, flameRingRadius);
         hasFlameRing = true;
       }
     }
 
-    // Flame ring persistent decal (lazy-create + follow player)
-    if (hasFlameRing && player.alive) {
-      const disk = this.ensureFlameRingDisk();
-      disk.visible = true;
-      disk.position.set(player.x, player.y + 0.05, player.z);
-      this.flameRingTime += dt;
-      // 光晕外缘对齐到实际 aoeRadius 边界：plane 边长 = 2 * radius / tipNorm。
-      const breathe = 1 + Math.sin(this.flameRingTime * 4) * 0.04;
-      const size = (flameRingRadius * 2 / GameScene.FLAME_AURA_TIP_NORM) * breathe;
-      // 满不透明发光、缓慢自转，作为范围边界提示。
-      const star = this.flameRingLayers[0];
-      if (star) {
-        star.scale.set(size, size, 1);
-        star.rotation.z = this.flameRingTime * 0.6;
-        (star.material as THREE.MeshBasicMaterial).opacity = 1;
-      }
-    } else if (this.flameRingDisk) {
-      this.flameRingDisk.visible = false;
-    }
+    // Flame ring persistent decal (lazy-create + follow player) → WeaponTransientVfx 内部处理。
+    this.weaponTransientVfx.updateFlameRing(
+      hasFlameRing && player.alive,
+      flameRingRadius,
+      player.x, player.y, player.z,
+      dt,
+    );
 
     // === Weapon Trail VFX (#12) ===
     // Projectile trails for player weapons
@@ -9854,10 +7581,10 @@ export class GameScene {
 
       // Other player projectiles: short trail dot every 2 ticks
       if (state.tick % 2 === 0) {
-        const color = GameScene.WEAPON_VFX_COLORS[proj.weaponType] ?? [1, 1, 1];
+        const color = WEAPON_VFX_COLORS[proj.weaponType] ?? [1, 1, 1];
         // Shotgun: brighter, larger trail to read as buckshot
         const isShotgun = proj.weaponType === 'shotgun';
-        this.spawnParticle(
+        this.particlePool.spawn(
           proj.x, proj.y, proj.z,
           0, 0, 0,
           isShotgun ? 0.6 : 0.4,
@@ -9899,7 +7626,7 @@ export class GameScene {
         const swipeCount = Math.max(1, Math.round(swordStats.projectileCount));
         for (let s = 0; s < swipeCount; s++) {
           const sweepAngle = slashAngle + (s - (swipeCount - 1) / 2) * 0.3;
-          this.spawnSlashSector(player.x, player.y + 0.05, player.z, sweepAngle, swordRange);
+          this.weaponTransientVfx.spawnSlashSector(player.x, player.y + 0.05, player.z, sweepAngle, swordRange);
         }
 
         // 12 lightweight particles streaking along the arc for extra punch
@@ -9908,7 +7635,7 @@ export class GameScene {
           const dist = 1.5 + Math.random() * 0.6;
           const px = player.x + Math.sin(arcAngle) * dist;
           const pz = player.z + Math.cos(arcAngle) * dist;
-          this.spawnParticle(
+          this.particlePool.spawn(
             px, player.y + 1.0, pz,
             Math.sin(arcAngle) * 1.8, 0.8 + Math.random() * 0.6, Math.cos(arcAngle) * 1.8,
             0.5,
@@ -9922,53 +7649,10 @@ export class GameScene {
     }
 
     // Drive transient mesh effects (slash arcs, lightning bolts)
-    this.updateTransientEffects(dt);
+    this.weaponTransientVfx.updateTransient(dt, this.camera);
 
-    // --- Update particle physics ---
-    const positions = this.vfxGeometry.attributes.position as THREE.BufferAttribute;
-    const sizes = this.vfxGeometry.attributes.aSize as THREE.BufferAttribute;
-    const lifes = this.vfxGeometry.attributes.aLife as THREE.BufferAttribute;
-    const colors = this.vfxGeometry.attributes.aColor as THREE.BufferAttribute;
-
-    let activeCount = 0;
-    for (let i = 0; i < this.MAX_PARTICLES; i++) {
-      const p = this.vfxParticles[i];
-      if (!p.active) continue;
-
-      p.life -= dt;
-      if (p.life <= 0) {
-        p.active = false;
-        continue;
-      }
-
-      // Update position
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.z += p.vz * dt;
-      p.vy -= 3.0 * dt; // slight gravity
-
-      // Write to buffers
-      const lifeRatio = p.life / p.maxLife;
-      positions.setXYZ(activeCount, p.x, p.y, p.z);
-      sizes.setX(activeCount, p.size * lifeRatio);
-      lifes.setX(activeCount, lifeRatio);
-      colors.setXYZ(activeCount, p.r, p.g, p.b);
-      activeCount++;
-    }
-
-    // Fill rest with invisible positions
-    for (let i = activeCount; i < this.MAX_PARTICLES; i++) {
-      positions.setXYZ(i, 0, -100, 0);
-      sizes.setX(i, 0);
-      lifes.setX(i, 0);
-      colors.setXYZ(i, 0, 0, 0);
-    }
-
-    positions.needsUpdate = true;
-    sizes.needsUpdate = true;
-    lifes.needsUpdate = true;
-    colors.needsUpdate = true;
-    this.vfxGeometry.setDrawRange(0, activeCount);
+    // --- Particle physics → ParticlePool ---
+    this.particlePool.update(dt);
   }
 
   private updateCamera(state: GameState): void {
@@ -10156,6 +7840,7 @@ export class GameScene {
           height:${(HUD_RELIC_SLOT_VIEWBOX.h / HUD_RELIC_BAR_VIEWBOX.h) * 100}%;
           transform:translate(-50%,-50%);
           display:flex;align-items:center;justify-content:center;
+          background:url("${HUD_RELIC_SLOT_BG}") center/100% 100% no-repeat;
           border-radius:7px;box-sizing:border-box;cursor:help;
           filter:drop-shadow(0 0 5px ${borderColor}80);
         `;
@@ -10213,9 +7898,9 @@ export class GameScene {
     }
 
     // --- Altar / Portal Indicator ---
-    // 显示距离最近的祭坛 / 宝箱（或玩家在交互半径里时的 prompt）。
+    // 显示距离最近的飞碟 / 宝箱（或玩家在交互半径里时的 prompt）。
     // 跳过终态：boss_active（Boss 战中无意义）/ portal_used（即将被消费）。
-    // 充能神殿进度指示器占用同位置时，压制宝箱 / 祭坛文字提示。
+    // 充能神殿进度指示器占用同位置时，压制宝箱 / 飞碟文字提示。
     const shrineIndicatorVisible = this.updateShrineIndicator(
       state.shrines,
       p.x,
@@ -10239,7 +7924,7 @@ export class GameScene {
     const isMobile = !window.matchMedia('(hover: hover)').matches;
     if (chargeIndicatorVisible) {
       gsapAnimations.animateTeleporterIndicator(this.teleporterIndicator, false, 0.2);
-    // [DISABLED] 局内祭坛位置显示
+    // [DISABLED] 局内飞碟位置显示
     // const visibleAltar = state.altars.find(a => a.phase !== 'boss_active' && a.phase !== 'portal_used');
     } else if (chestInRange && nearestChest && !isMobile) {
       // 使用 GSAP 动画显示传送门指示器
@@ -10251,15 +7936,15 @@ export class GameScene {
         ? '0 0 8px #ffcc33,0 1px 3px rgba(0,0,0,0.8)'
         : '0 1px 3px rgba(0,0,0,0.8)';
       this.teleporterIndicator.innerHTML = isBossChest
-        ? `${chestIconHtml()}<span>${escapeTooltipText('[E] 开启 Boss 宝箱')}</span>`
+        ? `${chestIconHtml()}<span>${escapeTooltipText(t('chest.prompt.openBossKey'))}</span>`
         : canAfford
-        ? `${chestIconHtml()}<span>${escapeTooltipText(`[E] 开启宝箱 - ${chestCost} 金币`)}</span>`
-        : `${chestIconHtml()}<span>${escapeTooltipText(`金币不足 ${p.gold}/${chestCost}`)}</span>`;
+        ? `${chestIconHtml()}<span>${escapeTooltipText(t('chest.prompt.openKey', { cost: String(chestCost) }))}</span>`
+        : `${chestIconHtml()}<span>${escapeTooltipText(t('chest.prompt.needGold', { have: String(p.gold), need: String(chestCost) }))}</span>`;
     } else if (chestInRange && isMobile) {
       // 触屏靠近宝箱：顶部不显示 [E] 提示，由底部 interactBtn 承担
       gsapAnimations.animateTeleporterIndicator(this.teleporterIndicator, false, 0.2);
     /*
-    // [DISABLED] 局内祭坛位置显示
+    // [DISABLED] 局内飞碟位置显示
     } else if (visibleAltar) {
       // 使用 GSAP 动画显示传送门指示器
       gsapAnimations.animateTeleporterIndicator(this.teleporterIndicator, true, 0.2);
@@ -10296,19 +7981,13 @@ export class GameScene {
         }
       }
     */
-    } else if (nearestChest) {
-      // 使用 GSAP 动画显示传送门指示器
-      gsapAnimations.animateTeleporterIndicator(this.teleporterIndicator, true, 0.2);
-      this.teleporterIndicator.style.color = '#ffdd66';
-      this.teleporterIndicator.style.textShadow = '0 0 8px #ffcc33,0 1px 3px rgba(0,0,0,0.8)';
-      this.teleporterIndicator.innerHTML = `${chestIconHtml()}<span>${escapeTooltipText(`${Math.round(nearestChest.dist)}m`)}</span>`;
     } else {
       // 使用 GSAP 动画隐藏传送门指示器
       gsapAnimations.animateTeleporterIndicator(this.teleporterIndicator, false, 0.2);
     }
 
     // --- 移动端交互按钮：仅在玩家位于传送门 / 宝箱交互半径内时显示 ---
-    // 召唤 Boss 的祭坛（ready）现在进入范围即自动充能，无需按键，故不再显示提示。
+    // 召唤 Boss 的飞碟（ready）现在进入范围即自动充能，无需按键，故不再显示提示。
     const portalInRange = state.altars.find(a =>
       a.phase === 'portal_ready'
       && Math.hypot(a.x - p.x, a.z - p.z) <= 2.0
@@ -10319,8 +7998,10 @@ export class GameScene {
         const isBossChest = nearestChest?.chest.bossDrop === true;
         const canAfford = isBossChest || p.gold >= chestCost;
         setMobileChestInteractState(this.interactBtn, canAfford);
-        if (!canAfford) this.interactBtn.title = `金币不足 ${p.gold}/${chestCost}`;
-        else this.interactBtn.title = isBossChest ? '开启 Boss 宝箱' : `开启宝箱 ${chestCost}`;
+        if (!canAfford) this.interactBtn.title = t('chest.prompt.needGold', { have: String(p.gold), need: String(chestCost) });
+        else this.interactBtn.title = isBossChest
+          ? t('chest.prompt.openBoss')
+          : t('chest.prompt.open', { cost: String(chestCost) });
       } else if (portalInRange) {
         setMobileAltarInteractState(this.interactBtn, t('altar.prompt.enterPortal'));
       }
@@ -10974,7 +8655,7 @@ export class GameScene {
     if (stats.bounces > 0) rows.push([t('upgrade.stat.bounces'), String(stats.bounces)]);
     if (stats.chains > 0) rows.push([t('upgrade.stat.chains'), String(stats.chains)]);
     if (stats.speed > 0) rows.push([t('upgrade.stat.projSpeed'), formatTooltipNumber(stats.speed, 1)]);
-    if (weapon.cooldownTimer > 0) rows.push(['剩余冷却', `${formatTooltipNumber(weapon.cooldownTimer, 1)}s`]);
+    if (weapon.cooldownTimer > 0) rows.push([t('tooltip.weapon.cooldownLabel'), `${formatTooltipNumber(weapon.cooldownTimer, 1)}s`]);
 
     return this.buildItemTooltipHtml({
       title: t(`upgrade.weapon.${weapon.type}`),
@@ -11034,7 +8715,11 @@ export class GameScene {
     return this.buildItemTooltipHtml({
       title: t(`upgrade.tome.${tome.type}`),
       iconSrc: tomeIconSrc(tome.type),
-      subtitle: `Lv.${tome.level}/${TOME_MAX_LEVELS[tome.type] ?? 8} · 强度 ${formatTooltipNumber(power, 1)}`,
+      subtitle: t('tooltip.tome.subtitle', {
+        level: String(tome.level),
+        max: String(TOME_MAX_LEVELS[tome.type] ?? 8),
+        power: formatTooltipNumber(power, 1),
+      }),
       description: t(`upgrade.tome.${tome.type}_desc`),
       rows,
       accent: TOME_COLORS[tome.type] ?? '#aa88ff',
@@ -11049,35 +8734,38 @@ export class GameScene {
         rows.push([t('upgrade.stat.critChance'), `+${formatTooltipPercent(0.03 * stacks)}`]);
         break;
       case 'small_shield_charm':
-        rows.push(['护盾值', `+${2 * stacks}`]);
-        rows.push(['最大护盾', `+${5 * stacks}`]);
+        rows.push([t('relic.stat.shield'), `+${2 * stacks}`]);
+        rows.push([t('relic.stat.maxShield'), `+${5 * stacks}`]);
         break;
       case 'blood_fang':
-        rows.push(['击杀回复', `${2 * stacks} HP`]);
-        rows.push(['精英击杀回复', `${3 * stacks} HP`]);
+        rows.push([t('relic.stat.killHeal'), `${2 * stacks} HP`]);
+        rows.push([t('relic.stat.eliteKillHeal'), `${3 * stacks} HP`]);
         break;
       case 'pact_coin':
-        rows.push(['击杀金币', `+${stacks}`]);
+        rows.push([t('relic.stat.killGold'), `+${stacks}`]);
         break;
       case 'arsenal_badge': {
         const level10Weapons = state.player.weapons.filter(w => w.level >= 10).length;
-        rows.push(['每把 Lv10 武器', `+${formatTooltipPercent(0.04 * stacks)} 伤害`]);
-        rows.push(['当前总伤害', `+${formatTooltipPercent(level10Weapons * 0.04 * stacks)}`]);
+        rows.push([
+          t('relic.stat.perLv10Weapon'),
+          t('relic.stat.perLv10WeaponValue', { pct: `+${formatTooltipPercent(0.04 * stacks)}` }),
+        ]);
+        rows.push([t('relic.stat.currentTotalDamage'), `+${formatTooltipPercent(level10Weapons * 0.04 * stacks)}`]);
         break;
       }
       case 'elite_writ':
-        rows.push(['对精英伤害', `+${formatTooltipPercent(0.10 * stacks)}`]);
+        rows.push([t('relic.stat.eliteDamage'), `+${formatTooltipPercent(0.10 * stacks)}`]);
         break;
       case 'regen_core':
-        rows.push(['生命恢复', `+${formatTooltipNumber(0.5 * stacks, 1)}/s`]);
+        rows.push([t('relic.stat.lifeRegen'), `+${formatTooltipNumber(0.5 * stacks, 1)}/s`]);
         break;
       case 'magazine_expander':
         rows.push([t('upgrade.stat.projectiles'), `+${stacks}`]);
         break;
       case 'hourglass':
-        rows.push(['Overtime 每秒全伤', `+${formatTooltipPercent(0.0012 * stacks, 2)}`]);
+        rows.push([t('relic.stat.overtimePerSec'), `+${formatTooltipPercent(0.0012 * stacks, 2)}`]);
         if (state.overtimeSeconds > 0) {
-          rows.push(['当前全伤', `+${formatTooltipPercent(state.overtimeSeconds * 0.0012 * stacks, 1)}`]);
+          rows.push([t('relic.stat.currentOvertime'), `+${formatTooltipPercent(state.overtimeSeconds * 0.0012 * stacks, 1)}`]);
         }
         break;
       case 'iron_heart':
@@ -11087,10 +8775,10 @@ export class GameScene {
     }
 
     return this.buildItemTooltipHtml({
-      title: relic.name,
+      title: t(`relic.${id}.name`),
       iconSrc: relicIconSrc(id),
       subtitle: `${t(`shrine.rarity.${relic.rarity}`)} · x${stacks}`,
-      description: relic.description,
+      description: t(`relic.${id}.desc`),
       rows,
       accent: RARITY_COLORS[relic.rarity] ?? '#aaaaaa',
     });
@@ -11172,46 +8860,7 @@ export class GameScene {
   // ===========================================================================
 
   private spawnDamageNumber(evt: DamageEvent): void {
-    const el = this.damageNums[this.damageNumIndex];
-    this.damageNumIndex = (this.damageNumIndex + 1) % DAMAGE_NUM_POOL_SIZE;
-
-    this._tempVec.set(evt.x, evt.y, evt.z);
-    this._tempVec.project(this.camera);
-
-    const hw = window.innerWidth / 2;
-    const hh = window.innerHeight / 2;
-    const screenX = this._tempVec.x * hw + hw;
-    const screenY = -(this._tempVec.y * hh) + hh;
-
-    let color = '#ffffff';
-    if (evt.isShield) color = '#66ddff';
-    else if (evt.isPlayerDamage) color = '#ff4444';
-    else if (evt.isCrit) color = '#ffd700'; // gold for crits
-
-    // Damage number scaling by value
-    let fontSize = 14;
-    if (evt.damage > 50) fontSize = 24;
-    else if (evt.damage > 20) fontSize = 18;
-
-    // Crits: 1.5x size + "CRIT!" suffix
-    if (evt.isCrit) {
-      fontSize = Math.round(fontSize * 1.5);
-    }
-
-    // 按视口短边缩放，避免小屏伤害数字过大遮挡画面
-    fontSize = uiPx(fontSize);
-
-    const dmgText = evt.isShield ? `+${Math.round(evt.damage)}` : String(Math.round(evt.damage));
-    // Use GSAP for damage number animation
-    gsapAnimations.showDamageNumber(el, {
-      text: evt.isCrit ? `${dmgText} CRIT!` : dmgText,
-      color: color,
-      x: screenX,
-      y: screenY,
-      fontSize: fontSize,
-      isCrit: evt.isCrit,
-      damage: evt.damage
-    });
+    this.damageNumbers.spawnDamage(evt);
   }
 
   // ===========================================================================
@@ -11281,11 +8930,13 @@ export class GameScene {
       box-shadow:0 0 34px ${accentColor}88,0 18px 70px rgba(0,0,0,0.68);
       color:#fff;text-align:center;pointer-events:none;z-index:260;opacity:0;
       transition:opacity 180ms ease,transform 220ms ease;
-      font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;box-sizing:border-box;
+      font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;box-sizing:border-box;
     `;
 
     const title = document.createElement('div');
-    title.style.cssText = `color:${accentColor};font-size:clamp(28px,8vw,54px);font-weight:900;letter-spacing:2px;text-shadow:0 0 18px ${accentColor},0 3px 8px #000;`;
+    // boss banner：保留 accent glow + 黑色硬投影，再叠 2px 黑描边让 28–54px 大字在彩色背景里仍清晰。
+    title.style.cssText = uiColoredTextBold(accentColor, `0 0 18px ${accentColor},0 3px 8px #000`)
+      + 'font-size:clamp(28px,8vw,54px);font-weight:900;letter-spacing:2px;';
     title.textContent = titleText;
 
     const body = document.createElement('div');
@@ -11320,12 +8971,12 @@ export class GameScene {
     this.upgradePanel = document.createElement('div');
     this.upgradePanel.dataset.cameraBlock = 'true';
     this.upgradePanel.style.cssText = inGameChoiceOverlayStyle(
-      'background:rgba(0,0,0,0.7);z-index:300;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;',
+      'background:rgba(0,0,0,0.7);z-index:300;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;',
     );
 
     const centerGroup = createInGameChoiceCenterGroup();
     const title = document.createElement('div');
-    title.style.cssText = uiPlainText('color:#ffcc00;font-size:clamp(20px,5.5vw,24px);font-weight:bold;margin-bottom:clamp(12px,3vh,20px);text-align:center;width:100%;');
+    title.style.cssText = uiColoredTextBold('#ffcc00') + 'font-size:clamp(20px,5.5vw,24px);font-weight:bold;margin-bottom:clamp(12px,3vh,20px);text-align:center;width:100%;';
     title.textContent = t('upgrade.title');
     centerGroup.appendChild(title);
 
@@ -11465,7 +9116,7 @@ export class GameScene {
 
     const overlay = document.createElement('div');
     overlay.dataset.cameraBlock = 'true';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:400;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:400;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
     this.installItemTooltipHandlers(overlay);
 
     const sideMaxH = `calc(100% - ${sideInset * 2}px)`;
@@ -11669,9 +9320,9 @@ export class GameScene {
 
   /**
    * 局内主线任务条显隐判定：
-   * - 完成条件：任意祭坛 phase 为 `portal_ready`（Boss 已死、传送门可用）或 `portal_used`（玩家已进入传送门）。
+   * - 完成条件：任意飞碟 phase 为 `portal_ready`（Boss 已死、传送门可用）或 `portal_used`（玩家已进入传送门）。
    * - 满足后播放「右弹 → 左滑出屏」动画，动画结束后隐藏任务条。
-   * - 若祭坛被重置（如进入下一难度 tier 后 altars 回到 ready），任务条重新显示。
+   * - 若飞碟被重置（如进入下一难度 tier 后 altars 回到 ready），任务条重新显示。
    */
   private updateQuestHudTrack(state: GameState): void {
     const bossDefeated = state.altars.some(
@@ -11750,7 +9401,7 @@ export class GameScene {
 
     const overlay = document.createElement('div');
     overlay.dataset.cameraBlock = 'true';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:420;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:420;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
     this.installItemTooltipHandlers(overlay);
 
     const sideMaxH = `calc(100% - ${sideInset * 2}px)`;
@@ -11831,7 +9482,7 @@ export class GameScene {
       relics.map(([id, count]) => ({
         icon: RELICS[id].emoji,
         iconSrc: relicIconSrc(id),
-        name: RELICS[id].name,
+        name: t(`relic.${id}.name`),
         inner: `x${count}`,
         accent: RARITY_COLORS[RELICS[id].rarity] ?? '#aaaaaa',
         tooltipHtml: this.createRelicTooltipHtml(id, count, state),
@@ -12099,8 +9750,7 @@ function ensureSelectableCharacter(): void {
 
 const PREP_SCREEN_STYLE = `
   position:fixed;top:0;left:0;width:100%;height:100%;box-sizing:border-box;
-  z-index:550;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;
-  background:#0a0a1a url(${UI_COMMON_BG_PATH}) center center/cover no-repeat;
+  z-index:550;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;  background:#0a0a1a url(${UI_COMMON_BG_PATH}) center center/cover no-repeat;
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
   padding-left:env(safe-area-inset-left,0px);
@@ -12109,7 +9759,7 @@ const PREP_SCREEN_STYLE = `
 
 const PREP_SCREEN_HEADER_STYLE = `
   display:flex;align-items:center;justify-content:space-between;width:100%;flex-shrink:0;
-  padding:4px 12px 4px 14px;box-sizing:border-box;z-index:2;
+  padding:0 12px 4px 0;box-sizing:border-box;z-index:2;
 `;
 
 /** 预备界面（英雄/难度选择）的固定设计尺寸：横屏锚定，不随屏幕放大、不换行重排 */
@@ -12128,26 +9778,31 @@ function createPrepBackButton(onClick: () => void): HTMLButtonElement {
   const backBtn = document.createElement('button');
   backBtn.type = 'button';
   backBtn.setAttribute('aria-label', t('characterSelect.back'));
+  // 红丝带形 SVG 的画布是 837×188，但实际可见图形（红丝带 + 黑色阴影）只覆盖 viewBox 左侧的
+  // x∈[0, ~637]，右侧 ~24% 是透明空白（Figma 切图遗留）。如果让按钮按 SVG 自然宽渲染，
+  // 标题会被这片透明空白往右顶 ~47px，看起来"和红丝带隔得很远"。
+  // 这里把按钮盒子宽高比锁到"可见部分"的 637:188，再用 overflow:hidden 把 img 自然宽溢出
+  // 的透明右段裁掉，从而让标题（leftGroup 里 6px gap 之后的 span）紧贴红丝带末端。
+  // - margin/padding 全部清零 + header `padding-left:0` → 红丝带最左像素贴屏幕左边缘
+  // - transform-origin:left center → hover 缩放时丝带头部不会从屏幕边缘拉开
   backBtn.style.cssText = `
-    min-width:36px;min-height:36px;padding:0;border:none;background:transparent;cursor:pointer;
-    touch-action:manipulation;display:flex;align-items:center;justify-content:center;flex-shrink:0;
-    transition:transform 0.15s;
+    height:44px;aspect-ratio:637/188;padding:0;margin:0;border:none;background:transparent;cursor:pointer;
+    touch-action:manipulation;display:flex;align-items:center;justify-content:flex-start;flex-shrink:0;
+    overflow:hidden;transform-origin:left center;transition:transform 0.15s;
   `;
   const backImg = document.createElement('img');
   backImg.src = CHARACTER_SELECT_BACK_ICON;
   backImg.alt = '';
   backImg.draggable = false;
-  backImg.style.cssText = 'width:36px;height:36px;object-fit:contain;pointer-events:none;';
+  // 图片按 SVG 自然 837:188 比例渲染（≈ 196px 宽 @44px 高），右侧透明 ~47px 由按钮盒
+  // overflow:hidden 裁掉。不能给 img 设 width:100%，那会把 SVG 横向压扁。
+  backImg.style.cssText = 'height:100%;width:auto;display:block;pointer-events:none;flex-shrink:0;';
   backBtn.appendChild(backImg);
   backBtn.addEventListener('mouseenter', () => { backBtn.style.transform = 'scale(1.05)'; });
   backBtn.addEventListener('mouseleave', () => { backBtn.style.transform = 'scale(1)'; });
   backBtn.addEventListener('click', onClick);
   return backBtn;
 }
-
-const PREP_SCREEN_TITLE_STYLE = uiPlainText(
-  'font-size:clamp(15px,4vw,20px);font-weight:bold;white-space:nowrap;',
-);
 
 function createPrepScreenHeader(
   title: string,
@@ -12157,14 +9812,26 @@ function createPrepScreenHeader(
   const header = document.createElement('header');
   header.style.cssText = PREP_SCREEN_HEADER_STYLE;
 
-  const leftGroup = document.createElement('div');
-  leftGroup.style.cssText = 'display:flex;align-items:center;gap:6px;min-width:0;';
-  leftGroup.appendChild(createPrepBackButton(onBack));
+  // 标题直接叠在红丝带的宽阔上半段（"丝带 logo"风），不再做 flex 行内排版。
+  // - 标题 append 到 backBtn 内部（而不是 leftGroup 同级），这样 backBtn 在 hover 时的
+  //   `transform:scale(1.05)` 会带着标题一起缩放，丝带和文字同步放大。
+  // - backBtn 需要 position:relative 给 absolute 子元素提供坐标系（默认 button 是 static）。
+  // - 定位按红丝带的几何：箭头末端 ~28px，丝带顶部 y≈5 处最宽；2 字标题 14px ≈ 28px 宽，
+  //   起点 34 + 文字 28 = 62px，远小于丝带顶端可容纳的 ~135px。
+  // - pointer-events:none → 文字不挡住 back 的 click / hover 检测，整条丝带都能点。
+  // - 白字 + 黑色描边阴影，保证盖在红底（#CD4040）上仍清晰。
+  const backBtn = createPrepBackButton(onBack);
+  backBtn.style.position = 'relative';
+
   const titleEl = document.createElement('span');
-  titleEl.style.cssText = PREP_SCREEN_TITLE_STYLE;
+  // 描边走 textStyle.uiPlainTextBold（2px 8 向 + 底投影），项目里大字号标题统一用这套。
+  titleEl.style.cssText = uiPlainTextBold(
+    'position:absolute;left:50px;top:7px;pointer-events:none;'
+    + 'font-weight:bold;font-size:24px;line-height:1;letter-spacing:0.04em;white-space:nowrap;',
+  );
   titleEl.textContent = title;
-  leftGroup.appendChild(titleEl);
-  header.appendChild(leftGroup);
+  backBtn.appendChild(titleEl);
+  header.appendChild(backBtn);
 
   header.appendChild(rightContent);
   return header;
@@ -12172,10 +9839,9 @@ function createPrepScreenHeader(
 
 const SHOP_OVERLAY_STYLE = `
   position:fixed;top:0;left:0;width:100%;height:100%;box-sizing:border-box;
-  background:#0a0a1a url(${UI_COMMON_BG_PATH}) center center/cover no-repeat;
+  background:#1a2332 url(${SHOP_QUEST_PAGE_BG_IMAGE}) center center/cover no-repeat;
   display:flex;flex-direction:column;
-  z-index:600;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;
-  padding-top:env(safe-area-inset-top,0px);
+  z-index:600;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;  padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
   padding-left:env(safe-area-inset-left,0px);
   padding-right:env(safe-area-inset-right,0px);
@@ -12183,10 +9849,9 @@ const SHOP_OVERLAY_STYLE = `
 
 const QUESTS_OVERLAY_STYLE = `
   position:fixed;top:0;left:0;width:100%;height:100%;box-sizing:border-box;
-  background:#0a0a1a url(${UI_COMMON_BG_PATH}) center center/cover no-repeat;
+  background:#1a2332 url(${SHOP_QUEST_PAGE_BG_IMAGE}) center center/cover no-repeat;
   display:flex;flex-direction:column;
-  z-index:600;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;
-  padding-top:env(safe-area-inset-top,0px);
+  z-index:600;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;  padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
   padding-left:env(safe-area-inset-left,0px);
   padding-right:env(safe-area-inset-right,0px);
@@ -12484,7 +10149,7 @@ function createFramedLabelButton(
   const labelEl = document.createElement('span');
   labelEl.textContent = label;
   labelEl.style.cssText = uiPlainText(`
-    position:absolute;left:0;top:0;width:100%;height:100%;
+    position:absolute;left:0;top:-5px;width:100%;height:100%;
     display:flex;align-items:center;justify-content:center;
     font-size:clamp(${uiPx(9)}px,2.6vmin,${uiPx(12)}px);font-weight:bold;line-height:1.2;
     padding:0 clamp(4px,1.2vmin,8px);box-sizing:border-box;text-align:center;
@@ -12618,10 +10283,10 @@ function createCharacterConfirmButton(label: string, onClick: () => void): HTMLD
 }
 
 /**
- * 角色面板 5 个属性行前置的小圆徽章 icon。
+ * 角色面板 5 个属性行前置的小方形徽章 icon。
  *
- * 项目里没有这套"小圆 + 白图形"的现成资源（`public/ui/icon/Shrine_Reward/*.png`
- * 都是大尺寸插画），所以这里用**内联 SVG** 拼出来：圆背景上叠一个白色 path，
+ * 项目里没有这套"小徽章 + 白图形"的现成资源（`public/ui/icon/Shrine_Reward/*.png`
+ * 都是大尺寸插画），所以这里用**内联 SVG** 拼出来：圆角方形背景上叠一个白色 path，
  * 颜色按目标视觉（参考 Brawl Stars 风格）选定，整体只占一行字高度。
  *
  * 未来若有正式 icon 资源，把这里换成 `<img src=...>` 即可。
@@ -12663,11 +10328,13 @@ function createStatIcon(key: CharacterStatKey): HTMLElement {
     flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;
     width:clamp(16px,3.4vw,20px);height:clamp(16px,3.4vw,20px);
   `;
+  // 背景从 r=11 的圆改成 22×22 的圆角方形（rx=3），让 5 个属性图标统一变方。
+  // 内嵌的 glyph path 都画在 24×24 viewBox 中心 ±10 范围内，圆变方后图形位置无需调整。
   wrap.innerHTML =
     `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" `
     + `style="width:100%;height:100%;display:block;">`
-    + `<circle cx="12" cy="12" r="11" fill="${STAT_ICON_BG[key]}" `
-    + `stroke="rgba(0,0,0,0.45)" stroke-width="1.4"/>`
+    + `<rect x="1" y="1" width="22" height="22" rx="3" ry="3" `
+    + `fill="${STAT_ICON_BG[key]}" stroke="rgba(0,0,0,0.45)" stroke-width="1.4"/>`
     + STAT_ICON_GLYPH[key]
     + `</svg>`;
   return wrap;
@@ -12781,9 +10448,10 @@ function refreshCharacterSelectDetail(): void {
     padding:0 ${characterDetailInsetXPct(CHARACTER_DETAIL_TITLE_BAR_PAD_X)};
   `;
   const nameEl = document.createElement('h2');
-  nameEl.style.cssText = detailFont(
-    'clamp(16px,4.2vw,22px)',
-    'font-weight:bold;margin:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;',
+  // 与"商店"红丝带标题、商店卡片标题统一描边强度（uiPlainTextBold：2px 8 向 + 底投影），
+  // 让所有"卡通丝带 logo"风的大字号标题保持一致；这里 16~22px 字号正好在 bold 描边的安全区间。
+  nameEl.style.cssText = uiPlainTextBold(
+    'margin:0;line-height:1.45;font-size:clamp(16px,4.2vw,22px);font-weight:bold;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;',
   );
   nameEl.textContent = t(`character.${id}`);
   titleBar.appendChild(nameEl);
@@ -13170,7 +10838,13 @@ function showTierSelectScreen(): void {
   };
 
   tierSelectEl = document.createElement('div');
-  tierSelectEl.style.cssText = `${PREP_SCREEN_STYLE}display:flex;flex-direction:column;`;
+  // 共用 PREP_SCREEN_STYLE 的布局/层级，但难度选择页单独换背景：
+  // 把 PREP_SCREEN_STYLE 里的 background 覆盖为沙漠场景，其他 prep 页面不受影响。
+  tierSelectEl.style.cssText = `
+    ${PREP_SCREEN_STYLE}
+    display:flex;flex-direction:column;
+    background:#1a2332 url(${TIER_SELECT_PAGE_BG_IMAGE}) center bottom / cover no-repeat;
+  `;
 
   const header = document.createElement('header');
   header.dataset.region = 'header';
@@ -13218,8 +10892,14 @@ function showTierSelectScreen(): void {
         showCharacterSelectScreen();
         return;
       }
-      destroyTierSelectScreen();
-      startGame(selectedCharacter);
+      const character = selectedCharacter;
+      playTransition(
+        () => {
+          destroyTierSelectScreen();
+          startGame(character);
+        },
+        { duration: 800 },
+      );
     },
     TIER_START_BUTTON_FRAME,
     TIER_START_BUTTON_PRESSED,
@@ -13273,7 +10953,7 @@ function appendTierPanelIcon(card: HTMLElement, tier: DifficultyTier): void {
 function appendTierPanelTitle(card: HTMLElement, tier: DifficultyTier): void {
   const titleEl = document.createElement('div');
   titleEl.textContent = t(`tier.${tier}`);
-  titleEl.style.cssText = uiPlainText(`
+  titleEl.style.cssText = uiPlainTextBold(`
     position:absolute;box-sizing:border-box;
     left:${tierInsetXPct(200)};right:${tierInsetXPct(200)};
     top:${TIER_TITLE_BAR_LAYOUT.topPct}%;height:${TIER_TITLE_BAR_LAYOUT.heightPct}%;
@@ -13306,14 +10986,11 @@ function appendTierPanelStatRows(card: HTMLElement, cfg: (typeof TIER_CONFIGS)[D
   });
 }
 
-function createTierPanelSelectButton(isSelected: boolean, onClick: () => void): HTMLDivElement {
+function createTierPanelSelectButton(isSelected: boolean): HTMLDivElement {
   const btn = document.createElement('div');
-  btn.setAttribute('role', 'button');
-  btn.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
   btn.style.cssText = `
     position:relative;width:100%;min-width:44px;max-width:100%;
-    cursor:${isSelected ? 'default' : 'pointer'};user-select:none;touch-action:manipulation;
-    transition:transform 0.15s;
+    user-select:none;pointer-events:none;
   `;
 
   const frame = document.createElement('img');
@@ -13331,18 +11008,12 @@ function createTierPanelSelectButton(isSelected: boolean, onClick: () => void): 
 
   btn.appendChild(frame);
   btn.appendChild(labelEl);
-  if (!isSelected) {
-    btn.addEventListener('mouseenter', () => { btn.style.transform = 'scale(1.05)'; });
-    btn.addEventListener('mouseleave', () => { btn.style.transform = 'scale(1)'; });
-    btn.addEventListener('click', onClick);
-  }
   return btn;
 }
 
 function appendTierPanelSelectButton(
   card: HTMLElement,
   isSelected: boolean,
-  onClick: () => void,
 ): void {
   const wrap = document.createElement('div');
   wrap.style.cssText = `
@@ -13350,8 +11021,9 @@ function appendTierPanelSelectButton(
     transform:translateX(-50%);
     width:${TIER_SELECT_BUTTON_LAYOUT.widthPct}%;
     min-width:44px;max-width:60%;box-sizing:border-box;
+    pointer-events:none;
   `;
-  wrap.appendChild(createTierPanelSelectButton(isSelected, onClick));
+  wrap.appendChild(createTierPanelSelectButton(isSelected));
   card.appendChild(wrap);
 }
 
@@ -13378,24 +11050,39 @@ function showTierSelect(onSelect: (tier: DifficultyTier) => void): HTMLDivElemen
     `;
 
     const card = document.createElement('div');
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
     card.setAttribute('aria-label', t(`tier.${tier}`));
+    const selectedScale = 1.07;
     card.style.cssText = `
       position:relative;width:100%;max-width:100%;
       aspect-ratio:${TIER_PANEL_SIZE.w}/${TIER_PANEL_SIZE.h};height:auto;
       box-sizing:border-box;
       background:url(${TIER_PANEL_BGS[tier]}) center center/contain no-repeat;
       border:none;overflow:visible;
+      cursor:${isSelected ? 'default' : 'pointer'};
+      user-select:none;touch-action:manipulation;
+      transition:transform 0.18s ease-out, filter 0.18s ease-out;
+      transform:${isSelected ? `scale(${selectedScale})` : 'scale(1)'};
+      transform-origin:center center;
+      z-index:${isSelected ? 2 : 1};
+      filter:${isSelected ? 'drop-shadow(0 6px 14px rgba(0,0,0,0.45))' : 'none'};
     `;
     appendTierPanelIcon(card, tier);
     appendTierPanelTitle(card, tier);
     appendTierPanelStatRows(card, cfg);
-    appendTierPanelSelectButton(card, isSelected, () => {
-      if (selectedTier === tier) return;
-      selectedTier = tier;
-      onSelect(tier);
-      const newPanel = showTierSelect(onSelect);
-      panel.replaceWith(newPanel);
-    });
+    appendTierPanelSelectButton(card, isSelected);
+    if (!isSelected) {
+      card.addEventListener('mouseenter', () => { card.style.transform = 'scale(1.05)'; });
+      card.addEventListener('mouseleave', () => { card.style.transform = 'scale(1)'; });
+      card.addEventListener('click', () => {
+        if (selectedTier === tier) return;
+        selectedTier = tier;
+        onSelect(tier);
+        const newPanel = showTierSelect(onSelect);
+        panel.replaceWith(newPanel);
+      });
+    }
     col.appendChild(card);
 
     panel.appendChild(col);
@@ -13456,7 +11143,9 @@ function createMainMenuButton(
   // label 区域 = [icon 右沿 + gap, 按钮右沿 - 内 padding]
   // left = icon.left(10) + icon.width(27) + gap(8) = 45；右侧留 12 与 icon 视觉对称。
   // text-align:center → 短标签（"商店"/"任务"）也在右侧矩形里居中，不会贴 icon 也不会贴右边框。
-  labelEl.style.cssText = uiPlainText(`
+  // 与"商店"红丝带标题、商店卡片标题、角色名统一描边强度（uiPlainTextBold：2px 8 向 + 底投影），
+  // 让首页"开始游戏 / 商店 / 任务"按钮文字也吃同一档"卡通丝带 logo"风的厚描边。
+  labelEl.style.cssText = uiPlainTextBold(`
     position:absolute;left:${uiPx(45)}px;right:${uiPx(12)}px;top:50%;transform:translateY(-50%);
     font-size:${uiPx(15)}px;font-weight:bold;line-height:1.2;white-space:nowrap;
     text-align:center;text-overflow:ellipsis;overflow:hidden;
@@ -13486,8 +11175,7 @@ function showMainMenu(): void {
   mainMenuEl.style.cssText = `
     position:fixed;top:0;left:0;width:100%;height:100%;
     display:flex;flex-direction:column;align-items:stretch;
-    z-index:500;font-family:"Lilita One","Noto Sans SC","MegaBonk UI",Arial,sans-serif;-webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;
-    overflow:hidden;
+    z-index:500;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;    overflow:hidden;
     background:#0a0a1a url(${LOBBY_BG_PATH}) center center/cover no-repeat;
     ${OVERLAY_SAFE_AREA}
     padding-top:max(16px,env(safe-area-inset-top,0px));
@@ -13634,7 +11322,11 @@ function showShopOverlay(): void {
     `;
 
     const nameEl = document.createElement('div');
-    nameEl.style.cssText = shopText(1.2, 'font-weight:bold;text-overflow:ellipsis;white-space:nowrap;max-width:100%;flex-shrink:0;');
+    // 与商店红丝带标题（uiPlainTextBold，2px 8 向描边 + 底投影）统一描边强度，
+    // 让卡片标题在浅蓝面板上的"卡通丝带 logo"质感一致；不再用 1px 细描边的 uiPlainText。
+    nameEl.style.cssText = uiPlainTextBold(
+      'margin:0;font-size:1.2em;line-height:1.2;font-weight:bold;text-overflow:ellipsis;white-space:nowrap;max-width:100%;flex-shrink:0;',
+    );
     nameEl.textContent = t(upgrade.nameKey);
     cardInner.appendChild(nameEl);
 
@@ -13923,9 +11615,9 @@ function createQuestRow(
 ): HTMLDivElement {
   // Quest_item_bg.svg 底部装饰浪占 SVG 高 13.1% + 灰阴影底 6.7%。
   // padding-bottom 留 13% × rowHeight + 几像素呼吸，避免文字/进度条压在浪和阴影上。
-  const rowMinHeight = progress.completed
-    ? 'clamp(50px,12.5vw,60px)'
-    : 'clamp(68px,15.5vw,84px)';
+  // 所有状态用同一行高：SVG 用 9-slice 风格的整图拉伸（preserveAspectRatio=none），
+  // 不同高度会让 9954×1241 主板被纵向压扁，已领取行视觉上就会"背景缩水"。
+  const rowMinHeight = 'clamp(68px,15.5vw,84px)';
 
   const row = document.createElement('div');
   row.style.cssText = `
@@ -13963,7 +11655,8 @@ function createQuestRow(
     questFlag.src = BAR_ASSETS.quest.flag;
     questFlag.alt = '';
     questFlag.draggable = false;
-    questFlag.style.cssText = 'position:absolute;left:-1px;top:50%;transform:translateY(-50%);height:150%;width:auto;pointer-events:none;user-select:none;display:block;';
+    // 旗子相对进度条中心略向上偏 2px，避免视觉上压在进度条下沿。
+    questFlag.style.cssText = 'position:absolute;left:-1px;top:50%;transform:translate(0,calc(-50% - 4px));height:150%;width:auto;pointer-events:none;user-select:none;display:block;';
     progressBarContainer.appendChild(questFlag);
     infoEl.appendChild(progressBarContainer);
 
@@ -14360,9 +12053,8 @@ function showBootLoadingOverlay(): void {
 
   const title = document.createElement('div');
   title.textContent = t('game.title');
-  title.style.cssText =
-    'font-size:clamp(32px,10vw,64px);font-weight:700;letter-spacing:2px;' +
-    'text-shadow:3px 3px 0 rgba(0,0,0,0.35),-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000;';
+  // 主菜单游戏标题（loading 屏 / 大 logo 字）：32–64px 用 2px 8 向描边统一卡通厚度感。
+  title.style.cssText = uiPlainTextBold('font-size:clamp(32px,10vw,64px);font-weight:700;letter-spacing:2px;');
 
   const track = document.createElement('div');
   track.style.cssText =
@@ -14373,7 +12065,7 @@ function showBootLoadingOverlay(): void {
   track.appendChild(bar);
 
   const hint = document.createElement('div');
-  hint.textContent = 'Loading…';
+  hint.textContent = t('boot.loading');
   hint.style.cssText = 'font-size:clamp(8px,2.5vw,11px);opacity:0.85;';
 
   overlay.appendChild(title);

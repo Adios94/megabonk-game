@@ -4,14 +4,20 @@
  * 等价于原 `computeEnemyTarget` 的 'ranged' case + ranged attack 检查 + `moveEnemy`：
  * - 错峰重算 target：dist < range → 后撤 4m, dist > range×1.5 → 追, 中间 → 站定
  * - 每帧检查 attack cooldown：在 [range×0.5, range×1.5] 之间、垂直差不超过阈值且冷却到时, 推一个敌方投射物
+ * - 射击后 STRIKE_RECOVERY 秒站定不移动，给客户端的 Cast/Punch 动画一个干净的施展窗口
+ *   （否则边走边挥手，Run 动画把攻击姿势完全盖住）。
  */
-import { distanceSqBetween, normalizeDirection } from '../../physics.ts';
+import { distanceSqBetween, normalizeDirection } from '../../helpers/physics.ts';
 import { ENEMIES } from '../../data/enemies.ts';
 import type { EnemyBehaviorFn } from '../types.ts';
 import { applyMovement } from './_move.ts';
 
 const MAX_RANGED_ATTACK_DISTANCE = 10;
 const ENEMY_RANGED_MAX_Y_DELTA = 2.8;
+/** 射击后站定的"出招"窗口（秒）。和客户端 attackCooldown 阈值 0.7 配合：
+ * archer (cooldown 3.0s) 30% = 0.9s 攻击姿态可见；这里 0.3s 让前 1/3 窗口完全站定，足够动画 fade-in 成型。
+ */
+const RANGED_STRIKE_RECOVERY = 0.3;
 
 export const ranged: EnemyBehaviorFn = (enemy, ctx, i) => {
   const def = ENEMIES[enemy.type];
@@ -61,5 +67,8 @@ export const ranged: EnemyBehaviorFn = (enemy, ctx, i) => {
     }
   }
 
-  applyMovement(enemy, ctx);
+  // 出招窗口：刚射出去的 RANGED_STRIKE_RECOVERY 秒里站定不动，让 Cast/Punch 动画看得见。
+  if (enemy.attackCooldown < enemy.attackCooldownMax - RANGED_STRIKE_RECOVERY) {
+    applyMovement(enemy, ctx);
+  }
 };

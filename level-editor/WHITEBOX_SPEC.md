@@ -92,7 +92,7 @@
 |---|---|---|
 | `spawn_player` | 玩家出生点 | **必须 1 个** |
 | `spawn_boss` | Boss 出生点 | **必须 1 个** |
-| `spawn_altar` | 祭坛/传送门 | 0–N（建议 1） |
+| `spawn_altar` | 飞碟/传送门 | 0–N（建议 1） |
 | `spawn_chest` 🆕 | 宝箱位置 | 0–N |
 | `spawn_enemy_N/S/E/W` | 敌人刷新区 | 可选（不设→默认地图边缘） |
 
@@ -143,7 +143,7 @@
 ```
 spawn_player   Empty   Pos(0, 30, 0)        # 玩家从南侧出生 (游戏 z=-30)
 spawn_boss     Empty   Pos(0, 36, 0)        # 北侧 (游戏 z=-36)
-spawn_altar    Empty   Pos(20, 0, 0)        # 东侧祭坛
+spawn_altar    Empty   Pos(20, 0, 0)        # 东侧飞碟
 
 col_ground     Cube    Pos(0,0,0)    Scale(20,20,0.1)    # 40×40 中央地面
 col_ledge_n    Cube    Pos(0,-25,2)  Scale(4,4,0.1)      # 北侧 y=2 站台(注:Blender Y=-25→游戏 z=25? 见下)
@@ -166,7 +166,7 @@ spawn_chest    Empty   Pos(-15,15,0)
 > ⚡ **测试**：游戏启动后自动加载 `level_whitebox.glb`（不需要 URL 参数）。
 > 控制台会打印 `[Level] Loaded (mode) ...` 其中 mode = `two-file` / `col-only`。
 > 文件缺失会让 boot 直接抛错（没有内置 arena 兜底）。
-> 当前已接入：`col_`（实体地面/盒子，盒外为虚空会掉落，**倾斜的 col_ 自动当斜坡**）+ 迈步/掉落/支撑面跟随 + `wall_`（横向遮挡）+ `climb_`（实体+攀爬）+ `ramp_`（可行走斜坡）+ `spawn_player`（出生）+ `spawn_boss`（Boss 出场点）+ `spawn_altar`（祭坛）+ `spawn_chest`（宝箱）+ 全场景白盒渲染。
+> 当前已接入：`col_`（实体地面/盒子，盒外为虚空会掉落，**倾斜的 col_ 自动当斜坡**）+ 迈步/掉落/支撑面跟随 + `wall_`（横向遮挡）+ `climb_`（实体+攀爬）+ `ramp_`（可行走斜坡）+ `spawn_player`（出生）+ `spawn_boss`（Boss 出场点）+ `spawn_altar`（飞碟）+ `spawn_chest`（宝箱）+ 全场景白盒渲染。
 > 暂未接入：`spawn_enemy_*`（已解析+打印，敌人目前仍从地图边缘刷新）；怪物绕墙寻路尚未做（敌人直线追，但会沿斜坡/地形高度走）。
 
 ### 6.1 双文件模式（推荐生产用）🆕

@@ -102,13 +102,13 @@ export const ALTAR_SUMMON_DURATION = 2.0;
  * 0.5 表示回落速度为充能的一半，进度缓慢减少直到归零才取消召唤。
  */
 export const ALTAR_SUMMON_DECAY_RATE = 0.5;
-/** 第二关及以后 Boss 击败后，祭坛再次可召唤前的冷却秒数。 */
+/** 第二关及以后 Boss 击败后，飞碟再次可召唤前的冷却秒数。 */
 export const ALTAR_BOSS_RESPAWN_COOLDOWN = 60;
-/** 玩家与祭坛 / 传送门交互的触发半径。 */
+/** 玩家与飞碟 / 传送门交互的触发半径。 */
 export const ALTAR_INTERACT_RADIUS = 2.0;
-/** 祭坛距出生点的最小距离（要求玩家探索才能找到）。 */
+/** 飞碟距出生点的最小距离（要求玩家探索才能找到）。 */
 export const ALTAR_MIN_DISTANCE = 25;
-/** 祭坛距地图中心的最大相对距离（halfMap 系数）。避免出图边。 */
+/** 飞碟距地图中心的最大相对距离（halfMap 系数）。避免出图边。 */
 export const ALTAR_MAX_DISTANCE_RATIO = 0.6;
 
 /**
@@ -438,8 +438,8 @@ export interface TierConfig {
   xpMultiplier: number;
   silverMultiplier: number;
   /**
-   * 本档生成的祭坛 / 传送门数量。当前设计统一 = 1。
-   * （字段保留旧名 `teleporterCount` 以减少破坏；新代码可读作"祭坛数量"。）
+   * 本档生成的飞碟 / 传送门数量。当前设计统一 = 1。
+   * （字段保留旧名 `teleporterCount` 以减少破坏；新代码可读作"飞碟数量"。）
    */
   teleporterCount: number;
   bossHpMultiplier: number;

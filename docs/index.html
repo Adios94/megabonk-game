@@ -730,7 +730,7 @@
 
     <h4>系统</h4>
     <a href="#quests" data-tab="quests">任务 / 银币</a>
-    <a href="#teleporter" data-tab="teleporter">祭坛 / Boss / 超时</a>
+    <a href="#teleporter" data-tab="teleporter">飞碟 / Boss / 超时</a>
     <a href="#shrine" data-tab="shrine">充能神殿</a>
 
     <h4>技术</h4>
@@ -926,7 +926,7 @@ export {
 <section id="overview">
   <div class="hero">
     <h1>MegaBonk Three.js</h1>
-    <div class="tagline">3D Roguelike Survivor · 探索找祭坛召 Boss · Stage I/II 循环 · Boss 宝箱 · 移动端优先 · 12 种武器 · 12 种典籍 · 9 条羁绊</div>
+    <div class="tagline">3D Roguelike Survivor · 探索找飞碟召 Boss · Stage I/II 循环 · Boss 宝箱 · 移动端优先 · 12 种武器 · 12 种典籍 · 9 条羁绊</div>
 
     <div>
       <span class="pill cyan">Three.js 0.170</span>
@@ -951,7 +951,7 @@ export {
   </div>
 
   <div class="note" style="border-left: 4px solid var(--accent-2); background: var(--accent-2-soft); padding: 12px 16px; border-radius: 8px; margin-bottom: 24px;">
-    <b>本页为 MegaBonk 策划主文档</b>（<code>index.html</code> · v0.6）。当前主循环为 Stage I 传送门进 Stage II，之后 Boss 击败掉免费宝箱并让祭坛进入冷却；100 级成长、羁绊、遗物、消耗品均已并入对应页。
+    <b>本页为 MegaBonk 策划主文档</b>（<code>index.html</code> · v0.6）。当前主循环为 Stage I 传送门进 Stage II，之后 Boss 击败掉免费宝箱并让飞碟进入冷却；100 级成长、羁绊、遗物、消耗品均已并入对应页。
     <br><br>
     <b>如何打开：</b>用浏览器<strong>直接打开本文件</strong>，或 <code>npx serve docs -l 5199</code> → <code>http://localhost:5199/index.html</code>。
   </div>
@@ -1033,11 +1033,11 @@ export {
 <!-- ============= TIMELINE ============= -->
 <section id="timeline">
   <h2>单局节奏（常规生存期 540s + Overtime 无上限）</h2>
-  <p class="sub">来源：<code>WAVE_CONFIGS</code>、<code>tickSpawning()</code> 与 <code>tickOvertime()</code>。Boss 战由玩家在祭坛主动触发，与时间无关；Stage I 击败 Boss 后可进入 Stage II，若留在当前关且 <code>gameTime ≥ 540s</code> 则进入 Overtime 连续压迫曲线。详见 <a data-tab="teleporter">祭坛 / Boss / 超时</a>。</p>
+  <p class="sub">来源：<code>WAVE_CONFIGS</code>、<code>tickSpawning()</code> 与 <code>tickOvertime()</code>。Boss 战由玩家在飞碟主动触发，与时间无关；Stage I 击败 Boss 后可进入 Stage II，若留在当前关且 <code>gameTime ≥ 540s</code> 则进入 Overtime 连续压迫曲线。详见 <a data-tab="teleporter">飞碟 / Boss / 超时</a>。</p>
 
   <div class="timeline-wrap">
     <div class="timeline">
-      <div class="tl-marker" style="left: 0%"><span class="lbl">0s</span><span class="ev">骷髅步兵<br>祭坛 + 6 宝箱已生成</span></div>
+      <div class="tl-marker" style="left: 0%"><span class="lbl">0s</span><span class="ev">骷髅步兵<br>飞碟 + 6 宝箱已生成</span></div>
       <div class="tl-marker" style="left: 11.1%"><span class="lbl">60s</span><span class="ev">+ 僵尸<br>5% 精英</span></div>
       <div class="tl-marker" style="left: 33.3%"><span class="lbl">180s</span><span class="ev">+ 弓手<br>Mini-Boss 启动</span></div>
       <div class="tl-marker" style="left: 55.5%"><span class="lbl">300s</span><span class="ev">15% 精英</span></div>
@@ -1063,7 +1063,7 @@ export {
     <tr><td>420–480s</td><td>已全开</td><td class="num">0.8s</td><td class="num">100</td><td>4–8</td><td>20%</td></tr>
     <tr style="background: var(--warn-soft);"><td>480–540s</td><td><span class="hl">FINAL SWARM</span> 双倍刷新</td><td class="num">0.4s</td><td class="num">150</td><td>4–8</td><td>20%</td></tr>
     <tr style="background: var(--bad-soft);"><td>≥ 540s</td><td><span class="hl">Overtime</span> 仅当留在当前关</td><td colspan="3">敌人 HP/伤害按 <code>overtimeSeconds / 30 × 35%</code> 连续提升，速度按 <code>×12%</code> 连续提升；刷新上限/频率/组规模按 <code>1 + overtimeSeconds / 45</code> 加压</td></tr>
-    <tr style="background: var(--accent-2-soft);"><td>任意时刻</td><td><span class="hl">Boss 战</span> 由玩家召唤</td><td colspan="3">走到祭坛 + 按 [E] / 移动端按钮 → 1.0s 读条 → Boss 进场；死亡掉免费 Boss 宝箱</td></tr>
+    <tr style="background: var(--accent-2-soft);"><td>任意时刻</td><td><span class="hl">Boss 战</span> 由玩家召唤</td><td colspan="3">走到飞碟 + 按 [E] / 移动端按钮 → 1.0s 读条 → Boss 进场；死亡掉免费 Boss 宝箱</td></tr>
   </table>
 </section>
 
@@ -1081,7 +1081,7 @@ export {
       <div class="tier-row"><span class="k">XP 奖励</span><span class="v">1.0×</span></div>
       <div class="tier-row"><span class="k">银币奖励</span><span class="v">1.0×</span></div>
       <div class="tier-row"><span class="k">Boss HP</span><span class="v">1.0×（新设计 6000）</span></div>
-      <div class="tier-row"><span class="k">祭坛</span><span class="v">1 个（按 [E] 召唤）</span></div>
+      <div class="tier-row"><span class="k">飞碟</span><span class="v">1 个（按 [E] 召唤）</span></div>
     </div>
     <div class="tier t2">
       <h3>Tier 2 <span class="badge" style="color: var(--warn); border-color: var(--warn); background: var(--warn-soft);">困难</span></h3>
@@ -1091,7 +1091,7 @@ export {
       <div class="tier-row"><span class="k">XP 奖励</span><span class="v">1.5×</span></div>
       <div class="tier-row"><span class="k">银币奖励</span><span class="v">2.0×</span></div>
       <div class="tier-row"><span class="k">Boss HP</span><span class="v">1.5×</span></div>
-      <div class="tier-row"><span class="k">祭坛</span><span class="v">1 个（按 [E] 召唤）</span></div>
+      <div class="tier-row"><span class="k">飞碟</span><span class="v">1 个（按 [E] 召唤）</span></div>
     </div>
     <div class="tier t3">
       <h3>Tier 3 <span class="badge" style="color: var(--bad); border-color: var(--bad); background: var(--bad-soft);">噩梦</span></h3>
@@ -1101,7 +1101,7 @@ export {
       <div class="tier-row"><span class="k">XP 奖励</span><span class="v">2.0×</span></div>
       <div class="tier-row"><span class="k">银币奖励</span><span class="v">3.0×</span></div>
       <div class="tier-row"><span class="k">Boss HP</span><span class="v">2.5×</span></div>
-      <div class="tier-row"><span class="k">祭坛</span><span class="v">1 个（按 [E] 召唤）</span></div>
+      <div class="tier-row"><span class="k">飞碟</span><span class="v">1 个（按 [E] 召唤）</span></div>
     </div>
   </div>
 </section>
@@ -1576,7 +1576,7 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
 <!-- ============= BOSS ============= -->
 <section id="boss">
   <h2>Boss 战</h2>
-  <p class="sub">触发：玩家走到祭坛旁按 <code>[E]</code> / 移动端按钮，1.0s 读条完成后进场（不再依赖 540s 时间触发）· 当前基础 HP <strong>2000</strong>，再乘 <code>tier.bossHpMultiplier</code> · 来源：<code>ai/bosses/skeletonKing.ts</code>（phase 表 + 7 attacks）+ <code>systems/bossAi.ts</code> 调度。Boss 死亡会掉落免费 Boss 宝箱；Stage I 额外打开传送门，Stage II 后祭坛进入冷却。详见 <a data-tab="teleporter">祭坛 / Boss / 超时</a>。</p>
+  <p class="sub">触发：玩家走到飞碟旁按 <code>[E]</code> / 移动端按钮，1.0s 读条完成后进场（不再依赖 540s 时间触发）· 当前基础 HP <strong>2000</strong>，再乘 <code>tier.bossHpMultiplier</code> · 来源：<code>ai/bosses/skeletonKing.ts</code>（phase 表 + 7 attacks）+ <code>systems/bossAi.ts</code> 调度。Boss 死亡会掉落免费 Boss 宝箱；Stage I 额外打开传送门，Stage II 后飞碟进入冷却。详见 <a data-tab="teleporter">飞碟 / Boss / 超时</a>。</p>
   <p class="note">Boss 直接伤害技能需要与玩家高度差 ≤ <code>2.8</code> 才会命中，避免上下层隔空受伤；天降/直线弹仍走投射物碰撞规则。</p>
 
   <div class="hpbar">
@@ -1660,36 +1660,36 @@ totalSilver = round((baseSilver + victoryBonus + runSilver) × tier.silverMultip
 
 <!-- ============= TELEPORTER ============= -->
 <section id="teleporter">
-  <h2>祭坛 / Boss / 传送门 / Overtime</h2>
+  <h2>飞碟 / Boss / 传送门 / Overtime</h2>
   <p class="sub">设计文档：<code>docs/boss-loop-redesign.md</code> · 实现：<code>systems/altars.ts</code> · <code>systems/overtime.ts</code> · <code>systems/tierTransition.ts</code></p>
 
   <div class="note" style="margin-top: 14px;">
-    <b>核心循环</b>：开局生成 1 个祭坛 → 玩家探索找到 → 按 <code>[E]</code> / 移动端按钮召唤 → Boss 战 → 击败后掉落免费 Boss 宝箱。Stage I 的祭坛变传送门，玩家可进入 Stage II 或留下打 Overtime；Stage II 后 Boss 死亡不再开传送门，祭坛进入冷却后可再次召唤。
+    <b>核心循环</b>：开局生成 1 个飞碟 → 玩家探索找到 → 按 <code>[E]</code> / 移动端按钮召唤 → Boss 战 → 击败后掉落免费 Boss 宝箱。Stage I 的飞碟变传送门，玩家可进入 Stage II 或留下打 Overtime；Stage II 后 Boss 死亡不再开传送门，飞碟进入冷却后可再次召唤。
   </div>
 
-  <h3>祭坛状态机（6 阶段）</h3>
+  <h3>飞碟状态机（6 阶段）</h3>
   <pre><code>ready          玩家在交互半径内 → UI 显示 [E] 召唤 Boss
   ↓ 按 interact
 summoning      读条 1.0s（防误触）；走出半径 → 回 ready
   ↓ 读条满
-boss_active    Boss 已生成；祭坛锁住、不可再交互
+boss_active    Boss 已生成；飞碟锁住、不可再交互
   ↓ Boss 死亡（Stage I）
-portal_ready   祭坛变传送门；UI 显示 [E] 进入 Stage II
+portal_ready   飞碟变传送门；UI 显示 [E] 进入 Stage II
   ↓ 按 interact
-portal_used    终态；stage 推进流程消费它（清场 + 重生新祭坛）
+portal_used    终态；stage 推进流程消费它（清场 + 重生新飞碟）
 
-boss_active    Boss 已生成；祭坛锁住、不可再交互
+boss_active    Boss 已生成；飞碟锁住、不可再交互
   ↓ Boss 死亡（Stage II）
 cooldown       冷却 60s；结束后回 ready，可再次召唤</code></pre>
 
-  <h3>祭坛常量（<code>config.ts</code>）</h3>
+  <h3>飞碟常量（<code>config.ts</code>）</h3>
   <table>
     <tr><th>常量</th><th>值</th><th>说明</th></tr>
     <tr><td><code>ALTAR_SUMMON_DURATION</code></td><td>1.0s</td><td>召唤读条秒数（仅防误触，可被走出半径打断）</td></tr>
-    <tr><td><code>ALTAR_BOSS_RESPAWN_COOLDOWN</code></td><td>60s</td><td>Stage II 后 Boss 击败，祭坛重新可召唤前的冷却</td></tr>
-    <tr><td><code>ALTAR_INTERACT_RADIUS</code></td><td>2.0</td><td>玩家与祭坛 / 传送门交互的半径</td></tr>
-    <tr><td><code>ALTAR_MIN_DISTANCE</code></td><td>25</td><td>祭坛距出生点最小距离（要求探索）</td></tr>
-    <tr><td><code>ALTAR_MAX_DISTANCE_RATIO</code></td><td>0.6</td><td>祭坛距地图中心的最大相对距离 (× halfMap)</td></tr>
+    <tr><td><code>ALTAR_BOSS_RESPAWN_COOLDOWN</code></td><td>60s</td><td>Stage II 后 Boss 击败，飞碟重新可召唤前的冷却</td></tr>
+    <tr><td><code>ALTAR_INTERACT_RADIUS</code></td><td>2.0</td><td>玩家与飞碟 / 传送门交互的半径</td></tr>
+    <tr><td><code>ALTAR_MIN_DISTANCE</code></td><td>25</td><td>飞碟距出生点最小距离（要求探索）</td></tr>
+    <tr><td><code>ALTAR_MAX_DISTANCE_RATIO</code></td><td>0.6</td><td>飞碟距地图中心的最大相对距离 (× halfMap)</td></tr>
     <tr><td>数量</td><td>每个 Tier 配置 1 个</td><td>Tier 控制难度倍率；Stage 控制是否开传送门 / 冷却循环</td></tr>
   </table>
 
@@ -1706,12 +1706,12 @@ cooldown       冷却 60s；结束后回 ready，可再次召唤</code></pre>
   <p style="color: var(--dim);">公式（<code>factories/spawnEnemy.ts</code>）：<code>steps = overtimeSeconds / 30</code> → <code>hp/damage ×= 1 + 0.35 × steps</code>，<code>speed ×= 1 + 0.12 × steps</code>。仅在 <code>wave</code> / <code>miniBoss</code> 模式下叠加；<code>necromancerSummon</code> / <code>bossSummon</code> 不受影响。</p>
 
   <h3>Stage 推进（进入传送门）</h3>
-  <p>玩家在 <code>portal_ready</code> 阶段按 <code>[E]</code> → 祭坛切到 <code>portal_used</code> → <code>tickTierTransition</code> 在本帧末尾消费它：</p>
+  <p>玩家在 <code>portal_ready</code> 阶段按 <code>[E]</code> → 飞碟切到 <code>portal_used</code> → <code>tickTierTransition</code> 在本帧末尾消费它：</p>
   <ul>
     <li><code>state.stage++</code>（最高 2）；<code>config.tier</code> 和 <code>state.tier</code> 保持玩家开局选择的难度</li>
     <li>清场：<code>enemies / projectiles / pickups / goldMotes / boss / damageEvents / waveIndex / finalSwarm / overtimeSeconds = 0</code></li>
     <li><code>gameTime = 0</code>（进入新一关的"常规生存期"）</li>
-    <li>重新生成祭坛 + 6 宝箱（<code>generateChests</code>）</li>
+    <li>重新生成飞碟 + 6 宝箱（<code>generateChests</code>）</li>
     <li><b>保留</b>：玩家 HP / 武器 / 典籍 / 等级 / XP / 金币 / 遗物层数（<code>relicStacks</code>）/ silver</li>
     <li><code>phase = 'playing'</code></li>
   </ul>
@@ -1721,15 +1721,15 @@ cooldown       冷却 60s；结束后回 ready，可再次召唤</code></pre>
     <tr><th>结束时机</th><th>触发</th><th>结算</th></tr>
     <tr><td>Boss 战死亡</td><td><code>player.alive=false</code> 且 <code>phase='boss_fight'</code></td><td>defeat，无 victory bonus</td></tr>
     <tr><td>Overtime 死亡</td><td>死时 <code>overtimeSeconds &gt; 0</code></td><td>defeat（结算时可读 overtimeSeconds 区分死法）</td></tr>
-    <tr><td>Stage II 以后循环</td><td>Boss 死亡 → Boss 宝箱 + 祭坛冷却 → 再召唤</td><td>当前未设置 victory 终点，保留 enum 供后续多关内容扩展</td></tr>
+    <tr><td>Stage II 以后循环</td><td>Boss 死亡 → Boss 宝箱 + 飞碟冷却 → 再召唤</td><td>当前未设置 victory 终点，保留 enum 供后续多关内容扩展</td></tr>
   </table>
 
   <h3>UI / 输入</h3>
   <ul>
     <li><b>PC</b>：<code>KeyE</code> 边缘触发（<code>InputState.interact</code>），按下当帧为 true，发完即清零（防长按反复召唤）</li>
-    <li><b>Mobile</b>：交互半径内出现屏幕中下方圆形按钮，文案随阶段切换：召唤 / 进入传送门 / 祭坛冷却倒计时</li>
+    <li><b>Mobile</b>：交互半径内出现屏幕中下方圆形按钮，文案随阶段切换：召唤 / 进入传送门 / 飞碟冷却倒计时</li>
     <li><b>HUD</b>：屏幕中上方指南针文字 + 距离；右上显示 Tier 与 Stage（I / II）；Overtime 时屏幕顶部黄色横幅显示 <code>mm:ss</code></li>
-    <li><b>3D 表现</b>：祭坛底色按阶段切换（青蓝 ready / 金黄 summoning / 红 boss_active / 蓝紫 cooldown / 紫 portal_ready）；Boss 宝箱有金色光环和光柱</li>
+    <li><b>3D 表现</b>：飞碟底色按阶段切换（青蓝 ready / 金黄 summoning / 红 boss_active / 蓝紫 cooldown / 紫 portal_ready）；Boss 宝箱有金色光环和光柱</li>
     <li><b>GSAP 动画系统</b>：所有 UI 元素使用 GSAP 动画，包括：
       <ul>
         <li>Boss 血条淡入淡出 + 宽度动画</li>
@@ -1829,7 +1829,7 @@ cooldown       冷却 60s；结束后回 ready，可再次召唤</code></pre>
     <tr><td><code>movement_speed</code></td><td>0.08</td><td>+8% 移动速度</td></tr>
   </table>
 
-  <h4 style="margin-top: 14px;"><span class="pill" style="border-color: var(--c-uncommon); color: var(--c-uncommon); background: white;">Uncommon 罕见</span></h4>
+  <h4 style="margin-top: 14px;"><span class="pill" style="border-color: var(--c-uncommon); color: var(--c-uncommon); background: white;">Uncommon 优秀</span></h4>
   <table>
     <tr><th>类型</th><th>数值</th><th>描述</th></tr>
     <tr><td><code>knockback</code></td><td>0.12</td><td>+12% 击退</td></tr>
@@ -2558,7 +2558,7 @@ player.consumableDropMult?: number       // consumable_tome</code></pre>
     </div>
 
     <h4>GSAP 动画方法</h4>
-    <p><code>game/client/source/gsap-animations.ts</code> 提供一组专业动画方法：</p>
+    <p><code>game/client/source/gsapAnimations.ts</code> 提供一组专业动画方法：</p>
     <ul>
       <li><code>fadeInElement()</code> / <code>fadeOutElement()</code> - 基础淡入淡出</li>
       <li><code>animateHealthBar()</code> - 健康条平滑过渡</li>
@@ -2652,11 +2652,11 @@ processDeaths(engine);             // hp ≤ 0 → spawn pickup + kill++
 tickPickups(engine, dt);           // 寿命 / 吸附 / collect
 tickLevelUp(engine);               // xp ≥ xpToNext → 进 level_up phase
 tickSpawning(engine, dt);          // wave + mini-boss + final swarm
-tickAltars(engine, dt);            // 祭坛 / 传送门 / 冷却状态机（按 [E] 召唤 / 进入）
+tickAltars(engine, dt);            // 飞碟 / 传送门 / 冷却状态机（按 [E] 召唤 / 进入）
 tickShrines(engine, dt);           // 充能神殿状态机 / charging→ready→consumed
 tickChests(engine, dt);            // 交互开箱 → chest_reward 时本帧后续逻辑跳过
 if (phase === 'chest_reward') return false;
-checkBossSpawn(engine);            // 仅当祭坛 boss_active 时 spawn
+checkBossSpawn(engine);            // 仅当飞碟 boss_active 时 spawn
 if (state.boss && phase === 'boss_fight') tickBossAi(state.boss, ctx);
 tickThorns(engine);
 checkGameOver(engine);             // Boss 死 → Boss 宝箱；Stage I 开 portal，Stage II 进 cooldown；玩家死 → defeat
@@ -3127,7 +3127,7 @@ pnpm run dev
     <tr><td>调难度</td><td><code>config.ts TIER_CONFIGS</code></td></tr>
     <tr><td>调波次 / Final Swarm</td><td><code>config.ts WAVE_CONFIGS</code> + <code>systems/spawning.ts</code></td></tr>
     <tr><td>调 Boss</td><td><code>config.ts BOSS_HP / BOSS_INTRO_DURATION</code> + <code>ai/bosses/skeletonKing.ts</code> + <code>systems/bossAi.ts</code>（触发逻辑见 <code>systems/altars.ts</code>）</td></tr>
-    <tr><td>调祭坛 / 召唤手感</td><td><code>config.ts ALTAR_SUMMON_DURATION / ALTAR_INTERACT_RADIUS / ALTAR_MIN_DISTANCE</code> + <code>systems/altars.ts</code>。生成位置算法 = 随机角度 + 距离 [25, halfMap×0.6]。</td></tr>
+    <tr><td>调飞碟 / 召唤手感</td><td><code>config.ts ALTAR_SUMMON_DURATION / ALTAR_INTERACT_RADIUS / ALTAR_MIN_DISTANCE</code> + <code>systems/altars.ts</code>。生成位置算法 = 随机角度 + 距离 [25, halfMap×0.6]。</td></tr>
     <tr><td>调 Overtime 难度曲线</td><td><code>config.ts OVERTIME_STEP_SECONDS / OVERTIME_HP_DAMAGE_PER_STEP / OVERTIME_SPEED_PER_STEP</code>。系数应用点 = <code>factories/spawnEnemy.ts</code>（仅 wave / miniBoss 模式叠加）。</td></tr>
     <tr><td>加新角色</td><td><code>config.ts CHARACTER_CONFIGS</code> → <code>public/models/player_*.gltf</code> → i18n</td></tr>
     <tr><td>调升级选项数量</td><td><code>systems/player.ts tickLevelUp</code> 内 <code>generateUpgradeOptions(player, 3)</code></td></tr>

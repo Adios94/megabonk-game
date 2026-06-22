@@ -9,7 +9,7 @@
  * Curse_tome 给 XP 增益，luck_tome 加 silver bonus，xp_gain_tome / shop xpGain
  * / combo / tier 共同决定最终 XP value。
  */
-import { distanceBetween, distanceSqBetween, normalizeDirection } from '../physics.ts';
+import { distanceBetween, distanceSqBetween, normalizeDirection } from '../helpers/physics.ts';
 import {
   MAX_PICKUPS,
   PICKUP_LIFETIME,
@@ -20,8 +20,8 @@ import {
   AOE_MAX_Y_DELTA,
 } from '../config.ts';
 import { ENEMIES } from '../data/enemies.ts';
-import { getShopBonuses } from '../shop.ts';
-import { getTomePower } from '../tomeProgression.ts';
+import { getShopBonuses } from '../data/shop.ts';
+import { getTomePower } from '../data/tomeProgression.ts';
 import { applyRelicKillEffects, getRelicBonusGoldOnKill, rollGoldForEnemy } from './relics.ts';
 import { getXpPickupRadius, isXpPickupType, spawnConsumablesFromEnemy } from './consumables.ts';
 import { recordBondKill, recordWeaponKill } from './weaponDamageStats.ts';

@@ -2,7 +2,7 @@
  * 生成系统 —— 波次 / mini-boss / 单怪 / boss 进场。
  *
  * 入口：tickSpawning(engine, dt)
- *   - 检查 phase: boss_fight / boss_intro 时跳过
+ *   - 检查 phase: boss_intro 时跳过；boss_fight 只把刷怪效率降半
  *   - 维护 finalSwarm 标志 (gameTime 480-540)
  *   - 推 spawnTimer + miniBossTimer
  *   - cooldown 到 → spawn 一组怪
@@ -38,17 +38,20 @@ const STAGE_TWO_BOSS_DAMAGE_MULTIPLIER_PER_SUMMON = 1.2;
 const STAGE_TWO_BOSS_CHEST_DROP_CHANCE_PER_SUMMON = 0.4;
 const OVERTIME_ELITE_CHANCE_PER_SECOND = 1 / 300;
 const OVERTIME_ELITE_CHANCE_CAP = 0.65;
+const BOSS_ENEMY_SPAWN_RATE_MULTIPLIER = 0.5;
+const BOSS_OVERTIME_GROWTH_MULTIPLIER = 0.1;
 /** 刷怪面**高于**玩家的上限：基本不许在玩家头顶之上的台面刷（=空中刷出）。 */
 const SPAWN_MAX_ABOVE_PLAYER = 1.0;
 /** 刷怪面**低于**玩家的上限：允许怪从下方的地面/低层来（玩家在高台时怪在地面集结）。 */
 const SPAWN_MAX_BELOW_PLAYER = 6.0;
 
 export function tickSpawning(engine: Engine, dt: number): void {
-  // boss 阶段不刷怪
-  if (engine.state.phase === 'boss_fight' || engine.state.phase === 'boss_intro') return;
+  // boss 出场动画仍暂停；正式战斗期间只降低刷怪效率，不清场也不禁刷。
+  if (engine.state.phase === 'boss_intro') return;
 
   const wave = getCurrentWave(engine);
   if (!wave) return;
+  const bossSpawnRateMultiplier = getBossEnemySpawnRateMultiplier(engine);
 
   // 更新 waveIndex
   for (let i = 0; i < WAVE_CONFIGS.length; i++) {
@@ -64,7 +67,8 @@ export function tickSpawning(engine: Engine, dt: number): void {
   engine.state.finalSwarm = isFinalSwarm;
 
   const shrineDifficulty = engine.state.player.difficultyMult ?? 1;
-  const overtimePressure = getOvertimePressure(engine.state.overtimeSeconds) * shrineDifficulty;
+  const effectiveOvertimeSeconds = getBossAdjustedOvertimeSeconds(engine);
+  const overtimePressure = getOvertimePressure(effectiveOvertimeSeconds) * shrineDifficulty;
   const maxAlive = isFinalSwarm
     ? 150
     : Math.ceil(wave.maxAlive * overtimePressure);
@@ -77,7 +81,7 @@ export function tickSpawning(engine: Engine, dt: number): void {
 
   // Mini-boss spawning（gameTime ≥ 180 后每 120 秒一只）
   if (engine.state.gameTime >= 180) {
-    engine.miniBossTimer += dt;
+    engine.miniBossTimer += dt * bossSpawnRateMultiplier;
     if (engine.miniBossTimer >= 120) {
       engine.miniBossTimer = 0;
       spawnMiniBoss(engine);
@@ -85,7 +89,7 @@ export function tickSpawning(engine: Engine, dt: number): void {
   }
 
   // 主 wave spawn cooldown
-  engine.spawnTimer -= dt;
+  engine.spawnTimer -= dt * bossSpawnRateMultiplier;
   if (engine.spawnTimer > 0) return;
 
   // Curse tome: 加快 spawn / 加大 group
@@ -113,7 +117,7 @@ export function tickSpawning(engine: Engine, dt: number): void {
     if (engine.state.enemies.length >= maxAlive) break;
     if (engine.state.enemies.length >= maxEnemiesLimit) break;
 
-    const eliteChance = getOvertimeEliteChance(wave.eliteChance, engine.state.overtimeSeconds);
+    const eliteChance = getOvertimeEliteChance(wave.eliteChance, effectiveOvertimeSeconds);
     const isEliteRoll = Math.random() < eliteChance;
     let enemyType: string;
 
@@ -133,6 +137,33 @@ export function tickSpawning(engine: Engine, dt: number): void {
     if (!enemyType) continue;
     spawnSingleEnemy(engine, enemyType);
   }
+}
+
+function isBossEnemyPressureActive(engine: Engine): boolean {
+  return !!engine.state.boss && engine.state.boss.hp > 0;
+}
+
+function getBossEnemySpawnRateMultiplier(engine: Engine): number {
+  return isBossEnemyPressureActive(engine) ? BOSS_ENEMY_SPAWN_RATE_MULTIPLIER : 1;
+}
+
+function getBossAdjustedOvertimeSeconds(engine: Engine): number {
+  const raw = engine.state.overtimeSeconds;
+  if (raw <= 0 || !isBossEnemyPressureActive(engine)) return raw;
+
+  const anchor = Math.max(0, Math.min(raw, engine.state.boss?.spawnOvertimeSeconds ?? raw));
+  return anchor + (raw - anchor) * BOSS_OVERTIME_GROWTH_MULTIPLIER;
+}
+
+export function getBossOvertimeGrowthContext(engine: Engine): Pick<
+  Parameters<typeof spawnEnemy>[3],
+  'overtimeGrowthAnchorSeconds' | 'overtimeGrowthMultiplier'
+> {
+  if (engine.state.overtimeSeconds <= 0 || !isBossEnemyPressureActive(engine)) return {};
+  return {
+    overtimeGrowthAnchorSeconds: engine.state.boss?.spawnOvertimeSeconds ?? engine.state.overtimeSeconds,
+    overtimeGrowthMultiplier: BOSS_OVERTIME_GROWTH_MULTIPLIER,
+  };
 }
 
 function getOvertimePressure(overtimeSeconds: number): number {
@@ -161,6 +192,7 @@ function spawnMiniBoss(engine: Engine): void {
       gameTime: engine.state.gameTime,
       tier: engine.config.tier,
       overtimeSeconds: engine.state.overtimeSeconds,
+      ...getBossOvertimeGrowthContext(engine),
       player: engine.state.player,
       nextId: () => engine.nextEnemyId++,
     },
@@ -213,6 +245,7 @@ function spawnSingleEnemy(engine: Engine, type: string): void {
       gameTime: engine.state.gameTime,
       tier: engine.config.tier,
       overtimeSeconds: engine.state.overtimeSeconds,
+      ...getBossOvertimeGrowthContext(engine),
       player: engine.state.player,
       nextId: () => engine.nextEnemyId++,
     },
@@ -385,11 +418,12 @@ export function checkBossSpawn(engine: Engine): void {
     hitFlashTimer: 0,
     speed: 3.0,
     enraged: false,
+    spawnOvertimeSeconds: engine.state.overtimeSeconds,
     damageMultiplier: stageTwoDamageMultiplier,
     chestDropChance,
   };
 
   engine.state.phase = 'boss_intro';
   // 召唤 boss 时不清场：保留场上已有敌人，与 boss 同时存在。
-  // （boss_intro / boss_fight 阶段 tickSpawning 仍跳过常规刷怪，故不会再新增波次。）
+  // boss_intro 短暂停刷；进入 boss_fight 后以半效率继续常规刷怪。
 }

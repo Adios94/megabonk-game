@@ -723,6 +723,8 @@ export interface BossState {
   hitFlashColor?: number;
   speed: number;
   enraged: boolean;
+  /** Boss 生成时的 overtime 秒数；boss 存活期间敌人成长只放慢生成后的增量。 */
+  spawnOvertimeSeconds?: number;
   /** 本次召唤的额外伤害倍率。第二关重复召唤会递增；缺省为 1。 */
   damageMultiplier?: number;
   /** Boss 死亡时的宝箱掉落概率，1 = 100%；超过 1 的整数部分为保底额外宝箱。 */

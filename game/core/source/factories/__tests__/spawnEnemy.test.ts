@@ -65,6 +65,31 @@ describe('spawnEnemy level scaling', () => {
     expect(enemy.damage).toBe(8);
   });
 
+  it('slows overtime growth after the boss spawn anchor', () => {
+    const normal = spawnEnemy(
+      'skeleton_soldier',
+      0, 0,
+      { ...makeCtx(1), gameTime: REGULAR_GAME_DURATION + 100, overtimeSeconds: 100 },
+      { applyEliteRoll: false },
+    );
+    const slowed = spawnEnemy(
+      'skeleton_soldier',
+      0, 0,
+      {
+        ...makeCtx(1),
+        gameTime: REGULAR_GAME_DURATION + 100,
+        overtimeSeconds: 100,
+        overtimeGrowthAnchorSeconds: 50,
+        overtimeGrowthMultiplier: 0.1,
+      },
+      { applyEliteRoll: false },
+    );
+
+    expect(slowed.hp).toBeLessThan(normal.hp);
+    expect(slowed.damage).toBeLessThan(normal.damage);
+    expect(slowed.speed).toBeLessThan(normal.speed);
+  });
+
   it('ramps wave enemy hp and damage during final swarm', () => {
     const ctx = { ...makeCtx(1), gameTime: 510 };
     const enemy = spawnEnemy('necromancer', 0, 0, ctx, { applyEliteRoll: false });

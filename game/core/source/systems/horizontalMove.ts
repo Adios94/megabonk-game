@@ -10,7 +10,7 @@
  *   - 地图边界 clamp（已经由 applyMovement3D 或 mover 自己 clamp 过）
  *   - 攀爬 / 跳跃等 mover 特有逻辑
  */
-import { isBlockedHorizontallyAt, type LevelGeometry } from './collision.ts';
+import { isBlockedHorizontallyAt, type LevelGeometry } from './levelGeometry.ts';
 
 export interface HorizontalMoveOptions {
   /** mover 横向碰撞半径，默认沿用 isBlockedHorizontallyAt 默认值（PLAYER_RADIUS=0.45）。 */

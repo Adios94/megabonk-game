@@ -10,7 +10,7 @@
  * 新增奖励：在此数组末尾追加一行即可，systems/shrines.ts 与 GameInstance 自动接管。
  */
 import type { ShrineRewardType, UpgradeRarity, PlayerState, ShrineRewardOption } from '../types.ts';
-import { getTomePower } from '../tomeProgression.ts';
+import { getTomePower } from '../data/tomeProgression.ts';
 
 export interface ShrineRewardDef {
   reward: ShrineRewardType;

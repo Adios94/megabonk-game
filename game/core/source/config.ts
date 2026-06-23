@@ -52,7 +52,7 @@ export const XP_BASE = 10;
 export const XP_GROWTH = 0.35;
 
 export const BOSS_SPAWN_TIME = 540;
-export const BOSS_HP = 2000;
+export const BOSS_HP = 60000;
 export const BOSS_INTRO_DURATION = 2.0;
 /**
  * 常规生存期（秒）。超过这个时间且玩家未进传送门 → 进入 overtime。
@@ -60,6 +60,16 @@ export const BOSS_INTRO_DURATION = 2.0;
  * 现在已不再用作 Boss 触发条件，仅供测试 / 兼容引用。
  */
 export const REGULAR_GAME_DURATION = 540;
+/** 最终狂潮开始时间：Boss/超时前的最后 60 秒。 */
+export const FINAL_SWARM_START_TIME = 480;
+/** 最终狂潮结束前，wave 敌人额外获得的 HP 成长上限。 */
+export const FINAL_SWARM_HP_GROWTH = 0.5;
+/** 最终狂潮结束前，wave 敌人额外获得的伤害成长上限。 */
+export const FINAL_SWARM_DAMAGE_GROWTH = 0.25;
+/** 最终狂潮期间敌人移动速度倍率（原 +20%，提高 50% 后为 +30%）。 */
+export const FINAL_SWARM_SPEED_MULTIPLIER = 1.3;
+/** 进入 overtime 后，继承并延续的最终狂潮成长比例。 */
+export const FINAL_SWARM_OVERTIME_GROWTH_RATIO = 0.5;
 
 export const PICKUP_LIFETIME = 30;
 export const PICKUP_ATTRACT_SPEED = 12;
@@ -85,15 +95,20 @@ export const CHEST_LEVEL_MAX = 24;               // Cap on chests generated from
 export const CHEST_MIN_SEPARATION = 6;           // Min distance between two unopened chests
 
 // Altar (formerly Teleporter) settings
-/** 召唤 Boss 的读条秒数（防误触）。 */
-export const ALTAR_SUMMON_DURATION = 1.0;
-/** 第二关及以后 Boss 击败后，祭坛再次可召唤前的冷却秒数。 */
+/** 召唤 Boss 的读条秒数。 */
+export const ALTAR_SUMMON_DURATION = 2.0;
+/**
+ * 玩家离开召唤半径后，读条进度的回落速率（相对充能速率的倍数）。
+ * 0.5 表示回落速度为充能的一半，进度缓慢减少直到归零才取消召唤。
+ */
+export const ALTAR_SUMMON_DECAY_RATE = 0.5;
+/** 第二关及以后 Boss 击败后，飞碟再次可召唤前的冷却秒数。 */
 export const ALTAR_BOSS_RESPAWN_COOLDOWN = 60;
-/** 玩家与祭坛 / 传送门交互的触发半径。 */
+/** 玩家与飞碟 / 传送门交互的触发半径。 */
 export const ALTAR_INTERACT_RADIUS = 2.0;
-/** 祭坛距出生点的最小距离（要求玩家探索才能找到）。 */
+/** 飞碟距出生点的最小距离（要求玩家探索才能找到）。 */
 export const ALTAR_MIN_DISTANCE = 25;
-/** 祭坛距地图中心的最大相对距离（halfMap 系数）。避免出图边。 */
+/** 飞碟距地图中心的最大相对距离（halfMap 系数）。避免出图边。 */
 export const ALTAR_MAX_DISTANCE_RATIO = 0.6;
 
 /**
@@ -116,6 +131,11 @@ export const SHRINE_COUNT = 5;
 export const SHRINE_RADIUS = 2.5;
 /** 充满 / 解锁需要的站立秒数。 */
 export const SHRINE_CHARGE_DURATION = 4.0;
+/**
+ * 玩家离开充能圈后，充能进度的回落速率（相对充能速率的倍数）。
+ * 0.5 表示回落速度为充能的一半，进度缓慢减少直到归零，而非立刻消失。
+ */
+export const SHRINE_CHARGE_DECAY_RATE = 0.5;
 /** 解锁后的奖励选项数量（megabonk 充能圣殿固定为 4 选 1）。 */
 export const SHRINE_REWARD_COUNT = 4;
 /** 护盾每秒回满的速率（玩家护盾比 HP 恢复快得多）。 */
@@ -418,8 +438,8 @@ export interface TierConfig {
   xpMultiplier: number;
   silverMultiplier: number;
   /**
-   * 本档生成的祭坛 / 传送门数量。当前设计统一 = 1。
-   * （字段保留旧名 `teleporterCount` 以减少破坏；新代码可读作"祭坛数量"。）
+   * 本档生成的飞碟 / 传送门数量。当前设计统一 = 1。
+   * （字段保留旧名 `teleporterCount` 以减少破坏；新代码可读作"飞碟数量"。）
    */
   teleporterCount: number;
   bossHpMultiplier: number;
@@ -433,10 +453,10 @@ export const TIER_CONFIGS: Record<DifficultyTier, TierConfig> = {
 
 // === Overtime 难度系数 ===
 /** Overtime 系数每多少秒升一档。 */
-export const OVERTIME_STEP_SECONDS = 30;
+export const OVERTIME_STEP_SECONDS = 10;
 /** Overtime 每档给敌人 HP 的增量（连续线性）。 */
-export const OVERTIME_HP_PER_STEP = 0.5;
+export const OVERTIME_HP_PER_STEP = 0.2;
 /** Overtime 每档给敌人伤害的增量（连续线性）。 */
-export const OVERTIME_DAMAGE_PER_STEP = 0.5;
+export const OVERTIME_DAMAGE_PER_STEP = 0.1;
 /** Overtime 每档给敌人速度的增量（连续线性）。 */
-export const OVERTIME_SPEED_PER_STEP = 0.16;
+export const OVERTIME_SPEED_PER_STEP = 0.05;

@@ -1,0 +1,16 @@
+<svg width="993" height="571" viewBox="0 0 993 571" fill="none" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip_st_track)">
+<path d="M36.7689 71.6574C40.3164 31.11 74.2618 0 114.957 0H914.301C960.349 0 996.499 39.463 992.489 85.3428L956.354 498.345C952.806 538.892 918.861 570.003 878.166 570.003H78.8218C32.7818 570.003 -3.37685 530.54 0.633797 484.66L36.7689 71.6574Z" fill="#02103F"/>
+<mask id="mask_st_track" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="0" y="0" width="993" height="571">
+<path d="M36.7689 71.6574C40.3164 31.11 74.2618 0 114.957 0H914.301C960.349 0 996.499 39.463 992.489 85.3428L956.354 498.345C952.806 538.892 918.861 570.003 878.166 570.003H78.8218C32.7818 570.003 -3.37685 530.54 0.633797 484.66L36.7689 71.6574Z" fill="white"/>
+</mask>
+<g mask="url(#mask_st_track)">
+<path d="M1029 -40.3633H-24.7722V296.635H1029V-40.3633Z" fill="#023056"/>
+</g>
+</g>
+<defs>
+<clipPath id="clip_st_track">
+<rect width="993" height="571" fill="white"/>
+</clipPath>
+</defs>
+</svg>

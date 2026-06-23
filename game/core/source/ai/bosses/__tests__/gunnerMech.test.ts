@@ -32,33 +32,33 @@ describe('GUNNER_MECH_PHASES', () => {
 });
 
 describe('attack: aimed_burst', () => {
-  it('朝玩家发 3 发直线弹，每发 12 dmg', () => {
+  it('朝玩家发 3 发直线弹，每发 14 dmg', () => {
     const effects = makeAiEffects();
     const player = makePlayer({ x: 10, z: 0 });
     const ctx = makeAiContext({ player, effects });
     GUNNER_MECH.attacks.aimed_burst!(gunnerAt(1), ctx);
     expect(effects.spawnProjectileSpy).toHaveBeenCalledTimes(3);
-    expect(effects.spawnProjectileSpy.mock.calls[0][0].damage).toBe(12);
+    expect(effects.spawnProjectileSpy.mock.calls[0][0].damage).toBe(14);
   });
 });
 
 describe('attack: suppress_fire', () => {
-  it('扇形 5 发直线弹，每发 10 dmg', () => {
+  it('扇形 5 发直线弹，每发 12 dmg', () => {
     const effects = makeAiEffects();
     const player = makePlayer({ x: 0, z: 10 });
     const ctx = makeAiContext({ player, effects });
     GUNNER_MECH.attacks.suppress_fire!(gunnerAt(3), ctx);
     expect(effects.spawnProjectileSpy).toHaveBeenCalledTimes(5);
-    expect(effects.spawnProjectileSpy.mock.calls[0][0].damage).toBe(10);
+    expect(effects.spawnProjectileSpy.mock.calls[0][0].damage).toBe(12);
   });
 });
 
 describe('attack: melee_swipe', () => {
-  it('dist < 3.5 给 25 伤害', () => {
+  it('dist < 3.5 给 30 伤害', () => {
     const effects = makeAiEffects();
     const ctx = makeAiContext({ player: makePlayer({ x: 1, z: 0 }), effects });
     GUNNER_MECH.attacks.melee_swipe!(gunnerAt(1), ctx);
-    expect(effects.damagePlayerSpy).toHaveBeenCalledWith(25);
+    expect(effects.damagePlayerSpy).toHaveBeenCalledWith(30);
   });
 
   it('dist >= 3.5 不伤害', () => {
@@ -79,11 +79,11 @@ describe('attack: melee_swipe', () => {
 });
 
 describe('attack: leap_strike', () => {
-  it('dist < 4.0 给 20 伤害', () => {
+  it('dist < 4.0 给 24 伤害', () => {
     const effects = makeAiEffects();
     const ctx = makeAiContext({ player: makePlayer({ x: 3, z: 0 }), effects });
     GUNNER_MECH.attacks.leap_strike!(gunnerAt(2), ctx);
-    expect(effects.damagePlayerSpy).toHaveBeenCalledWith(20);
+    expect(effects.damagePlayerSpy).toHaveBeenCalledWith(24);
   });
 
   it('dist >= 4.0 不伤害', () => {

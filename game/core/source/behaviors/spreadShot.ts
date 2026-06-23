@@ -9,7 +9,7 @@
  * 数学等价于 fireShotgun，由 parity 测试锁定。
  */
 import { computeWeaponDamage } from '../stats/index.ts';
-import { playerProjectileY } from '../combatHeight.ts';
+import { playerProjectileY } from '../helpers/combatHeight.ts';
 import type { BehaviorContext } from './types.ts';
 import type { GameWorld } from '../world.ts';
 

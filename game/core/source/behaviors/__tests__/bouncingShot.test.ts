@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { bouncingShot } from '../bouncingShot.ts';
 import { createWorld } from '../../world.ts';
-import { makePlayer, makeEnemy, makeStats, makeCtx } from './_helpers.ts';
+import { makePlayer, makeEnemy, makeBoss, makeStats, makeCtx } from './_helpers.ts';
 
 describe('bouncingShot', () => {
   let mathRandomSpy: ReturnType<typeof vi.spyOn>;
@@ -65,6 +65,16 @@ describe('bouncingShot', () => {
     expect(ctx.effects.projectiles[0].vz).toBeCloseTo(e0.vz, 4);
     expect(ctx.effects.projectiles[2].vx).toBeCloseTo(e2.vx, 4);
     expect(ctx.effects.projectiles[2].vz).toBeCloseTo(e2.vz, 4);
+  });
+
+  it('only boss → projectile aims at boss', () => {
+    const player = makePlayer({ rotation: Math.PI });   // 朝后；boss 在前
+    const boss = makeBoss(0, 5);
+    const ctx = makeCtx(player, [], boss, makeStats({ damage: 8, projectileCount: 1, bounces: 2, speed: 12 }), 'bone_bouncer', 'bouncingShot', ['bone_bouncer']);
+    bouncingShot(createWorld(), ctx);
+    expect(ctx.effects.projectiles).toHaveLength(1);
+    expect(ctx.effects.projectiles[0].vx).toBeCloseTo(0, 4);
+    expect(ctx.effects.projectiles[0].vz).toBeCloseTo(12, 4);
   });
 
   it('damage uses computeWeaponDamage (dM=2.0 → damage=16)', () => {

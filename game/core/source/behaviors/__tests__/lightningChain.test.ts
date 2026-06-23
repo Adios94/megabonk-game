@@ -59,6 +59,26 @@ describe('lightningChain', () => {
     expect(ctx.effects.damageEvents).toHaveLength(2);
   });
 
+  it('only boss in range → boss as primary target (full damage, 不走链衰减)', () => {
+    const player = makePlayer();
+    const boss = makeBoss(0, 3, 2000);   // 在 range=8 内, 无其它敌人
+    const ctx = makeCtx(player, [], boss, makeStats({ damage: 15, range: 8, chains: 2 }), 'lightning_staff', 'lightningChain', ['lightning_staff']);
+    lightningChain(createWorld(), ctx);
+    // boss 应作为主目标被命中，伤害为完整 15（非链衰减 11）
+    expect(boss.hp).toBe(2000 - 15);
+    expect(ctx.effects.damageEvents).toHaveLength(1);
+  });
+
+  it('boss as primary 时，末尾的 boss 兜底不会再扣一次血', () => {
+    const player = makePlayer();
+    const boss = makeBoss(0, 3, 2000);
+    const ctx = makeCtx(player, [], boss, makeStats({ damage: 15, range: 8, chains: 3 }), 'lightning_staff', 'lightningChain', ['lightning_staff']);
+    lightningChain(createWorld(), ctx);
+    // chains=3 但没有其它 enemy 可链，主命中 boss 后兜底逻辑被 targetIsBoss 排除
+    expect(boss.hp).toBe(2000 - 15);  // 只扣 1 次
+    expect(ctx.effects.damageEvents).toHaveLength(1);
+  });
+
   it('damage uses computeWeaponDamage (dM=2.0, no crit, base=15 → primary=30)', () => {
     const player = makePlayer({ damageMultiplier: 2.0 });
     const enemy = makeEnemy(1, 0, 1);

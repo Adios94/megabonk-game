@@ -1,23 +1,23 @@
-/**
- * MegaBonk 3D Roguelike Survivor — Game Instance facade.
+﻿/**
+ * MegaBonk 3D Roguelike Survivor 鈥?Game Instance facade.
  *
- * Pure game logic — NO Three.js or rendering imports.
+ * Pure game logic 鈥?NO Three.js or rendering imports.
  *
- * Phase 6: 本文件缩成 thin facade. 所有内部逻辑迁到 `systems/`:
- *   - systems/player.ts     — 移动 / dash / 计时器 / 升级 / createInitialPlayer
- *   - systems/spawning.ts   — wave / mini-boss / 单怪 / boss spawn
- *   - systems/projectiles.ts — 投射物移动 / 寿命 / 出界
- *   - systems/collisions.ts — 4 种碰撞 + 击退 + damage event
- *   - systems/pickups.ts    — pickup 寿命 / 吸附 / collect / deaths / thorns
- *   - systems/weapons.ts    — fireWeapons / getWeaponStats / evolution
- *   - systems/altars.ts     — 祭坛 / 传送门状态机
- *   - systems/chests.ts     — 宝箱
- *   - systems/aiSystem.ts   — enemy AI 主循环
- *   - systems/bossAi.ts     — boss AI 主循环
- *   - systems/helpers.ts    — findNearestEnemy / addDamageEvent / applyKnockback / ...
- *   - systems/collision.ts  — 关卡 / 碰撞系统（geometry + 高度 / 横向阻挡查询）
+ * Phase 6: 鏈枃浠剁缉鎴?thin facade. 鎵€鏈夊唴閮ㄩ€昏緫杩佸埌 `systems/`:
+ *   - systems/player.ts     鈥?绉诲姩 / dash / 璁℃椂鍣?/ 鍗囩骇 / createInitialPlayer
+ *   - systems/spawning.ts   鈥?wave / mini-boss / 鍗曟€?/ boss spawn
+ *   - systems/projectiles.ts 鈥?鎶曞皠鐗╃Щ鍔?/ 瀵垮懡 / 鍑虹晫
+ *   - systems/collisions.ts 鈥?4 绉嶇鎾?+ 鍑婚€€ + damage event
+ *   - systems/pickups.ts    鈥?pickup 瀵垮懡 / 鍚搁檮 / collect / deaths / thorns
+ *   - systems/weapons.ts    鈥?fireWeapons / getWeaponStats / evolution
+ *   - systems/altars.ts     鈥?椋炵 / 浼犻€侀棬鐘舵€佹満
+ *   - systems/chests.ts     鈥?瀹濈
+ *   - systems/aiSystem.ts   鈥?enemy AI 涓诲惊鐜?
+ *   - systems/bossAi.ts     鈥?boss AI 涓诲惊鐜?
+ *   - systems/helpers.ts    鈥?findNearestEnemy / addDamageEvent / applyKnockback / ...
+ *   - systems/collision.ts  鈥?鍏冲崱 / 纰版挒绯荤粺锛坓eometry + 楂樺害 / 妯悜闃绘尅鏌ヨ锛?
  *
- * 公开 API 完全不变：start / tick / applyAction / selectUpgrade / pause / resume
+ * 鍏紑 API 瀹屽叏涓嶅彉锛歴tart / tick / applyAction / selectUpgrade / pause / resume
  *                  / getState / getResult.
  */
 
@@ -31,19 +31,19 @@ import {
 import { MAX_PROJECTILES, MAX_AREA_EFFECTS } from './config.ts';
 import type { AiEffects, AiContext } from './ai/types.ts';
 
-import { SpatialHash } from './spatial-hash.ts';
+import { SpatialHash } from './helpers/spatialHash.ts';
 import { createWorld } from './world.ts';
-import { addSilver, updateRunStats, recordWeaponsUsed } from './save.ts';
-import { getShopBonuses } from './shop.ts';
-import { checkQuestCompletion } from './quests.ts';
+import { addSilver, updateRunStats, recordWeaponsUsed } from './services/save.ts';
+import { getShopBonuses } from './data/shop.ts';
+import { checkQuestCompletion } from './data/quests.ts';
 import { spawnEnemy } from './factories/spawnEnemy.ts';
 import { recomputePlayerStats } from './stats/recomputePlayerStats.ts';
-import { applyTomeUpgrade } from './tomeProgression.ts';
+import { applyTomeUpgrade } from './data/tomeProgression.ts';
 import { tickEnemyAi } from './systems/aiSystem.ts';
 import { tickBossAi } from './systems/bossAi.ts';
 
 import type { Engine } from './systems/types.ts';
-import { getTerrainHeightAt, makeLevelGeometry, NEON_CRUCIBLE_GEOMETRY } from './systems/collision.ts';
+import { getTerrainHeightAt, makeLevelGeometry, NEON_CRUCIBLE_GEOMETRY } from './systems/levelGeometry.ts';
 import {
   createInitialPlayer,
   tickPlayerMovement,
@@ -68,8 +68,9 @@ import { grantRelic } from './systems/relics.ts';
 import { tickOvertime } from './systems/overtime.ts';
 import { tickTierTransition } from './systems/tierTransition.ts';
 import { tickShrines, generateShrines, applyShrineReward } from './systems/shrines.ts';
+import { tickEnemySeparation } from './systems/enemySeparation.ts';
 import { addDamageEvent, applyKnockback, checkGameOver } from './systems/helpers.ts';
-import { pickRandomOne } from './spawnPick.ts';
+import { pickRandomOne } from './factories/spawnPick.ts';
 
 export class GameInstance {
   private engine: Engine;
@@ -87,7 +88,7 @@ export class GameInstance {
       paused: false,
       finished: false,
       phase: 'menu',
-      player: {} as PlayerState,  // 占位, start() 会重建
+      player: {} as PlayerState,  // 鍗犱綅, start() 浼氶噸寤?
       enemies: [],
       projectiles: [],
       areaEffects: [],
@@ -99,6 +100,8 @@ export class GameInstance {
       damageEvents: [],
       bondVfxEvents: [],
       levelUpCompensationEvents: [],
+      xpPickupEvents: [],
+      fallDamageEvents: [],
       chestOpenEvents: [],
       pendingChestReward: null,
       stats: { killCount: 0, damageDealt: 0, damageTaken: 0, shieldAbsorbed: 0, silverEarned: 0 },
@@ -119,9 +122,11 @@ export class GameInstance {
       config,
       input: { moveX: 0, moveY: 0, dash: false, skill1: false, skill2: false, jump: false, slide: false, interact: false },
       world,
-      effects: null as unknown as AiEffects,  // 立刻填
+      effects: null as unknown as AiEffects,  // 绔嬪埢濉?
       spatialHash: new SpatialHash(4),
-      // 关卡几何 —— applyLevelConfig() 会根据 config.level 重新赋值；此处先用默认占位
+      enemyById: new Map(),
+      spatialIndexTick: -1,
+      // 鍏冲崱鍑犱綍 鈥斺€?applyLevelConfig() 浼氭牴鎹?config.level 閲嶆柊璧嬪€硷紱姝ゅ鍏堢敤榛樿鍗犱綅
       geo: NEON_CRUCIBLE_GEOMETRY,
       nextEnemyId: 1,
       nextProjectileId: 1,
@@ -134,6 +139,7 @@ export class GameInstance {
       chestPendingSpawnKeys: [],
       aiGroup: 0,
       miniBossTimer: 0,
+      stageTwoBossSummonCount: 0,
       landingTimer: 0,
       lastDashInput: false,
       lastJumpInput: false,
@@ -149,8 +155,8 @@ export class GameInstance {
   }
 
   /**
-   * 应用关卡数据：注入地形碰撞矩形 + 玩家出生点。
-   * 无关卡数据时回退到内置 Neon Crucible 几何。
+   * 搴旂敤鍏冲崱鏁版嵁锛氭敞鍏ュ湴褰㈢鎾炵煩褰?+ 鐜╁鍑虹敓鐐广€?
+   * 鏃犲叧鍗℃暟鎹椂鍥為€€鍒板唴缃?Neon Crucible 鍑犱綍銆?
    */
   private applyLevelConfig(): void {
     const { engine } = this;
@@ -196,6 +202,8 @@ export class GameInstance {
     state.damageEvents = [];
     state.bondVfxEvents = [];
     state.levelUpCompensationEvents = [];
+    state.xpPickupEvents = [];
+    state.fallDamageEvents = [];
     state.chestOpenEvents = [];
     state.pendingChestReward = null;
     state.boss = null;
@@ -227,7 +235,11 @@ export class GameInstance {
     engine.aiGroup = 0;
     engine.landingTimer = 0;
     engine.miniBossTimer = 0;
+    engine.stageTwoBossSummonCount = 0;
     engine.weaponDamageWindows = {};
+    engine.spatialIndexTick = -1;
+    engine.enemyById.clear();
+    engine.spatialHash.clear();
   }
 
   tick(): boolean {
@@ -238,14 +250,14 @@ export class GameInstance {
       return state.finished;
     }
     if (state.phase === 'level_up') return false;
-    // shrine_reward phase: 玩家在 4 选 1 选项面板，game logic 全部暂停（等同 level_up）
+    // shrine_reward phase: 鐜╁鍦?4 閫?1 閫夐」闈㈡澘锛実ame logic 鍏ㄩ儴鏆傚仠锛堢瓑鍚?level_up锛?
     if (state.phase === 'shrine_reward') return false;
-    // chest_reward phase: 宝箱已消耗，等待玩家留下/丢弃遗物，game logic 暂停。
+    // chest_reward phase: 瀹濈宸叉秷鑰楋紝绛夊緟鐜╁鐣欎笅/涓㈠純閬楃墿锛実ame logic 鏆傚仠銆?
     if (state.phase === 'chest_reward') return false;
 
     const dt = TICK_INTERVAL_MS / 1000;
 
-    // Boss intro 倒计时（其它 system 全部跳过）
+    // Boss intro 鍊掕鏃讹紙鍏跺畠 system 鍏ㄩ儴璺宠繃锛?
     if (state.phase === 'boss_intro') {
       state.gameTime += dt;
       state.tick++;
@@ -258,20 +270,24 @@ export class GameInstance {
       return false;
     }
 
-    // 清上一帧事件（client 在两帧之间读）
+    // 娓呬笂涓€甯т簨浠讹紙client 鍦ㄤ袱甯т箣闂磋锛?
     state.damageEvents = [];
     state.bondVfxEvents = [];
     state.levelUpCompensationEvents = [];
+    state.xpPickupEvents = [];
+    state.fallDamageEvents = [];
     state.chestOpenEvents = [];
 
     state.gameTime += dt;
     state.tick++;
 
-    // ─── 顺序见 systems/README.md。每帧 dispatch ───
+    // 鈹€鈹€鈹€ 椤哄簭瑙?systems/README.md銆傛瘡甯?dispatch 鈹€鈹€鈹€
     tickPlayerMovement(engine, dt);
     tickDash(engine, dt);
     tickTimers(engine, dt);
     tickEnemyAi(state.enemies, makeAiContext(engine, dt));
+    // 鏁屼汉涔嬮棿杞垎绂?鈥斺€?AI 鍐冲畾鎰忓浘浣嶇Щ鍚庯紝鎶婅创鑴?閲嶅彔鐨勫悓浼存帹寮€锛堝甯ц蒋鎺掓枼锛屽皧閲嶅浣擄級銆?
+    tickEnemySeparation(engine);
     tickWeapons(engine, dt);
     tickProjectiles(engine, dt);
     tickAreaEffects(engine, dt);
@@ -294,10 +310,10 @@ export class GameInstance {
     }
     tickThorns(engine);
     checkGameOver(engine);
-    // Boss 死亡后祭坛会进 portal_ready；玩家按 E 进入后变 portal_used。
-    // tickTierTransition 检测并执行下一关流程（清场 + tier++）。
+    // Boss 姝讳骸鍚庨纰熶細杩?portal_ready锛涚帺瀹舵寜 E 杩涘叆鍚庡彉 portal_used銆?
+    // tickTierTransition 妫€娴嬪苟鎵ц涓嬩竴鍏虫祦绋嬶紙娓呭満 + tier++锛夈€?
     tickTierTransition(engine);
-    // Overtime 累加（仅在 gameTime ≥ 540 且玩家未死且未在结算时）。
+    // Overtime 绱姞锛堜粎鍦?gameTime 鈮?540 涓旂帺瀹舵湭姝讳笖鏈湪缁撶畻鏃讹級銆?
     tickOvertime(engine, dt);
     refreshAllWeaponDps(engine);
 
@@ -334,7 +350,7 @@ export class GameInstance {
       case 'weapon_upgrade':
         if (option.weaponType) {
           const weapon = player.weapons.find(w => w.type === option.weaponType);
-          // 新规则：level +1，并按选项稀有度缩放「本级→下一级」步进累加到 growth。
+          // 鏂拌鍒欙細level +1锛屽苟鎸夐€夐」绋€鏈夊害缂╂斁銆屾湰绾р啋涓嬩竴绾с€嶆杩涚疮鍔犲埌 growth銆?
           if (weapon) {
             const levels = Math.max(1, option.newLevel - weapon.level);
             for (let i = 0; i < levels; i++) applyWeaponUpgrade(weapon, option.rarity);
@@ -371,13 +387,13 @@ export class GameInstance {
   }
 
   /**
-   * 玩家从 Charge Shrine 4 个奖励选项里选一个 → 永久应用到 player +
-   * 关闭 shrine 并恢复 phase。
+   * 鐜╁浠?Charge Shrine 4 涓鍔遍€夐」閲岄€変竴涓?鈫?姘镐箙搴旂敤鍒?player +
+   * 鍏抽棴 shrine 骞舵仮澶?phase銆?
    *
-   * 与 selectUpgrade 同样的语义结构：
-   *   - 仅在 phase === 'shrine_reward' 时生效
-   *   - 选完 → activeShrineId=null + shrine.phase='consumed'
-   *   - 恢复 phase 到 boss_fight / playing
+   * 涓?selectUpgrade 鍚屾牱鐨勮涔夌粨鏋勶細
+   *   - 浠呭湪 phase === 'shrine_reward' 鏃剁敓鏁?
+   *   - 閫夊畬 鈫?activeShrineId=null + shrine.phase='consumed'
+   *   - 鎭㈠ phase 鍒?boss_fight / playing
    */
   selectShrineReward(optionId: string): void {
     const { engine } = this;
@@ -392,8 +408,8 @@ export class GameInstance {
     if (!option) return;
 
     applyShrineReward(state.player, option.reward, option.value);
-    // damage/attack_speed/movement_speed/pickup_range/crit_damage 奖励累计在 shrineBonuses，
-    // recompute 末尾合并后即时生效（其余奖励已在 applyShrineReward 内直接写字段）。
+    // damage/attack_speed/movement_speed/pickup_range/crit_damage 濂栧姳绱鍦?shrineBonuses锛?
+    // recompute 鏈熬鍚堝苟鍚庡嵆鏃剁敓鏁堬紙鍏朵綑濂栧姳宸插湪 applyShrineReward 鍐呯洿鎺ュ啓瀛楁锛夈€?
     recomputePlayerStats(state.player, engine.config.character, getShopBonuses());
 
     shrine.phase = 'consumed';
@@ -470,9 +486,9 @@ export class GameInstance {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
+// 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 // Helpers (file-private)
-// ─────────────────────────────────────────────────────────────────────────
+// 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 function consumeNextUpgradeBonus(player: PlayerState): void {
   player.nextWeaponUpgradeBonus = 0;
@@ -497,7 +513,7 @@ function makeAiContext(engine: Engine, dt: number): AiContext {
     mapSize: engine.config.mapSize,
     aiGroup: engine.aiGroup,
     finalSwarm: engine.state.finalSwarm,
-    // 闭包绑定 engine.geo —— 关卡切换后下一帧就读到新几何
+    // 闂寘缁戝畾 engine.geo 鈥斺€?鍏冲崱鍒囨崲鍚庝笅涓€甯у氨璇诲埌鏂板嚑浣?
     getTerrainHeight: (x, z) => getTerrainHeightAt(engine.geo, x, z),
     geo: engine.geo,
     effects: engine.effects,
@@ -505,11 +521,11 @@ function makeAiContext(engine: Engine, dt: number): AiContext {
 }
 
 /**
- * 构造 AiEffects —— 给 AI / 武器 behavior 提供副作用入口。Engine 已就绪后调一次。
+ * 鏋勯€?AiEffects 鈥斺€?缁?AI / 姝﹀櫒 behavior 鎻愪緵鍓綔鐢ㄥ叆鍙ｃ€侲ngine 宸插氨缁悗璋冧竴娆°€?
  */
 function makeEffects(engine: Engine): AiEffects {
   return {
-    addDamageEvent: (x, y, z, d, c, p, w) => addDamageEvent(engine, x, y, z, d, c, p, w),
+    addDamageEvent: (x, y, z, d, c, p, w, s, hitFlashColor) => addDamageEvent(engine, x, y, z, d, c, p, w, s, hitFlashColor),
     applyKnockback: (e, fx, fz, strengthMult) => applyKnockback(engine, e, fx, fz, strengthMult),
     addDamageDealt: (n, weaponType, target) => {
       if (weaponType) {

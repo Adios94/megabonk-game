@@ -9,10 +9,10 @@
 import type { EnemyState } from '../../types.ts';
 import type { AiContext } from '../types.ts';
 import { tryMoveHorizontally } from '../../systems/horizontalMove.ts';
-import { isBlockedHorizontallyAt, getSupportHeightAt } from '../../systems/collision.ts';
-import { getTomePower } from '../../tomeProgression.ts';
+import { isBlockedHorizontallyAt, getSupportHeightAt } from '../../systems/levelGeometry.ts';
+import { getTomePower } from '../../data/tomeProgression.ts';
 import { getSlowMultiplier } from '../../systems/statusEffects.ts';
-import { STEP_HEIGHT } from '../../config.ts';
+import { FINAL_SWARM_SPEED_MULTIPLIER, STEP_HEIGHT } from '../../config.ts';
 
 const ENEMY_RADIUS = 0.4;
 const DROP_MIN_DELTA = STEP_HEIGHT * 1.2;
@@ -34,9 +34,9 @@ export function applyMovement(enemy: EnemyState, ctx: AiContext): void {
   const curseTome = ctx.player.tomes.find(t => t.type === 'curse_tome');
   speedMult *= (1 + getTomePower(curseTome) * 0.1);
 
-  // Final Swarm: 全体 +20% speed
+  // Final Swarm: 全体 +30% speed
   if (ctx.finalSwarm) {
-    speedMult *= 1.2;
+    speedMult *= FINAL_SWARM_SPEED_MULTIPLIER;
   }
 
   // 减速状态（麻痹枪 strong_slow / 涟漪等）：乘上有效速度倍率（精英已在施加时按抗性减弱）。

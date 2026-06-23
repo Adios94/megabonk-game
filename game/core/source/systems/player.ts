@@ -9,7 +9,7 @@
  *
  * MegaBonk 移动特性: bunny hop (落地后 0.3s 内再跳获 1.4× 高度), 严格地形高度。
  */
-import { applyMovement3D, normalizeDirection } from '../physics.ts';
+import { applyMovement3D, normalizeDirection } from '../helpers/physics.ts';
 import {
   CHARACTER_CONFIGS,
   PLAYER_BASE_CRIT_DAMAGE,
@@ -32,16 +32,16 @@ import {
   SHIELD_REGEN_RATE,
   SHIELD_REGEN_DELAY,
 } from '../config.ts';
-import { loadSave } from '../save.ts';
-import { getShopBonuses } from '../shop.ts';
-import { computeActiveWeaponSlots, generateUpgradeOptions, xpForLevel } from '../upgrades.ts';
+import { loadSave } from '../services/save.ts';
+import { getShopBonuses } from '../data/shop.ts';
+import { computeActiveWeaponSlots, generateUpgradeOptions, xpForLevel } from '../data/upgrades.ts';
 import { emptyWeaponGrowth } from './weapons.ts';
 import { applyCharacterTrait } from '../stats/applyCharacterTrait.ts';
 import {
   getTerrainHeightAt,
   getSupportHeightAt,
   findClimbAt,
-} from './collision.ts';
+} from './levelGeometry.ts';
 import { addDamageEvent, checkPlayerDeath } from './helpers.ts';
 import { tryMoveHorizontally } from './horizontalMove.ts';
 import type { GameConfig, PlayerState } from '../types.ts';
@@ -345,6 +345,7 @@ function applyFallDamage(engine: Engine, fallDistance: number): void {
   player.shieldRegenAccum = -SHIELD_REGEN_DELAY;
   engine.state.stats.damageTaken += damage;
   addDamageEvent(engine, player.x, player.y + 1.5, player.z, damage, false, true);
+  engine.state.fallDamageEvents.push({ x: player.x, y: player.y, z: player.z, damage });
   checkPlayerDeath(engine);
 }
 
@@ -421,12 +422,22 @@ export function tickTimers(engine: Engine, dt: number): void {
   }
 
   for (const enemy of engine.state.enemies) {
-    if (enemy.hitFlashTimer > 0) enemy.hitFlashTimer = Math.max(0, enemy.hitFlashTimer - dt);
+    if (enemy.hitFlashTimer > 0) {
+      enemy.hitFlashTimer = Math.max(0, enemy.hitFlashTimer - dt);
+      if (enemy.hitFlashTimer <= 0) {
+        enemy.hitFlashWeaponType = undefined;
+        enemy.hitFlashColor = undefined;
+      }
+    }
     if (enemy.attackCooldown > 0) enemy.attackCooldown = Math.max(0, enemy.attackCooldown - dt);
   }
 
   if (engine.state.boss && engine.state.boss.hitFlashTimer > 0) {
     engine.state.boss.hitFlashTimer = Math.max(0, engine.state.boss.hitFlashTimer - dt);
+    if (engine.state.boss.hitFlashTimer <= 0) {
+      engine.state.boss.hitFlashWeaponType = undefined;
+      engine.state.boss.hitFlashColor = undefined;
+    }
   }
 }
 

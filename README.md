@@ -140,7 +140,7 @@ t('hud.level', { level: '5' })
 | [`docs/assets.md`](./docs/assets.md) | 美术资源清单 |
 | [`CONTRIBUTING.md`](./CONTRIBUTING.md) | 贡献指南（Fork → PR） |
 | [`level-editor/WORKFLOW.md`](./level-editor/WORKFLOW.md) | 关卡制作工作流 |
-| [`KUBEE.md`](./KUBEE.md) | KUBEE 模板原始说明 |
+| [`docs/kubee-template.md`](./docs/kubee-template.md) | KUBEE 模板原始说明 |
 | [`CLAUDE.md`](./CLAUDE.md) | AI Agent 入口（指向契约） |
 
 ## 参与贡献

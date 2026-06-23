@@ -46,7 +46,7 @@ GameScene.animate()
 | `game/core/source/systems/*.ts` | ~1300 (11 systems) |
 | `game/core/source/{data,behaviors,ai,factories,stats}/*.ts` | ~1700 |
 | `game/core/source/__tests__/*` | ~2200（232 单测） |
-| `game/core/` 其他（types/config/upgrades/quests/shop/save/physics/spatial-hash/world） | ~1500 |
+| `game/core/` 其他（types/config/upgrades/quests/shop/save/physics/spatialHash/world） | ~1500 |
 | `game/client/source/index.ts` | ~4500 |
 | **核心 + 客户端合计** | **≈ 11600** |
 
@@ -157,10 +157,10 @@ processDeaths(engine);             // hp ≤ 0 → spawn pickup + kill++
 tickPickups(engine, dt);           // 寿命 / 吸附 / collect
 tickLevelUp(engine);               // xp ≥ xpToNext → 进 level_up phase
 tickSpawning(engine, dt);          // wave + mini-boss + final swarm
-tickAltars(engine, dt);            // 5 阶段祭坛状态机 (按 [E] 召唤 / 进入 portal)
+tickAltars(engine, dt);            // 5 阶段飞碟状态机 (按 [E] 召唤 / 进入 portal)
 tickShrines(engine, dt);           // 充能神殿 charging → ready → consumed
 tickChests(engine);
-checkBossSpawn(engine);            // 仅当祭坛 boss_active 时 spawn
+checkBossSpawn(engine);            // 仅当飞碟 boss_active 时 spawn
 if (state.boss && phase === 'boss_fight') tickBossAi(state.boss, ctx);
 tickThorns(engine);
 checkGameOver(engine);             // Boss 死 → portal_open；玩家死 → defeat

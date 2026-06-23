@@ -3,7 +3,7 @@
  *
  * 设计文档：docs/boss-loop-redesign.md (§8)
  *
- * 触发：altars.ts 把祭坛 phase 推到 'portal_used' 时，本 system 检测并执行。
+ * 触发：altars.ts 把飞碟 phase 推到 'portal_used' 时，本 system 检测并执行。
  *
  * 执行步骤：
  *   1. stage++（最高 2；难度 tier 保持玩家开局选择）
@@ -38,6 +38,8 @@ export function tickTierTransition(engine: Engine): void {
   state.goldMotes = [];
   state.damageEvents = [];
   state.levelUpCompensationEvents = [];
+  state.xpPickupEvents = [];
+  state.fallDamageEvents = [];
   state.chestOpenEvents = [];
   state.pendingChestReward = null;
   state.boss = null;
@@ -47,7 +49,7 @@ export function tickTierTransition(engine: Engine): void {
   state.overtimeSeconds = 0;
   state.gameTime = 0;
 
-  // 重新生成祭坛和宝箱
+  // 重新生成飞碟和宝箱
   state.altars = generateAltars(config, state.player, engine.geo);
   state.chests = generateChests(config);
   engine.nextChestId = nextChestId(state.chests);
@@ -58,6 +60,7 @@ export function tickTierTransition(engine: Engine): void {
   // engine 内部计时器复位
   engine.spawnTimer = 1.0;
   engine.miniBossTimer = 0;
+  engine.stageTwoBossSummonCount = 0;
   engine.aiGroup = 0;
 
   // phase 回到游玩态

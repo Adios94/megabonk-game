@@ -19,8 +19,9 @@ export function voidRipple(_world: GameWorld, ctx: BehaviorContext): void {
 
   const maxRadius = stats.aoeRadius;
   const expandSpeed = stats.speed > 0 ? stats.speed : 8;
-  // 寿命：扩散到最大半径所需时间 + 少量缓冲（保证最后一圈也能结算）
-  const lifetime = maxRadius / expandSpeed + 0.2;
+  // 寿命：扩散到 max（maxRadius/expandSpeed）+ 反向收回到 0（同等时长）+ 少量缓冲。
+  // 收回阶段不结算伤害，纯视觉演出"波出去、再收回来"，避免到顶瞬间 pop 消失。
+  const lifetime = 2 * (maxRadius / expandSpeed) + 0.2;
 
   effects.spawnAreaEffect({
     kind: 'void_ripple',

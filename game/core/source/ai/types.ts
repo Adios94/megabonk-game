@@ -9,7 +9,7 @@
  */
 import type { PlayerState, EnemyState, BossState, EnemyType } from '../types.ts';
 import type { BehaviorEffects } from '../behaviors/types.ts';
-import type { LevelGeometry } from '../systems/collision.ts';
+import type { LevelGeometry } from '../systems/levelGeometry.ts';
 
 export interface AiEffects extends BehaviorEffects {
   /**
@@ -44,7 +44,7 @@ export interface AiContext {
   mapSize: number;
   /** 当前帧错峰组（0..3），用于 ranged 等只在某些组内重算 target */
   aiGroup: number;
-  /** Final Swarm 阶段（gameTime 480-540），所有敌人 +20% speed */
+  /** Final Swarm 阶段（gameTime 480-540），所有敌人 +30% speed */
   finalSwarm: boolean;
   /** 地形高度查询（玩家平台几何） —— 非 gargoyle 敌人 y 跟随地形 */
   getTerrainHeight(x: number, z: number): number;

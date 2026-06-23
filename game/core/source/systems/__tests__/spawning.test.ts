@@ -5,12 +5,12 @@
  *  - boss_fight 阶段不刷怪
  *  - finalSwarm 标志 (gameTime 480-540)
  *  - mini-boss 每 120 秒一只 (gameTime ≥ 180)
- *  - Boss 起场 = 必须有祭坛进入 boss_active（按 E 召唤完成），与时间无关
+ *  - Boss 起场 = 必须有飞碟进入 boss_active（按 E 召唤完成），与时间无关
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { tickSpawning, checkBossSpawn } from '../spawning.ts';
 import { makeEngine, makePlayer, makeEnemy } from './_fixtures.ts';
-import { ALTAR_SUMMON_DURATION, REGULAR_GAME_DURATION } from '../../config.ts';
+import { ALTAR_SUMMON_DURATION, BOSS_HP, REGULAR_GAME_DURATION } from '../../config.ts';
 
 describe('tickSpawning', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -210,7 +210,7 @@ describe('checkBossSpawn', () => {
     expect(engine.state.boss).toBeNull();
   });
 
-  it('没有 boss_active 祭坛 → 不 spawn（即使时间已过去）', () => {
+  it('没有 boss_active 飞碟 → 不 spawn（即使时间已过去）', () => {
     const engine = makeEngine();
     engine.config = { ...engine.config, tier: 1 };
     engine.state.gameTime = REGULAR_GAME_DURATION + 60;  // 久过去
@@ -221,7 +221,7 @@ describe('checkBossSpawn', () => {
     expect(engine.state.boss).toBeNull();
   });
 
-  it('有 boss_active 祭坛 → boss spawn + phase=boss_intro + 不清场', () => {
+  it('有 boss_active 飞碟 → boss spawn + phase=boss_intro + 不清场', () => {
     const engine = makeEngine();
     engine.config = { ...engine.config, tier: 1 };
     engine.state.altars = [{
@@ -233,12 +233,47 @@ describe('checkBossSpawn', () => {
     expect(engine.state.boss).not.toBeNull();
     expect(engine.state.phase).toBe('boss_intro');
     expect(engine.state.enemies).toHaveLength(1);
-    // Boss 出场点应该贴近触发祭坛
+    // Boss 出场点应该贴近触发飞碟
     expect(engine.state.boss!.x).toBeCloseTo(5);
     expect(engine.state.boss!.z).toBeCloseTo(7);
+    expect(engine.state.boss!.maxHp).toBe(BOSS_HP);
   });
 
-  it('Boss 绑定触发祭坛，忽略旧 spawn_boss 标记', () => {
+  it('第二关重复召唤 boss 会递增血量 / 伤害 / 宝箱概率', () => {
+    const engine = makeEngine();
+    engine.state.stage = 2;
+    engine.state.altars = [{
+      x: 5, z: 7, phase: 'boss_active', summonTimer: ALTAR_SUMMON_DURATION, summonDuration: ALTAR_SUMMON_DURATION,
+    }];
+
+    checkBossSpawn(engine);
+    expect(engine.state.boss).toMatchObject({
+      bossType: 'siege_mech',
+      maxHp: BOSS_HP,
+      damageMultiplier: 1,
+      chestDropChance: 1,
+    });
+
+    engine.state.boss = null;
+    engine.state.phase = 'playing';
+    checkBossSpawn(engine);
+    expect(engine.state.boss).toMatchObject({
+      maxHp: Math.round(BOSS_HP * 1.3),
+      damageMultiplier: 1.2,
+      chestDropChance: 1.4,
+    });
+
+    engine.state.boss = null;
+    engine.state.phase = 'playing';
+    checkBossSpawn(engine);
+    expect(engine.state.boss).toMatchObject({
+      maxHp: Math.round(BOSS_HP * 1.3 ** 2),
+      damageMultiplier: 1.2 ** 2,
+      chestDropChance: 1.8,
+    });
+  });
+
+  it('Boss 绑定触发飞碟，忽略旧 spawn_boss 标记', () => {
     const engine = makeEngine();
     engine.config = {
       ...engine.config,

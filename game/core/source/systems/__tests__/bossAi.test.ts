@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { tickBossAi } from '../bossAi.ts';
-import { getTerrainHeightAt, makeLevelGeometry } from '../collision.ts';
+import { getTerrainHeightAt, makeLevelGeometry } from '../levelGeometry.ts';
 import { makeAiContext, makeBoss, makePlayer } from '../../ai/__tests__/_fixtures.ts';
 
 describe('tickBossAi terrain following', () => {

@@ -5,13 +5,13 @@
  * 复用 ai/__tests__/_fixtures.ts 的 makePlayer / makeEnemy。
  */
 import { vi } from 'vitest';
-import { SpatialHash } from '../../spatial-hash.ts';
+import { SpatialHash } from '../../helpers/spatialHash.ts';
 import { createWorld } from '../../world.ts';
 import { DEFAULT_GAME_CONFIG } from '../../config.ts';
 import type { GameConfig, GameState, InputState, PlayerState } from '../../types.ts';
 import type { AiEffects } from '../../ai/types.ts';
 import type { Engine } from '../types.ts';
-import { NEON_CRUCIBLE_GEOMETRY } from '../collision.ts';
+import { NEON_CRUCIBLE_GEOMETRY } from '../levelGeometry.ts';
 import { makePlayer } from '../../ai/__tests__/_fixtures.ts';
 
 export { makePlayer, makeEnemy, makeBoss } from '../../ai/__tests__/_fixtures.ts';
@@ -40,7 +40,7 @@ function defaultState(
     phase: 'playing',
     player,
     enemies: [], projectiles: [], areaEffects: [], pickups: [], consumablePickups: [], goldMotes: [], boss: null,
-    upgradeOptions: null, damageEvents: [], bondVfxEvents: [], levelUpCompensationEvents: [],
+    upgradeOptions: null, damageEvents: [], bondVfxEvents: [], levelUpCompensationEvents: [], xpPickupEvents: [], fallDamageEvents: [],
     chestOpenEvents: [], pendingChestReward: null,
     stats: { killCount: 0, damageDealt: 0, damageTaken: 0, shieldAbsorbed: 0, silverEarned: 0 },
     weaponDamageStats: [],
@@ -94,6 +94,8 @@ export function makeEngine(overrides: Partial<Engine> = {}): Engine {
     world: createWorld(),
     effects: overrides.effects ?? effects,
     spatialHash: overrides.spatialHash ?? new SpatialHash(4),
+    enemyById: overrides.enemyById ?? new Map(),
+    spatialIndexTick: overrides.spatialIndexTick ?? -1,
     geo: overrides.geo ?? NEON_CRUCIBLE_GEOMETRY,
     nextEnemyId: 100,
     nextProjectileId: 100,
@@ -106,6 +108,7 @@ export function makeEngine(overrides: Partial<Engine> = {}): Engine {
     chestPendingSpawnKeys: [],
     aiGroup: 0,
     miniBossTimer: 0,
+    stageTwoBossSummonCount: 0,
     landingTimer: 0,
     lastDashInput: false,
     lastJumpInput: false,

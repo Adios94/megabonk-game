@@ -4,7 +4,7 @@
  * 同时仅 1 个生效槽（新拾取覆盖旧效果与持续时间）。
  * 拾取即用：instant / one_shot 立即生效；timed 进入 activeConsumable 倒计时。
  */
-import { distanceBetween, normalizeDirection } from '../physics.ts';
+import { distanceBetween, normalizeDirection } from '../helpers/physics.ts';
 import {
   PICKUP_ATTRACT_SPEED,
   PICKUP_LIFETIME,
@@ -12,7 +12,7 @@ import {
   SHIELD_REGEN_DELAY,
 } from '../config.ts';
 import { CONSUMABLES, rollConsumableForEnemy, rollMiniBossBonusConsumable } from '../data/consumables.ts';
-import { getTomePower } from '../tomeProgression.ts';
+import { getTomePower } from '../data/tomeProgression.ts';
 import { applyCharacterTrait } from '../stats/applyCharacterTrait.ts';
 import { addDamageEvent, checkPlayerDeath } from './helpers.ts';
 import { onPlayerHitBonds } from './bonds.ts';

@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { forwardArrow } from '../forwardArrow.ts';
 import { createWorld } from '../../world.ts';
-import { makePlayer, makeEnemy, makeStats, makeCtx } from './_helpers.ts';
+import { makePlayer, makeEnemy, makeBoss, makeStats, makeCtx } from './_helpers.ts';
 
 describe('forwardArrow', () => {
   let mathRandomSpy: ReturnType<typeof vi.spyOn>;
@@ -64,6 +64,29 @@ describe('forwardArrow', () => {
     expect(ctx.effects.projectiles).toHaveLength(1);
     expect(ctx.effects.projectiles[0].vz).toBeCloseTo(25, 4);  // forward
     expect(ctx.effects.projectiles[0].vx).toBeCloseTo(0, 4);
+  });
+
+  it('only boss in range → 第一发瞄准 boss（boss 不在 enemies[] 但仍应被追踪）', () => {
+    const player = makePlayer({ rotation: Math.PI });   // 朝后 (-Z)；boss 在前 (+Z)
+    const boss = makeBoss(3, 4);
+    const ctx = makeCtx(player, [], boss, makeStats({ damage: 18, range: 30, speed: 25, projectileCount: 1 }), 'pistol', 'forwardArrow', ['pistol']);
+    forwardArrow(createWorld(), ctx);
+    expect(ctx.effects.projectiles).toHaveLength(1);
+    const p = ctx.effects.projectiles[0];
+    // boss 在 (3, 4) → 单位化 (0.6, 0.8) × speed 25
+    expect(p.vx).toBeCloseTo(0.6 * 25, 4);
+    expect(p.vz).toBeCloseTo(0.8 * 25, 4);
+  });
+
+  it('enemy 和 boss 同在 range，enemy 更近 → 第一发瞄 enemy', () => {
+    const player = makePlayer();
+    const enemy = makeEnemy(1, 0, 3);     // 距 3
+    const boss = makeBoss(0, 10);          // 距 10
+    const ctx = makeCtx(player, [enemy], boss, makeStats({ damage: 18, range: 30, speed: 25, projectileCount: 1 }), 'pistol', 'forwardArrow', ['pistol']);
+    forwardArrow(createWorld(), ctx);
+    expect(ctx.effects.projectiles).toHaveLength(1);
+    expect(ctx.effects.projectiles[0].vx).toBeCloseTo(0, 4);
+    expect(ctx.effects.projectiles[0].vz).toBeCloseTo(25, 4);
   });
 
   it('damage uses computeWeaponDamage (dM=1.5 → damage=27)', () => {

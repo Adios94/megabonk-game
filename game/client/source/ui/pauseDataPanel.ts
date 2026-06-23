@@ -67,9 +67,7 @@ export function createPauseDataPanel(title: string, titleColor?: string): PauseD
   const panel = document.createElement('div');
   panel.style.cssText = `
     position:relative;width:100%;box-sizing:border-box;
-    background:url(${PAUSE_DATA_PANEL_BG}) center center/100% 100% no-repeat;
     display:flex;flex-direction:column;align-items:stretch;
-    filter:drop-shadow(0 4px 12px rgba(0,0,0,0.55));
   `;
 
   const titleBar = document.createElement('div');

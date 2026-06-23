@@ -7708,8 +7708,8 @@ export class GameScene {
     const enemies = state.enemies;
     const player = state.player;
 
-    this.areaEffectVfx.update(state);
-    this.bondStatusVfx.updateEnemyStatusVfx(state);
+    this.areaEffectVfx.update(state, eventsFresh);
+    if (eventsFresh) this.bondStatusVfx.updateEnemyStatusVfx(state);
     this.bondStatusVfx.updateMysteryNumber(state, this.frameDt);
     // 事件驱动的羁绊 VFX 只在新 tick 消费一次（高刷屏去重）。
     if (eventsFresh) {
@@ -7775,23 +7775,25 @@ export class GameScene {
 
     // === Weapon Trail VFX (#12) ===
     // Projectile trails for player weapons
-    for (const proj of state.projectiles) {
-      if (!proj.fromPlayer) continue;
+    if (eventsFresh) {
+      for (const proj of state.projectiles) {
+        if (!proj.fromPlayer) continue;
 
-      // Other player projectiles: short trail dot every 2 ticks
-      if (state.tick % 2 === 0) {
-        const color = WEAPON_VFX_COLORS[proj.weaponType] ?? [1, 1, 1];
-        // Shotgun: brighter, larger trail to read as buckshot
-        const isShotgun = proj.weaponType === 'shotgun';
-        this.particlePool.spawn(
-          proj.x, proj.y, proj.z,
-          0, 0, 0,
-          isShotgun ? 0.6 : 0.4,
-          isShotgun ? 0.25 : 0.2,
-          color[0] * (isShotgun ? 1.0 : 0.7),
-          color[1] * (isShotgun ? 1.0 : 0.7),
-          color[2] * (isShotgun ? 1.0 : 0.7),
-        );
+        // Other player projectiles: short trail dot every 2 ticks
+        if (state.tick % 2 === 0) {
+          const color = WEAPON_VFX_COLORS[proj.weaponType] ?? [1, 1, 1];
+          // Shotgun: brighter, larger trail to read as buckshot
+          const isShotgun = proj.weaponType === 'shotgun';
+          this.particlePool.spawn(
+            proj.x, proj.y, proj.z,
+            0, 0, 0,
+            isShotgun ? 0.6 : 0.4,
+            isShotgun ? 0.25 : 0.2,
+            color[0] * (isShotgun ? 1.0 : 0.7),
+            color[1] * (isShotgun ? 1.0 : 0.7),
+            color[2] * (isShotgun ? 1.0 : 0.7),
+          );
+        }
       }
     }
 

@@ -11,7 +11,6 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 // @ts-ignore
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 // @ts-ignore
@@ -184,13 +183,15 @@ import {
 // Post-process passes — see materials/postProcessPasses.ts
 import {
   type OutlineMode,
-  SceneOutlinePass,
+  SceneRenderPass,
+  FinalCompositePass,
   ColorGradePass,
   DarkComicPass,
   GRADE_SATURATION,
   GRADE_CONTRAST,
   GRADE_BRIGHTNESS,
 } from './materials/postProcessPasses.ts';
+import { getPlatformRenderProfile, type PlatformRenderProfile } from './quality.ts';
 
 // Billboard VFX pool — see vfx/BillboardPool.ts
 import {
@@ -994,11 +995,14 @@ function audioToggleLabel(kind: AudioToggleKind, muted: boolean): string {
 function audioToggleIconSvg(kind: AudioToggleKind, muted: boolean): string {
   const color = muted ? '#9eb1cc' : '#fff4a8';
   const slash = muted
-    ? '<path d="M7 7L25 25" stroke="#ff6b6b" stroke-width="3.2" stroke-linecap="round"/>'
+    ? kind === 'music'
+      ? '<path d="M13 7L29 21" stroke="#ff6b6b" stroke-width="3.2" stroke-linecap="round"/>'
+      : '<path d="M7 7L25 25" stroke="#ff6b6b" stroke-width="3.2" stroke-linecap="round"/>'
     : '';
   if (kind === 'music') {
+    // Path bounds ≈ (13, 6)–(29, 23); square viewBox centers the note; larger size = smaller render.
     return `
-      <svg viewBox="0 0 32 32" width="100%" height="100%" aria-hidden="true">
+      <svg viewBox="7 4.5 26 26" width="100%" height="100%" aria-hidden="true">
         <path d="M20 7v15.5a4.2 4.2 0 1 1-2.7-3.9V10l9-2v12.5a4.2 4.2 0 1 1-2.7-3.9V6.2L20 7z"
           fill="${color}" stroke="#1a2340" stroke-width="1.4" stroke-linejoin="round"/>
         ${slash}
@@ -2471,9 +2475,9 @@ async function tryLoadLevel(name: string = DEFAULT_LEVEL_NAME): Promise<void> {
       }
 
       // 自动对非背景网格几何体进行自适应三角剖分细分，提升顶点密度。
-      // 阀值设为 1.8 米：只细分大平板/长斜坡，既保证弯曲边缘完美咬合不撕裂，又把面数增加压到最低！
+      // 阀值由画质档控制：桌面 1.8m 保弯曲边缘；移动 4m 减顶点。
       if (!isBg && mesh.geometry) {
-        mesh.geometry = tessellateGeometry(mesh.geometry, 1.8);
+        mesh.geometry = tessellateGeometry(mesh.geometry, getPlatformRenderProfile().levelTessellate);
       }
 
       const meshId = `scenery_mesh_${idCounter++}`;
@@ -2924,7 +2928,9 @@ export class GameScene {
   private readonly container: HTMLElement;
   private readonly renderer: THREE.WebGLRenderer;
   private composer: EffectComposer | null = null;
-  private outlinePass: SceneOutlinePass | null = null; // 屏幕空间描边 pass（screenSpace/none，dev 下 O 键切换）
+  private sceneRenderPass: SceneRenderPass | null = null;
+  private finalCompositePass: FinalCompositePass | null = null; // 含 screenSpace/none 描边开关（dev perf overlay 可读 mode）
+  private readonly renderProfile: PlatformRenderProfile = getPlatformRenderProfile();
   private bloomPass: UnrealBloomPass | null = null;
   private colorGradePass: ColorGradePass | null = null;
   private darkComicPass: DarkComicPass | null = null; // 末端"暗黑漫画"风格 post-fx；DARK_COMIC_ENABLED 控制
@@ -3285,8 +3291,7 @@ export class GameScene {
     this.container = container;
 
     // Renderer
-    // antialias:false —— 画面全程走离屏 EffectComposer target，最终由 OutputPass 把贴图全屏 blit 到
-    // 默认帧缓冲，canvas 级 MSAA 对这条离屏管线基本不生效＝白付开销（尤其移动端填充率敏感）。关掉。
+    // antialias:false —— 画面走离屏 sceneRT + FinalCompositePass 全屏合成上屏，canvas 级 MSAA 基本不生效。
     this.renderer = new THREE.WebGLRenderer({
       antialias: false,
       powerPreference: 'high-performance',
@@ -3373,6 +3378,11 @@ export class GameScene {
     this.questCompleteAtRunStart = new Set(
       getQuestProgress().filter(p => p.completed).map(p => p.questId),
     );
+    curvedWorldUniforms.uWarpStrength.value = this.renderProfile.curvedWorldStrength;
+    this.renderer.shadowMap.type = this.renderProfile.shadowMapType;
+    if (import.meta.env.DEV) {
+      console.log(`[Render] platform profile: ${this.renderProfile.id}`, this.renderProfile);
+    }
     this.setupLighting();
     this.setupGround();
     // ⚠️ HitFlashSystem / DamageNumbersOverlay 必须在 setupPlayer 之前构造：
@@ -3386,6 +3396,20 @@ export class GameScene {
     this.setupVFX();
     this.setupHUD();
     this.setupPerfStats();
+
+    this.removeDisplayListener = installThreeHighDpi({
+      renderer: this.renderer,
+      container: this.container,
+      maxPixelRatio: this.renderProfile.maxPixelRatio,
+      onResize: ({ width, height, pixelRatio }) => {
+        this.camera.aspect = width / height;
+        this.camera.updateProjectionMatrix();
+        if (this.composer) {
+          this.composer.setPixelRatio(pixelRatio);
+          this.composer.setSize(width, height);
+        }
+      },
+    });
 
     this.setupComposer();
 
@@ -3404,19 +3428,6 @@ export class GameScene {
       });
       this.setupGmWeaponDamagePanel();
     }
-
-    this.removeDisplayListener = installThreeHighDpi({
-      renderer: this.renderer,
-      container: this.container,
-      onResize: ({ width, height, pixelRatio }) => {
-        this.camera.aspect = width / height;
-        this.camera.updateProjectionMatrix();
-        if (this.composer) {
-          this.composer.setPixelRatio(pixelRatio);
-          this.composer.setSize(width, height);
-        }
-      },
-    });
 
     this.sessionUnsubscribers.push(
       this.session.on('game_update', ({ state }) => {
@@ -3509,7 +3520,9 @@ export class GameScene {
     // （toon 渐变贴图 / 预加载 VFX 贴图），错误释放会让下一局渲染崩坏。移除全局监听 + 退订
     // session 后，旧 GameScene 整棵场景图与 GL 上下文已无引用，可被 GC 连同 GPU 资源回收。
     this.composer?.dispose();
-    this.outlinePass?.dispose(); // EffectComposer.dispose 不级联各 pass，手动释放 sceneRT / 深度纹理 / 描边材质
+    this.sceneRenderPass?.dispose();
+    this.finalCompositePass?.dispose();
+    this.colorGradePass?.dispose();
     this.darkComicPass?.dispose();
     this.blobShadows?.dispose();
     this.renderer.dispose();
@@ -3574,8 +3587,9 @@ export class GameScene {
     dir.name = 'DirectionalLight';
     dir.position.set(15, 25, 15);
     dir.castShadow = true;
-    dir.shadow.mapSize.width = 2048;
-    dir.shadow.mapSize.height = 2048;
+    const shadowSize = this.renderProfile.shadowMapSize;
+    dir.shadow.mapSize.width = shadowSize;
+    dir.shadow.mapSize.height = shadowSize;
     dir.shadow.camera.near = 0.5;
     dir.shadow.camera.far = 70;
     const d = 30;
@@ -3978,55 +3992,65 @@ export class GameScene {
   }
 
   /**
-   * 后处理：SceneOutlinePass（场景渲染 + 屏幕空间深度描边）→ [可选 bloom] → OutputPass（tonemap）。
+   * 后处理：SceneRenderPass（场景 → sceneRT）→ [可选 bloom] → FinalCompositePass（描边+tonemap+调色+darkcomic 合 4→1）。
    *
    * BLOOM_ENABLED = false（默认关闭，性能优化）：UnrealBloomPass 的半分辨率降采样 +
    * 多次高斯模糊是移动端 / 集显帧率的最大单项开销，关闭后还会释放其 mip render targets 显存。
-   * 描边与 tone map（OutputPass）不受影响，画面整体观感基本一致，仅少了发光特效的辉光晕。
-   * 想开回：把 BLOOM_ENABLED 改回 true 即可（调试面板的 Bloom 段也会随之出现）。
+   * 移动端 sceneRT 用 UnsignedByteType + uOutlineTapScale=2.0 降带宽；桌面保持 HalfFloat + tap 1.0。
    */
   private setupComposer(): void {
     const BLOOM_ENABLED = false;
-    const composer = new EffectComposer(this.renderer); // 默认 HalfFloat 目标，保 HDR
+    const profile = this.renderProfile;
+    const composer = new EffectComposer(this.renderer);
     const w = this.container.clientWidth || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
     const dpr = this.renderer.getPixelRatio();
     composer.setPixelRatio(dpr);
     composer.setSize(w, h);
 
-    const outlinePass = new SceneOutlinePass(
+    const pxW = Math.round(w * dpr);
+    const pxH = Math.round(h * dpr);
+
+    const sceneRenderPass = new SceneRenderPass(
       this.scene, this.camera,
-      Math.round(w * dpr), Math.round(h * dpr),
+      pxW, pxH,
+      { sceneRtType: profile.sceneRtType },
     );
-    composer.addPass(outlinePass);
-    this.outlinePass = outlinePass;
+    composer.addPass(sceneRenderPass);
+    this.sceneRenderPass = sceneRenderPass;
 
     if (BLOOM_ENABLED) {
       const bloom = new UnrealBloomPass(
-        new THREE.Vector2(Math.max(1, w * dpr * 0.5), Math.max(1, h * dpr * 0.5)), // 半分辨率省手机
-        0.3,  // strength：微微
-        0.5,  // radius
-        1.0,  // threshold：抬高 → 只让真正的发光特效辉光，普通亮面不再被晕白
+        new THREE.Vector2(Math.max(1, w * dpr * 0.5), Math.max(1, h * dpr * 0.5)),
+        0.3,
+        0.5,
+        1.0,
       );
       composer.addPass(bloom);
       this.bloomPass = bloom;
     }
 
-    composer.addPass(new OutputPass()); // tone map：ACES + sRGB
-    // 末端美漫调色：提饱和 / 对比 / 亮度，让画面更鲜亮、色块更跳。
     const colorGrade = new ColorGradePass(GRADE_SATURATION, GRADE_CONTRAST, GRADE_BRIGHTNESS);
-    composer.addPass(colorGrade);
     this.colorGradePass = colorGrade;
 
-    // feat/dark-comic-postfx：末端"暗黑漫画"风格 pass。开关常量在这里，关掉就是回到主分支观感。
-    // 实际去饱和/噪点强度由 GameScene.updateDarkComic 每帧根据 state.finalSwarm 渐进驱动。
-    const DARK_COMIC_ENABLED = true;
-    if (DARK_COMIC_ENABLED) {
-      const darkComic = new DarkComicPass();
-      darkComic.setSize(Math.round(w * dpr), Math.round(h * dpr));
-      composer.addPass(darkComic);
-      this.darkComicPass = darkComic;
-    }
+    const darkComic = new DarkComicPass();
+    darkComic.enabled = profile.darkComicEnabled;
+    darkComic.setSize(pxW, pxH);
+    this.darkComicPass = darkComic;
+
+    const finalComposite = new FinalCompositePass(
+      sceneRenderPass,
+      this.camera,
+      colorGrade,
+      darkComic,
+      this.renderer,
+      pxW,
+      pxH,
+      { outlineTapScale: profile.outlineTapScale },
+    );
+    finalComposite.renderToScreen = true;
+    composer.addPass(finalComposite);
+    this.finalCompositePass = finalComposite;
 
     this.composer = composer;
   }
@@ -4072,7 +4096,7 @@ export class GameScene {
     baseGeo.rotateX(-Math.PI / 2);
     // 关键修复：手动生成的底板也必须进行高密度三角剖分细分，确保它在 GPU 空间弯曲时完美贴合球面，
     // 绝对不会因为低顶点密度而形成平直的大平板穿透并遮挡视野！
-    const tessellatedGeo = tessellateGeometry(baseGeo, 1.8);
+    const tessellatedGeo = tessellateGeometry(baseGeo, this.renderProfile.groundTessellate);
     const baseMat = new THREE.MeshToonMaterial({ color: '#4A7FB5', gradientMap: toonGradientMap });
     applyStylizedToonShading(baseMat, 0, true); // 地面底板也加风格化 + 网点
     this.groundMesh = new THREE.Mesh(tessellatedGeo, baseMat);
@@ -4495,11 +4519,12 @@ export class GameScene {
   }
 
   private setupVFX(): void {
-    // ─── Billboard VFX：贴图预载 + 64 槽 plane mesh 池 ───
-    this.billboardPool = new BillboardPool(this.scene);
-    // ─── 点云粒子池：500 槽 + shader 自渲染 ───
+    const { billboardCapacity, particleCapacity } = this.renderProfile;
+    // ─── Billboard VFX：贴图预载 + plane mesh 池（移动 24 / 桌面 64）───
+    this.billboardPool = new BillboardPool(this.scene, billboardCapacity);
+    // ─── 点云粒子池（移动 250 / 桌面 500）+ shader 自渲染 ───
     //（emitDeathBurst / emitHitSparks 等会同时调 billboardPool，所以必须在它之后）
-    this.particlePool = new ParticlePool(this.scene, this.billboardPool);
+    this.particlePool = new ParticlePool(this.scene, this.billboardPool, particleCapacity);
     // ─── 武器瞬态 VFX（剑气 / 闪电 / 火环）+ 自带常驻 lightningFlashLight ───
     this.weaponTransientVfx = new WeaponTransientVfx(this.scene, this.billboardPool, this.particlePool);
     // ─── 区域特效（毒气 / 虚空涟漪 / 灼地痕迹 / 激光线）+ 按 kind 对象池 ───
@@ -4924,7 +4949,8 @@ export class GameScene {
       `  enemy ${b.enemy}  shadow ${b.shadow}\n` +
       `  level ${b.level}  other ${b.other}\n` +
       `  sum ${bSum} (+post ${Math.max(0, drawCalls - bSum)})\n` +
-      `outline: ${this.outlinePass?.mode ?? 'off'}\n` +
+      `outline: ${this.finalCompositePass?.mode ?? 'off'}\n` +
+      `profile: ${this.renderProfile.id}\n` +
       `render: ${this.perfRenderMs.toFixed(1)}ms (submit)`;
     this.renderer.info.reset();
   }
@@ -12257,6 +12283,20 @@ function hideBootLoadingOverlay(): void {
   window.setTimeout(() => overlay.remove(), 400);
 }
 
+/** 平台生命周期：资源加载完毕、主菜单可交互时通知一次（duko / KubeeClient）。 */
+let kubeeGameLoadedSent = false;
+function notifyKubeeGameLoaded(): void {
+  if (kubeeGameLoadedSent) return;
+  const client = globalThis.KubeeClient;
+  if (!client?.game?.loaded) return;
+  try {
+    client.game.loaded();
+    kubeeGameLoadedSent = true;
+  } catch (err) {
+    console.warn('[Boot] KubeeClient.game.loaded() failed:', err);
+  }
+}
+
 async function main(): Promise<void> {
   const i18nMode = (import.meta.env.VITE_I18N_MODE as I18nMode | undefined) ?? 'locked';
   const i18nLocale = import.meta.env.VITE_I18N_LOCALE as string | undefined;
@@ -12296,6 +12336,7 @@ async function main(): Promise<void> {
   }
 
   showMainMenu();
+  notifyKubeeGameLoaded();
 }
 
 export function bootGameClient(): void {

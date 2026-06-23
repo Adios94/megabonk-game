@@ -2672,8 +2672,8 @@ async function loadObjItems(): Promise<void> {
 
   [crystalGeometry, heartGeometry, heartHalfGeometry, boneGeometry, crystal2Geometry, crystal3Geometry, crystal4Geometry] = await Promise.all([
     loadAndNormalizeGlb('/models/items/Crystal1.glb', 0.4),
-    loadAndNormalize('/models/items/Heart.obj', 0.5),
-    loadAndNormalize('/models/items/Heart_Half.obj', 0.42),
+    loadAndNormalizeGlb('/models/items/Heart.glb', 0.5),
+    loadAndNormalizeGlb('/models/items/Heart_Half.glb', 0.42),
     loadAndNormalizeGlb('/models/items/Bone.glb', 0.5),
     loadAndNormalizeGlb('/models/items/Crystal2.glb', 0.4),
     loadAndNormalizeGlb('/models/items/Crystal3.glb', 0.4),
@@ -4489,7 +4489,7 @@ export class GameScene {
 
   private setupPickupMesh(): void {
     // 每种拾取物用各自的 geometry（一个 InstancedMesh / 类型），颜色仍走 instanceColor 染色。
-    // xp 四档共用 Crystal1（靠颜色区分阶级）；health/health_small 用专属 OBJ 模型。
+    // xp 四档共用 Crystal1（靠颜色区分阶级）；health/health_small 用专属 GLB 模型。
     // 银币走 coin.glb 独立克隆渲染（见 renderSilverPickups）。
     const fallback = new THREE.OctahedronGeometry(0.35, 0);
     const xpGeo = crystalGeometry ?? fallback;

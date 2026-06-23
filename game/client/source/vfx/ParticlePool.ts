@@ -26,7 +26,7 @@ interface Particle {
   active: boolean;
 }
 
-const DEFAULT_MAX_PARTICLES = 500;
+export const DEFAULT_MAX_PARTICLES = 500;
 
 export class ParticlePool {
   readonly capacity: number;

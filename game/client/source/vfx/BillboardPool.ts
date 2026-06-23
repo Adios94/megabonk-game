@@ -86,7 +86,7 @@ export interface BillboardSpawnOpts {
   blending?: 'additive' | 'normal';
 }
 
-const DEFAULT_BILLBOARD_CAPACITY = 64;
+export const DEFAULT_BILLBOARD_CAPACITY = 64;
 
 export class BillboardPool {
   /** 预载的 VFX 贴图集合 — 公开给其它 VFX 子系统复用（slash sector / lightning / etc.）。 */

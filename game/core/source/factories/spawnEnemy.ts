@@ -59,11 +59,28 @@ function computeFinalSwarmScale(gameTime: number): { hp: number; damage: number 
   };
 }
 
+function computeEffectiveOvertimeSeconds(
+  overtimeSeconds: number,
+  anchorSeconds: number | undefined,
+  growthMultiplier: number | undefined,
+): number {
+  if (overtimeSeconds <= 0 || anchorSeconds === undefined || growthMultiplier === undefined) {
+    return overtimeSeconds;
+  }
+
+  const anchor = Math.max(0, Math.min(overtimeSeconds, anchorSeconds));
+  return anchor + (overtimeSeconds - anchor) * growthMultiplier;
+}
+
 export interface SpawnEnemyContext {
   gameTime: number;
   tier: DifficultyTier;
   /** Overtime 累积秒数，0 表示常规生存期。按 OVERTIME_STEP_SECONDS 归一后连续提升。 */
   overtimeSeconds?: number;
+  /** Boss 生成时的 overtime 秒数；只放慢该锚点之后的成长增量。 */
+  overtimeGrowthAnchorSeconds?: number;
+  /** Boss 存活期间 overtime 成长速率倍率；undefined 表示不调整。 */
+  overtimeGrowthMultiplier?: number;
   player: PlayerState;     // 用于 targetX/Z 初始化
   nextId: () => number;    // 调用方维护 nextEnemyId
 }
@@ -93,20 +110,29 @@ export function spawnEnemy(
 
   // Overtime 系数（仅对 wave / miniBoss 应用；necromancer/boss summon 保持原始数值）。
   // 使用连续曲线，避免按档位突跳，同时让超时压迫感从第一秒就开始增强。
-  const overtimeSteps = Math.max(0, (ctx.overtimeSeconds ?? 0) / OVERTIME_STEP_SECONDS);
+  const rawOvertimeSeconds = ctx.overtimeSeconds ?? 0;
+  const effectiveOvertimeSeconds = computeEffectiveOvertimeSeconds(
+    rawOvertimeSeconds,
+    ctx.overtimeGrowthAnchorSeconds,
+    ctx.overtimeGrowthMultiplier,
+  );
+  const effectiveGameTime = rawOvertimeSeconds > 0 && ctx.gameTime >= REGULAR_GAME_DURATION
+    ? REGULAR_GAME_DURATION + effectiveOvertimeSeconds
+    : ctx.gameTime;
+  const overtimeSteps = Math.max(0, effectiveOvertimeSeconds / OVERTIME_STEP_SECONDS);
   const overtimeHpFactor = 1 + OVERTIME_HP_PER_STEP * overtimeSteps;
   const overtimeDamageFactor = 1 + OVERTIME_DAMAGE_PER_STEP * overtimeSteps;
   const overtimeSpeedFactor = 1 + OVERTIME_SPEED_PER_STEP * overtimeSteps;
   const shrineDifficulty = ctx.player.difficultyMult ?? 1;
   const levelScale = computeEnemyLevelScale(ctx.player.level);
-  const finalSwarmScale = computeFinalSwarmScale(ctx.gameTime);
+  const finalSwarmScale = computeFinalSwarmScale(effectiveGameTime);
 
   switch (mode) {
     case 'wave': {
-      const timeScale = 1 + ctx.gameTime / 600;
+      const timeScale = 1 + effectiveGameTime / 600;
       let hpScale = timeScale;
-      if (ctx.gameTime >= 180) {
-        hpScale *= (1 + (ctx.gameTime - 180) / 60 * 0.1);
+      if (effectiveGameTime >= 180) {
+        hpScale *= (1 + (effectiveGameTime - 180) / 60 * 0.1);
       }
       const tierCfg = TIER_CONFIGS[ctx.tier];
       hp = Math.round(def.hp * hpScale * tierCfg.enemyHpMultiplier * levelScale.hp * finalSwarmScale.hp * overtimeHpFactor * shrineDifficulty);
@@ -125,7 +151,7 @@ export function spawnEnemy(
       break;
     }
     case 'miniBoss': {
-      const timeScale = 1 + ctx.gameTime / 600;
+      const timeScale = 1 + effectiveGameTime / 600;
       const tierCfg = TIER_CONFIGS[ctx.tier];
       hp = Math.round(def.hp * timeScale * 3 * tierCfg.enemyHpMultiplier * levelScale.hp * overtimeHpFactor * shrineDifficulty);
       damage = Math.round(def.damage * 2 * tierCfg.enemyDamageMultiplier * levelScale.damage * overtimeDamageFactor * shrineDifficulty);
@@ -138,7 +164,7 @@ export function spawnEnemy(
     }
     case 'necromancerSummon': {
       // 召唤的小骷髅 — legacy isElite=false, summonCooldown=0, orbitAngle=0
-      const timeScale = 1 + ctx.gameTime / 600;
+      const timeScale = 1 + effectiveGameTime / 600;
       hp = Math.round(def.hp * timeScale);
       damage = def.damage;
       speed = def.speed;

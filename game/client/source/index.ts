@@ -31,6 +31,8 @@ import {
   TIER_CONFIGS,
   CHEST_INTERACT_RADIUS,
   CHEST_INTERACT_MAX_Y_DELTA,
+  ALTAR_INTERACT_RADIUS,
+  ALTAR_INTERACT_MAX_Y_DELTA,
   RELICS,
   BONDS,
   evalBondCounts,
@@ -138,6 +140,7 @@ import {
   installButtonClickSfx,
   onAudioSettingsChange,
   playCombatMusic,
+  playLevelTwoTransitionSfx,
   playMenuMusic,
   playSfx,
   setFlameRingSfxActive,
@@ -2969,6 +2972,9 @@ export class GameScene {
   private bossAnimState: string | null = null;
   /** Boss 上一帧 XZ + 静止时长（移动判定，逻辑同敌人）。 */
   private bossPrevPos: { x: number; z: number; stillTime: number } | null = null;
+  private bossWasPresent = false;
+  private bossAttackSfxActive = false;
+  private lastBossPhase: BossState['phase'] | null = null;
   // Boss hit-flash 当前 tint 已迁至 this.hitFlash.bossTint
   private ambientLight!: THREE.AmbientLight;
   private hemiLight!: THREE.HemisphereLight;
@@ -3004,6 +3010,7 @@ export class GameScene {
   private wasAlive = true;
   private wasGrounded = true; // Track grounded state for jump animation trigger
   private lastPhase: GamePhase = 'playing';
+  private lastRunStage: GameState['stage'] = 1;
   private startIntro: StartIntroState | null = null;
 
   // GSAP animation state
@@ -3092,6 +3099,7 @@ export class GameScene {
   private pickupMeshes: Map<PickupType, THREE.InstancedMesh> = new Map();
   private silverPickupObjects: Map<number, THREE.Object3D> = new Map();
   private consumableSprites: Map<number, THREE.Sprite> = new Map();
+  private lastConsumablePickups: Map<number, { x: number; z: number; attracted: boolean }> = new Map();
   private goldMoteTexture!: THREE.Texture;
   private goldMoteSprites: Map<number, THREE.Sprite> = new Map();
 
@@ -3535,6 +3543,7 @@ export class GameScene {
     this.chestRewardPanel?.remove();
     this.pendingChestRewardReveal = null;
     this.chestOpenAnimDone.clear();
+    this.lastConsumablePickups.clear();
     this.shrineIndicator?.remove();
     if (this.majorNoticeTimer) {
       clearTimeout(this.majorNoticeTimer);
@@ -5159,6 +5168,10 @@ export class GameScene {
     }
 
     const state = this.session.getRenderState();
+    if (this.lastRunStage === 1 && state.stage === 2) {
+      playLevelTwoTransitionSfx();
+    }
+    this.lastRunStage = state.stage;
     const introRenderMode = this.updateStartIntro(dt);
     if (introRenderMode === 'introOnly') {
       this.renderStartIntroFrame(state);
@@ -5199,6 +5212,7 @@ export class GameScene {
     this.renderProjectiles(state.projectiles);
     this.renderPickups(state.pickups);
     this.renderSilverPickups(state.pickups);
+    this.playConsumablePickupSfx(state);
     this.renderConsumablePickups(state.consumablePickups ?? []);
     this.renderGoldMotes(state.goldMotes ?? []);
     this.renderBoss(state.boss);
@@ -5229,6 +5243,7 @@ export class GameScene {
             if (evt.isShield) {
               playerHitFlashColor ??= PLAYER_SHIELD_HIT_FLASH_COLOR;
             } else {
+              playSfx('hurt');
               playerHitFlashColor = PLAYER_HP_HIT_FLASH_COLOR;
             }
           }
@@ -6382,6 +6397,29 @@ export class GameScene {
     }
   }
 
+  private playConsumablePickupSfx(state: GameState): void {
+    const pickups = state.consumablePickups ?? [];
+    const current = new Set<number>();
+    for (const pickup of pickups) current.add(pickup.id);
+
+    for (const [id, previous] of this.lastConsumablePickups) {
+      if (current.has(id)) continue;
+      const dx = previous.x - state.player.x;
+      const dz = previous.z - state.player.z;
+      if (previous.attracted || dx * dx + dz * dz <= 0.5 * 0.5) {
+        playSfx('eat');
+      }
+    }
+
+    this.lastConsumablePickups = new Map(
+      pickups.map(pickup => [pickup.id, {
+        x: pickup.x,
+        z: pickup.z,
+        attracted: pickup.attracted,
+      }]),
+    );
+  }
+
   private renderPickups(pickups: PickupState[]): void {
     const time = performance.now() * 0.004; // Faster spin
 
@@ -6499,6 +6537,9 @@ export class GameScene {
         this.setBossHitFlashTint(this.bossMesh, undefined);
         this.bossMesh.visible = false;
       }
+      this.bossWasPresent = false;
+      this.bossAttackSfxActive = false;
+      this.lastBossPhase = null;
       if (!boss) {
         // Boss 离场：重置动画状态，下一个 boss 干净起播
         this.bossAnimState = null;
@@ -6578,6 +6619,20 @@ export class GameScene {
 
     this.bossMesh.visible = true;
     this.bossMesh.position.set(boss.x, boss.y || 0, boss.z);
+    if (!this.bossWasPresent) {
+      playSfx('boss_loading');
+      this.bossWasPresent = true;
+      this.bossAttackSfxActive = false;
+      this.lastBossPhase = boss.phase;
+    } else if ((this.lastBossPhase === 1 && boss.phase === 2) || (this.lastBossPhase === 2 && boss.phase === 3)) {
+      playSfx('boss_alarm');
+    }
+    this.lastBossPhase = boss.phase;
+    const bossAttackSfxActive = boss.attackAnimTimer > 0 && boss.currentAttack !== 'idle';
+    if (bossAttackSfxActive && !this.bossAttackSfxActive) {
+      playSfx('boss_attack');
+    }
+    this.bossAttackSfxActive = bossAttackSfxActive;
     const bossHitFlashWeaponType = boss.hitFlashTimer > 0 ? boss.hitFlashWeaponType : undefined;
     const bossHitFlashColor = boss.hitFlashTimer > 0 ? boss.hitFlashColor : undefined;
     this.setBossHitFlashTint(this.bossMesh, bossHitFlashWeaponType, bossHitFlashColor);
@@ -7012,6 +7067,7 @@ export class GameScene {
         window.clearInterval(flashTimer);
         const finalRarity = reward.rarity as ItemFrameRarity;
         const finalColor = RARITY_COLORS[reward.rarity] ?? '#aaaaaa';
+        playSfx('select');
         card.style.backgroundImage = `url(${upgradeFrameUrl(finalRarity)})`;
         card.style.filter = `${baseGlow} drop-shadow(0 0 18px ${finalColor}cc)`;
         titleEl.textContent = t(`relic.${reward.relicId}.name`);
@@ -7602,6 +7658,7 @@ export class GameScene {
     rarityEl.style.color = '#ffffff';
 
     card.addEventListener('click', () => {
+      playSfx('select');
       this.session.selectShrineReward(option.id);
       this.hideShrineRewardPanel();
     });
@@ -7628,7 +7685,12 @@ export class GameScene {
     this.bondStatusVfx.updateEnemyStatusVfx(state);
     this.bondStatusVfx.updateMysteryNumber(state, this.frameDt);
     // 事件驱动的羁绊 VFX 只在新 tick 消费一次（高刷屏去重）。
-    if (eventsFresh) this.bondStatusVfx.processBondVfxEvents(state);
+    if (eventsFresh) {
+      for (const evt of state.bondVfxEvents ?? []) {
+        if (evt.kind === 'arcane_burst') playSfx('magic');
+      }
+      this.bondStatusVfx.processBondVfxEvents(state);
+    }
     this.bondStatusVfx.updateArcaneBurstOrbs(dt);
 
     // --- Emit particles based on game events ---
@@ -7716,7 +7778,11 @@ export class GameScene {
       if (justFired) {
         if (weapon.type === 'sword') playSfx('sword');
         else if (weapon.type === 'ray_gun') playSfx('raygun');
-        else if (weapon.type === 'pistol' || weapon.type === 'shotgun' || weapon.type === 'paralysis_gun') playSfx('gun');
+        else if (weapon.type === 'paralysis_gun') playSfx('needle');
+        else if (weapon.type === 'poison_bomb') playSfx('poison');
+        else if (weapon.type === 'bone_bouncer') playSfx('bone');
+        else if (weapon.type === 'lightning_staff') playSfx('lightning', 0.252);
+        else if (weapon.type === 'pistol' || weapon.type === 'shotgun') playSfx('gun');
         else if (weapon.type === 'void_ripple') playSfx('ripple');
         else if (weapon.type === 'scorch_boots') playSfx('burn');
       }
@@ -8108,7 +8174,8 @@ export class GameScene {
     // 召唤 Boss 的飞碟（ready）现在进入范围即自动充能，无需按键，故不再显示提示。
     const portalInRange = state.altars.find(a =>
       a.phase === 'portal_ready'
-      && Math.hypot(a.x - p.x, a.z - p.z) <= 2.0
+      && Math.hypot(a.x - p.x, a.z - p.z) <= ALTAR_INTERACT_RADIUS
+      && Math.abs((p.y ?? 0) - (a.y ?? 0)) <= ALTAR_INTERACT_MAX_Y_DELTA
     );
     if ((portalInRange || chestInRange) && isMobile) {
       gsapAnimations.animateInteractButton(this.interactBtn, true, 0.3);
@@ -8163,7 +8230,7 @@ export class GameScene {
         this.spawnDamageNumber(evt);
       }
       for (const evt of state.xpPickupEvents) {
-        playSfx('getexp', evt.amount >= 10 ? 0.546 : 0.434);
+        playSfx('getexp', evt.amount >= 10 ? 0.382 : 0.304);
       }
       for (const evt of state.fallDamageEvents) {
         playSfx('fall', evt.damage >= 10 ? 0.574 : 0.476);
@@ -9180,6 +9247,7 @@ export class GameScene {
     rarityEl.style.color = '#ffffff';
 
     card.addEventListener('click', () => {
+      playSfx('select');
       this.session.selectUpgrade(option.id);
       // Immediately hide panel (don't wait for next game_update cycle)
       this.hideUpgradePanel();
@@ -10864,6 +10932,7 @@ let tierSelectEl: HTMLDivElement | null = null;
 
 function showCharacterSelectScreen(): void {
   if (characterSelectEl) return;
+  destroyMainMenu();
   ensureSelectableCharacter();
 
   characterSelectEl = document.createElement('div');
@@ -11310,6 +11379,7 @@ function createMainMenuButton(
 }
 
 function showMainMenu(): void {
+  if (mainMenuEl) return;
   playMenuMusic();
   mainMenuEl = document.createElement('div');
   mainMenuEl.style.cssText = `
@@ -12158,6 +12228,10 @@ function startGame(character: CharacterType = 'megachad'): void {
     activeScene.destroy();
     activeScene = null;
   }
+  destroyMainMenu();
+  destroyCharacterSelectScreen();
+  destroyTierSelectScreen();
+  hideQuestsOverlay();
 
   const levelName = levelNameForTier(selectedTier);
   const tierLevel = loadedLevelsByName.get(levelName);

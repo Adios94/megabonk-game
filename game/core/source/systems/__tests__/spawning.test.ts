@@ -2,25 +2,38 @@
  * spawning.{tickSpawning, checkBossSpawn} 单元测试.
  *
  * 重点：
- *  - boss_fight 阶段不刷怪
+ *  - boss_fight 阶段刷怪效率减半但不归零
  *  - finalSwarm 标志 (gameTime 480-540)
  *  - mini-boss 每 120 秒一只 (gameTime ≥ 180)
  *  - Boss 起场 = 必须有飞碟进入 boss_active（按 E 召唤完成），与时间无关
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { tickSpawning, checkBossSpawn } from '../spawning.ts';
-import { makeEngine, makePlayer, makeEnemy } from './_fixtures.ts';
+import { makeEngine, makePlayer, makeEnemy, makeBoss } from './_fixtures.ts';
 import { ALTAR_SUMMON_DURATION, BOSS_HP, REGULAR_GAME_DURATION } from '../../config.ts';
 
 describe('tickSpawning', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('boss_fight 阶段不刷怪', () => {
+  it('boss_fight 阶段仍会刷怪', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const engine = makeEngine();
     engine.state.phase = 'boss_fight';
+    engine.state.boss = makeBoss();
     engine.state.gameTime = 30;
+    engine.spawnTimer = 0;
     tickSpawning(engine, 0.05);
-    expect(engine.state.enemies).toHaveLength(0);
+    expect(engine.state.enemies.length).toBeGreaterThan(0);
+  });
+
+  it('boss_fight 阶段刷怪计时半速推进', () => {
+    const engine = makeEngine();
+    engine.state.phase = 'boss_fight';
+    engine.state.boss = makeBoss();
+    engine.state.gameTime = 5;
+    engine.spawnTimer = 1.0;
+    tickSpawning(engine, 0.2);
+    expect(engine.spawnTimer).toBeCloseTo(0.9, 5);
   });
 
   it('boss_intro 阶段也不刷怪', () => {

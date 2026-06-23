@@ -61,7 +61,7 @@ import { tickAreaEffects } from './systems/areaEffects.ts';
 import { processDeaths, tickPickups, tickThorns } from './systems/pickups.ts';
 import { recordWeaponDamage, refreshAllWeaponDps } from './systems/weaponDamageStats.ts';
 import { applyPlayerHit, tickConsumableEffects, tickConsumablePickups } from './systems/consumables.ts';
-import { tickSpawning, checkBossSpawn } from './systems/spawning.ts';
+import { tickSpawning, checkBossSpawn, getBossOvertimeGrowthContext } from './systems/spawning.ts';
 import { tickAltars, generateAltars } from './systems/altars.ts';
 import { tickChests, generateChests, nextChestId, nextChestRespawnDelay } from './systems/chests.ts';
 import { grantRelic } from './systems/relics.ts';
@@ -576,6 +576,7 @@ function makeEffects(engine: Engine): AiEffects {
           gameTime: engine.state.gameTime,
           tier: engine.config.tier,
           overtimeSeconds: engine.state.overtimeSeconds,
+          ...getBossOvertimeGrowthContext(engine),
           player: engine.state.player,
           nextId: () => engine.nextEnemyId++,
         },

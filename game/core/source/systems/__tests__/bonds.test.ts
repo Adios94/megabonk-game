@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { tickBonds } from '../bonds.ts';
+import { onBondWeaponHit, tickBonds } from '../bonds.ts';
 import { makeEngine, makeEnemy, makePlayer } from './_fixtures.ts';
 
 const ARCANE_WEAPONS = [
@@ -62,5 +62,27 @@ describe('arcane bond', () => {
 
     expect(closeThreat.hp).toBe(44);
     expect(distantTank.hp).toBe(300);
+  });
+
+  it('caps mystery gain at 15 per second', () => {
+    const player = makePlayer({
+      bonds: [{ bondId: 'arcane', tier: 2 }],
+      weapons: ARCANE_WEAPONS,
+    });
+    const engine = makeEngine({ state: { ...makeEngine().state, player } });
+    const target = makeEnemy(1, 'skeleton_soldier', 2, 0, { hp: 100, maxHp: 100 });
+
+    for (let i = 0; i < 20; i++) {
+      onBondWeaponHit(engine, 'lightning_staff', target, 1, false);
+    }
+
+    expect(player.bondMystery).toBe(15);
+    expect(player.bondMysterySecGain).toBe(15);
+
+    tickBonds(engine, 1);
+    onBondWeaponHit(engine, 'lightning_staff', target, 1, false);
+
+    expect(player.bondMystery).toBe(16);
+    expect(player.bondMysterySecGain).toBe(1);
   });
 });

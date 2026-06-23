@@ -30,8 +30,6 @@ import {
   TIER_CONFIGS,
   CHEST_INTERACT_RADIUS,
   CHEST_INTERACT_MAX_Y_DELTA,
-  ALTAR_INTERACT_RADIUS,
-  ALTAR_INTERACT_MAX_Y_DELTA,
   RELICS,
   BONDS,
   evalBondCounts,
@@ -152,6 +150,9 @@ import { EventEmitter } from './session/EventEmitter.ts';
 
 import zhLocale from '../../../i18n/zh.json';
 import enLocale from '../../../i18n/en.json';
+
+const ALTAR_INTERACT_RADIUS = 2.0;
+const ALTAR_INTERACT_MAX_Y_DELTA = ALTAR_INTERACT_RADIUS;
 
 // =============================================================================
 // Pool Caps & Resource Disposal

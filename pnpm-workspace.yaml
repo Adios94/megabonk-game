@@ -6,7 +6,6 @@ packages:
   - packages/render-adapter
 allowBuilds:
   esbuild: true
-  ffmpeg-static: set this to true or false
   sharp: false
   tree-sitter: true
   tree-sitter-html: true

@@ -1,15 +1,10 @@
 // 音频资源优化：无损/高码率 → 128kbps MP3（浏览器 SFX/BGM 足够）。
 // 用法：node scripts/assets/optimize-audio.mjs
-// 首次运行前需确保 ffmpeg-static 已下载二进制：
-//   node node_modules/ffmpeg-static/install.js
+// 需要本机已安装 ffmpeg，或通过 FFMPEG_PATH 指向 ffmpeg 可执行文件。
 import { execFileSync } from 'node:child_process';
-import { renameSync, statSync, unlinkSync, existsSync } from 'node:fs';
-import ffmpegPath from 'ffmpeg-static';
+import { renameSync, statSync, unlinkSync } from 'node:fs';
 
-if (!ffmpegPath || !existsSync(ffmpegPath)) {
-  console.error('ffmpeg binary missing — run: node node_modules/ffmpeg-static/install.js');
-  process.exit(1);
-}
+const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
 
 /** @type {Array<{ in: string; out?: string; bitrate?: string; mono?: boolean }>} */
 const JOBS = [

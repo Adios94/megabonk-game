@@ -509,6 +509,29 @@ export class GSAPAnimationManager {
   }
 
   /**
+   * 结算界面「本局完成了新的任务！」提示：先弹性放大入场，再循环呼吸式放大缩小。
+   */
+  playNewQuestDonePulse(element: HTMLElement): void {
+    const animationId = 'new-quest-done-pulse';
+    this.cancelAnimation(animationId);
+
+    gsap.set(element, { scale: 0, transformOrigin: '50% 50%' });
+
+    const timeline = gsap.timeline();
+    timeline
+      .to(element, { scale: 1.15, duration: 0.55, ease: 'elastic.out(1, 0.45)' })
+      .to(element, {
+        scale: 1.08,
+        duration: 0.7,
+        ease: 'sine.inOut',
+        yoyo: true,
+        repeat: -1,
+      });
+
+    this.timelines.set(animationId, timeline);
+  }
+
+  /**
    * 屏幕闪光动画
    */
   screenFlash(color: string, duration: number = 0.5): void {

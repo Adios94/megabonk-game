@@ -369,6 +369,7 @@
     "claim": "领取",
     "claimed": "已领取",
     "ready_to_claim": "可领取",
+    "new_quest_done": "本局完成了新的任务！",
     "back": "返回"
   },
   "boss": {
@@ -469,7 +470,7 @@
     },
     "hourglass": {
       "name": "时间沙漏",
-      "desc": "Overtime 内全伤 +0.12%/s（按层累加）"
+      "desc": "超时模式内全伤 +0.12%/s（按层累加）"
     },
     "iron_heart": {
       "name": "铁心",
@@ -486,7 +487,7 @@
       "currentTotalDamage": "当前总伤害",
       "eliteDamage": "对精英伤害",
       "lifeRegen": "生命恢复",
-      "overtimePerSec": "Overtime 每秒全伤",
+      "overtimePerSec": "超时模式每秒全伤",
       "currentOvertime": "当前全伤"
     }
   },

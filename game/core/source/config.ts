@@ -52,7 +52,7 @@ export const XP_BASE = 10;
 export const XP_GROWTH = 0.35;
 
 export const BOSS_SPAWN_TIME = 540;
-export const BOSS_HP = 60000;
+export const BOSS_HP = 30000;
 export const BOSS_INTRO_DURATION = 2.0;
 /**
  * 常规生存期（秒）。超过这个时间且玩家未进传送门 → 进入 overtime。
@@ -106,6 +106,8 @@ export const ALTAR_SUMMON_DECAY_RATE = 0.5;
 export const ALTAR_BOSS_RESPAWN_COOLDOWN = 60;
 /** 玩家与飞碟 / 传送门交互的触发半径。 */
 export const ALTAR_INTERACT_RADIUS = 2.0;
+/** 玩家与飞碟 / 传送门交互允许的高度差（与祭坛 y 比较）。 */
+export const ALTAR_INTERACT_MAX_Y_DELTA = ALTAR_INTERACT_RADIUS;
 /** 飞碟距出生点的最小距离（要求玩家探索才能找到）。 */
 export const ALTAR_MIN_DISTANCE = 25;
 /** 飞碟距地图中心的最大相对距离（halfMap 系数）。避免出图边。 */

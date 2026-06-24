@@ -147,8 +147,11 @@ export function onBondWeaponHit(
 
     switch (id) {
       case 'arcane': {
-        player.bondMystery = (player.bondMystery ?? 0) + 1;
-        player.bondMysterySecGain = (player.bondMysterySecGain ?? 0) + 1;
+        const secGain = player.bondMysterySecGain ?? 0;
+        if (secGain < (p.rateCap ?? Number.POSITIVE_INFINITY)) {
+          player.bondMystery = (player.bondMystery ?? 0) + 1;
+          player.bondMysterySecGain = secGain + 1;
+        }
         break;
       }
       case 'arc_conductor': {

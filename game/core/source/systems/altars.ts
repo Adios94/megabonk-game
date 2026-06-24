@@ -31,6 +31,7 @@ import {
   ALTAR_SUMMON_DURATION,
   ALTAR_SUMMON_DECAY_RATE,
   ALTAR_INTERACT_RADIUS,
+  ALTAR_INTERACT_MAX_Y_DELTA,
   ALTAR_MIN_DISTANCE,
   ALTAR_MAX_DISTANCE_RATIO,
   TIER_CONFIGS,
@@ -103,6 +104,18 @@ export function generateAltars(config: GameConfig, avoidNearestTo?: AvoidPoint, 
   return altars;
 }
 
+function isAltarInRange(
+  playerX: number,
+  playerZ: number,
+  playerY: number | undefined,
+  altar: AltarState,
+): boolean {
+  const dist = distanceBetween(playerX, playerZ, altar.x, altar.z);
+  if (dist >= ALTAR_INTERACT_RADIUS) return false;
+  const yDelta = Math.abs((playerY ?? 0) - (altar.y ?? 0));
+  return yDelta <= ALTAR_INTERACT_MAX_Y_DELTA;
+}
+
 function nearestPoint<T extends AvoidPoint>(points: readonly T[], origin: AvoidPoint): T | undefined {
   let best: T | undefined;
   let bestDistSq = Infinity;
@@ -132,8 +145,7 @@ export function tickAltars(engine: Engine, dt: number): void {
   const interact = engine.input.interact === true;
 
   for (const altar of engine.state.altars) {
-    const dist = distanceBetween(player.x, player.z, altar.x, altar.z);
-    const inRange = dist < ALTAR_INTERACT_RADIUS;
+    const inRange = isAltarInRange(player.x, player.z, player.y, altar);
 
     switch (altar.phase) {
       case 'ready': {

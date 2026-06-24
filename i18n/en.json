@@ -369,6 +369,7 @@
     "claim": "Claim",
     "claimed": "Claimed",
     "ready_to_claim": "Ready to claim",
+    "new_quest_done": "New quest completed this run!",
     "back": "Back"
   },
   "boss": {

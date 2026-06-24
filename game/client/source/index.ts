@@ -403,10 +403,10 @@ const RARITY_COLORS: Record<string, string> = {
   legendary: '#ffaa00',
 };
 
-// 羁绊档位边框：T1 铜 / T2 银 / T3 金
+// 羁绊档位边框：T1 灰 / T2 橙 / T3 金
 const BOND_TIER_COLORS: Record<number, string> = {
-  1: '#cd7f32',
-  2: '#c8c8d4',
+  1: '#aaaaaa',
+  2: '#ff8844',
   3: '#ffcc00',
 };
 
@@ -915,8 +915,10 @@ const HUD_TASK_TRACK_SIZE = { w: 1207, h: 337 } as const;
 const HUD_TASK_TRACK_TEXT_INSET_LEFT = 0.26;
 /** 任务条整体相对 topLeft 的横向偏移（负值=向左推）。 */
 const HUD_TASK_TRACK_OFFSET_LEFT = 'clamp(-10px,-3vw,-10px)';
-/** 局内底部经验条宽度。 */
-const HUD_XP_BAR_WIDTH = 'min(86vw,560px)';
+/** 局内底部遗物条宽度（10 槽 SVG 整体宽）。 */
+const HUD_RELIC_BAR_WIDTH = 'clamp(257px,68.9vw,312px)';
+/** 局内底部经验条宽度。与遗物条同宽，使经验条与上方 buff 行（道具槽/羁绊槽）左右端对齐遗物条。 */
+const HUD_XP_BAR_WIDTH = HUD_RELIC_BAR_WIDTH;
 const HUD_XP_BAR_HEIGHT = 'clamp(8px,2.1vw,11px)';
 const HUD_RELIC_BAR_BG = '/ui/panel/svg/hud_relic_bar_bg.svg';
 const HUD_RELIC_SLOT_BG = '/ui/panel/svg/hud_relic_slot.svg';
@@ -924,7 +926,6 @@ const HUD_RELIC_BAR_VIEWBOX = { w: 404, h: 44 } as const;
 const HUD_RELIC_BAR_SLOT_COUNT = 10;
 const HUD_RELIC_SLOT_VIEWBOX = { x: 4, y: 4, w: 36, h: 36, pitch: 40 } as const;
 const HUD_RELIC_BAR_MIN_HEIGHT = 'clamp(28px,7.5vw,34px)';
-const HUD_RELIC_BAR_WIDTH = 'clamp(257px,68.9vw,312px)';
 /** 局内武器槽尺寸 */
 const HUD_WEAPON_SLOT_SIZE = 'clamp(22px,6.4vw,28px)';
 /** 局内典籍槽尺寸，与武器槽保持一致。 */
@@ -987,6 +988,17 @@ function setSilverBadgeAmount(badge: HTMLDivElement, count: number, prefix = '')
 
 type AudioToggleKind = 'music' | 'sfx';
 
+const AUDIO_TOGGLE_ICON_PATHS: Record<AudioToggleKind, { on: string; off: string }> = {
+  music: {
+    on: '/ui/button/icon_music_on.png',
+    off: '/ui/button/icon_music_off.png',
+  },
+  sfx: {
+    on: '/ui/button/icon_sfx_on.png',
+    off: '/ui/button/icon_sfx_off.png',
+  },
+};
+
 function isAudioToggleMuted(kind: AudioToggleKind, settings = getAudioSettings()): boolean {
   return kind === 'music' ? settings.musicMuted : settings.sfxMuted;
 }
@@ -996,45 +1008,18 @@ function audioToggleLabel(kind: AudioToggleKind, muted: boolean): string {
   return muted ? '播放音效' : '静音音效';
 }
 
-function audioToggleIconSvg(kind: AudioToggleKind, muted: boolean): string {
-  const color = muted ? '#9eb1cc' : '#fff4a8';
-  const slash = muted
-    ? kind === 'music'
-      ? '<path d="M13 7L29 21" stroke="#ff6b6b" stroke-width="3.2" stroke-linecap="round"/>'
-      : '<path d="M7 7L25 25" stroke="#ff6b6b" stroke-width="3.2" stroke-linecap="round"/>'
-    : '';
-  if (kind === 'music') {
-    // Path bounds ≈ (13, 6)–(29, 23); square viewBox centers the note; larger size = smaller render.
-    return `
-      <svg viewBox="7 4.5 26 26" width="100%" height="100%" aria-hidden="true">
-        <path d="M20 7v15.5a4.2 4.2 0 1 1-2.7-3.9V10l9-2v12.5a4.2 4.2 0 1 1-2.7-3.9V6.2L20 7z"
-          fill="${color}" stroke="#1a2340" stroke-width="1.4" stroke-linejoin="round"/>
-        ${slash}
-      </svg>
-    `;
-  }
-  return `
-    <svg viewBox="0 0 32 32" width="100%" height="100%" aria-hidden="true">
-      <path d="M5 19h5.2L18 25V7l-7.8 6H5v6z"
-        fill="${color}" stroke="#1a2340" stroke-width="1.6" stroke-linejoin="round"/>
-      ${muted ? '' : '<path d="M21.5 12.2a6 6 0 0 1 0 7.6M24.5 9.5a10 10 0 0 1 0 13" fill="none" stroke="#fff4a8" stroke-width="2.2" stroke-linecap="round"/>'}
-      ${slash}
-    </svg>
-  `;
-}
-
 function syncAudioToggleButton(button: HTMLButtonElement, settings = getAudioSettings()): void {
   const kind = button.dataset.audioToggleKind as AudioToggleKind | undefined;
   if (kind !== 'music' && kind !== 'sfx') return;
   const muted = isAudioToggleMuted(kind, settings);
+  const icon = button.querySelector<HTMLImageElement>('img[data-audio-toggle-icon]');
   button.dataset.audioMuted = muted ? 'true' : 'false';
   button.setAttribute('aria-label', audioToggleLabel(kind, muted));
   button.title = audioToggleLabel(kind, muted);
-  button.innerHTML = audioToggleIconSvg(kind, muted);
-  button.style.opacity = muted ? '0.62' : '1';
-  button.style.boxShadow = muted
-    ? '0 2px 0 rgba(0,0,0,0.45), inset 0 0 0 2px rgba(255,255,255,0.12)'
-    : '0 3px 0 rgba(0,0,0,0.45), 0 0 12px rgba(255,217,59,0.32), inset 0 0 0 2px rgba(255,255,255,0.18)';
+  if (icon) {
+    icon.src = muted ? AUDIO_TOGGLE_ICON_PATHS[kind].off : AUDIO_TOGGLE_ICON_PATHS[kind].on;
+    icon.alt = '';
+  }
 }
 
 function syncAudioToggleButtons(settings = getAudioSettings()): void {
@@ -1052,11 +1037,16 @@ function createAudioToggleButton(kind: AudioToggleKind, compact = false): HTMLBu
   button.style.cssText = `
     width:${compact ? 'clamp(30px,6vmin,36px)' : 'clamp(34px,7vw,40px)'};
     height:${compact ? 'clamp(30px,6vmin,36px)' : 'clamp(34px,7vw,40px)'};
-    border:2px solid rgba(20,30,58,0.92);border-radius:9999px;
-    background:linear-gradient(180deg,rgba(48,83,145,0.96),rgba(22,42,86,0.96));
-    padding:${compact ? '5px' : '6px'};box-sizing:border-box;display:flex;align-items:center;justify-content:center;
-    cursor:pointer;user-select:none;touch-action:manipulation;pointer-events:auto;transition:transform 0.12s,opacity 0.12s,box-shadow 0.12s;
+    min-width:44px;min-height:44px;
+    border:0;border-radius:9999px;background:transparent;
+    padding:0;box-sizing:border-box;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;user-select:none;touch-action:manipulation;pointer-events:auto;transition:transform 0.12s;
   `;
+  const icon = document.createElement('img');
+  icon.dataset.audioToggleIcon = 'true';
+  icon.draggable = false;
+  icon.style.cssText = 'display:block;width:100%;height:100%;object-fit:contain;pointer-events:none;';
+  button.appendChild(icon);
   button.addEventListener('mouseenter', () => { button.style.transform = 'scale(1.06)'; });
   button.addEventListener('mouseleave', () => { button.style.transform = 'scale(1)'; });
   button.addEventListener('click', (ev) => {
@@ -1068,11 +1058,21 @@ function createAudioToggleButton(kind: AudioToggleKind, compact = false): HTMLBu
   return button;
 }
 
-function createSilverMusicControls(count: number, includeSfx = false): HTMLDivElement {
+function createSilverMusicControls(count: number): HTMLDivElement {
   const controls = document.createElement('div');
   controls.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:8px;box-sizing:border-box;';
   controls.appendChild(createSilverBadge(count));
-  if (includeSfx) controls.appendChild(createAudioToggleButton('sfx'));
+  return controls;
+}
+
+/**
+ * 主菜单右下角音频开关：音效 / 音乐 上下纵向排列。
+ * 音频开关仅出现在主菜单与局内暂停界面，其它界面不再展示。
+ */
+function createMenuAudioControls(): HTMLDivElement {
+  const controls = document.createElement('div');
+  controls.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:10px;box-sizing:border-box;';
+  controls.appendChild(createAudioToggleButton('sfx'));
   controls.appendChild(createAudioToggleButton('music'));
   return controls;
 }
@@ -1492,6 +1492,18 @@ const TOME_COLORS: Record<string, string> = {
   knockback_tome: '#88cccc',
   speed_tome: '#44ffaa',
 };
+
+const TOME_HUD_TYPE_ORDER = [
+  'attack_speed_tome',
+  'life_tome',
+  'shield_tome',
+  'xp_gain_tome',
+  'luck_tome',
+] as const;
+
+const TOME_HUD_TYPE_RANK = new Map<string, number>(
+  TOME_HUD_TYPE_ORDER.map((type, index) => [type, index]),
+);
 
 function escapeTooltipText(value: string | number): string {
   return String(value)
@@ -3151,6 +3163,20 @@ export class GameScene {
   private bondDetailOutsideHandler: ((ev: PointerEvent) => void) | null = null;
   /** timed 消耗品记录到的最大剩余时间，用于阴影下降比例。 */
   private consumableMaxRemaining = 0;
+  /** 道具槽结构签名（道具种类变化才重建 DOM），及逐帧更新的倒计时元素引用。 */
+  private consumableSlotSig = '';
+  private consumableShadeEl: HTMLDivElement | null = null;
+  private consumableSecsEl: HTMLSpanElement | null = null;
+  /** 触屏点击道具图标弹出的效果说明浮层 + 1.5s 自动关闭计时器。 */
+  private consumableTooltipEl: HTMLDivElement | null = null;
+  private consumableTooltipTimer: number | null = null;
+  /**
+   * 道具槽位于左下角，被 @minigame/platform 摇杆触控区（z-index 150，覆盖 HUD）盖住，
+   * 普通 pointerdown 会先被摇杆吞掉。用 window 捕获阶段命中检测在摇杆之前拦截点击。
+   */
+  private onConsumableTapCapture?: (e: PointerEvent) => void;
+  /** 局内触控是否启用（模态面板打开时为 false，避免拦截面板交互）。 */
+  private touchControlsEnabled = true;
   private weaponSlotsContainer!: HTMLDivElement;
   private tomesSlotsContainer!: HTMLDivElement;
   private relicSlotsContainer!: HTMLDivElement;
@@ -3536,6 +3562,11 @@ export class GameScene {
     this.blobShadows?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
+    if (this.onConsumableTapCapture) {
+      window.removeEventListener('pointerdown', this.onConsumableTapCapture, { capture: true });
+      this.onConsumableTapCapture = undefined;
+    }
+    this.hideConsumableTooltip();
     this.hudContainer?.remove();
     this.perfStatsEl?.remove();
     this.perfStatsEl = null;
@@ -4705,7 +4736,10 @@ export class GameScene {
     this.buffRow = document.createElement('div');
     this.buffRow.style.cssText = `width:${HUD_XP_BAR_WIDTH};display:flex;justify-content:space-between;align-items:flex-end;pointer-events:none;`;
     this.consumableBuffsContainer = document.createElement('div');
-    this.consumableBuffsContainer.style.cssText = 'display:flex;gap:6px;align-items:flex-end;pointer-events:none;';
+    this.consumableBuffsContainer.dataset.cameraBlock = 'true';
+    this.consumableBuffsContainer.style.cssText = 'display:flex;gap:6px;align-items:flex-end;pointer-events:auto;';
+    this.onConsumableTapCapture = (e: PointerEvent) => this.handleConsumableTapCapture(e);
+    window.addEventListener('pointerdown', this.onConsumableTapCapture, { capture: true });
     this.buffRow.appendChild(this.consumableBuffsContainer);
     this.bondSlotsContainer = document.createElement('div');
     this.bondSlotsContainer.dataset.cameraBlock = 'true';
@@ -7998,17 +8032,24 @@ export class GameScene {
     this.renderWeaponSlots(p);
     this.renderGmWeaponDamagePanel(state);
 
-    // --- Tome stack (top-right second column): newest on the right ---
+    // --- Tome stack (top-right second column): grouped by tome type, stable within each group ---
     // 仅在法书集合 / 等级变化时重建（旧实现每帧全量重建 DOM）。
+    const orderedTomes = p.tomes
+      .map((tome, index) => ({ tome, index }))
+      .sort((a, b) => {
+        const ar = TOME_HUD_TYPE_RANK.get(a.tome.type) ?? Number.MAX_SAFE_INTEGER;
+        const br = TOME_HUD_TYPE_RANK.get(b.tome.type) ?? Number.MAX_SAFE_INTEGER;
+        return ar - br || a.index - b.index;
+      })
+      .map(entry => entry.tome);
     let tomesSig = '';
-    for (const tome of p.tomes) tomesSig += `${tome.type}:${tome.level}|`;
+    for (const tome of orderedTomes) tomesSig += `${tome.type}:${tome.level}|`;
     if (tomesSig !== this.tomesSig) {
       this.tomesSig = tomesSig;
       this.tomesSlotsContainer.innerHTML = '';
-      for (const tome of p.tomes) {
+      for (const tome of orderedTomes) {
         const slot = document.createElement('div');
-        const bgColor = TOME_COLORS[tome.type] ?? '#444';
-        slot.style.cssText = `width:${HUD_TOME_SLOT_SIZE};height:${HUD_TOME_SLOT_SIZE};background:${bgColor}33;position:relative;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:help;`;
+        slot.style.cssText = `width:${HUD_TOME_SLOT_SIZE};height:${HUD_TOME_SLOT_SIZE};background:rgba(0,0,0,0.6);position:relative;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:help;`;
         this.setItemTooltip(slot, this.createTomeTooltipHtml(tome));
         const icon = document.createElement('span');
         icon.style.cssText = 'font-size:clamp(10px,2.8vw,12px);';
@@ -8023,9 +8064,9 @@ export class GameScene {
       }
     }
     // DOM 不重建时仍刷新 tooltip，避免 growth / 文案里的动态数值停留在旧快照。
-    for (let i = 0; i < p.tomes.length; i++) {
+    for (let i = 0; i < orderedTomes.length; i++) {
       const slot = this.tomesSlotsContainer.children[i] as HTMLElement | undefined;
-      if (slot) this.setItemTooltip(slot, this.createTomeTooltipHtml(p.tomes[i]));
+      if (slot) this.setItemTooltip(slot, this.createTomeTooltipHtml(orderedTomes[i]));
     }
 
     // --- Relic bar (bottom): SVG has 10 fixed slots, filled left → right ---
@@ -8554,7 +8595,13 @@ export class GameScene {
     const active = p.activeConsumable;
     if (!active) {
       this.consumableMaxRemaining = 0;
-      this.consumableBuffsContainer.innerHTML = '';
+      if (this.consumableSlotSig !== '') {
+        this.consumableSlotSig = '';
+        this.consumableBuffsContainer.innerHTML = '';
+        this.consumableShadeEl = null;
+        this.consumableSecsEl = null;
+        this.hideConsumableTooltip();
+      }
       return;
     }
     // 追踪 timed buff 的最大剩余值，用于阴影下降比例
@@ -8562,58 +8609,112 @@ export class GameScene {
       this.consumableMaxRemaining = active.remaining;
     }
 
+    // 仅道具种类变化时重建 DOM（避免每帧重建导致点击态/浮层丢失）。
+    if (this.consumableSlotSig !== active.id) {
+      this.consumableSlotSig = active.id;
+      this.rebuildConsumableSlot(active.id);
+    }
+
+    // 逐帧更新倒计时遮罩高度与秒数（结构不变）。
+    const hasTimer = active.remaining > 0 && this.consumableMaxRemaining > 0;
+    if (this.consumableShadeEl) {
+      const ratio = hasTimer ? Math.max(0, Math.min(1, active.remaining / this.consumableMaxRemaining)) : 0;
+      this.consumableShadeEl.style.height = `${Math.round((1 - ratio) * 100)}%`;
+    }
+    if (this.consumableSecsEl) {
+      this.consumableSecsEl.textContent = hasTimer ? `${Math.ceil(active.remaining)}` : '';
+    }
+  }
+
+  /** 道具槽：参考武器槽的方形样式，仅展示图标 + 持续时间倒计时遮罩/秒数。 */
+  private rebuildConsumableSlot(id: ConsumableId): void {
     this.consumableBuffsContainer.innerHTML = '';
+    this.consumableShadeEl = null;
+    this.consumableSecsEl = null;
+
+    // 不设 overflow:hidden —— 否则底部倒计时标签会被槽框裁掉（见 bug 修复）。
     const slot = document.createElement('div');
-    slot.style.cssText = 'min-width:clamp(92px,22vw,126px);height:clamp(38px,10vw,44px);background:rgba(20,12,34,0.86);border:1px solid rgba(180,120,255,0.5);border-radius:8px;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:flex-start;gap:6px;padding:3px 7px;box-sizing:border-box;flex-shrink:0;box-shadow:0 0 10px rgba(160,90,255,0.25);';
-    this.setItemTooltip(slot, this.createConsumableTooltipHtml(active.id, active.remaining));
+    slot.style.cssText = `width:${HUD_WEAPON_SLOT_SIZE};height:${HUD_WEAPON_SLOT_SIZE};background:rgba(0,0,0,0.6);position:relative;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;touch-action:manipulation;`;
 
     const icon = document.createElement('span');
-    icon.style.cssText = 'font-size:clamp(18px,5vw,22px);line-height:1;position:relative;z-index:1;flex:0 0 auto;';
-    setIconImage(icon, consumableIconSrc(active.id), CONSUMABLE_EMOJI[active.id] ?? '✨');
+    icon.style.cssText = 'font-size:clamp(12px,3.4vw,15px);line-height:1;position:relative;z-index:1;pointer-events:none;';
+    setIconImage(icon, consumableIconSrc(id), CONSUMABLE_EMOJI[id] ?? '✨');
     slot.appendChild(icon);
 
-    const textCol = document.createElement('div');
-    textCol.style.cssText = 'position:relative;z-index:1;min-width:0;display:flex;flex-direction:column;gap:1px;line-height:1.05;';
-    const effect = document.createElement('div');
-    effect.style.cssText = uiPlainText('font-size:clamp(8px,2.1vw,10px);font-weight:bold;color:#f3e9ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;');
-    effect.textContent = t(`consumable.${active.id}_short`);
-    textCol.appendChild(effect);
-    const timerLine = document.createElement('div');
-    timerLine.style.cssText = uiPlainText('font-size:clamp(7px,1.8vw,9px);font-weight:bold;color:#cdb7ff;white-space:nowrap;');
-    timerLine.textContent = active.remaining < 0
-      ? t('consumable.pending')
-      : t('consumable.timer', { seconds: String(Math.ceil(active.remaining)) });
-    textCol.appendChild(timerLine);
-    slot.appendChild(textCol);
+    // 顶部向下降的倒计时遮罩（剩余越少遮罩越高）。
+    const shade = document.createElement('div');
+    shade.style.cssText = 'position:absolute;top:0;left:0;right:0;height:0%;background:rgba(0,0,0,0.62);pointer-events:none;z-index:2;';
+    slot.appendChild(shade);
+    this.consumableShadeEl = shade;
 
-    // 限时 buff：顶部向下降的阴影（剩余越少阴影越高）
-    if (active.remaining > 0 && this.consumableMaxRemaining > 0) {
-      const ratio = Math.max(0, Math.min(1, active.remaining / this.consumableMaxRemaining));
-      const shade = document.createElement('div');
-      shade.style.cssText = `position:absolute;top:0;left:0;right:0;height:${Math.round((1 - ratio) * 100)}%;background:rgba(0,0,0,0.62);pointer-events:none;border-radius:8px 8px 0 0;overflow:hidden;`;
-      slot.appendChild(shade);
-      const secs = document.createElement('span');
-      secs.style.cssText = uiPlainText('position:absolute;right:4px;bottom:1px;text-align:right;font-size:8px;font-weight:bold;z-index:2;');
-      secs.textContent = `${Math.ceil(active.remaining)}s`;
-      slot.appendChild(secs);
-    }
+    // 剩余秒数：置于槽框图层上方（z-index 最高），位置参考武器等级标签。
+    const secs = document.createElement('span');
+    secs.style.cssText = uiPlainText('position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:8px;line-height:1;font-weight:bold;z-index:3;pointer-events:none;');
+    slot.appendChild(secs);
+    this.consumableSecsEl = secs;
+
+    // 点击拦截统一走 window 捕获阶段（handleConsumableTapCapture），此处不再单独绑定。
     this.consumableBuffsContainer.appendChild(slot);
   }
 
-  private createConsumableTooltipHtml(id: ConsumableId, remaining: number): string {
-    const name = t(`consumable.${id}`);
-    const desc = t(`consumable.${id}_desc`);
-    const timerText = remaining < 0
-      ? t('consumable.pending')
-      : t('consumable.timer', { seconds: String(Math.ceil(remaining)) });
-    return `
-      <div style="display:flex;align-items:center;gap:6px;font-weight:700;">
-        ${iconImgHtml(consumableIconSrc(id), 18)}
-        <span>${escapeTooltipText(name)}</span>
-        <span style="opacity:0.8;font-size:11px;">${escapeTooltipText(timerText)}</span>
-      </div>
-      <div style="margin-top:4px;${UI_PLAIN_TEXT_STYLE};font-size:11px;line-height:1.35;">${escapeTooltipText(desc)}</div>
-    `;
+  /**
+   * window 捕获阶段命中检测：若点击落在道具槽矩形内，则在摇杆触控区接管之前拦截，
+   * 切换道具说明浮层（触屏点击图标弹窗）。
+   */
+  private handleConsumableTapCapture(e: PointerEvent): void {
+    if (!this.touchControlsEnabled) return;
+    const slot = this.consumableBuffsContainer?.firstElementChild as HTMLElement | null;
+    if (!slot) return;
+    const r = slot.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    this.toggleConsumableTooltip(slot, this.consumableSlotSig as ConsumableId);
+  }
+
+  /** 点击道具图标：浮层未显示则在图标上方弹出（1.5s 后自动消失）；已显示则立即关闭。 */
+  private toggleConsumableTooltip(slot: HTMLElement, id: ConsumableId): void {
+    if (this.consumableTooltipEl) {
+      this.hideConsumableTooltip();
+      return;
+    }
+    this.showConsumableTooltip(slot, id);
+  }
+
+  private showConsumableTooltip(slot: HTMLElement, id: ConsumableId): void {
+    this.hideConsumableTooltip();
+    const el = document.createElement('div');
+    el.style.cssText = `position:fixed;z-index:320;max-width:min(72vw,240px);background:rgba(20,12,34,0.96);border:1px solid rgba(180,120,255,0.6);border-radius:8px;padding:7px 10px;box-shadow:0 4px 16px rgba(0,0,0,0.55);pointer-events:none;${UI_PLAIN_TEXT_STYLE}`;
+    el.innerHTML = `<div style="font-weight:bold;color:#f3e9ff;font-size:clamp(11px,3vw,13px);margin-bottom:3px;">${escapeTooltipText(t(`consumable.${id}`))}</div><div style="color:#cdb7ff;font-size:clamp(10px,2.6vw,12px);line-height:1.4;">${escapeTooltipText(t(`consumable.${id}_desc`))}</div>`;
+    document.body.appendChild(el);
+    this.consumableTooltipEl = el;
+
+    // 定位到图标正上方，超出屏幕时夹取/翻转到下方。
+    const rect = slot.getBoundingClientRect();
+    const tipW = el.offsetWidth;
+    const tipH = el.offsetHeight;
+    let left = rect.left + rect.width / 2 - tipW / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - tipW - 8));
+    let top = rect.top - tipH - 8;
+    if (top < 8) top = rect.bottom + 8;
+    el.style.left = `${Math.round(left)}px`;
+    el.style.top = `${Math.round(top)}px`;
+
+    this.consumableTooltipTimer = window.setTimeout(() => {
+      this.consumableTooltipTimer = null;
+      this.hideConsumableTooltip();
+    }, 1500);
+  }
+
+  private hideConsumableTooltip(): void {
+    if (this.consumableTooltipTimer !== null) {
+      clearTimeout(this.consumableTooltipTimer);
+      this.consumableTooltipTimer = null;
+    }
+    this.consumableTooltipEl?.remove();
+    this.consumableTooltipEl = null;
   }
 
   /**
@@ -8639,18 +8740,18 @@ export class GameScene {
         const tierColor = BOND_TIER_COLORS[prog.tier] ?? BOND_TIER_COLORS[1];
         const slot = document.createElement('div');
         slot.dataset.cameraBlock = 'true';
-        slot.style.cssText = `width:clamp(36px,9.5vw,42px);height:clamp(36px,9.5vw,42px);position:relative;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:manipulation;`;
+        slot.style.cssText = `width:${HUD_WEAPON_SLOT_SIZE};height:${HUD_WEAPON_SLOT_SIZE};position:relative;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:manipulation;`;
         this.setItemTooltip(slot, this.createBondTooltipHtml(prog.bondId, prog.tier, state));
         const diamond = document.createElement('div');
-        diamond.style.cssText = `position:absolute;inset:3px;transform:rotate(45deg);background:rgba(10,10,22,0.85);border:2px solid ${tierColor};border-radius:6px;box-shadow:0 0 10px ${tierColor}66;`;
+        diamond.style.cssText = `position:absolute;inset:2px;transform:rotate(45deg);background:rgba(10,10,22,0.85);border:2px solid ${tierColor};border-radius:5px;box-shadow:0 0 10px ${tierColor}66;`;
         slot.appendChild(diamond);
         const icon = document.createElement('span');
-        icon.style.cssText = 'position:relative;z-index:1;font-size:clamp(14px,4vw,17px);line-height:1;';
+        icon.style.cssText = 'position:relative;z-index:1;font-size:clamp(11px,3vw,14px);line-height:1;';
         setIconImage(icon, bondIconSrc(prog.bondId), def.icon);
         slot.appendChild(icon);
         // Tier label (T1/T2/T3) bottom-center
         const tierLabel = document.createElement('span');
-        tierLabel.style.cssText = `position:absolute;bottom:-3px;left:0;right:0;text-align:center;font-size:9px;font-weight:bold;color:${tierColor};text-shadow:0 1px 2px rgba(0,0,0,0.95);z-index:2;`;
+        tierLabel.style.cssText = `position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:8px;font-weight:bold;color:${tierColor};text-shadow:0 1px 2px rgba(0,0,0,0.95);z-index:2;`;
         tierLabel.textContent = `T${prog.tier}`;
         slot.appendChild(tierLabel);
 
@@ -9401,21 +9502,13 @@ export class GameScene {
 
     centerGroup.appendChild(statsCol);
 
-    // 本局新完成的任务（奖励需手动领取）保留提示。
+    // 本局新完成了任务：仅显示一条黄色高亮提示，带弹性放大缩小动画。
     if (newQuests.length > 0) {
       const questHeader = document.createElement('div');
-      questHeader.style.cssText = uiPlainText(`color:#ffcc00;font-size:clamp(${uiPx(10)}px,2.6vmin,${uiPx(12)}px);font-weight:bold;text-align:center;margin-top:4px;`);
-      questHeader.textContent = t('quest.ready_to_claim');
+      questHeader.style.cssText = uiPlainText(`color:#ffcc00;font-size:clamp(${uiPx(11)}px,3vmin,${uiPx(14)}px);font-weight:bold;text-align:center;margin-top:6px;will-change:transform;`);
+      questHeader.textContent = t('quest.new_quest_done');
       centerGroup.appendChild(questHeader);
-
-      for (const qId of newQuests) {
-        const quest = QUESTS.find(q => q.id === qId);
-        if (!quest) continue;
-        const el = document.createElement('div');
-        el.style.cssText = uiPlainText(`color:#88ff88;font-size:clamp(${uiPx(9)}px,2.4vmin,${uiPx(11)}px);text-align:center;`);
-        el.textContent = t(quest.description);
-        centerGroup.appendChild(el);
-      }
+      gsapAnimations.playNewQuestDonePulse(questHeader);
     }
 
     const confirmBtn = createPauseMenuButton(
@@ -9476,11 +9569,10 @@ export class GameScene {
     const cellPad = 'padding:3px 0;';
     stats.forEach((stat, idx) => {
       const isMvp = idx === 0;
-      const rowBg = isMvp ? 'background:rgba(255,200,40,0.13);' : '';
 
       // 来源列：图标 + 名称（+ MVP）。
       const source = document.createElement('div');
-      source.style.cssText = `display:flex;align-items:center;gap:4px;min-width:0;${cellPad}${rowBg}`;
+      source.style.cssText = `display:flex;align-items:center;gap:4px;min-width:0;${cellPad}`;
       const icon = document.createElement('span');
       icon.style.cssText = `width:clamp(${uiPx(14)}px,3.6vmin,${uiPx(18)}px);height:clamp(${uiPx(14)}px,3.6vmin,${uiPx(18)}px);flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;line-height:1;`;
       setIconImage(icon, weaponIconSrc(stat.weaponType), WEAPON_ICONS[stat.weaponType] ?? '?');
@@ -9499,17 +9591,17 @@ export class GameScene {
 
       const lv = levelByType.get(stat.weaponType);
       const level = document.createElement('span');
-      level.style.cssText = uiPlainText(`text-align:left;font-size:${cellFont};font-variant-numeric:tabular-nums;white-space:nowrap;${cellPad}${rowBg}`);
+      level.style.cssText = uiPlainText(`text-align:left;font-size:${cellFont};font-variant-numeric:tabular-nums;white-space:nowrap;${cellPad}`);
       level.textContent = lv != null ? `Lv.${lv}` : '-';
       table.appendChild(level);
 
       const dmg = document.createElement('span');
-      dmg.style.cssText = uiPlainText(`text-align:left;font-size:${cellFont};font-variant-numeric:tabular-nums;white-space:nowrap;color:${isMvp ? '#ffd700' : '#f3f3ff'};${cellPad}${rowBg}`);
+      dmg.style.cssText = uiPlainText(`text-align:left;font-size:${cellFont};font-variant-numeric:tabular-nums;white-space:nowrap;color:${isMvp ? '#ffd700' : '#f3f3ff'};${cellPad}`);
       dmg.textContent = this.formatGmDamageNumber(stat.totalDamage, 0);
       table.appendChild(dmg);
 
       const kills = document.createElement('span');
-      kills.style.cssText = uiPlainText(`text-align:left;font-size:${cellFont};font-variant-numeric:tabular-nums;white-space:nowrap;${cellPad}${rowBg}`);
+      kills.style.cssText = uiPlainText(`text-align:left;font-size:${cellFont};font-variant-numeric:tabular-nums;white-space:nowrap;${cellPad}`);
       kills.textContent = String(stat.killCount);
       table.appendChild(kills);
     });
@@ -9520,6 +9612,7 @@ export class GameScene {
   }
 
   private hideGameOver(): void {
+    gsapAnimations.cancelAnimation('new-quest-done-pulse');
     this.gameOverPanel?.remove();
     this.gameOverPanel = null;
     this.cameraOrbit.setEnabled(true);
@@ -9535,6 +9628,8 @@ export class GameScene {
       this.gameOverPanel ||
       this.pausePanel,
     );
+    this.touchControlsEnabled = !modalOpen;
+    if (modalOpen) this.hideConsumableTooltip();
     setInGameTouchControlsEnabled(!modalOpen, this.platformInput.getMobileInput());
   }
 
@@ -9629,12 +9724,12 @@ export class GameScene {
     this.installItemTooltipHandlers(overlay);
 
     const sideMaxH = `calc(100% - ${sideInset * 2}px)`;
-    const sidePos = `position:absolute;top:50%;transform:translateY(-50%);width:${sideW}px;max-width:calc(50% - ${centerHalf + sideGap}px - 4px);max-height:${sideMaxH};overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;align-items:stretch;`;
+    const sidePos = `position:absolute;top:${sideInset}px;width:${sideW}px;max-width:calc(50% - ${centerHalf + sideGap}px - 4px);max-height:${sideMaxH};overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;align-items:stretch;`;
 
     const leftWrap = document.createElement('div');
     leftWrap.className = UI_SCROLLBAR_TRANSPARENT_CLASS;
     leftWrap.style.cssText = `${sidePos}left:calc(50% - ${sideOffset}px);`;
-    leftWrap.appendChild(this.buildPauseInventory(state));
+    leftWrap.appendChild(this.buildPauseInventory(state, true));
 
     const rightWrap = document.createElement('div');
     rightWrap.className = UI_SCROLLBAR_TRANSPARENT_CLASS;
@@ -9740,15 +9835,16 @@ export class GameScene {
 
   /**
    * 背包内一个分组（武器 / 典籍 / 遗物）：标题 + 槽位流式排列。
-   * 每个槽位与局内一致：单独图标，图标内部下方显示等级（Lv.N）/层数（xN），图标下方再显示名字。
+   * 每个槽位与局内一致：单独图标，图标内部下方显示等级（Lv.N）/层数（xN）。
+   * 非 compact 模式会在图标下方显示名字；结算 / 暂停侧栏 compact 模式仅保留方格和 tooltip。
    * 该分组暂无物品时显示空占位格，不显示「暂无」文案。
    */
   private buildPauseEmptySlotCell(compact = false): HTMLDivElement {
-    const cellW = compact ? `clamp(${uiPx(44)}px,12vmin,${uiPx(58)}px)` : `clamp(${uiPx(34)}px,9vmin,${uiPx(40)}px)`;
+    const cellW = compact ? HUD_WEAPON_SLOT_SIZE : `clamp(${uiPx(34)}px,9vmin,${uiPx(40)}px)`;
     const boxSize = compact ? HUD_WEAPON_SLOT_SIZE : `clamp(${uiPx(32)}px,8.5vmin,${uiPx(38)}px)`;
 
     const cell = document.createElement('div');
-    cell.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:2px;width:${cellW};`;
+    cell.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:${compact ? 0 : 2}px;width:${cellW};`;
 
     const box = document.createElement('div');
     box.style.cssText = compact
@@ -9756,9 +9852,11 @@ export class GameScene {
       : `width:${boxSize};height:${boxSize};background:rgba(0,0,0,0.32);border:1px dashed rgba(255,255,255,0.16);border-radius:6px;flex-shrink:0;box-sizing:border-box;`;
     cell.appendChild(box);
 
-    const nameSpacer = document.createElement('span');
-    nameSpacer.style.cssText = `width:100%;height:clamp(${uiPx(9)}px,2.5vmin,${uiPx(11)}px);flex-shrink:0;`;
-    cell.appendChild(nameSpacer);
+    if (!compact) {
+      const nameSpacer = document.createElement('span');
+      nameSpacer.style.cssText = `width:100%;height:clamp(${uiPx(9)}px,2.5vmin,${uiPx(11)}px);flex-shrink:0;`;
+      cell.appendChild(nameSpacer);
+    }
 
     return cell;
   }
@@ -9769,8 +9867,8 @@ export class GameScene {
     emptySlotCount = 1,
     compact = false,
   ): HTMLDivElement {
-    // compact：框保持局内大小，但列加宽给单行名称留出空间。
-    const cellW = compact ? `clamp(${uiPx(44)}px,12vmin,${uiPx(58)}px)` : `clamp(${uiPx(34)}px,9vmin,${uiPx(40)}px)`;
+    // compact 用于结算页侧栏：槽位按局内武器栏的方格尺寸和横向间距排列，避免名称撑宽。
+    const cellW = compact ? HUD_WEAPON_SLOT_SIZE : `clamp(${uiPx(34)}px,9vmin,${uiPx(40)}px)`;
     const boxSize = compact ? HUD_WEAPON_SLOT_SIZE : `clamp(${uiPx(32)}px,8.5vmin,${uiPx(38)}px)`;
     const iconFont = compact ? 'clamp(10px,2.8vw,12px)' : `clamp(${uiPx(13)}px,3.6vmin,${uiPx(17)}px)`;
 
@@ -9783,7 +9881,7 @@ export class GameScene {
     section.appendChild(label);
 
     const row = document.createElement('div');
-    row.style.cssText = `display:flex;flex-wrap:wrap;gap:clamp(4px,1.2vmin,${compact ? 6 : 8}px);`;
+    row.style.cssText = `display:flex;flex-wrap:wrap;gap:${compact ? '3px' : `clamp(4px,1.2vmin,8px)`};`;
 
     if (items.length === 0) {
       const slots = Math.max(1, emptySlotCount);
@@ -9793,7 +9891,7 @@ export class GameScene {
     } else {
       for (const it of items) {
         const cell = document.createElement('div');
-        cell.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:2px;width:${cellW};cursor:help;touch-action:manipulation;`;
+        cell.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:${compact ? 0 : 2}px;width:${cellW};cursor:help;touch-action:manipulation;`;
         if (it.tooltipHtml) {
           this.setItemTooltip(cell, it.tooltipHtml);
         }
@@ -9817,14 +9915,14 @@ export class GameScene {
         box.appendChild(inner);
         cell.appendChild(box);
 
-        const name = document.createElement('span');
-        name.style.cssText = uiPlainText(
-          compact
-            ? `width:auto;max-width:none;text-align:center;font-size:clamp(${uiPx(6)}px,1.6vmin,${uiPx(8)}px);line-height:1.1;white-space:nowrap;overflow:visible;margin-top:3px;`
-            : `width:100%;text-align:center;font-size:clamp(${uiPx(7)}px,2vmin,${uiPx(9)}px);line-height:1.15;word-break:break-word;`,
-        );
-        name.textContent = it.name;
-        cell.appendChild(name);
+        if (!compact) {
+          const name = document.createElement('span');
+          name.style.cssText = uiPlainText(
+            `width:100%;text-align:center;font-size:clamp(${uiPx(7)}px,2vmin,${uiPx(9)}px);line-height:1.15;word-break:break-word;`,
+          );
+          name.textContent = it.name;
+          cell.appendChild(name);
+        }
 
         row.appendChild(cell);
       }
@@ -10382,7 +10480,7 @@ function createFramedLabelButton(
   const labelEl = document.createElement('span');
   labelEl.textContent = label;
   labelEl.style.cssText = uiPlainText(`
-    position:absolute;left:0;top:-5px;width:100%;height:100%;
+    position:absolute;left:0;top:1.6%;width:100%;height:92%;
     display:flex;align-items:center;justify-content:center;
     font-size:clamp(${uiPx(9)}px,2.6vmin,${uiPx(12)}px);font-weight:bold;line-height:1.2;
     padding:0 clamp(4px,1.2vmin,8px);box-sizing:border-box;text-align:center;
@@ -11309,8 +11407,15 @@ function showTierSelect(onSelect: (tier: DifficultyTier) => void): HTMLDivElemen
     appendTierPanelStatRows(card, cfg);
     appendTierPanelSelectButton(card, isSelected);
     if (!isSelected) {
-      card.addEventListener('mouseenter', () => { card.style.transform = 'scale(1.05)'; });
-      card.addEventListener('mouseleave', () => { card.style.transform = 'scale(1)'; });
+      // 仅在真正支持 hover 的设备（PC 鼠标）上启用悬停放大。
+      // 触屏设备没有真实指针，浏览器会把"虚拟指针"停在屏幕中心，
+      // 触发中间卡片（困难/tier 2）的 mouseenter 却永远收不到 mouseleave，
+      // 导致困难难度卡片一直停留在 scale(1.05) 的"伪悬停"状态。
+      const canHover = window.matchMedia('(hover: hover)').matches;
+      if (canHover) {
+        card.addEventListener('mouseenter', () => { card.style.transform = 'scale(1.05)'; });
+        card.addEventListener('mouseleave', () => { card.style.transform = 'scale(1)'; });
+      }
       card.addEventListener('click', () => {
         if (selectedTier === tier) return;
         selectedTier = tier;
@@ -11440,12 +11545,19 @@ function showMainMenu(): void {
   });
 
   const save = loadSave();
-  const topRightControls = createSilverMusicControls(save.silver, true);
+  const topRightControls = createSilverMusicControls(save.silver);
   topRightControls.style.position = 'absolute';
   topRightControls.style.top = 'max(16px, env(safe-area-inset-top, 0px))';
   topRightControls.style.right = 'max(16px, env(safe-area-inset-right, 0px))';
   topRightControls.style.zIndex = '2';
   mainMenuEl.appendChild(topRightControls);
+
+  const audioControls = createMenuAudioControls();
+  audioControls.style.position = 'absolute';
+  audioControls.style.right = 'max(16px, env(safe-area-inset-right, 0px))';
+  audioControls.style.bottom = 'max(16px, env(safe-area-inset-bottom, 0px))';
+  audioControls.style.zIndex = '2';
+  mainMenuEl.appendChild(audioControls);
 
   const langBtn = createLanguageSwitcherButton();
   if (langBtn) {
@@ -12428,6 +12540,7 @@ export function bootGameClient(): void {
 
 let gmPanel: HTMLDivElement | null = null;
 let gmSession: LocalGameSession | null = null;
+let gmGodModeSnapshot: { hp: number; maxHp: number } | null = null;
 
 function setupGMTool(): void {
   window.addEventListener('keydown', (e) => {
@@ -12446,6 +12559,8 @@ function setupGMTool(): void {
     silver(amount: number = 1000) { gmAddSilver(amount); },
     spawnBoss() { gmSpawnBoss(); },
     godMode() { gmGodMode(); },
+    disableGodMode() { gmDisableGodMode(); },
+    zeroHp() { gmZeroPlayerHp(); },
     skipTo(minutes: number) { gmSkipTime(minutes); },
     giveWeapon(type: string, level: number = 1) { gmGiveWeapon(type, level); },
     giveAllWeapons() { gmGiveAllWeapons(); },
@@ -12464,6 +12579,8 @@ GM Commands (window.__gm):
   .silver(1000)       — 加银币
   .spawnBoss()        — 召唤Boss
   .godMode()          — 无敌模式
+  .disableGodMode()   — 关闭无敌模式
+  .zeroHp()           — 玩家血量清零
   .skipTo(5)          — 跳到第5分钟
   .giveWeapon(type, level=1)
                       — 加指定武器（type 见 .listWeapons()，槽位不足自动扩容）
@@ -12481,6 +12598,7 @@ GM Commands (window.__gm):
 
 function setGMSession(session: LocalGameSession): void {
   gmSession = session;
+  gmGodModeSnapshot = null;
 }
 
 function gmLevelUp(): void {
@@ -12524,9 +12642,39 @@ function gmSpawnBoss(): void {
 function gmGodMode(): void {
   if (!gmSession) return;
   const state = gmSession.getRenderState();
+  if (!gmGodModeSnapshot) {
+    gmGodModeSnapshot = {
+      hp: state.player.hp,
+      maxHp: state.player.maxHp,
+    };
+  }
   state.player.maxHp = 99999;
   state.player.hp = 99999;
   state.player.invincibleTimer = 99999;
+}
+
+function gmDisableGodMode(): void {
+  if (!gmSession) return;
+  const state = gmSession.getRenderState();
+  state.player.invincibleTimer = 0;
+  if (gmGodModeSnapshot) {
+    state.player.maxHp = gmGodModeSnapshot.maxHp;
+    state.player.hp = Math.min(gmGodModeSnapshot.hp, state.player.maxHp);
+    gmGodModeSnapshot = null;
+  } else {
+    state.player.hp = Math.min(state.player.hp, state.player.maxHp);
+  }
+}
+
+function gmZeroPlayerHp(): void {
+  if (!gmSession) return;
+  const state = gmSession.getRenderState();
+  state.player.hp = 0;
+  state.player.invincibleTimer = 0;
+  state.player.alive = false;
+  state.phase = 'defeat';
+  state.finished = true;
+  state.running = false;
 }
 
 function gmSkipTime(minutes: number): void {
@@ -12662,6 +12810,8 @@ function toggleGMPanel(): void {
     ['加 1000 银币', () => gmAddSilver(1000)],
     ['召唤 Boss', gmSpawnBoss],
     ['无敌模式', gmGodMode],
+    ['关闭无敌模式', gmDisableGodMode],
+    ['玩家血量清零', gmZeroPlayerHp],
     ['跳到 5 分钟', () => gmSkipTime(5)],
     ['跳到 8 分钟', () => gmSkipTime(8)],
     ['+闪电法杖 (Lv5)', () => gmGiveWeapon('lightning_staff', 5)],

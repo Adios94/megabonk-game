@@ -173,7 +173,6 @@ export { curvedWorldUniforms };
 // Toon / cel-shading — see materials/toon.ts
 import {
   toonGradientMap,
-  stylizedUniforms,
   applyStylizedToonShading,
   convertToToonMaterials,
   brightenWeaponMaterials,
@@ -1173,258 +1172,6 @@ function createLanguageSwitcherButton(): HTMLButtonElement | null {
   btn.addEventListener('mouseenter', () => { btn.style.transform = 'scale(1.05)'; });
   btn.addEventListener('mouseleave', () => { btn.style.transform = 'scale(1)'; });
   return btn;
-}
-
-// =============================================================================
-/**
- * 游戏内风格化调参面板（仅 dev）。把 stylizedUniforms + 雾 + bloom 全部接上滑块，实时拖动即时生效，
- * 不用改代码重编译。按 ` 键（反引号）或点右上角按钮开关。"复制参数"把当前值导成可粘回代码的片段。
- */
-function createStylizedDebugPanel(opts: {
-  scene: THREE.Scene;
-  bloom: UnrealBloomPass | null;
-  renderer: THREE.WebGLRenderer;
-  colorGrade: ColorGradePass | null;
-  darkComic?: DarkComicPass | null;
-  cameraOrbit?: CameraOrbit | null;
-  onSkyModeChange?: (mode: 'photo' | 'color') => void;
-}): void {
-  if (document.getElementById('stylized-debug-panel')) return; // 幂等
-  const u = stylizedUniforms;
-  const fog = opts.scene.fog instanceof THREE.Fog ? opts.scene.fog : null;
-  const bloom = opts.bloom;
-  const renderer = opts.renderer;
-  const colorGrade = opts.colorGrade;
-  const darkComic = opts.darkComic ?? null;
-  const cameraOrbit = opts.cameraOrbit;
-
-  type Ctl = { label: string; min: number; max: number; step: number; get: () => number; set: (v: number) => void };
-  const vec3ctls = (v: THREE.Vector3, min: number, max: number, prefix = ''): Ctl[] => {
-    const p = prefix ? `${prefix} ` : '';
-    return [
-      { label: `${p}R`, min, max, step: 0.01, get: () => v.x, set: (x) => { v.x = x; } },
-      { label: `${p}G`, min, max, step: 0.01, get: () => v.y, set: (x) => { v.y = x; } },
-      { label: `${p}B`, min, max, step: 0.01, get: () => v.z, set: (x) => { v.z = x; } },
-    ];
-  };
-
-  const sections: { title: string; ctls: Ctl[] }[] = [
-    {
-      title: '关卡视觉与阴影 Scenery', ctls: [
-        {
-          label: 'Scenery 场景材质(0Toon/1PBR)',
-          min: 0, max: 1, step: 1,
-          get: () => sceneryMode === 'pbr' ? 1 : 0,
-          set: (v) => {
-            sceneryMode = v === 1 ? 'pbr' : 'toon';
-            const levelRoot = opts.scene.getObjectByName('LevelRoot');
-            if (levelRoot) {
-              applySceneryMode(levelRoot, sceneryMode);
-            }
-          }
-        },
-        {
-          label: 'Sky 天空背景(0Color/1Photo)',
-          min: 0, max: 1, step: 1,
-          get: () => skyMode === 'photo' ? 1 : 0,
-          set: (v) => {
-            skyMode = v === 1 ? 'photo' : 'color';
-            if (opts.onSkyModeChange) {
-              opts.onSkyModeChange(skyMode);
-            }
-          }
-        },
-        {
-          label: 'Curved World 空间弯曲弯度',
-          min: 0.0, max: 0.04, step: 0.0005,
-          get: () => curvedWorldUniforms.uWarpStrength.value,
-          set: (v) => {
-            curvedWorldUniforms.uWarpStrength.value = v;
-          }
-        },
-        {
-          label: 'Shadows 实时阴影(0Off/1On)',
-          min: 0, max: 1, step: 1,
-          get: () => realTimeShadowsEnabled ? 1 : 0,
-          set: (v) => {
-            realTimeShadowsEnabled = v === 1;
-            const dirLight = opts.scene.getObjectByName('DirectionalLight') as THREE.DirectionalLight;
-            if (dirLight) {
-              dirLight.castShadow = realTimeShadowsEnabled;
-            }
-          }
-        }
-      ]
-    },
-    {
-      title: '整体亮度 Exposure', ctls: [
-        { label: 'Brightness', min: 0.3, max: 2.5, step: 0.01, get: () => renderer.toneMappingExposure, set: (v) => { renderer.toneMappingExposure = v; } },
-      ],
-    },
-    {
-      title: '分层 Stepped', ctls: [
-        { label: 'Steps 台阶数', min: 1, max: 8, step: 1, get: () => u.uSteps.value, set: (v) => { u.uSteps.value = v; } },
-        { label: 'Smooth 过渡', min: 0, max: 0.5, step: 0.01, get: () => u.uStepSmooth.value, set: (v) => { u.uStepSmooth.value = v; } },
-      ],
-    },
-    {
-      title: '网点 Halftone', ctls: [
-        { label: 'Tiling 大小', min: 4, max: 40, step: 0.5, get: () => u.uHalftoneTiling.value, set: (v) => { u.uHalftoneTiling.value = v; } },
-        { label: 'Smooth 脆度', min: 0.01, max: 0.4, step: 0.01, get: () => u.uHalftoneSmooth.value, set: (v) => { u.uHalftoneSmooth.value = v; } },
-        { label: 'Dark 压暗', min: 0, max: 1, step: 0.01, get: () => u.uHalftoneDark.value, set: (v) => { u.uHalftoneDark.value = v; } },
-        { label: 'Blend 强度', min: 0, max: 1, step: 0.01, get: () => u.uHalftoneBlend.value, set: (v) => { u.uHalftoneBlend.value = v; } },
-        { label: 'CutLow 起点', min: 0, max: 1, step: 0.01, get: () => u.uHalftoneCutLow.value, set: (v) => { u.uHalftoneCutLow.value = v; } },
-        { label: 'CutHigh 终点', min: 0, max: 1, step: 0.01, get: () => u.uHalftoneCutHigh.value, set: (v) => { u.uHalftoneCutHigh.value = v; } },
-      ],
-    },
-    { title: '阴影色 ShadowTint (×albedo)', ctls: vec3ctls(u.uShadowTint.value, 0, 1.5) },
-    { title: '受光色 LightTint (×albedo)', ctls: vec3ctls(u.uLightTint.value, 0, 1.5) },
-  ];
-  if (cameraOrbit) {
-    sections.push({
-      title: '极度视角 Camera', ctls: [
-        { label: 'Cam Dist 镜头距离', min: 1.5, max: 12, step: 0.1, get: () => cameraOrbit.camDistance, set: (v) => { cameraOrbit.camDistance = v; } },
-        { label: 'Cam Height 镜头高度', min: 0.5, max: 8, step: 0.1, get: () => cameraOrbit.camHeightBase, set: (v) => { cameraOrbit.camHeightBase = v; } },
-      ],
-    });
-  }
-  if (colorGrade) {
-    sections.push({
-      title: '美漫调色 ColorGrade', ctls: [
-        { label: 'Saturation 饱和', min: 0.5, max: 2.5, step: 0.01, get: () => colorGrade.saturation, set: (v) => { colorGrade.saturation = v; } },
-        { label: 'Contrast 对比', min: 0.5, max: 2.0, step: 0.01, get: () => colorGrade.contrast, set: (v) => { colorGrade.contrast = v; } },
-        { label: 'Brightness 亮度', min: 0.5, max: 2.0, step: 0.01, get: () => colorGrade.brightness, set: (v) => { colorGrade.brightness = v; } },
-      ],
-    });
-  }
-  if (darkComic) {
-    sections.push({
-      title: '暗黑漫画 DarkComic (Final Swarm)', ctls: [
-        { label: 'Enabled 开关', min: 0, max: 1, step: 1, get: () => darkComic.enabled ? 1 : 0, set: (v) => { darkComic.enabled = v >= 0.5; } },
-        { label: '去饱和最大值', min: 0, max: 1, step: 0.01, get: () => darkComic.desaturateMax, set: (v) => { darkComic.desaturateMax = v; } },
-        { label: '噪点最大值', min: 0, max: 0.3, step: 0.005, get: () => darkComic.noiseMax, set: (v) => { darkComic.noiseMax = v; } },
-        { label: '渐变时长(s)', min: 1, max: 120, step: 1, get: () => darkComic.rampDurationSeconds, set: (v) => { darkComic.rampDurationSeconds = v; } },
-        { label: '当前进度 ramp', min: 0, max: 1, step: 0.01, get: () => darkComic.ramp01, set: (v) => { darkComic.ramp01 = v; } },
-      ],
-    });
-  }
-  if (fog) {
-    sections.push({
-      title: '雾 Fog', ctls: [
-        { label: 'Near 起点', min: 0, max: 300, step: 1, get: () => fog.near, set: (v) => { fog.near = v; } },
-        { label: 'Far 终点', min: 10, max: 600, step: 1, get: () => fog.far, set: (v) => { fog.far = v; } },
-      ],
-    });
-  }
-  if (bloom) {
-    sections.push({
-      title: '泛光 Bloom', ctls: [
-        { label: 'Strength 强度', min: 0, max: 2, step: 0.01, get: () => bloom.strength, set: (v) => { bloom.strength = v; } },
-        { label: 'Radius 半径', min: 0, max: 1.5, step: 0.01, get: () => bloom.radius, set: (v) => { bloom.radius = v; } },
-        { label: 'Threshold 阈值', min: 0, max: 1.5, step: 0.01, get: () => bloom.threshold, set: (v) => { bloom.threshold = v; } },
-      ],
-    });
-  }
-
-  const panel = document.createElement('div');
-  panel.id = 'stylized-debug-panel';
-  panel.style.cssText = [
-    'position:fixed', 'top:8px', 'right:8px', 'z-index:99999', 'display:none',
-    'width:268px', 'max-height:88vh', 'overflow-y:auto', 'box-sizing:border-box',
-    'padding:10px 12px', 'background:rgba(12,14,22,0.92)', 'border:1px solid rgba(120,160,255,0.4)',
-    'border-radius:10px', 'color:#dfe6ff', 'font:12px/1.4 ui-monospace,Menlo,Consolas,monospace',
-    'box-shadow:0 6px 24px rgba(0,0,0,0.5)', 'user-select:none',
-  ].join(';');
-
-  const title = document.createElement('div');
-  title.textContent = '🎨 风格化调参 (按 ` 开关)';
-  title.style.cssText = 'font-weight:700;margin-bottom:8px;color:#9fc0ff;';
-  panel.appendChild(title);
-
-  for (const sec of sections) {
-    const h = document.createElement('div');
-    h.textContent = sec.title;
-    h.style.cssText = 'margin:8px 0 4px;color:#ffd479;font-weight:700;border-bottom:1px solid rgba(255,255,255,0.12);padding-bottom:2px;';
-    panel.appendChild(h);
-    for (const c of sec.ctls) {
-      const row = document.createElement('label');
-      row.style.cssText = 'display:flex;align-items:center;gap:6px;margin:3px 0;';
-      const name = document.createElement('span');
-      name.textContent = c.label;
-      name.style.cssText = 'flex:0 0 96px;color:#cfd8ff;';
-      const slider = document.createElement('input');
-      slider.type = 'range';
-      slider.min = String(c.min);
-      slider.max = String(c.max);
-      slider.step = String(c.step);
-      slider.value = String(c.get());
-      slider.style.cssText = 'flex:1 1 auto;min-width:0;';
-      const val = document.createElement('span');
-      val.textContent = c.get().toFixed(2);
-      val.style.cssText = 'flex:0 0 40px;text-align:right;color:#9fffcf;';
-      slider.addEventListener('input', () => {
-        const v = parseFloat(slider.value);
-        c.set(v);
-        val.textContent = v.toFixed(2);
-      });
-      row.appendChild(name);
-      row.appendChild(slider);
-      row.appendChild(val);
-      panel.appendChild(row);
-    }
-  }
-
-  const copyBtn = document.createElement('button');
-  copyBtn.textContent = '复制参数到剪贴板';
-  copyBtn.style.cssText = 'margin-top:10px;width:100%;padding:6px;background:#3a6;border:none;border-radius:6px;color:#fff;font-weight:700;cursor:pointer;';
-  copyBtn.addEventListener('click', () => {
-    const v3 = (v: THREE.Vector3) => `new THREE.Vector3(${v.x.toFixed(3)}, ${v.y.toFixed(3)}, ${v.z.toFixed(3)})`;
-    const snippet = [
-      `// sceneryMode = '${sceneryMode}'`,
-      `// skyMode = '${skyMode}'`,
-      `// realTimeShadowsEnabled = ${realTimeShadowsEnabled}`,
-      `// renderer.toneMappingExposure = ${renderer.toneMappingExposure.toFixed(3)}`,
-      '// —— stylizedUniforms 初值 ——',
-      `uSteps: { value: ${u.uSteps.value} },`,
-      `uStepSmooth: { value: ${u.uStepSmooth.value} },`,
-      `uHalftoneTiling: { value: ${u.uHalftoneTiling.value} },`,
-      `uHalftoneSmooth: { value: ${u.uHalftoneSmooth.value} },`,
-      `uHalftoneDark: { value: ${u.uHalftoneDark.value} },`,
-      `uHalftoneBlend: { value: ${u.uHalftoneBlend.value} },`,
-      `uShadowTint: { value: ${v3(u.uShadowTint.value)} },`,
-      `uLightTint: { value: ${v3(u.uLightTint.value)} },`,
-      fog ? `// fog: new THREE.Fog('#87CEEB', ${fog.near}, ${fog.far})` : '',
-      bloom ? `// bloom: strength=${bloom.strength}, radius=${bloom.radius}, threshold=${bloom.threshold}` : '',
-      colorGrade ? `// ColorGrade: saturation=${colorGrade.saturation.toFixed(3)}, contrast=${colorGrade.contrast.toFixed(3)}, brightness=${colorGrade.brightness.toFixed(3)}` : '',
-      darkComic ? `// DarkComic: enabled=${darkComic.enabled}, desatMax=${darkComic.desaturateMax.toFixed(2)}, noiseMax=${darkComic.noiseMax.toFixed(3)}, rampDuration=${darkComic.rampDurationSeconds}s, ramp01=${darkComic.ramp01.toFixed(2)}` : '',
-    ].filter(Boolean).join('\n');
-    navigator.clipboard?.writeText(snippet).catch(() => { /* ignore */ });
-    console.log('[stylized] 当前参数：\n' + snippet);
-    copyBtn.textContent = '已复制 ✓（也打印在 Console）';
-    setTimeout(() => { copyBtn.textContent = '复制参数到剪贴板'; }, 1500);
-  });
-  panel.appendChild(copyBtn);
-
-  document.body.appendChild(panel);
-
-  const toggleBtn = document.createElement('button');
-  toggleBtn.textContent = '🎨';
-  toggleBtn.title = '风格化调参（`）';
-  toggleBtn.style.cssText = [
-    'position:fixed', 'top:8px', 'right:8px', 'z-index:99998', 'width:34px', 'height:34px',
-    'border:none', 'border-radius:8px', 'background:rgba(60,90,160,0.85)', 'color:#fff',
-    'font-size:16px', 'cursor:pointer', 'box-shadow:0 2px 8px rgba(0,0,0,0.4)',
-  ].join(';');
-  const toggle = () => {
-    const show = panel.style.display === 'none';
-    panel.style.display = show ? 'block' : 'none';
-    toggleBtn.style.display = show ? 'none' : 'block';
-  };
-  toggleBtn.addEventListener('click', toggle);
-  document.body.appendChild(toggleBtn);
-  window.addEventListener('keydown', (e) => {
-    if (e.code === 'Backquote') { e.preventDefault(); toggle(); }
-  });
 }
 
 const WEATHER_DAY_EXPOSURE = 1.85;
@@ -3135,8 +2882,6 @@ export class GameScene {
   private killCountEl!: HTMLSpanElement;
   private goldLabel!: HTMLDivElement;
   private silverLabel!: HTMLDivElement;
-  private gmWeaponDamagePanel: HTMLDivElement | null = null;
-  private gmWeaponDamageBody: HTMLDivElement | null = null;
   /** 局内任务条（武器槽下方）。 */
   private questRow!: HTMLDivElement;
   private questLabel!: HTMLDivElement;
@@ -3187,13 +2932,6 @@ export class GameScene {
   private wasOvertime = false;
   private xpFlashTimer = 0;
   private seenChestOpenEvents = new Set<string>();
-  /** 帧率 / Draw Call 调试 overlay（dev 下按 ` 与风格化调参面板同步开关） */
-  private perfStatsEl: HTMLDivElement | null = null;
-  private perfStatsVisible = false;
-  private perfFpsSampleTime = 0;
-  private perfFpsFrameCount = 0;
-  private perfFpsDisplay = 0;
-
   // 渲染帧计数器（动画 LOD 错峰用：不同 id 的敌人在不同帧更新，把降频开销摊开）。
   private frameIndex = 0;
   // 复用的视锥/矩阵，避免每帧分配。renderEnemies 开头由当前相机重建后做点剔除。
@@ -3235,12 +2973,6 @@ export class GameScene {
    */
   private weaponSlotsSig = '';
   private weaponCooldownOverlays: Array<HTMLElement | null> = [];
-  private gmWeaponDamageSig = '';
-  private gmWeaponDamageRows = new Map<string, {
-    kills: HTMLSpanElement;
-    dps: HTMLSpanElement;
-    total: HTMLSpanElement;
-  }>();
   private tomesSig = '';
   private relicsSig = '';
   private bondsSig = '';
@@ -3258,10 +2990,6 @@ export class GameScene {
 
   // Boss attack warning elements
   private bossAoeFlashTimer = 0;
-
-  /** GM 调试：碰撞盒可视化层（col_/wall_/climb_/ramp_/spawn_），按需 lazy 构建。 */
-  private collisionDebugGroup: THREE.Group | null = null;
-  private collisionDebugVisible = false;
 
   // Combo HUD elements
   private comboLabel: HTMLDivElement | null = null;
@@ -3404,7 +3132,6 @@ export class GameScene {
     this.setupGoldMoteMesh();
     this.setupVFX();
     this.setupHUD();
-    this.setupPerfStats();
 
     this.removeDisplayListener = installThreeHighDpi({
       renderer: this.renderer,
@@ -3421,22 +3148,6 @@ export class GameScene {
     });
 
     this.setupComposer();
-
-    // Dev-only 风格化调参面板（按 ` 开关），生产构建不创建。
-    if (import.meta.env.DEV) {
-      createStylizedDebugPanel({
-        scene: this.scene,
-        bloom: this.bloomPass,
-        renderer: this.renderer,
-        colorGrade: this.colorGradePass,
-        darkComic: this.darkComicPass,
-        cameraOrbit: this.cameraOrbit,
-        onSkyModeChange: (mode) => {
-          this.applySkyMode(mode);
-        },
-      });
-      this.setupGmWeaponDamagePanel();
-    }
 
     this.sessionUnsubscribers.push(
       this.session.on('game_update', ({ state }) => {
@@ -3537,18 +3248,6 @@ export class GameScene {
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.hudContainer?.remove();
-    this.perfStatsEl?.remove();
-    this.perfStatsEl = null;
-    this.perfStatsVisible = false;
-    if (this.perfKeyHandler) {
-      window.removeEventListener('keydown', this.perfKeyHandler);
-      this.perfKeyHandler = null;
-    }
-    this.gmWeaponDamagePanel?.remove();
-    this.gmWeaponDamagePanel = null;
-    this.gmWeaponDamageBody = null;
-    this.gmWeaponDamageRows.clear();
-    this.gmWeaponDamageSig = '';
     this.upgradePanel?.remove();
     this.gameOverPanel?.remove();
     this.pausePanel?.remove();
@@ -4066,16 +3765,9 @@ export class GameScene {
   }
 
   private renderFrame(): void {
-    // dev 诊断：渲染提交墙钟耗时(EMA)。不被 vsync(60封顶)掩盖，反映 CPU 端 draw 提交负载——
-    // 这个 ms 越接近 16.6 越接近掉帧临界点。生产构建里 import.meta.env.DEV 恒为 false，整块计时被 tree-shake。
-    const t0 = import.meta.env.DEV ? performance.now() : 0;
     if (this.composer) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
-    if (import.meta.env.DEV) {
-      this.perfRenderMs = this.perfRenderMs * 0.9 + (performance.now() - t0) * 0.1;
-    }
   }
-  private perfRenderMs = 0;
 
   /** GL context 丢失时显示的提示浮层（懒创建，复用同一节点）。 */
   private showContextLostOverlay(): void {
@@ -4858,160 +4550,6 @@ export class GameScene {
     this.hudContainer.appendChild(this.comboLabel);
   }
 
-  /**
-   * 左下角 FPS + Draw Call + 分类拆解诊断 overlay（EffectComposer 多 pass 需关闭 autoReset 后手动 reset）。
-   * 仅 dev 构建启用（生产 `import.meta.env.DEV === false` 直接 return，不创建 DOM、不改 renderer.info、不挂键盘）。
-   * 默认隐藏，按 ` 与右上角风格化调参面板同步开关。保留它是为了后续做敌人模型合批时还能用 enemy draws / sig 验证。
-   */
-  private setupPerfStats(): void {
-    if (!import.meta.env.DEV) return;
-    if (this.perfStatsEl) return;
-    this.renderer.info.autoReset = false;
-    const el = document.createElement('div');
-    el.style.cssText = `
-      position:fixed;left:max(8px,env(safe-area-inset-left));bottom:max(8px,env(safe-area-inset-bottom));
-      z-index:150;display:none;pointer-events:none;padding:4px 8px;border-radius:6px;
-      background:rgba(0,0,0,0.55);color:#b8ffb8;font-family:monospace;
-      font-size:11px;line-height:1.45;font-variant-numeric:tabular-nums;
-      text-shadow:0 1px 2px rgba(0,0,0,0.9);white-space:pre;
-    `;
-    el.textContent = 'FPS: --\nDraw: --';
-    document.body.appendChild(el);
-    this.perfStatsEl = el;
-
-    // dev 诊断：按 ` 开关本 overlay。
-    this.perfKeyHandler = (e: KeyboardEvent) => {
-      if (e.code !== 'Backquote') return;
-      this.perfStatsVisible = !this.perfStatsVisible;
-      el.style.display = this.perfStatsVisible ? 'block' : 'none';
-    };
-    window.addEventListener('keydown', this.perfKeyHandler);
-  }
-  private perfKeyHandler: ((e: KeyboardEvent) => void) | null = null;
-
-  private updatePerfStats(dt: number): void {
-    if (!this.perfStatsEl) return;
-    if (!this.perfStatsVisible) {
-      this.renderer.info.reset();
-      return;
-    }
-    this.perfFpsFrameCount += 1;
-    this.perfFpsSampleTime += dt;
-    if (this.perfFpsSampleTime >= 0.25) {
-      this.perfFpsDisplay = Math.round(this.perfFpsFrameCount / this.perfFpsSampleTime);
-      this.perfFpsFrameCount = 0;
-      this.perfFpsSampleTime = 0;
-    }
-    const drawCalls = this.renderer.info.render.calls;
-    const tris = this.renderer.info.render.triangles;
-    // 临时诊断：统计敌人贡献的可见子网格数（= draw call 数），定位 draw call 来源。
-    // 每 0.25s 才重算一次（与 FPS 采样同步），O(敌人数) 遍历，开销可忽略。
-    if (this.perfFpsSampleTime === 0) {
-      let enemyMeshes = 0;
-      let enemyMerged = 0;
-      let enemyMergedSig = 0;
-      for (const obj of this.enemyObjects.values()) {
-        const type = obj.userData['enemyType'] as string | undefined;
-        let stat = type ? this.enemyMeshCountByType.get(type) : undefined;
-        if (stat === undefined) {
-          let meshes = 0;
-          const texes = new Set<string>();
-          const sigs = new Set<string>();
-          obj.traverse((c) => {
-            const m = c as THREE.Mesh;
-            if (!m.isMesh) return;
-            meshes++;
-            const mm = m.material;
-            const arr = Array.isArray(mm) ? mm : [mm];
-            for (const x of arr) {
-              const tm = x as THREE.MeshToonMaterial;
-              const tex = tm?.map?.uuid ?? `color:${tm?.color?.getHexString?.() ?? 'none'}`;
-              texes.add(tex);
-              // 完整材质签名：贴图 + 颜色 + 自发光 + 透明/面向。同签名 = 可直接复用一个材质合并。
-              const sig = `${tex}|${tm?.color?.getHexString?.() ?? '-'}|${tm?.emissiveMap?.uuid ?? '-'}|${tm?.emissive?.getHexString?.() ?? '-'}|${tm?.transparent ? 't' : 'o'}|${tm?.side ?? 0}`;
-              sigs.add(sig);
-            }
-          });
-          stat = { meshes, tex: texes.size, sig: sigs.size };
-          if (type) this.enemyMeshCountByType.set(type, stat);
-        }
-        enemyMeshes += stat.meshes;
-        enemyMerged += stat.tex;
-        enemyMergedSig += stat.sig;
-      }
-      this.perfEnemyMeshes = enemyMeshes;
-      this.perfEnemyMerged = enemyMerged;
-      this.perfEnemyMergedSig = enemyMergedSig;
-      this.perfEnemyCount = this.enemyObjects.size;
-      this.computeDrawBreakdown();
-    }
-    const b = this.perfDrawBreakdown;
-    const bSum = b.enemy + b.shadow + b.level + b.other;
-    // alive 来自 enemyObjects（含 dying 动画前的所有挂载对象），culled = 因 >ENEMY_VISIBLE_CULL_DIST
-    // 被强制 visible=false 的；alive - culled 即「画面附近实际尝试渲染的怪」（再被视锥过滤就是 b.enemy）。
-    const culled = this.perfEnemyCulledFar;
-    this.perfStatsEl.textContent =
-      `FPS: ${this.perfFpsDisplay}\nDraw: ${drawCalls}\nTris: ${(tris / 1000).toFixed(0)}k\n` +
-      `Enemies: ${this.perfEnemyCount} → ${this.perfEnemyMeshes} draws\n` +
-      `  far-culled (>${ENEMY_VISIBLE_CULL_DIST}m): ${culled}\n` +
-      `merge tex→ ${this.perfEnemyMerged} / sig→ ${this.perfEnemyMergedSig}\n` +
-      `real draws (frustum):\n` +
-      `  enemy ${b.enemy}  shadow ${b.shadow}\n` +
-      `  level ${b.level}  other ${b.other}\n` +
-      `  sum ${bSum} (+post ${Math.max(0, drawCalls - bSum)})\n` +
-      `outline: ${this.finalCompositePass?.mode ?? 'off'}\n` +
-      `profile: ${this.renderProfile.id}\n` +
-      `render: ${this.perfRenderMs.toFixed(1)}ms (submit)`;
-    this.renderer.info.reset();
-  }
-
-  /**
-   * 临时诊断：把场景里**实际会渲染**的 draw 按类别拆开（敌人 / blob 阴影 / 地图 / 其它），
-   * 定位 2419 draw 的大头。带视锥剔除 + 祖先 visible 判断 + 多材质 group 计数，
-   * 四类之和应 ≈ renderer.calls（差额 = 后处理 pass / shadowmap 等）。每 0.25s 算一次。
-   */
-  private computeDrawBreakdown(): void {
-    this.cullMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
-    this.cullFrustum.setFromProjectionMatrix(this.cullMatrix);
-    let enemy = 0, shadow = 0, level = 0, other = 0;
-    this.scene.traverse((obj) => {
-      const m = obj as THREE.Mesh;
-      if (!m.isMesh || !m.visible) return;
-      // 祖先任一不可见 → 不渲染
-      for (let p = m.parent; p; p = p.parent) if (!p.visible) return;
-      // 视锥剔除（frustumCulled=false 的强制渲染，如 blob 阴影）
-      if (m.frustumCulled && !this.cullFrustum.intersectsObject(m)) return;
-      // draw 数：多材质按 geometry.groups 拆，否则 1
-      const groups = (m.geometry as THREE.BufferGeometry | undefined)?.groups;
-      const draws = Array.isArray(m.material) && groups && groups.length > 0 ? groups.length : 1;
-      // 归类：沿 parent 链找标记
-      let cat = 3; // 0 enemy / 1 shadow / 2 level / 3 other
-      for (let p: THREE.Object3D | null = m; p; p = p.parent) {
-        if (p.userData && p.userData['enemyType'] !== undefined) { cat = 0; break; }
-        if (p.name === 'BlobShadow') { cat = 1; break; }
-        if (p.name === 'LevelRoot') { cat = 2; break; }
-      }
-      if (cat === 0) enemy += draws;
-      else if (cat === 1) shadow += draws;
-      else if (cat === 2) level += draws;
-      else other += draws;
-    });
-    this.perfDrawBreakdown.enemy = enemy;
-    this.perfDrawBreakdown.shadow = shadow;
-    this.perfDrawBreakdown.level = level;
-    this.perfDrawBreakdown.other = other;
-  }
-  private enemyMeshCountByType = new Map<string, { meshes: number; tex: number; sig: number }>();
-  private perfEnemyMeshes = 0;
-  private perfEnemyMerged = 0;
-  private perfEnemyMergedSig = 0;
-  private perfEnemyCount = 0;
-  // 每帧 updateEnemyObjects 累加：被 ENEMY_VISIBLE_CULL_DIST 远距剔除掉的敌人数。
-  // 写在 perf 字段里方便 overlay 立刻显示「活着但不可见」的怪有多少 —— 帮玩家分辨
-  // 「真的没怪」vs「怪都在 35m 外被剔除」。
-  private perfEnemyCulledFar = 0;
-  private perfDrawBreakdown = { enemy: 0, shadow: 0, level: 0, other: 0 };
-
   // ===========================================================================
   // Camera Effects — Layered Shake & Hit Stop
   // ===========================================================================
@@ -5026,146 +4564,6 @@ export class GameScene {
 
   triggerHitStop(duration: number): void {
     this.hitStopTimer = duration;
-  }
-
-  // GM debug: 强制在指定坐标劈一道闪电（测试用）
-  debugSpawnLightning(x: number, y: number, z: number): void {
-    this.weaponTransientVfx.spawnLightningBolt(x, y, z);
-  }
-
-  /**
-   * GM debug：切换碰撞盒可视化层。
-   *
-   * 颜色编码（透明 wireframe）：
-   *   - 绿 col_  : 可站立平台（顶面 = 可走面）
-   *   - 红 wall_ : 实心遮挡（横向阻挡 + 头顶下穿）
-   *   - 蓝 climb_: 攀爬体（按 jump 抓墙）
-   *   - 黄 ramp_ : 可行走斜坡（线性插值高度）
-   *   - 品红 spawn_player/boss/altar/chest 标记球
-   *
-   * 数据源：客户端 `loadedLevel.data`（LevelLoader 解析的 LevelData）。
-   * 走到这里时 loadedLevel 必非 null（boot 失败会先抛错）。
-   */
-  debugToggleCollisionViz(): boolean {
-    if (this.collisionDebugGroup) {
-      this.collisionDebugVisible = !this.collisionDebugVisible;
-      this.collisionDebugGroup.visible = this.collisionDebugVisible;
-      return this.collisionDebugVisible;
-    }
-    if (!loadedLevel) {
-      console.warn('[GM] loadedLevel 为空（理论上不该发生）。');
-      return false;
-    }
-    this.collisionDebugGroup = this.buildCollisionDebugGroup(loadedLevel.data);
-    this.scene.add(this.collisionDebugGroup);
-    this.collisionDebugVisible = true;
-    return true;
-  }
-
-  private buildCollisionDebugGroup(data: LevelData): THREE.Group {
-    const group = new THREE.Group();
-    group.name = 'CollisionDebug';
-
-    // 加色实心 fill（占据体积感，加色让重叠处更亮）
-    const fillMat = (color: number, opacity: number) =>
-      new THREE.MeshBasicMaterial({
-        color, transparent: true, opacity,
-        depthWrite: false, depthTest: false, // 永远置顶（debug overlay）
-        blending: THREE.AdditiveBlending,
-        side: THREE.DoubleSide,
-      });
-
-    // 高亮 wireframe 边缘（用 EdgesGeometry，比 wireframe:true 干净）
-    const edgeMat = (color: number) =>
-      new THREE.LineBasicMaterial({
-        color, transparent: true, opacity: 0.95,
-        depthWrite: false, depthTest: false,
-      });
-
-    // 给一个 box 加一组 fill + edge，自动放进 group 并提高 renderOrder。
-    const addBox = (
-      cx: number, cy: number, cz: number,
-      sx: number, sy: number, sz: number,
-      color: number, fillOpacity: number,
-    ) => {
-      const geo = new THREE.BoxGeometry(sx, sy, sz);
-      const fill = new THREE.Mesh(geo, fillMat(color, fillOpacity));
-      fill.position.set(cx, cy, cz);
-      fill.renderOrder = 9999;
-      group.add(fill);
-      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat(color));
-      edges.position.set(cx, cy, cz);
-      edges.renderOrder = 10000;
-      group.add(edges);
-    };
-
-    // col_: 绿色（顶面 = 可走面；baseY 缺省 = height - 1 即视觉厚 1 单位）
-    for (const r of data.collisionRects) {
-      const baseY = r.baseY ?? r.height - 1;
-      const sy = Math.max(r.height - baseY, 0.01);
-      addBox(r.cx, (baseY + r.height) / 2, r.cz, r.halfW * 2, sy, r.halfD * 2, 0x00ff44, 0.18);
-    }
-
-    // wall_: 红色（亮一点的 fill 凸显挡墙）
-    for (const w of data.walls ?? []) {
-      const sy = Math.max(w.topY - w.bottomY, 0.01);
-      addBox(w.cx, (w.bottomY + w.topY) / 2, w.cz, w.halfW * 2, sy, w.halfD * 2, 0xff3355, 0.28);
-    }
-
-    // climb_: 蓝色
-    for (const c of data.climbVolumes ?? []) {
-      const sy = Math.max(c.topY - c.bottomY, 0.01);
-      addBox(c.cx, (c.bottomY + c.topY) / 2, c.cz, c.halfW * 2, sy, c.halfD * 2, 0x33aaff, 0.25);
-    }
-
-    // ramp_: 黄色——按 slopeDir 旋转的盒子，对齐真实斜面 footprint
-    for (const r of data.ramps ?? []) {
-      const sy = Math.max(r.highY - r.lowY, 0.01);
-      const cy = (r.lowY + r.highY) / 2;
-      const rotY = Math.atan2(-r.slopeDirZ, r.slopeDirX); // 对齐 local +X 到 slopeDir
-      const geo = new THREE.BoxGeometry(r.halfSlope * 2, sy, r.halfPerp * 2);
-      const fill = new THREE.Mesh(geo, fillMat(0xffcc00, 0.20));
-      fill.position.set(r.cx, cy, r.cz);
-      fill.rotation.y = rotY;
-      fill.renderOrder = 9999;
-      group.add(fill);
-      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat(0xffcc00));
-      edges.position.set(r.cx, cy, r.cz);
-      edges.rotation.y = rotY;
-      edges.renderOrder = 10000;
-      group.add(edges);
-    }
-
-    // spawn 点：品红色发光大球（半径 0.7，永远置顶）
-    const spawnFillMat = new THREE.MeshBasicMaterial({
-      color: 0xff33ff, transparent: true, opacity: 0.9,
-      depthWrite: false, depthTest: false,
-      blending: THREE.AdditiveBlending,
-    });
-    const markSpawn = (x: number, z: number, label: string) => {
-      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 12), spawnFillMat);
-      ball.position.set(x, 0.7, z);
-      ball.name = `Spawn_${label}`;
-      ball.renderOrder = 10001;
-      group.add(ball);
-      // 顶上加一根细立柱（高 5 单位）让远处也能看见
-      const pillarGeo = new THREE.CylinderGeometry(0.06, 0.06, 5, 8);
-      const pillar = new THREE.Mesh(pillarGeo, spawnFillMat);
-      pillar.position.set(x, 2.5, z);
-      pillar.renderOrder = 10001;
-      group.add(pillar);
-    };
-    for (const p of data.spawnPoints?.players ?? []) markSpawn(p.x, p.z, 'player');
-    for (const p of data.spawnPoints?.bosses ?? []) markSpawn(p.x, p.z, 'boss');
-    for (const a of data.spawnPoints?.altars ?? []) markSpawn(a.x, a.z, 'altar');
-    for (const c of data.chestSpawns ?? []) markSpawn(c.x, c.z, 'chest');
-
-    console.log(
-      `[GM] CollisionDebug: ${data.collisionRects.length} col, ${data.walls?.length ?? 0} wall, ` +
-      `${data.climbVolumes?.length ?? 0} climb, ${data.ramps?.length ?? 0} ramp, ` +
-      `${(data.spawnPoints?.players?.length ?? 0) + (data.spawnPoints?.bosses?.length ?? 0) + (data.spawnPoints?.altars?.length ?? 0) + (data.chestSpawns?.length ?? 0)} spawn`,
-    );
-    return group;
   }
 
   // ===========================================================================
@@ -5190,7 +4588,6 @@ export class GameScene {
       this.hitStopTimer -= dt;
       // Still render the frozen frame
       this.renderFrame();
-      this.updatePerfStats(dt);
       return;
     }
 
@@ -5203,7 +4600,6 @@ export class GameScene {
     if (introRenderMode === 'introOnly') {
       this.renderStartIntroFrame(state);
       this.renderFrame();
-      this.updatePerfStats(dt);
       return;
     }
     const introFullWorld = introRenderMode === 'fullWorld';
@@ -5308,7 +4704,6 @@ export class GameScene {
     this.updateHUD(state, eventsFresh);
 
     this.renderFrame();
-    this.updatePerfStats(dt);
   }
 
   // ===========================================================================
@@ -5686,9 +5081,6 @@ export class GameScene {
     const camY = this.camera.position.y;
     const camZ = this.camera.position.z;
 
-    // 每帧重置远距剔除计数（用于 perf overlay 显示「活着但 >35m 不渲染」的怪数）
-    this.perfEnemyCulledFar = 0;
-
     // 玩家坐标（敌人朝向用）只需每帧读一次，避免在循环内对每个敌人重复 getRenderState。
     const playerPos = this.session.getRenderState().player;
 
@@ -5833,7 +5225,6 @@ export class GameScene {
       const cullDistSq = cullDx * cullDx + cullDy * cullDy + cullDz * cullDz;
       if (cullDistSq > ENEMY_VISIBLE_CULL_SQ) {
         if (obj.visible) obj.visible = false;
-        this.perfEnemyCulledFar++;
         continue;
       }
       obj.visible = true;
@@ -7996,8 +7387,6 @@ export class GameScene {
 
     // --- Weapon slots (top-left): fixed grid of maxWeaponSlots + a locked 6th slot ---
     this.renderWeaponSlots(p);
-    this.renderGmWeaponDamagePanel(state);
-
     // --- Tome stack (top-right second column): newest on the right ---
     // 仅在法书集合 / 等级变化时重建（旧实现每帧全量重建 DOM）。
     let tomesSig = '';
@@ -8421,124 +7810,7 @@ export class GameScene {
     }
   }
 
-  private setupGmWeaponDamagePanel(): void {
-    const debugPanel = document.getElementById('stylized-debug-panel');
-    if (!debugPanel) return;
-
-    this.gmWeaponDamagePanel?.remove();
-    this.gmWeaponDamageRows.clear();
-    this.gmWeaponDamageSig = '';
-
-    this.gmWeaponDamagePanel = document.createElement('div');
-    this.gmWeaponDamagePanel.style.cssText = `
-      margin:10px 0 8px;padding:8px 0 0;border-top:1px solid rgba(255,255,255,0.14);
-      color:#eaf3ff;font-variant-numeric:tabular-nums;
-    `;
-
-    const gmTitle = document.createElement('div');
-    gmTitle.style.cssText = 'margin:0 0 6px;color:#9fd0ff;font-weight:800;';
-    gmTitle.textContent = 'GM Tools - Weapon Damage';
-
-    this.gmWeaponDamageBody = document.createElement('div');
-    this.gmWeaponDamageBody.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
-
-    this.gmWeaponDamagePanel.appendChild(gmTitle);
-    this.gmWeaponDamagePanel.appendChild(this.gmWeaponDamageBody);
-    debugPanel.appendChild(this.gmWeaponDamagePanel);
-  }
-
-  private renderGmWeaponDamagePanel(state: GameState): void {
-    if (!this.gmWeaponDamageBody) return;
-
-    const statsByWeapon = new Map((state.weaponDamageStats ?? []).map(s => [s.weaponType, s]));
-    const weaponRows = state.player.weapons.map((weapon) => {
-      const stat = statsByWeapon.get(weapon.type) ?? {
-        weaponType: weapon.type,
-        killCount: 0,
-        totalDamage: 0,
-        dps: 0,
-      };
-      return {
-        id: `weapon:${weapon.type}`,
-        label: `${WEAPON_ICONS[weapon.type] ?? '?'} ${t(`upgrade.weapon.${weapon.type}`)}`,
-        killCount: stat.killCount,
-        totalDamage: stat.totalDamage,
-        dps: stat.dps,
-        isBond: false,
-      };
-    });
-    const bondRows = (state.bondDamageStats ?? [])
-      .filter(stat => stat.totalDamage > 0 || stat.killCount > 0)
-      .map(stat => {
-        const bond = BONDS[stat.bondId];
-        return {
-          id: `bond:${stat.bondId}`,
-          label: `${bond?.icon ?? '🔗'} ${bond ? t(bond.nameKey) : stat.bondId}`,
-          killCount: stat.killCount,
-          totalDamage: stat.totalDamage,
-          dps: stat.dps,
-          isBond: true,
-        };
-      });
-    const orderedStats = [...weaponRows, ...bondRows];
-
-    const sig = orderedStats.map(s => s.id).join('|');
-    if (sig !== this.gmWeaponDamageSig) {
-      this.gmWeaponDamageSig = sig;
-      this.gmWeaponDamageRows.clear();
-      this.gmWeaponDamageBody.innerHTML = '';
-
-      const header = document.createElement('div');
-      header.style.cssText = 'display:grid;grid-template-columns:minmax(92px,1fr) 38px 54px 58px;gap:6px;align-items:center;color:rgba(215,232,255,0.68);font-size:9px;text-transform:uppercase;';
-      for (const label of ['Weapon', 'Kills', 'DPS', 'Total']) {
-        const cell = document.createElement('span');
-        cell.textContent = label;
-        cell.style.textAlign = label === 'Weapon' ? 'left' : 'right';
-        header.appendChild(cell);
-      }
-      this.gmWeaponDamageBody.appendChild(header);
-
-      for (const stat of orderedStats) {
-        this.createGmWeaponDamageRow(stat.id, stat.label, stat.isBond);
-      }
-    }
-
-    for (const stat of orderedStats) {
-      const row = this.gmWeaponDamageRows.get(stat.id);
-      if (!row) continue;
-      row.kills.textContent = String(stat.killCount);
-      row.dps.textContent = this.formatGmDamageNumber(stat.dps, 1);
-      row.total.textContent = this.formatGmDamageNumber(stat.totalDamage, 0);
-    }
-  }
-
-  private createGmWeaponDamageRow(rowId: string, label: string, isBond: boolean): void {
-    const row = document.createElement('div');
-    row.style.cssText = 'display:grid;grid-template-columns:minmax(92px,1fr) 38px 54px 58px;gap:6px;align-items:center;min-height:18px;border-top:1px solid rgba(255,255,255,0.06);padding-top:3px;';
-
-    const name = document.createElement('span');
-    name.style.cssText = `overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${isBond ? '#ffd966' : '#ffffff'};font-weight:700;`;
-    name.textContent = label;
-    row.appendChild(name);
-
-    const kills = this.createGmWeaponDamageValue();
-    const dps = this.createGmWeaponDamageValue();
-    const total = this.createGmWeaponDamageValue();
-    row.appendChild(kills);
-    row.appendChild(dps);
-    row.appendChild(total);
-
-    this.gmWeaponDamageBody?.appendChild(row);
-    this.gmWeaponDamageRows.set(rowId, { kills, dps, total });
-  }
-
-  private createGmWeaponDamageValue(): HTMLSpanElement {
-    const value = document.createElement('span');
-    value.style.cssText = 'text-align:right;color:#bfe5ff;';
-    return value;
-  }
-
-  private formatGmDamageNumber(value: number, decimals: number): string {
+  private formatDamageNumber(value: number, decimals: number): string {
     if (!Number.isFinite(value)) return '0';
     const abs = Math.abs(value);
     if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
@@ -9505,7 +8777,7 @@ export class GameScene {
 
       const dmg = document.createElement('span');
       dmg.style.cssText = uiPlainText(`text-align:left;font-size:${cellFont};font-variant-numeric:tabular-nums;white-space:nowrap;color:${isMvp ? '#ffd700' : '#f3f3ff'};${cellPad}${rowBg}`);
-      dmg.textContent = this.formatGmDamageNumber(stat.totalDamage, 0);
+      dmg.textContent = this.formatDamageNumber(stat.totalDamage, 0);
       table.appendChild(dmg);
 
       const kills = document.createElement('span');
@@ -12284,7 +11556,6 @@ function startGame(character: CharacterType = 'megachad'): void {
   const session = new LocalGameSession(config);
   const scene = new GameScene(session);
   activeScene = scene;
-  setGMSession(session);
   scene.start();
   session.start({ startTickLoop: false });
   scene.playStartIntro(() => session.startTicks());
@@ -12421,315 +11692,3 @@ export function bootGameClient(): void {
     console.error('[MegaBonk] Boot failed:', error);
   });
 }
-
-// =============================================================================
-// GM Tool (Debug Panel) — press ` (backtick) to toggle
-// =============================================================================
-
-let gmPanel: HTMLDivElement | null = null;
-let gmSession: LocalGameSession | null = null;
-
-function setupGMTool(): void {
-  window.addEventListener('keydown', (e) => {
-    if (e.key === '`' || e.key === '~') {
-      toggleGMPanel();
-    }
-  });
-
-  // Expose to console
-  (window as any).__gm = {
-    get state() { return gmSession?.getRenderState(); },
-    levelUp() { gmLevelUp(); },
-    addXp(amount: number = 999) { gmAddXp(amount); },
-    heal() { gmHeal(); },
-    kill() { gmKillAllEnemies(); },
-    silver(amount: number = 1000) { gmAddSilver(amount); },
-    spawnBoss() { gmSpawnBoss(); },
-    godMode() { gmGodMode(); },
-    skipTo(minutes: number) { gmSkipTime(minutes); },
-    giveWeapon(type: string, level: number = 1) { gmGiveWeapon(type, level); },
-    giveAllWeapons() { gmGiveAllWeapons(); },
-    unlockAllCharacters() { gmUnlockAllCharacters(); },
-    listWeapons() { console.log('[GM] 可选武器:\n' + ALL_WEAPON_TYPES.map((t) => `  ${t.padEnd(16)} ${GM_WEAPON_LABELS[t]}`).join('\n')); },
-    testLightning() { gmTestLightning(); },
-    showCollision() { gmToggleCollisionViz(); },
-    help() {
-      console.log(`
-GM Commands (window.__gm):
-  .state              — 当前游戏状态
-  .levelUp()          — 直接升级
-  .addXp(999)         — 加经验
-  .heal()             — 满血
-  .kill()             — 杀死所有敌人
-  .silver(1000)       — 加银币
-  .spawnBoss()        — 召唤Boss
-  .godMode()          — 无敌模式
-  .skipTo(5)          — 跳到第5分钟
-  .giveWeapon(type, level=1)
-                      — 加指定武器（type 见 .listWeapons()，槽位不足自动扩容）
-  .listWeapons()      — 列出全部 12 把可选武器（id + 中文名）
-  .giveAllWeapons()   — 一键塞满全部武器
-  .unlockAllCharacters()
-                    — 解锁全部角色
-  .testLightning()    — 在玩家头顶劈一道电（VFX 测试）
-  .showCollision()    — 切换碰撞盒可视化（绿 col_ / 红 wall_ /
-                        蓝 climb_ / 黄 ramp_ / 品红 spawn_*）
-      `);
-    },
-  };
-}
-
-function setGMSession(session: LocalGameSession): void {
-  gmSession = session;
-}
-
-function gmLevelUp(): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  state.player.xp = state.player.xpToNext;
-}
-
-function gmAddXp(amount: number): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  state.player.xp += amount;
-}
-
-function gmHeal(): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  state.player.hp = state.player.maxHp;
-}
-
-function gmKillAllEnemies(): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  for (const enemy of state.enemies) {
-    enemy.hp = 0;
-  }
-}
-
-function gmAddSilver(amount: number): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  state.stats.silverEarned += amount;
-}
-
-function gmSpawnBoss(): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  (state as any).gameTime = 540; // Force boss spawn time
-}
-
-function gmGodMode(): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  state.player.maxHp = 99999;
-  state.player.hp = 99999;
-  state.player.invincibleTimer = 99999;
-}
-
-function gmSkipTime(minutes: number): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  (state as any).gameTime = minutes * 60;
-}
-
-const ALL_WEAPON_TYPES = [
-  'sword',
-  'bone_bouncer',
-  'axe',
-  'pistol',
-  'lightning_staff',
-  'flame_ring',
-  'shotgun',
-  'ray_gun',
-  'poison_bomb',
-  'paralysis_gun',
-  'void_ripple',
-  'scorch_boots',
-] as const;
-
-const GM_WEAPON_LABELS: Record<(typeof ALL_WEAPON_TYPES)[number], string> = {
-  sword: '大剑',
-  bone_bouncer: '弹射骨头',
-  axe: '旋转飞斧',
-  pistol: '手枪',
-  lightning_staff: '闪电法杖',
-  flame_ring: '烈焰环',
-  shotgun: '霰弹枪',
-  ray_gun: '射线枪',
-  poison_bomb: '毒气弹',
-  paralysis_gun: '麻痹枪',
-  void_ripple: '虚空涟漪',
-  scorch_boots: '灼地靴',
-};
-
-function gmGiveWeapon(type: string, level: number = 1): void {
-  if (!gmSession) return;
-  if (!ALL_WEAPON_TYPES.includes(type as typeof ALL_WEAPON_TYPES[number])) {
-    console.warn(`[GM] Unknown weapon type: ${type}. Valid: ${ALL_WEAPON_TYPES.join(', ')}`);
-    return;
-  }
-  const state = gmSession.getRenderState();
-  const player = state.player;
-  const existing = player.weapons.find((w) => w.type === type);
-  if (existing) {
-    existing.level = Math.max(existing.level, level);
-    console.log(`[GM] ${type} → level ${existing.level}`);
-    return;
-  }
-  // GM 工具：槽位不足时自动扩容，保证选中的武器一定能加上
-  if (player.weapons.length >= player.maxWeaponSlots) {
-    player.maxWeaponSlots = player.weapons.length + 1;
-  }
-  player.weapons.push({
-    type: type as typeof ALL_WEAPON_TYPES[number],
-    level,
-    cooldownTimer: 0,
-  });
-  console.log(`[GM] +${type} (level ${level})`);
-}
-
-function gmGiveAllWeapons(): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  const player = state.player;
-  // Bump slot cap so all 7 fit
-  if (player.maxWeaponSlots < ALL_WEAPON_TYPES.length) {
-    player.maxWeaponSlots = ALL_WEAPON_TYPES.length;
-  }
-  for (const type of ALL_WEAPON_TYPES) {
-    const existing = player.weapons.find((w) => w.type === type);
-    if (!existing) {
-      player.weapons.push({ type, level: 1, cooldownTimer: 0 });
-    }
-  }
-  console.log(`[GM] All weapons granted (${player.weapons.length}/${player.maxWeaponSlots})`);
-}
-
-function gmUnlockAllCharacters(): void {
-  const save = loadSave();
-  save.charactersUnlocked = [...CHARACTER_ORDER];
-  saveSave(save);
-  if (characterSelectSlotsHost) mountCharacterSelectSlots(characterSelectSlotsHost);
-  refreshCharacterSelectUI();
-  console.log('[GM] All characters unlocked');
-}
-
-function gmTestLightning(): void {
-  if (!gmSession || !activeScene) {
-    console.warn('[GM] No active scene');
-    return;
-  }
-  const state = gmSession.getRenderState();
-  const p = state.player;
-  // 在玩家头顶劈一道（不依赖敌人，纯视觉测试）
-  activeScene.debugSpawnLightning(p.x, 0, p.z);
-  console.log(`[GM] 强制劈电 @ (${p.x.toFixed(1)}, 0, ${p.z.toFixed(1)})`);
-}
-
-function gmToggleCollisionViz(): void {
-  if (!activeScene) {
-    console.warn('[GM] No active scene');
-    return;
-  }
-  const visible = activeScene.debugToggleCollisionViz();
-  console.log(`[GM] Collision viz: ${visible ? 'ON' : 'OFF'}`);
-}
-
-function toggleGMPanel(): void {
-  if (gmPanel) {
-    gmPanel.remove();
-    gmPanel = null;
-    return;
-  }
-
-  gmPanel = document.createElement('div');
-  gmPanel.dataset.cameraBlock = 'true';
-  gmPanel.style.cssText = 'position:fixed;top:60px;left:10px;background:rgba(0,0,0,0.85);color:#0f0;font-family:monospace;font-size:12px;padding:10px;border-radius:8px;z-index:9999;display:flex;flex-direction:column;gap:6px;max-width:160px;border:1px solid #0f0;';
-
-  const title = document.createElement('div');
-  title.style.cssText = 'color:#ff0;font-weight:bold;font-size:13px;margin-bottom:4px;';
-  title.textContent = 'GM TOOL (`)';
-  gmPanel.appendChild(title);
-
-  const buttons: [string, () => void][] = [
-    ['升级 +1', gmLevelUp],
-    ['加 XP ×999', () => gmAddXp(999)],
-    ['满血', gmHeal],
-    ['杀全部敌人', gmKillAllEnemies],
-    ['加 1000 银币', () => gmAddSilver(1000)],
-    ['召唤 Boss', gmSpawnBoss],
-    ['无敌模式', gmGodMode],
-    ['跳到 5 分钟', () => gmSkipTime(5)],
-    ['跳到 8 分钟', () => gmSkipTime(8)],
-    ['+闪电法杖 (Lv5)', () => gmGiveWeapon('lightning_staff', 5)],
-    ['+剑 (Lv5)', () => gmGiveWeapon('sword', 5)],
-    ['+火焰环 (Lv5)', () => gmGiveWeapon('flame_ring', 5)],
-    ['给我所有武器', gmGiveAllWeapons],
-    ['解锁全部角色', gmUnlockAllCharacters],
-    ['⚡测试闪电特效⚡', gmTestLightning],
-    ['🟩 切换碰撞盒可视化', gmToggleCollisionViz],
-  ];
-
-  for (const [label, fn] of buttons) {
-    const btn = document.createElement('button');
-    btn.style.cssText = 'background:#222;color:#0f0;border:1px solid #0f0;padding:4px 8px;border-radius:4px;cursor:pointer;font-family:monospace;font-size:11px;text-align:left;';
-    btn.textContent = label;
-    btn.addEventListener('click', fn);
-    btn.addEventListener('mouseenter', () => { btn.style.background = '#0f0'; btn.style.color = '#000'; });
-    btn.addEventListener('mouseleave', () => { btn.style.background = '#222'; btn.style.color = '#0f0'; });
-    gmPanel.appendChild(btn);
-  }
-
-  // ── 自选武器（任意武器 + 任意等级）──
-  const picker = document.createElement('div');
-  picker.style.cssText = 'margin-top:6px;padding-top:6px;border-top:1px dashed #0f0;display:flex;flex-direction:column;gap:4px;';
-
-  const pickerTitle = document.createElement('div');
-  pickerTitle.style.cssText = 'color:#ff0;font-size:11px;';
-  pickerTitle.textContent = '自选武器';
-  picker.appendChild(pickerTitle);
-
-  const weaponSelect = document.createElement('select');
-  weaponSelect.style.cssText = 'background:#222;color:#0f0;border:1px solid #0f0;border-radius:4px;font-family:monospace;font-size:11px;padding:3px;';
-  for (const type of ALL_WEAPON_TYPES) {
-    const opt = document.createElement('option');
-    opt.value = type;
-    opt.textContent = `${GM_WEAPON_LABELS[type]} (${type})`;
-    weaponSelect.appendChild(opt);
-  }
-  picker.appendChild(weaponSelect);
-
-  const levelRow = document.createElement('div');
-  levelRow.style.cssText = 'display:flex;align-items:center;gap:4px;';
-  const levelLabel = document.createElement('span');
-  levelLabel.style.cssText = 'font-size:11px;';
-  levelLabel.textContent = '等级';
-  const levelInput = document.createElement('input');
-  levelInput.type = 'number';
-  levelInput.min = '1';
-  levelInput.value = '5';
-  levelInput.style.cssText = 'width:48px;background:#222;color:#0f0;border:1px solid #0f0;border-radius:4px;font-family:monospace;font-size:11px;padding:3px;';
-  levelRow.appendChild(levelLabel);
-  levelRow.appendChild(levelInput);
-  picker.appendChild(levelRow);
-
-  const addBtn = document.createElement('button');
-  addBtn.style.cssText = 'background:#222;color:#0f0;border:1px solid #0f0;padding:4px 8px;border-radius:4px;cursor:pointer;font-family:monospace;font-size:11px;text-align:center;font-weight:bold;';
-  addBtn.textContent = '＋ 添加该武器';
-  addBtn.addEventListener('click', () => {
-    const level = Math.max(1, Math.floor(Number(levelInput.value) || 1));
-    gmGiveWeapon(weaponSelect.value, level);
-  });
-  addBtn.addEventListener('mouseenter', () => { addBtn.style.background = '#0f0'; addBtn.style.color = '#000'; });
-  addBtn.addEventListener('mouseleave', () => { addBtn.style.background = '#222'; addBtn.style.color = '#0f0'; });
-  picker.appendChild(addBtn);
-
-  gmPanel.appendChild(picker);
-
-  document.body.appendChild(gmPanel);
-}
-
-setupGMTool();

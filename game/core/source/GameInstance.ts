@@ -61,7 +61,7 @@ import { tickAreaEffects } from './systems/areaEffects.ts';
 import { processDeaths, tickPickups, tickThorns } from './systems/pickups.ts';
 import { recordWeaponDamage, refreshAllWeaponDps } from './systems/weaponDamageStats.ts';
 import { applyPlayerHit, tickConsumableEffects, tickConsumablePickups } from './systems/consumables.ts';
-import { tickSpawning, checkBossSpawn } from './systems/spawning.ts';
+import { tickSpawning, checkBossSpawn, getBossOvertimeGrowthContext } from './systems/spawning.ts';
 import { tickAltars, generateAltars } from './systems/altars.ts';
 import { tickChests, generateChests, nextChestId, nextChestRespawnDelay } from './systems/chests.ts';
 import { grantRelic } from './systems/relics.ts';
@@ -100,6 +100,8 @@ export class GameInstance {
       damageEvents: [],
       bondVfxEvents: [],
       levelUpCompensationEvents: [],
+      xpPickupEvents: [],
+      fallDamageEvents: [],
       chestOpenEvents: [],
       pendingChestReward: null,
       stats: { killCount: 0, damageDealt: 0, damageTaken: 0, shieldAbsorbed: 0, silverEarned: 0 },
@@ -200,6 +202,8 @@ export class GameInstance {
     state.damageEvents = [];
     state.bondVfxEvents = [];
     state.levelUpCompensationEvents = [];
+    state.xpPickupEvents = [];
+    state.fallDamageEvents = [];
     state.chestOpenEvents = [];
     state.pendingChestReward = null;
     state.boss = null;
@@ -233,6 +237,9 @@ export class GameInstance {
     engine.miniBossTimer = 0;
     engine.stageTwoBossSummonCount = 0;
     engine.weaponDamageWindows = {};
+    engine.spatialIndexTick = -1;
+    engine.enemyById.clear();
+    engine.spatialHash.clear();
   }
 
   tick(): boolean {
@@ -267,6 +274,8 @@ export class GameInstance {
     state.damageEvents = [];
     state.bondVfxEvents = [];
     state.levelUpCompensationEvents = [];
+    state.xpPickupEvents = [];
+    state.fallDamageEvents = [];
     state.chestOpenEvents = [];
 
     state.gameTime += dt;
@@ -567,6 +576,7 @@ function makeEffects(engine: Engine): AiEffects {
           gameTime: engine.state.gameTime,
           tier: engine.config.tier,
           overtimeSeconds: engine.state.overtimeSeconds,
+          ...getBossOvertimeGrowthContext(engine),
           player: engine.state.player,
           nextId: () => engine.nextEnemyId++,
         },

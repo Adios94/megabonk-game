@@ -38,6 +38,8 @@ export function tickTierTransition(engine: Engine): void {
   state.goldMotes = [];
   state.damageEvents = [];
   state.levelUpCompensationEvents = [];
+  state.xpPickupEvents = [];
+  state.fallDamageEvents = [];
   state.chestOpenEvents = [];
   state.pendingChestReward = null;
   state.boss = null;

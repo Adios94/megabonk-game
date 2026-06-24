@@ -345,6 +345,7 @@ function applyFallDamage(engine: Engine, fallDistance: number): void {
   player.shieldRegenAccum = -SHIELD_REGEN_DELAY;
   engine.state.stats.damageTaken += damage;
   addDamageEvent(engine, player.x, player.y + 1.5, player.z, damage, false, true);
+  engine.state.fallDamageEvents.push({ x: player.x, y: player.y, z: player.z, damage });
   checkPlayerDeath(engine);
 }
 

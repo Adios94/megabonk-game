@@ -13,6 +13,7 @@ import { makeEngine } from './_fixtures.ts';
 import {
   ALTAR_BOSS_RESPAWN_COOLDOWN,
   ALTAR_INTERACT_RADIUS,
+  ALTAR_INTERACT_MAX_Y_DELTA,
   ALTAR_SUMMON_DURATION,
   TIER_CONFIGS,
 } from '../../config.ts';
@@ -109,6 +110,38 @@ describe('tickAltars — 状态机', () => {
     engine.input.interact = true;
     tickAltars(engine, 0.05);
     expect(engine.state.altars[0].phase).toBe('ready');
+  });
+
+  it('ready + 玩家在水平范围内但高度差过大 → 保持 ready', () => {
+    const engine = makeEngine();
+    engine.state.altars = [altar({ y: 0 })];
+    engine.state.player.x = 0;
+    engine.state.player.z = 0;
+    engine.state.player.y = ALTAR_INTERACT_MAX_Y_DELTA + 1;
+    tickAltars(engine, 0.05);
+    expect(engine.state.altars[0].phase).toBe('ready');
+  });
+
+  it('summoning 时玩家高度差过大 → 进度回落', () => {
+    const engine = makeEngine();
+    engine.state.altars = [altar({ phase: 'summoning', summonTimer: 0.5, y: 0 })];
+    engine.state.player.x = 0;
+    engine.state.player.z = 0;
+    engine.state.player.y = ALTAR_INTERACT_MAX_Y_DELTA + 1;
+    tickAltars(engine, 0.05);
+    expect(engine.state.altars[0].phase).toBe('summoning');
+    expect(engine.state.altars[0].summonTimer).toBeLessThan(0.5);
+  });
+
+  it('portal_ready + 水平范围内但高度差过大 + 按 E → 保持 portal_ready', () => {
+    const engine = makeEngine();
+    engine.state.altars = [altar({ phase: 'portal_ready', y: 0 })];
+    engine.state.player.x = 0;
+    engine.state.player.z = 0;
+    engine.state.player.y = ALTAR_INTERACT_MAX_Y_DELTA + 1;
+    engine.input.interact = true;
+    tickAltars(engine, 0.05);
+    expect(engine.state.altars[0].phase).toBe('portal_ready');
   });
 
   it('summoning 倒计时满 → boss_active', () => {

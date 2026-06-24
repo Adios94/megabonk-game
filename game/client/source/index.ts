@@ -11,7 +11,6 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 // @ts-ignore
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 // @ts-ignore
@@ -131,11 +130,29 @@ import {
 } from './ui/layout.ts';
 import { createPauseDataPanel, PAUSE_SIDE_PANEL_WIDTH } from './ui/pauseDataPanel.ts';
 import { playTransition } from './ui/sceneTransition.ts';
+import {
+  applyGameStartAudioPolicy,
+  fadeOutMenuMusic,
+  getAudioSettings,
+  installButtonClickSfx,
+  onAudioSettingsChange,
+  playCombatMusic,
+  playLevelTwoTransitionSfx,
+  playMenuMusic,
+  playSfx,
+  setFlameRingSfxActive,
+  toggleMusicMuted,
+  toggleSfxMuted,
+  type AudioSettings,
+} from './audio/musicManager.ts';
 import type { I18nMode } from '@minigame/i18n';
 import { EventEmitter } from './session/EventEmitter.ts';
 
 import zhLocale from '../../../i18n/zh.json';
 import enLocale from '../../../i18n/en.json';
+
+const ALTAR_INTERACT_RADIUS = 2.0;
+const ALTAR_INTERACT_MAX_Y_DELTA = ALTAR_INTERACT_RADIUS;
 
 // =============================================================================
 // Pool Caps & Resource Disposal
@@ -170,13 +187,15 @@ import {
 // Post-process passes — see materials/postProcessPasses.ts
 import {
   type OutlineMode,
-  SceneOutlinePass,
+  SceneRenderPass,
+  FinalCompositePass,
   ColorGradePass,
   DarkComicPass,
   GRADE_SATURATION,
   GRADE_CONTRAST,
   GRADE_BRIGHTNESS,
 } from './materials/postProcessPasses.ts';
+import { getPlatformRenderProfile, type PlatformRenderProfile } from './quality.ts';
 
 // Billboard VFX pool — see vfx/BillboardPool.ts
 import {
@@ -812,6 +831,7 @@ function titleImageWidthStyle(): string {
   return `width:${width};height:auto;object-fit:contain;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.65));user-select:none;`;
 }
 const LOBBY_BG_PATH = '/ui/common/bg_lobby.webp';
+const LOBBY_BG_VIDEO_PATH = '/ui/common/bg_lobby.mp4';
 const UI_COMMON_BG_PATH = '/ui/common/bg_ui_common.webp';
 const TIER_SELECT_PAGE_BG_IMAGE = '/ui/common/bg_tier_select.webp';
 const SHOP_QUEST_PAGE_BG_IMAGE = '/ui/common/bg_city.webp';
@@ -963,6 +983,98 @@ function createSilverBadge(count: number, prefix = ''): HTMLDivElement {
 function setSilverBadgeAmount(badge: HTMLDivElement, count: number, prefix = ''): void {
   const amount = badge.querySelector('.silver-badge-amount');
   if (amount) amount.textContent = `${prefix}${count}`;
+}
+
+type AudioToggleKind = 'music' | 'sfx';
+
+function isAudioToggleMuted(kind: AudioToggleKind, settings = getAudioSettings()): boolean {
+  return kind === 'music' ? settings.musicMuted : settings.sfxMuted;
+}
+
+function audioToggleLabel(kind: AudioToggleKind, muted: boolean): string {
+  if (kind === 'music') return muted ? '播放背景音乐' : '静音背景音乐';
+  return muted ? '播放音效' : '静音音效';
+}
+
+function audioToggleIconSvg(kind: AudioToggleKind, muted: boolean): string {
+  const color = muted ? '#9eb1cc' : '#fff4a8';
+  const slash = muted
+    ? kind === 'music'
+      ? '<path d="M13 7L29 21" stroke="#ff6b6b" stroke-width="3.2" stroke-linecap="round"/>'
+      : '<path d="M7 7L25 25" stroke="#ff6b6b" stroke-width="3.2" stroke-linecap="round"/>'
+    : '';
+  if (kind === 'music') {
+    // Path bounds ≈ (13, 6)–(29, 23); square viewBox centers the note; larger size = smaller render.
+    return `
+      <svg viewBox="7 4.5 26 26" width="100%" height="100%" aria-hidden="true">
+        <path d="M20 7v15.5a4.2 4.2 0 1 1-2.7-3.9V10l9-2v12.5a4.2 4.2 0 1 1-2.7-3.9V6.2L20 7z"
+          fill="${color}" stroke="#1a2340" stroke-width="1.4" stroke-linejoin="round"/>
+        ${slash}
+      </svg>
+    `;
+  }
+  return `
+    <svg viewBox="0 0 32 32" width="100%" height="100%" aria-hidden="true">
+      <path d="M5 19h5.2L18 25V7l-7.8 6H5v6z"
+        fill="${color}" stroke="#1a2340" stroke-width="1.6" stroke-linejoin="round"/>
+      ${muted ? '' : '<path d="M21.5 12.2a6 6 0 0 1 0 7.6M24.5 9.5a10 10 0 0 1 0 13" fill="none" stroke="#fff4a8" stroke-width="2.2" stroke-linecap="round"/>'}
+      ${slash}
+    </svg>
+  `;
+}
+
+function syncAudioToggleButton(button: HTMLButtonElement, settings = getAudioSettings()): void {
+  const kind = button.dataset.audioToggleKind as AudioToggleKind | undefined;
+  if (kind !== 'music' && kind !== 'sfx') return;
+  const muted = isAudioToggleMuted(kind, settings);
+  button.dataset.audioMuted = muted ? 'true' : 'false';
+  button.setAttribute('aria-label', audioToggleLabel(kind, muted));
+  button.title = audioToggleLabel(kind, muted);
+  button.innerHTML = audioToggleIconSvg(kind, muted);
+  button.style.opacity = muted ? '0.62' : '1';
+  button.style.boxShadow = muted
+    ? '0 2px 0 rgba(0,0,0,0.45), inset 0 0 0 2px rgba(255,255,255,0.12)'
+    : '0 3px 0 rgba(0,0,0,0.45), 0 0 12px rgba(255,217,59,0.32), inset 0 0 0 2px rgba(255,255,255,0.18)';
+}
+
+function syncAudioToggleButtons(settings = getAudioSettings()): void {
+  document
+    .querySelectorAll<HTMLButtonElement>('button[data-audio-toggle-kind]')
+    .forEach(button => syncAudioToggleButton(button, settings));
+}
+
+onAudioSettingsChange((settings: AudioSettings) => syncAudioToggleButtons(settings));
+
+function createAudioToggleButton(kind: AudioToggleKind, compact = false): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.dataset.audioToggleKind = kind;
+  button.style.cssText = `
+    width:${compact ? 'clamp(30px,6vmin,36px)' : 'clamp(34px,7vw,40px)'};
+    height:${compact ? 'clamp(30px,6vmin,36px)' : 'clamp(34px,7vw,40px)'};
+    border:2px solid rgba(20,30,58,0.92);border-radius:9999px;
+    background:linear-gradient(180deg,rgba(48,83,145,0.96),rgba(22,42,86,0.96));
+    padding:${compact ? '5px' : '6px'};box-sizing:border-box;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;user-select:none;touch-action:manipulation;pointer-events:auto;transition:transform 0.12s,opacity 0.12s,box-shadow 0.12s;
+  `;
+  button.addEventListener('mouseenter', () => { button.style.transform = 'scale(1.06)'; });
+  button.addEventListener('mouseleave', () => { button.style.transform = 'scale(1)'; });
+  button.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (kind === 'music') toggleMusicMuted();
+    else toggleSfxMuted();
+  });
+  syncAudioToggleButton(button);
+  return button;
+}
+
+function createSilverMusicControls(count: number, includeSfx = false): HTMLDivElement {
+  const controls = document.createElement('div');
+  controls.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:8px;box-sizing:border-box;';
+  controls.appendChild(createSilverBadge(count));
+  if (includeSfx) controls.appendChild(createAudioToggleButton('sfx'));
+  controls.appendChild(createAudioToggleButton('music'));
+  return controls;
 }
 
 function createGoldBadge(count: number): HTMLDivElement {
@@ -2367,9 +2479,9 @@ async function tryLoadLevel(name: string = DEFAULT_LEVEL_NAME): Promise<void> {
       }
 
       // 自动对非背景网格几何体进行自适应三角剖分细分，提升顶点密度。
-      // 阀值设为 1.8 米：只细分大平板/长斜坡，既保证弯曲边缘完美咬合不撕裂，又把面数增加压到最低！
+      // 阀值由画质档控制：桌面 1.8m 保弯曲边缘；移动 4m 减顶点。
       if (!isBg && mesh.geometry) {
-        mesh.geometry = tessellateGeometry(mesh.geometry, 1.8);
+        mesh.geometry = tessellateGeometry(mesh.geometry, getPlatformRenderProfile().levelTessellate);
       }
 
       const meshId = `scenery_mesh_${idCounter++}`;
@@ -2564,8 +2676,8 @@ async function loadObjItems(): Promise<void> {
 
   [crystalGeometry, heartGeometry, heartHalfGeometry, boneGeometry, crystal2Geometry, crystal3Geometry, crystal4Geometry] = await Promise.all([
     loadAndNormalizeGlb('/models/items/Crystal1.glb', 0.4),
-    loadAndNormalize('/models/items/Heart.obj', 0.5),
-    loadAndNormalize('/models/items/Heart_Half.obj', 0.42),
+    loadAndNormalizeGlb('/models/items/Heart.glb', 0.5),
+    loadAndNormalizeGlb('/models/items/Heart_Half.glb', 0.42),
     loadAndNormalizeGlb('/models/items/Bone.glb', 0.5),
     loadAndNormalizeGlb('/models/items/Crystal2.glb', 0.4),
     loadAndNormalizeGlb('/models/items/Crystal3.glb', 0.4),
@@ -2820,7 +2932,9 @@ export class GameScene {
   private readonly container: HTMLElement;
   private readonly renderer: THREE.WebGLRenderer;
   private composer: EffectComposer | null = null;
-  private outlinePass: SceneOutlinePass | null = null; // 屏幕空间描边 pass（screenSpace/none，dev 下 O 键切换）
+  private sceneRenderPass: SceneRenderPass | null = null;
+  private finalCompositePass: FinalCompositePass | null = null; // 含 screenSpace/none 描边开关（dev perf overlay 可读 mode）
+  private readonly renderProfile: PlatformRenderProfile = getPlatformRenderProfile();
   private bloomPass: UnrealBloomPass | null = null;
   private colorGradePass: ColorGradePass | null = null;
   private darkComicPass: DarkComicPass | null = null; // 末端"暗黑漫画"风格 post-fx；DARK_COMIC_ENABLED 控制
@@ -2865,6 +2979,9 @@ export class GameScene {
   private bossAnimState: string | null = null;
   /** Boss 上一帧 XZ + 静止时长（移动判定，逻辑同敌人）。 */
   private bossPrevPos: { x: number; z: number; stillTime: number } | null = null;
+  private bossWasPresent = false;
+  private bossAttackSfxActive = false;
+  private lastBossPhase: BossState['phase'] | null = null;
   // Boss hit-flash 当前 tint 已迁至 this.hitFlash.bossTint
   private ambientLight!: THREE.AmbientLight;
   private hemiLight!: THREE.HemisphereLight;
@@ -2900,6 +3017,7 @@ export class GameScene {
   private wasAlive = true;
   private wasGrounded = true; // Track grounded state for jump animation trigger
   private lastPhase: GamePhase = 'playing';
+  private lastRunStage: GameState['stage'] = 1;
   private startIntro: StartIntroState | null = null;
 
   // GSAP animation state
@@ -2988,6 +3106,7 @@ export class GameScene {
   private pickupMeshes: Map<PickupType, THREE.InstancedMesh> = new Map();
   private silverPickupObjects: Map<number, THREE.Object3D> = new Map();
   private consumableSprites: Map<number, THREE.Sprite> = new Map();
+  private lastConsumablePickups: Map<number, { x: number; z: number; attracted: boolean }> = new Map();
   private goldMoteTexture!: THREE.Texture;
   private goldMoteSprites: Map<number, THREE.Sprite> = new Map();
 
@@ -3181,8 +3300,7 @@ export class GameScene {
     this.container = container;
 
     // Renderer
-    // antialias:false —— 画面全程走离屏 EffectComposer target，最终由 OutputPass 把贴图全屏 blit 到
-    // 默认帧缓冲，canvas 级 MSAA 对这条离屏管线基本不生效＝白付开销（尤其移动端填充率敏感）。关掉。
+    // antialias:false —— 画面走离屏 sceneRT + FinalCompositePass 全屏合成上屏，canvas 级 MSAA 基本不生效。
     this.renderer = new THREE.WebGLRenderer({
       antialias: false,
       powerPreference: 'high-performance',
@@ -3269,6 +3387,11 @@ export class GameScene {
     this.questCompleteAtRunStart = new Set(
       getQuestProgress().filter(p => p.completed).map(p => p.questId),
     );
+    curvedWorldUniforms.uWarpStrength.value = this.renderProfile.curvedWorldStrength;
+    this.renderer.shadowMap.type = this.renderProfile.shadowMapType;
+    if (import.meta.env.DEV) {
+      console.log(`[Render] platform profile: ${this.renderProfile.id}`, this.renderProfile);
+    }
     this.setupLighting();
     this.setupGround();
     // ⚠️ HitFlashSystem / DamageNumbersOverlay 必须在 setupPlayer 之前构造：
@@ -3282,6 +3405,20 @@ export class GameScene {
     this.setupVFX();
     this.setupHUD();
     this.setupPerfStats();
+
+    this.removeDisplayListener = installThreeHighDpi({
+      renderer: this.renderer,
+      container: this.container,
+      maxPixelRatio: this.renderProfile.maxPixelRatio,
+      onResize: ({ width, height, pixelRatio }) => {
+        this.camera.aspect = width / height;
+        this.camera.updateProjectionMatrix();
+        if (this.composer) {
+          this.composer.setPixelRatio(pixelRatio);
+          this.composer.setSize(width, height);
+        }
+      },
+    });
 
     this.setupComposer();
 
@@ -3301,19 +3438,6 @@ export class GameScene {
       this.setupGmWeaponDamagePanel();
     }
 
-    this.removeDisplayListener = installThreeHighDpi({
-      renderer: this.renderer,
-      container: this.container,
-      onResize: ({ width, height, pixelRatio }) => {
-        this.camera.aspect = width / height;
-        this.camera.updateProjectionMatrix();
-        if (this.composer) {
-          this.composer.setPixelRatio(pixelRatio);
-          this.composer.setSize(width, height);
-        }
-      },
-    });
-
     this.sessionUnsubscribers.push(
       this.session.on('game_update', ({ state }) => {
         this.handlePhaseChange(state);
@@ -3330,6 +3454,7 @@ export class GameScene {
   }
 
   playStartIntro(onComplete: () => void): void {
+    playCombatMusic();
     const state = this.session.getRenderState();
     const p = state.player;
     const overlay = document.createElement('div');
@@ -3366,6 +3491,7 @@ export class GameScene {
   }
 
   destroy(): void {
+    setFlameRingSfxActive(false);
     if (this.animationId !== null) {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
@@ -3403,7 +3529,9 @@ export class GameScene {
     // （toon 渐变贴图 / 预加载 VFX 贴图），错误释放会让下一局渲染崩坏。移除全局监听 + 退订
     // session 后，旧 GameScene 整棵场景图与 GL 上下文已无引用，可被 GC 连同 GPU 资源回收。
     this.composer?.dispose();
-    this.outlinePass?.dispose(); // EffectComposer.dispose 不级联各 pass，手动释放 sceneRT / 深度纹理 / 描边材质
+    this.sceneRenderPass?.dispose();
+    this.finalCompositePass?.dispose();
+    this.colorGradePass?.dispose();
     this.darkComicPass?.dispose();
     this.blobShadows?.dispose();
     this.renderer.dispose();
@@ -3429,6 +3557,7 @@ export class GameScene {
     this.chestRewardPanel?.remove();
     this.pendingChestRewardReveal = null;
     this.chestOpenAnimDone.clear();
+    this.lastConsumablePickups.clear();
     this.shrineIndicator?.remove();
     if (this.majorNoticeTimer) {
       clearTimeout(this.majorNoticeTimer);
@@ -3468,8 +3597,9 @@ export class GameScene {
     dir.name = 'DirectionalLight';
     dir.position.set(15, 25, 15);
     dir.castShadow = true;
-    dir.shadow.mapSize.width = 2048;
-    dir.shadow.mapSize.height = 2048;
+    const shadowSize = this.renderProfile.shadowMapSize;
+    dir.shadow.mapSize.width = shadowSize;
+    dir.shadow.mapSize.height = shadowSize;
     dir.shadow.camera.near = 0.5;
     dir.shadow.camera.far = 70;
     const d = 30;
@@ -3872,55 +4002,65 @@ export class GameScene {
   }
 
   /**
-   * 后处理：SceneOutlinePass（场景渲染 + 屏幕空间深度描边）→ [可选 bloom] → OutputPass（tonemap）。
+   * 后处理：SceneRenderPass（场景 → sceneRT）→ [可选 bloom] → FinalCompositePass（描边+tonemap+调色+darkcomic 合 4→1）。
    *
    * BLOOM_ENABLED = false（默认关闭，性能优化）：UnrealBloomPass 的半分辨率降采样 +
    * 多次高斯模糊是移动端 / 集显帧率的最大单项开销，关闭后还会释放其 mip render targets 显存。
-   * 描边与 tone map（OutputPass）不受影响，画面整体观感基本一致，仅少了发光特效的辉光晕。
-   * 想开回：把 BLOOM_ENABLED 改回 true 即可（调试面板的 Bloom 段也会随之出现）。
+   * 移动端 sceneRT 用 UnsignedByteType + uOutlineTapScale=2.0 降带宽；桌面保持 HalfFloat + tap 1.0。
    */
   private setupComposer(): void {
     const BLOOM_ENABLED = false;
-    const composer = new EffectComposer(this.renderer); // 默认 HalfFloat 目标，保 HDR
+    const profile = this.renderProfile;
+    const composer = new EffectComposer(this.renderer);
     const w = this.container.clientWidth || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
     const dpr = this.renderer.getPixelRatio();
     composer.setPixelRatio(dpr);
     composer.setSize(w, h);
 
-    const outlinePass = new SceneOutlinePass(
+    const pxW = Math.round(w * dpr);
+    const pxH = Math.round(h * dpr);
+
+    const sceneRenderPass = new SceneRenderPass(
       this.scene, this.camera,
-      Math.round(w * dpr), Math.round(h * dpr),
+      pxW, pxH,
+      { sceneRtType: profile.sceneRtType },
     );
-    composer.addPass(outlinePass);
-    this.outlinePass = outlinePass;
+    composer.addPass(sceneRenderPass);
+    this.sceneRenderPass = sceneRenderPass;
 
     if (BLOOM_ENABLED) {
       const bloom = new UnrealBloomPass(
-        new THREE.Vector2(Math.max(1, w * dpr * 0.5), Math.max(1, h * dpr * 0.5)), // 半分辨率省手机
-        0.3,  // strength：微微
-        0.5,  // radius
-        1.0,  // threshold：抬高 → 只让真正的发光特效辉光，普通亮面不再被晕白
+        new THREE.Vector2(Math.max(1, w * dpr * 0.5), Math.max(1, h * dpr * 0.5)),
+        0.3,
+        0.5,
+        1.0,
       );
       composer.addPass(bloom);
       this.bloomPass = bloom;
     }
 
-    composer.addPass(new OutputPass()); // tone map：ACES + sRGB
-    // 末端美漫调色：提饱和 / 对比 / 亮度，让画面更鲜亮、色块更跳。
     const colorGrade = new ColorGradePass(GRADE_SATURATION, GRADE_CONTRAST, GRADE_BRIGHTNESS);
-    composer.addPass(colorGrade);
     this.colorGradePass = colorGrade;
 
-    // feat/dark-comic-postfx：末端"暗黑漫画"风格 pass。开关常量在这里，关掉就是回到主分支观感。
-    // 实际去饱和/噪点强度由 GameScene.updateDarkComic 每帧根据 state.finalSwarm 渐进驱动。
-    const DARK_COMIC_ENABLED = true;
-    if (DARK_COMIC_ENABLED) {
-      const darkComic = new DarkComicPass();
-      darkComic.setSize(Math.round(w * dpr), Math.round(h * dpr));
-      composer.addPass(darkComic);
-      this.darkComicPass = darkComic;
-    }
+    const darkComic = new DarkComicPass();
+    darkComic.enabled = profile.darkComicEnabled;
+    darkComic.setSize(pxW, pxH);
+    this.darkComicPass = darkComic;
+
+    const finalComposite = new FinalCompositePass(
+      sceneRenderPass,
+      this.camera,
+      colorGrade,
+      darkComic,
+      this.renderer,
+      pxW,
+      pxH,
+      { outlineTapScale: profile.outlineTapScale },
+    );
+    finalComposite.renderToScreen = true;
+    composer.addPass(finalComposite);
+    this.finalCompositePass = finalComposite;
 
     this.composer = composer;
   }
@@ -3966,7 +4106,7 @@ export class GameScene {
     baseGeo.rotateX(-Math.PI / 2);
     // 关键修复：手动生成的底板也必须进行高密度三角剖分细分，确保它在 GPU 空间弯曲时完美贴合球面，
     // 绝对不会因为低顶点密度而形成平直的大平板穿透并遮挡视野！
-    const tessellatedGeo = tessellateGeometry(baseGeo, 1.8);
+    const tessellatedGeo = tessellateGeometry(baseGeo, this.renderProfile.groundTessellate);
     const baseMat = new THREE.MeshToonMaterial({ color: '#4A7FB5', gradientMap: toonGradientMap });
     applyStylizedToonShading(baseMat, 0, true); // 地面底板也加风格化 + 网点
     this.groundMesh = new THREE.Mesh(tessellatedGeo, baseMat);
@@ -4359,7 +4499,7 @@ export class GameScene {
 
   private setupPickupMesh(): void {
     // 每种拾取物用各自的 geometry（一个 InstancedMesh / 类型），颜色仍走 instanceColor 染色。
-    // xp 四档共用 Crystal1（靠颜色区分阶级）；health/health_small 用专属 OBJ 模型。
+    // xp 四档共用 Crystal1（靠颜色区分阶级）；health/health_small 用专属 GLB 模型。
     // 银币走 coin.glb 独立克隆渲染（见 renderSilverPickups）。
     const fallback = new THREE.OctahedronGeometry(0.35, 0);
     const xpGeo = crystalGeometry ?? fallback;
@@ -4389,11 +4529,12 @@ export class GameScene {
   }
 
   private setupVFX(): void {
-    // ─── Billboard VFX：贴图预载 + 64 槽 plane mesh 池 ───
-    this.billboardPool = new BillboardPool(this.scene);
-    // ─── 点云粒子池：500 槽 + shader 自渲染 ───
+    const { billboardCapacity, particleCapacity } = this.renderProfile;
+    // ─── Billboard VFX：贴图预载 + plane mesh 池（移动 24 / 桌面 64）───
+    this.billboardPool = new BillboardPool(this.scene, billboardCapacity);
+    // ─── 点云粒子池（移动 250 / 桌面 500）+ shader 自渲染 ───
     //（emitDeathBurst / emitHitSparks 等会同时调 billboardPool，所以必须在它之后）
-    this.particlePool = new ParticlePool(this.scene, this.billboardPool);
+    this.particlePool = new ParticlePool(this.scene, this.billboardPool, particleCapacity);
     // ─── 武器瞬态 VFX（剑气 / 闪电 / 火环）+ 自带常驻 lightningFlashLight ───
     this.weaponTransientVfx = new WeaponTransientVfx(this.scene, this.billboardPool, this.particlePool);
     // ─── 区域特效（毒气 / 虚空涟漪 / 灼地痕迹 / 激光线）+ 按 kind 对象池 ───
@@ -4818,7 +4959,8 @@ export class GameScene {
       `  enemy ${b.enemy}  shadow ${b.shadow}\n` +
       `  level ${b.level}  other ${b.other}\n` +
       `  sum ${bSum} (+post ${Math.max(0, drawCalls - bSum)})\n` +
-      `outline: ${this.outlinePass?.mode ?? 'off'}\n` +
+      `outline: ${this.finalCompositePass?.mode ?? 'off'}\n` +
+      `profile: ${this.renderProfile.id}\n` +
       `render: ${this.perfRenderMs.toFixed(1)}ms (submit)`;
     this.renderer.info.reset();
   }
@@ -5053,6 +5195,10 @@ export class GameScene {
     }
 
     const state = this.session.getRenderState();
+    if (this.lastRunStage === 1 && state.stage === 2) {
+      playLevelTwoTransitionSfx();
+    }
+    this.lastRunStage = state.stage;
     const introRenderMode = this.updateStartIntro(dt);
     if (introRenderMode === 'introOnly') {
       this.renderStartIntroFrame(state);
@@ -5093,6 +5239,7 @@ export class GameScene {
     this.renderProjectiles(state.projectiles);
     this.renderPickups(state.pickups);
     this.renderSilverPickups(state.pickups);
+    this.playConsumablePickupSfx(state);
     this.renderConsumablePickups(state.consumablePickups ?? []);
     this.renderGoldMotes(state.goldMotes ?? []);
     this.renderBoss(state.boss);
@@ -5123,6 +5270,7 @@ export class GameScene {
             if (evt.isShield) {
               playerHitFlashColor ??= PLAYER_SHIELD_HIT_FLASH_COLOR;
             } else {
+              playSfx('hurt');
               playerHitFlashColor = PLAYER_HP_HIT_FLASH_COLOR;
             }
           }
@@ -5311,6 +5459,7 @@ export class GameScene {
 
     // === Level Up Animation ===
     if (state.phase === 'level_up' && this.lastPhase !== 'level_up') {
+      playSfx('levelup');
       this.levelUpAnimTimer = 0.3;
       this.spawnLevelUpBurst(p.x, p.y, p.z);
       this.triggerScreenFlash('#ffcc00', 0.2);
@@ -6275,6 +6424,29 @@ export class GameScene {
     }
   }
 
+  private playConsumablePickupSfx(state: GameState): void {
+    const pickups = state.consumablePickups ?? [];
+    const current = new Set<number>();
+    for (const pickup of pickups) current.add(pickup.id);
+
+    for (const [id, previous] of this.lastConsumablePickups) {
+      if (current.has(id)) continue;
+      const dx = previous.x - state.player.x;
+      const dz = previous.z - state.player.z;
+      if (previous.attracted || dx * dx + dz * dz <= 0.5 * 0.5) {
+        playSfx('eat');
+      }
+    }
+
+    this.lastConsumablePickups = new Map(
+      pickups.map(pickup => [pickup.id, {
+        x: pickup.x,
+        z: pickup.z,
+        attracted: pickup.attracted,
+      }]),
+    );
+  }
+
   private renderPickups(pickups: PickupState[]): void {
     const time = performance.now() * 0.004; // Faster spin
 
@@ -6392,6 +6564,9 @@ export class GameScene {
         this.setBossHitFlashTint(this.bossMesh, undefined);
         this.bossMesh.visible = false;
       }
+      this.bossWasPresent = false;
+      this.bossAttackSfxActive = false;
+      this.lastBossPhase = null;
       if (!boss) {
         // Boss 离场：重置动画状态，下一个 boss 干净起播
         this.bossAnimState = null;
@@ -6471,6 +6646,20 @@ export class GameScene {
 
     this.bossMesh.visible = true;
     this.bossMesh.position.set(boss.x, boss.y || 0, boss.z);
+    if (!this.bossWasPresent) {
+      playSfx('boss_loading');
+      this.bossWasPresent = true;
+      this.bossAttackSfxActive = false;
+      this.lastBossPhase = boss.phase;
+    } else if ((this.lastBossPhase === 1 && boss.phase === 2) || (this.lastBossPhase === 2 && boss.phase === 3)) {
+      playSfx('boss_alarm');
+    }
+    this.lastBossPhase = boss.phase;
+    const bossAttackSfxActive = boss.attackAnimTimer > 0 && boss.currentAttack !== 'idle';
+    if (bossAttackSfxActive && !this.bossAttackSfxActive) {
+      playSfx('boss_attack');
+    }
+    this.bossAttackSfxActive = bossAttackSfxActive;
     const bossHitFlashWeaponType = boss.hitFlashTimer > 0 ? boss.hitFlashWeaponType : undefined;
     const bossHitFlashColor = boss.hitFlashTimer > 0 ? boss.hitFlashColor : undefined;
     this.setBossHitFlashTint(this.bossMesh, bossHitFlashWeaponType, bossHitFlashColor);
@@ -6905,6 +7094,7 @@ export class GameScene {
         window.clearInterval(flashTimer);
         const finalRarity = reward.rarity as ItemFrameRarity;
         const finalColor = RARITY_COLORS[reward.rarity] ?? '#aaaaaa';
+        playSfx('select');
         card.style.backgroundImage = `url(${upgradeFrameUrl(finalRarity)})`;
         card.style.filter = `${baseGlow} drop-shadow(0 0 18px ${finalColor}cc)`;
         titleEl.textContent = t(`relic.${reward.relicId}.name`);
@@ -7413,6 +7603,7 @@ export class GameScene {
     if (isShrinePhase && !this.shrinePanel && state.activeShrineId != null) {
       const shrine = state.shrines.find(s => s.id === state.activeShrineId);
       if (shrine && shrine.options) {
+        playSfx('powerup');
         this.showShrineRewardPanel(shrine.options);
       }
     } else if (!isShrinePhase && this.shrinePanel) {
@@ -7494,6 +7685,7 @@ export class GameScene {
     rarityEl.style.color = '#ffffff';
 
     card.addEventListener('click', () => {
+      playSfx('select');
       this.session.selectShrineReward(option.id);
       this.hideShrineRewardPanel();
     });
@@ -7516,11 +7708,16 @@ export class GameScene {
     const enemies = state.enemies;
     const player = state.player;
 
-    this.areaEffectVfx.update(state);
-    this.bondStatusVfx.updateEnemyStatusVfx(state);
+    this.areaEffectVfx.update(state, eventsFresh);
+    if (eventsFresh) this.bondStatusVfx.updateEnemyStatusVfx(state);
     this.bondStatusVfx.updateMysteryNumber(state, this.frameDt);
     // 事件驱动的羁绊 VFX 只在新 tick 消费一次（高刷屏去重）。
-    if (eventsFresh) this.bondStatusVfx.processBondVfxEvents(state);
+    if (eventsFresh) {
+      for (const evt of state.bondVfxEvents ?? []) {
+        if (evt.kind === 'arcane_burst') playSfx('magic');
+      }
+      this.bondStatusVfx.processBondVfxEvents(state);
+    }
     this.bondStatusVfx.updateArcaneBurstOrbs(dt);
 
     // --- Emit particles based on game events ---
@@ -7529,6 +7726,7 @@ export class GameScene {
     if (eventsFresh) {
     for (const event of state.damageEvents) {
       if (event.isPlayerDamage) continue;
+      playSfx('hit');
 
       // Death detection
       const isDeath = event.damage > 10 && !enemies.some(e =>
@@ -7573,26 +7771,29 @@ export class GameScene {
       player.x, player.y, player.z,
       dt,
     );
+    setFlameRingSfxActive(hasFlameRing && player.alive);
 
     // === Weapon Trail VFX (#12) ===
     // Projectile trails for player weapons
-    for (const proj of state.projectiles) {
-      if (!proj.fromPlayer) continue;
+    if (eventsFresh) {
+      for (const proj of state.projectiles) {
+        if (!proj.fromPlayer) continue;
 
-      // Other player projectiles: short trail dot every 2 ticks
-      if (state.tick % 2 === 0) {
-        const color = WEAPON_VFX_COLORS[proj.weaponType] ?? [1, 1, 1];
-        // Shotgun: brighter, larger trail to read as buckshot
-        const isShotgun = proj.weaponType === 'shotgun';
-        this.particlePool.spawn(
-          proj.x, proj.y, proj.z,
-          0, 0, 0,
-          isShotgun ? 0.6 : 0.4,
-          isShotgun ? 0.25 : 0.2,
-          color[0] * (isShotgun ? 1.0 : 0.7),
-          color[1] * (isShotgun ? 1.0 : 0.7),
-          color[2] * (isShotgun ? 1.0 : 0.7),
-        );
+        // Other player projectiles: short trail dot every 2 ticks
+        if (state.tick % 2 === 0) {
+          const color = WEAPON_VFX_COLORS[proj.weaponType] ?? [1, 1, 1];
+          // Shotgun: brighter, larger trail to read as buckshot
+          const isShotgun = proj.weaponType === 'shotgun';
+          this.particlePool.spawn(
+            proj.x, proj.y, proj.z,
+            0, 0, 0,
+            isShotgun ? 0.6 : 0.4,
+            isShotgun ? 0.25 : 0.2,
+            color[0] * (isShotgun ? 1.0 : 0.7),
+            color[1] * (isShotgun ? 1.0 : 0.7),
+            color[2] * (isShotgun ? 1.0 : 0.7),
+          );
+        }
       }
     }
 
@@ -7602,6 +7803,18 @@ export class GameScene {
       const curr = weapon.cooldownTimer;
       // cooldownTimer just jumped UP → weapon fired this frame
       const justFired = curr > prev + 0.05 && player.alive;
+
+      if (justFired) {
+        if (weapon.type === 'sword') playSfx('sword');
+        else if (weapon.type === 'ray_gun') playSfx('raygun');
+        else if (weapon.type === 'paralysis_gun') playSfx('needle');
+        else if (weapon.type === 'poison_bomb') playSfx('poison');
+        else if (weapon.type === 'bone_bouncer') playSfx('bone');
+        else if (weapon.type === 'lightning_staff') playSfx('lightning', 0.252);
+        else if (weapon.type === 'pistol' || weapon.type === 'shotgun') playSfx('gun');
+        else if (weapon.type === 'void_ripple') playSfx('ripple');
+        else if (weapon.type === 'scorch_boots') playSfx('burn');
+      }
 
       if (justFired && weapon.type === 'sword') {
         // Find nearest enemy for slash direction
@@ -7990,7 +8203,8 @@ export class GameScene {
     // 召唤 Boss 的飞碟（ready）现在进入范围即自动充能，无需按键，故不再显示提示。
     const portalInRange = state.altars.find(a =>
       a.phase === 'portal_ready'
-      && Math.hypot(a.x - p.x, a.z - p.z) <= 2.0
+      && Math.hypot(a.x - p.x, a.z - p.z) <= ALTAR_INTERACT_RADIUS
+      && Math.abs((p.y ?? 0) - (a.y ?? 0)) <= ALTAR_INTERACT_MAX_Y_DELTA
     );
     if ((portalInRange || chestInRange) && isMobile) {
       gsapAnimations.animateInteractButton(this.interactBtn, true, 0.3);
@@ -8044,6 +8258,12 @@ export class GameScene {
       for (const evt of state.damageEvents) {
         this.spawnDamageNumber(evt);
       }
+      for (const evt of state.xpPickupEvents) {
+        playSfx('getexp', evt.amount >= 10 ? 0.382 : 0.304);
+      }
+      for (const evt of state.fallDamageEvents) {
+        playSfx('fall', evt.damage >= 10 ? 0.574 : 0.476);
+      }
     }
 
     // 空池升级补偿特效（银币/金币）
@@ -8059,6 +8279,7 @@ export class GameScene {
       if (this.seenChestOpenEvents.has(key)) continue;
       this.seenChestOpenEvents.add(key);
       if (this.seenChestOpenEvents.size > 80) this.seenChestOpenEvents.clear();
+      playSfx('openchest');
       this.playChestOpenFx(evt);
 
       // 玩家开箱动画：用 Punch 表达"敲开"的动作（仅当玩家存活；移动中也会被立刻打断，符合手感）
@@ -9055,6 +9276,7 @@ export class GameScene {
     rarityEl.style.color = '#ffffff';
 
     card.addEventListener('click', () => {
+      playSfx('select');
       this.session.selectUpgrade(option.id);
       // Immediately hide panel (don't wait for next game_update cycle)
       this.hideUpgradePanel();
@@ -9100,6 +9322,8 @@ export class GameScene {
 
   private showGameOver(result: GameResult): void {
     if (this.gameOverPanel) return;
+    setFlameRingSfxActive(false);
+    if (!result.victory) playSfx('gameover');
     this.cameraOrbit.setEnabled(false);
 
     const state = this.session.getRenderState();
@@ -9425,6 +9649,12 @@ export class GameScene {
     title.style.cssText = uiPlainText(`flex:0 0 auto;width:100%;text-align:center;font-size:clamp(${uiPx(32)}px,8vmin,${uiPx(46)}px);font-weight:bold;line-height:1.05;padding:0;transform:translateY(-${uiPx(6)}px);`);
     title.textContent = t('pause.title');
     centerGroup.appendChild(title);
+
+    const audioRow = document.createElement('div');
+    audioRow.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:8px;margin:-2px 0 2px;';
+    audioRow.appendChild(createAudioToggleButton('sfx', true));
+    audioRow.appendChild(createAudioToggleButton('music', true));
+    centerGroup.appendChild(audioRow);
 
     const buttonStack = document.createElement('div');
     buttonStack.style.cssText = 'display:flex;flex-direction:column;align-items:center;width:100%;gap:clamp(4px,1vh,6px);';
@@ -10016,6 +10246,7 @@ function mountCharacterSelectSlots(host: HTMLElement): void {
     const frames = CHARACTER_AVATAR_FRAME_PATHS[char];
 
     const slot = document.createElement('div');
+    if (isUnlocked) slot.dataset.audioClick = 'true';
     slot.style.cssText = `
       position:relative;width:clamp(46px,12vw,56px);min-width:44px;min-height:44px;
       cursor:${isUnlocked ? 'pointer' : 'not-allowed'};flex-shrink:0;transition:transform 0.15s;
@@ -10058,6 +10289,7 @@ function mountCharacterSelectSlots(host: HTMLElement): void {
 
 function createShopBuyButton(cost: number, affordable: boolean, onClick?: () => void): HTMLDivElement {
   const btn = document.createElement('div');
+  if (affordable && onClick) btn.dataset.audioClick = 'true';
   btn.style.cssText = `
     position:relative;width:100%;max-width:100%;
     cursor:${affordable ? 'pointer' : 'default'};user-select:none;
@@ -10134,6 +10366,7 @@ function createFramedLabelButton(
 ): HTMLDivElement {
   const btn = document.createElement('div');
   btn.dataset.cameraBlock = 'true';
+  btn.dataset.audioClick = 'true';
   btn.style.cssText = `
     position:relative;display:block;width:${width};min-width:${uiPx(40)}px;min-height:${uiPx(40)}px;flex-shrink:0;
     cursor:pointer;user-select:none;touch-action:manipulation;
@@ -10728,6 +10961,7 @@ let tierSelectEl: HTMLDivElement | null = null;
 
 function showCharacterSelectScreen(): void {
   if (characterSelectEl) return;
+  destroyMainMenu();
   ensureSelectableCharacter();
 
   characterSelectEl = document.createElement('div');
@@ -10751,7 +10985,7 @@ function showCharacterSelectScreen(): void {
 
   const silverWrap = document.createElement('div');
   silverWrap.dataset.region = 'silver';
-  silverWrap.appendChild(createSilverBadge(loadSave().silver));
+  silverWrap.appendChild(createSilverMusicControls(loadSave().silver));
   header.appendChild(silverWrap);
   characterSelectEl.appendChild(header);
 
@@ -10857,7 +11091,7 @@ function showTierSelectScreen(): void {
 
   const silverWrap = document.createElement('div');
   silverWrap.dataset.region = 'silver';
-  silverWrap.appendChild(createSilverBadge(loadSave().silver));
+  silverWrap.appendChild(createSilverMusicControls(loadSave().silver));
   header.appendChild(silverWrap);
   tierSelectEl.appendChild(header);
 
@@ -10893,6 +11127,8 @@ function showTierSelectScreen(): void {
         return;
       }
       const character = selectedCharacter;
+      applyGameStartAudioPolicy();
+      fadeOutMenuMusic(800);
       playTransition(
         () => {
           destroyTierSelectScreen();
@@ -11105,6 +11341,7 @@ function createMainMenuButton(
   pressedFrame?: string,
 ): HTMLDivElement {
   const btn = document.createElement('div');
+  btn.dataset.audioClick = 'true';
   btn.style.cssText = `
     position:relative;width:min(${uiPx(140)}px,58vw);max-width:100%;min-height:44px;cursor:pointer;user-select:none;
     touch-action:manipulation;transition:transform 0.15s;
@@ -11171,6 +11408,8 @@ function createMainMenuButton(
 }
 
 function showMainMenu(): void {
+  if (mainMenuEl) return;
+  playMenuMusic();
   mainMenuEl = document.createElement('div');
   mainMenuEl.style.cssText = `
     position:fixed;top:0;left:0;width:100%;height:100%;
@@ -11182,23 +11421,44 @@ function showMainMenu(): void {
     padding-bottom:max(24px,env(safe-area-inset-bottom,0px));
   `;
 
+  const bgVideo = document.createElement('video');
+  bgVideo.src = LOBBY_BG_VIDEO_PATH;
+  bgVideo.poster = LOBBY_BG_PATH;
+  bgVideo.autoplay = true;
+  bgVideo.muted = true;
+  bgVideo.loop = true;
+  bgVideo.playsInline = true;
+  bgVideo.disablePictureInPicture = true;
+  bgVideo.setAttribute('aria-hidden', 'true');
+  bgVideo.style.cssText = `
+    position:absolute;inset:0;width:100%;height:100%;
+    object-fit:cover;pointer-events:none;z-index:0;
+  `;
+  mainMenuEl.appendChild(bgVideo);
+  bgVideo.play().catch(() => {
+    // 静态 CSS background + poster 作为兜底；自动播放失败不影响菜单可用性。
+  });
+
   const save = loadSave();
-  const silverDisplay = createSilverBadge(save.silver);
-  silverDisplay.style.position = 'absolute';
-  silverDisplay.style.top = 'max(16px, env(safe-area-inset-top, 0px))';
-  silverDisplay.style.right = 'max(16px, env(safe-area-inset-right, 0px))';
-  mainMenuEl.appendChild(silverDisplay);
+  const topRightControls = createSilverMusicControls(save.silver, true);
+  topRightControls.style.position = 'absolute';
+  topRightControls.style.top = 'max(16px, env(safe-area-inset-top, 0px))';
+  topRightControls.style.right = 'max(16px, env(safe-area-inset-right, 0px))';
+  topRightControls.style.zIndex = '2';
+  mainMenuEl.appendChild(topRightControls);
 
   const langBtn = createLanguageSwitcherButton();
   if (langBtn) {
     langBtn.style.position = 'absolute';
     langBtn.style.left = 'max(12px, env(safe-area-inset-left, 0px))';
     langBtn.style.bottom = 'max(12px, env(safe-area-inset-bottom, 0px))';
+    langBtn.style.zIndex = '2';
     mainMenuEl.appendChild(langBtn);
   }
 
   const centerGroup = document.createElement('div');
   centerGroup.style.cssText = `
+    position:relative;z-index:1;
     flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
     gap:clamp(10px,2.5vh,14px);width:100%;min-height:0;
     overflow-y:${isUiShort() ? 'auto' : 'visible'};
@@ -11997,6 +12257,10 @@ function startGame(character: CharacterType = 'megachad'): void {
     activeScene.destroy();
     activeScene = null;
   }
+  destroyMainMenu();
+  destroyCharacterSelectScreen();
+  destroyTierSelectScreen();
+  hideQuestsOverlay();
 
   const levelName = levelNameForTier(selectedTier);
   const tierLevel = loadedLevelsByName.get(levelName);
@@ -12096,6 +12360,20 @@ function hideBootLoadingOverlay(): void {
   window.setTimeout(() => overlay.remove(), 400);
 }
 
+/** 平台生命周期：资源加载完毕、主菜单可交互时通知一次（duko / KubeeClient）。 */
+let kubeeGameLoadedSent = false;
+function notifyKubeeGameLoaded(): void {
+  if (kubeeGameLoadedSent) return;
+  const client = globalThis.KubeeClient;
+  if (!client?.game?.loaded) return;
+  try {
+    client.game.loaded();
+    kubeeGameLoadedSent = true;
+  } catch (err) {
+    console.warn('[Boot] KubeeClient.game.loaded() failed:', err);
+  }
+}
+
 async function main(): Promise<void> {
   const i18nMode = (import.meta.env.VITE_I18N_MODE as I18nMode | undefined) ?? 'locked';
   const i18nLocale = import.meta.env.VITE_I18N_LOCALE as string | undefined;
@@ -12109,6 +12387,7 @@ async function main(): Promise<void> {
     mode: i18nMode,
     locale: i18nLocale,
   });
+  installButtonClickSfx();
 
   showBootLoadingOverlay();
   // 进度封顶 95%，留最后 5% 给关卡解析 / 主菜单构建，hide 时补满到 100%。
@@ -12134,6 +12413,7 @@ async function main(): Promise<void> {
   }
 
   showMainMenu();
+  notifyKubeeGameLoaded();
 }
 
 export function bootGameClient(): void {

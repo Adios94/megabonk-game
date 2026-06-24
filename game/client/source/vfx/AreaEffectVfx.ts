@@ -37,7 +37,7 @@ export class AreaEffectVfx {
    * - 扫 state.areaEffects 创建/复用 mesh，按 kind 走不同 update（位置 / scale / opacity / 子层）。
    * - 失活的特效进对象池（按 kind 分池），超 cap 才 dispose。
    */
-  update(state: GameState): void {
+  update(state: GameState, eventsFresh = true): void {
     const live = new Set<number>();
 
     for (const ae of state.areaEffects) {
@@ -87,7 +87,7 @@ export class AreaEffectVfx {
             fillMat.opacity = ratio * pulse;
             ringMat.opacity = ratio;
           }
-          if (state.tick % 6 === 0) {
+          if (eventsFresh && state.tick % 6 === 0) {
             const a = Math.random() * Math.PI * 2;
             const r = Math.sqrt(Math.random()) * ae.radius;
             this.billboards.spawn({
@@ -99,7 +99,7 @@ export class AreaEffectVfx {
               rotationSpeed: (Math.random() - 0.5) * 0.6, blending: 'normal',
             });
           }
-          if (state.tick % 3 === 0) {
+          if (eventsFresh && state.tick % 3 === 0) {
             const a = Math.random() * Math.PI * 2;
             const r = Math.random() * ae.radius;
             this.particles.spawn(

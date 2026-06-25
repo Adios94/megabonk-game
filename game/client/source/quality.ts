@@ -40,7 +40,7 @@ function buildProfile(): PlatformRenderProfile {
       id: 'mobile',
       maxPixelRatio: 1,
       sceneRtType: THREE.UnsignedByteType,
-      outlineTapScale: 2.0,
+      outlineTapScale: 1.0,
       shadowMapSize: 1024,
       shadowMapType: THREE.BasicShadowMap,
       curvedWorldStrength: 0,

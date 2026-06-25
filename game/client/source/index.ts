@@ -3836,7 +3836,7 @@ export class GameScene {
    *
    * BLOOM_ENABLED = false（默认关闭，性能优化）：UnrealBloomPass 的半分辨率降采样 +
    * 多次高斯模糊是移动端 / 集显帧率的最大单项开销，关闭后还会释放其 mip render targets 显存。
-   * 移动端 sceneRT 用 UnsignedByteType + uOutlineTapScale=2.0 降带宽；桌面保持 HalfFloat + tap 1.0。
+   * 移动端 sceneRT 用 UnsignedByteType 降带宽；描边采样距离保持 1.0，避免低 DPR 手机上黑边过粗。
    */
   private setupComposer(): void {
     const BLOOM_ENABLED = false;

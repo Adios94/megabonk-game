@@ -5347,8 +5347,14 @@ export class GameScene {
   }
 
   private renderEnemies(enemies: EnemyState[], damageEvents: readonly DamageEvent[]): void {
-    this.enemyImpostorCount = 0;
+    const enemyImpostorUpdateDue = !this.renderProfile.enemyImpostorEnabled
+      || this.enemyImpostorCount === 0
+      || this.frameIndex % this.renderProfile.enemyImpostorUpdateStride === 0;
+    if (enemyImpostorUpdateDue) this.enemyImpostorCount = 0;
     const enemyImpostorDistSq = this.renderProfile.enemyImpostorDistance * this.renderProfile.enemyImpostorDistance;
+    const enemyVisibleCullSq = this.renderProfile.enemyImpostorEnabled
+      ? this.renderProfile.enemyImpostorCullDistance * this.renderProfile.enemyImpostorCullDistance
+      : ENEMY_VISIBLE_CULL_SQ;
     const enemyHitFxDistSq = this.renderProfile.enemyHitFxDistance * this.renderProfile.enemyHitFxDistance;
     // 动画 LOD：每帧重建一次视锥（点剔除）+ 缓存相机位置，循环内据此对 mixer 降频。
     this.cullMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
@@ -5499,7 +5505,7 @@ export class GameScene {
       const cullDy = (enemy.y + 1) - camY;
       const cullDz = enemy.z - camZ;
       const cullDistSq = cullDx * cullDx + cullDy * cullDy + cullDz * cullDz;
-      if (cullDistSq > ENEMY_VISIBLE_CULL_SQ) {
+      if (cullDistSq > enemyVisibleCullSq) {
         if (obj.visible) obj.visible = false;
         continue;
       }
@@ -5511,10 +5517,9 @@ export class GameScene {
         && !enemy.isMiniBoss
       ) {
         if (obj.visible) obj.visible = false;
-        if (enemy.type !== 'gargoyle') {
-          this.blobShadows?.place(enemy.x, enemy.y, enemy.z, targetHeight * sizeMultiplier * 0.3);
+        if (enemyImpostorUpdateDue) {
+          this.placeEnemyImpostor(enemy, targetHeight, sizeMultiplier, hoverOffset, playerPos);
         }
-        this.placeEnemyImpostor(enemy, targetHeight, sizeMultiplier, hoverOffset, playerPos);
         continue;
       }
       obj.visible = true;
@@ -5622,12 +5627,19 @@ export class GameScene {
       }
     }
 
-    this.commitEnemyImpostors();
-    this.updateParalysisTriangleSprites(enemies);
-    this.updateBondEnemyMarkers(enemies);
+    if (enemyImpostorUpdateDue) this.commitEnemyImpostors();
+    this.updateParalysisTriangleSprites(enemies, playerPos);
+    this.updateBondEnemyMarkers(enemies, playerPos);
   }
 
-  private updateParalysisTriangleSprites(enemies: EnemyState[]): void {
+  private shouldRenderEnemyMarker(enemy: EnemyState, playerPos: GameState['player']): boolean {
+    const dx = enemy.x - playerPos.x;
+    const dz = enemy.z - playerPos.z;
+    const maxDist = this.renderProfile.enemyMarkerDistance;
+    return dx * dx + dz * dz <= maxDist * maxDist;
+  }
+
+  private updateParalysisTriangleSprites(enemies: EnemyState[], playerPos: GameState['player']): void {
     const markedIds = new Set<number>();
     const offsets = [
       { x: 0.0, y: 1.45, z: 0.0, scale: 0.46, phase: 0.0 },
@@ -5640,6 +5652,7 @@ export class GameScene {
 
     for (const enemy of enemies) {
       if (enemy.hp <= 0 || (enemy.slowTimer ?? 0) <= 0) continue;
+      if (!this.shouldRenderEnemyMarker(enemy, playerPos)) continue;
       markedIds.add(enemy.id);
 
       let sprites = this.paralysisTriangleSprites.get(enemy.id);
@@ -5687,6 +5700,7 @@ export class GameScene {
   /** 维护单精灵覆盖标记（neuro / hunter / conductor），随敌人位置浮动并脉冲。 */
   private updateSingleMarkerSprites(
     enemies: EnemyState[],
+    playerPos: GameState['player'],
     store: Map<number, THREE.Sprite>,
     makeTexture: () => THREE.Texture,
     predicate: (e: EnemyState) => boolean,
@@ -5696,6 +5710,7 @@ export class GameScene {
     const time = performance.now() * 0.004;
     for (const e of enemies) {
       if (e.hp <= 0 || !predicate(e)) continue;
+      if (!this.shouldRenderEnemyMarker(e, playerPos)) continue;
       alive.add(e.id);
       let sprite = store.get(e.id);
       if (!sprite) {
@@ -5728,19 +5743,19 @@ export class GameScene {
   }
 
   /** 羁绊敌人覆盖标记：毒师墨绿倒三角 / 猎标红色瞄准圈 / 弧光导体蓝色发光。 */
-  private updateBondEnemyMarkers(enemies: EnemyState[]): void {
+  private updateBondEnemyMarkers(enemies: EnemyState[], playerPos: GameState['player']): void {
     this.updateSingleMarkerSprites(
-      enemies, this.neuroMarkerSprites, getNeuroTriangleTexture,
+      enemies, playerPos, this.neuroMarkerSprites, getNeuroTriangleTexture,
       (e) => (e.neuroStacks ?? 0) > 0,
       { y: 1.5, scale: 0.5, renderOrder: 6, additive: false, baseOpacity: 0.9 },
     );
     this.updateSingleMarkerSprites(
-      enemies, this.hunterMarkerSprites, getHunterCrosshairTexture,
+      enemies, playerPos, this.hunterMarkerSprites, getHunterCrosshairTexture,
       (e) => e.hunterBranded === true,
       { y: 1.9, scale: 0.55, renderOrder: 7, additive: false, baseOpacity: 0.95 },
     );
     this.updateSingleMarkerSprites(
-      enemies, this.conductorGlowSprites, getConductorGlowTexture,
+      enemies, playerPos, this.conductorGlowSprites, getConductorGlowTexture,
       (e) => (e.conductorMarkTimer ?? 0) > 0,
       { y: 0.9, scale: 1.8, renderOrder: 2, additive: true, baseOpacity: 0.8 },
     );
@@ -7423,7 +7438,7 @@ export class GameScene {
     if (eventsFresh) this.resetVfxEventBudget();
 
     this.areaEffectVfx.update(state, eventsFresh);
-    if (eventsFresh) this.bondStatusVfx.updateEnemyStatusVfx(state);
+    if (eventsFresh) this.bondStatusVfx.updateEnemyStatusVfx(state, this.renderProfile.enemyStatusVfxDistance);
     this.bondStatusVfx.updateMysteryNumber(state, this.frameDt);
     // 事件驱动的羁绊 VFX 只在新 tick 消费一次（高刷屏去重）。
     if (eventsFresh) {

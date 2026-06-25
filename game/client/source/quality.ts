@@ -36,8 +36,12 @@ export type PlatformRenderProfile = {
   hudSlowUpdateIntervalMs: number;
   enemyImpostorEnabled: boolean;
   enemyImpostorDistance: number;
+  enemyImpostorCullDistance: number;
+  enemyImpostorUpdateStride: number;
   enemyHitReactEnabled: boolean;
   enemyHitFxDistance: number;
+  enemyMarkerDistance: number;
+  enemyStatusVfxDistance: number;
 };
 
 /**
@@ -84,9 +88,13 @@ function buildProfile(): PlatformRenderProfile {
       swordSlashParticleCount: 5,
       hudSlowUpdateIntervalMs: 100,
       enemyImpostorEnabled: true,
-      enemyImpostorDistance: 12,
+      enemyImpostorDistance: 20,
+      enemyImpostorCullDistance: 32,
+      enemyImpostorUpdateStride: 2,
       enemyHitReactEnabled: false,
       enemyHitFxDistance: 9,
+      enemyMarkerDistance: 12,
+      enemyStatusVfxDistance: 14,
     };
   }
   return {
@@ -119,8 +127,12 @@ function buildProfile(): PlatformRenderProfile {
     hudSlowUpdateIntervalMs: 0,
     enemyImpostorEnabled: false,
     enemyImpostorDistance: Number.POSITIVE_INFINITY,
+    enemyImpostorCullDistance: Number.POSITIVE_INFINITY,
+    enemyImpostorUpdateStride: 1,
     enemyHitReactEnabled: true,
     enemyHitFxDistance: Number.POSITIVE_INFINITY,
+    enemyMarkerDistance: Number.POSITIVE_INFINITY,
+    enemyStatusVfxDistance: Number.POSITIVE_INFINITY,
   };
 }
 

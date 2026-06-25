@@ -179,9 +179,14 @@ export class BondAndStatusVfx {
    * 给中毒（poisonTimer>0）/ 减速（slowTimer>0）的敌人喷少量提示粒子。
    * 节流：中毒每 4 tick 一颗绿雾，减速每 5 tick 一颗黄电。
    */
-  updateEnemyStatusVfx(state: GameState): void {
+  updateEnemyStatusVfx(state: GameState, maxDistance = Number.POSITIVE_INFINITY): void {
+    const player = state.player;
+    const maxDistSq = maxDistance * maxDistance;
     for (const e of state.enemies) {
       if (e.hp <= 0) continue;
+      const dx = e.x - player.x;
+      const dz = e.z - player.z;
+      if (dx * dx + dz * dz > maxDistSq) continue;
       if ((e.poisonTimer ?? 0) > 0 && state.tick % 4 === 0) {
         const a = Math.random() * Math.PI * 2;
         this.particles.spawn(

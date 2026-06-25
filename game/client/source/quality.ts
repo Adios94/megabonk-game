@@ -2,15 +2,24 @@ import * as THREE from 'three';
 import { DEFAULT_BILLBOARD_CAPACITY } from './vfx/BillboardPool.ts';
 import { DEFAULT_MAX_PARTICLES } from './vfx/ParticlePool.ts';
 
-const MOBILE_BILLBOARD_CAPACITY = 24;
-const MOBILE_PARTICLE_CAPACITY = Math.floor(DEFAULT_MAX_PARTICLES / 2);
+const MOBILE_BILLBOARD_CAPACITY = 18;
+const MOBILE_PARTICLE_CAPACITY = Math.floor(DEFAULT_MAX_PARTICLES * 0.36);
 
 /** 自动画质档：桌面 High / 移动 Mobile，无设置页、启动时一次性判定。 */
 export type PlatformRenderProfile = {
   id: 'desktop' | 'mobile';
+  minPixelRatio: number;
   maxPixelRatio: number;
+  dynamicPixelRatioEnabled: boolean;
+  dynamicPixelRatioStep: number;
+  dynamicPixelRatioSampleSeconds: number;
+  dynamicPixelRatioCooldownSeconds: number;
+  dynamicPixelRatioLowFps: number;
+  dynamicPixelRatioHighFps: number;
   sceneRtType: THREE.TextureDataType;
+  outlineThickness: number;
   outlineTapScale: number;
+  shadowsEnabled: boolean;
   shadowMapSize: number;
   shadowMapType: THREE.ShadowMapType;
   curvedWorldStrength: number;
@@ -19,6 +28,12 @@ export type PlatformRenderProfile = {
   darkComicEnabled: boolean;
   billboardCapacity: number;
   particleCapacity: number;
+  particleEmissionScale: number;
+  vfxEventBudgetPerTick: number;
+  projectileTrailTickStride: number;
+  continuousVfxFrameStride: number;
+  swordSlashParticleCount: number;
+  hudSlowUpdateIntervalMs: number;
 };
 
 /**
@@ -38,9 +53,18 @@ function buildProfile(): PlatformRenderProfile {
   if (isMobile()) {
     return {
       id: 'mobile',
-      maxPixelRatio: 1,
+      minPixelRatio: 1,
+      maxPixelRatio: 1.5,
+      dynamicPixelRatioEnabled: true,
+      dynamicPixelRatioStep: 0.25,
+      dynamicPixelRatioSampleSeconds: 2.5,
+      dynamicPixelRatioCooldownSeconds: 4,
+      dynamicPixelRatioLowFps: 48,
+      dynamicPixelRatioHighFps: 57,
       sceneRtType: THREE.UnsignedByteType,
+      outlineThickness: 0.75,
       outlineTapScale: 1.0,
+      shadowsEnabled: false,
       shadowMapSize: 1024,
       shadowMapType: THREE.BasicShadowMap,
       curvedWorldStrength: 0,
@@ -49,13 +73,28 @@ function buildProfile(): PlatformRenderProfile {
       darkComicEnabled: false,
       billboardCapacity: MOBILE_BILLBOARD_CAPACITY,
       particleCapacity: MOBILE_PARTICLE_CAPACITY,
+      particleEmissionScale: 0.55,
+      vfxEventBudgetPerTick: 8,
+      projectileTrailTickStride: 4,
+      continuousVfxFrameStride: 3,
+      swordSlashParticleCount: 5,
+      hudSlowUpdateIntervalMs: 100,
     };
   }
   return {
     id: 'desktop',
+    minPixelRatio: 1,
     maxPixelRatio: 2,
+    dynamicPixelRatioEnabled: false,
+    dynamicPixelRatioStep: 0,
+    dynamicPixelRatioSampleSeconds: 0,
+    dynamicPixelRatioCooldownSeconds: 0,
+    dynamicPixelRatioLowFps: 0,
+    dynamicPixelRatioHighFps: 0,
     sceneRtType: THREE.HalfFloatType,
+    outlineThickness: 1.5,
     outlineTapScale: 1.0,
+    shadowsEnabled: true,
     shadowMapSize: 2048,
     shadowMapType: THREE.PCFSoftShadowMap,
     curvedWorldStrength: 0.015,
@@ -64,6 +103,12 @@ function buildProfile(): PlatformRenderProfile {
     darkComicEnabled: true,
     billboardCapacity: DEFAULT_BILLBOARD_CAPACITY,
     particleCapacity: DEFAULT_MAX_PARTICLES,
+    particleEmissionScale: 1,
+    vfxEventBudgetPerTick: Number.MAX_SAFE_INTEGER,
+    projectileTrailTickStride: 2,
+    continuousVfxFrameStride: 1,
+    swordSlashParticleCount: 12,
+    hudSlowUpdateIntervalMs: 0,
   };
 }
 

@@ -40,6 +40,7 @@ export class ParticlePool {
     private readonly scene: THREE.Scene,
     private readonly billboards: BillboardPool,
     capacity: number = DEFAULT_MAX_PARTICLES,
+    private readonly emissionScale: number = 1,
   ) {
     this.capacity = capacity;
 
@@ -143,6 +144,10 @@ export class ParticlePool {
     this.scene.add(this.points);
   }
 
+  private scaledCount(count: number, min = 1): number {
+    return Math.max(min, Math.floor(count * this.emissionScale));
+  }
+
   /** 在 (x,y,z) 注入一颗粒子。池满时静默丢弃。 */
   spawn(
     x: number, y: number, z: number,
@@ -168,7 +173,7 @@ export class ParticlePool {
   /** 命中火花：按武器颜色染色的发散粒子（不再叠加 muzzle 爆闪 billboard）。 */
   emitHitSparks(x: number, y: number, z: number, weaponType: string): void {
     const color = WEAPON_VFX_COLORS[weaponType] ?? [1.0, 0.9, 0.5];
-    const count = 10 + Math.floor(Math.random() * 8);
+    const count = this.scaledCount(10 + Math.floor(Math.random() * 8), 3);
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const elevation = Math.random() * Math.PI * 0.6;
@@ -187,7 +192,7 @@ export class ParticlePool {
 
   /** 极简死亡爆点：5–7 颗红橙粒 + 短命烟雾 + 地面烧痕。 */
   emitDeathBurst(x: number, y: number, z: number, _enemyType: string): void {
-    const count = 5 + Math.floor(Math.random() * 3);
+    const count = this.scaledCount(5 + Math.floor(Math.random() * 3), 2);
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const elevation = (Math.random() - 0.3) * Math.PI;
@@ -232,7 +237,7 @@ export class ParticlePool {
   /** 拾取小星花 + 颜色按 pickup 类型查表。 */
   emitPickupSparkle(x: number, y: number, z: number, pickupType: string): void {
     const color = PICKUP_VFX_COLORS[pickupType] ?? [0.5, 1.0, 0.5];
-    const count = 3 + Math.floor(Math.random() * 3);
+    const count = this.scaledCount(3 + Math.floor(Math.random() * 3), 1);
     for (let i = 0; i < count; i++) {
       const vx = (Math.random() - 0.5) * 1.5;
       const vy = 2 + Math.random() * 2;
@@ -257,7 +262,7 @@ export class ParticlePool {
 
   /** 升级仪式爆发：粒子绕圈外扩 + 中心星光 + 光柱（gold/silver 双色）。 */
   emitCompensationBurst(x: number, y: number, z: number, kind: 'gold' | 'silver'): void {
-    const count = kind === 'silver' ? 36 : 30;
+    const count = this.scaledCount(kind === 'silver' ? 36 : 30, 10);
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2;
       const speed = 3 + Math.random() * 2.5;
@@ -301,7 +306,7 @@ export class ParticlePool {
 
   /** 火环外圈火苗（少量短命橙红粒子）。 */
   emitFlameRingParticles(x: number, y: number, z: number, radius: number): void {
-    const count = 2 + Math.floor(Math.random() * 2);
+    const count = this.scaledCount(2 + Math.floor(Math.random() * 2), 1);
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const px = x + Math.cos(angle) * radius;
@@ -321,7 +326,8 @@ export class ParticlePool {
   /** 拾取爆点（不带 billboard，仅粒子）：8 颗按 color RGB 染色。 */
   spawnPickupBurst(x: number, y: number, z: number, color: number): void {
     const c = new THREE.Color(color);
-    for (let i = 0; i < 8; i++) {
+    const count = this.scaledCount(8, 3);
+    for (let i = 0; i < count; i++) {
       const p = this.particles.find(pp => !pp.active);
       if (!p) break;
       p.active = true;
@@ -338,7 +344,8 @@ export class ParticlePool {
 
   /** 奥术奥秘爆发：蓝紫烟团 + 命中爆闪 + 地面光环 + 魔法阵。 */
   emitArcaneSmoke(x: number, y: number, z: number): void {
-    for (let i = 0; i < 18; i++) {
+    const count = this.scaledCount(18, 6);
+    for (let i = 0; i < count; i++) {
       const a = Math.random() * Math.PI * 2;
       const sp = 2.2 + Math.random() * 3.0;
       this.spawn(
@@ -372,7 +379,8 @@ export class ParticlePool {
 
   /** 红色爆炸烟雾（余烬羁绊敌人爆炸）。 */
   emitEmberExplosion(x: number, y: number, z: number): void {
-    for (let i = 0; i < 8; i++) {
+    const count = this.scaledCount(8, 3);
+    for (let i = 0; i < count; i++) {
       const a = Math.random() * Math.PI * 2;
       const sp = 2 + Math.random() * 2.5;
       this.spawn(

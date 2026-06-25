@@ -524,6 +524,9 @@ const CHARACTER_DETAIL_WEAPON_SLOT = {
   heightPct: (1206 / 4897) * 100,
 } as const;
 
+const CHARACTER_DETAIL_BASE_RENDER_WIDTH = 360;
+const CHARACTER_DETAIL_SCALE_MIN = 0.82;
+const CHARACTER_DETAIL_SCALE_MAX = 1.18;
 const CHARACTER_CONFIRM_BUTTON_WIDTH = '96px';
 
 function characterDetailInsetXPct(value: number): string {
@@ -3055,6 +3058,23 @@ export class GameScene {
   private seenChestOpenEvents = new Set<string>();
   // 渲染帧计数器（动画 LOD 错峰用：不同 id 的敌人在不同帧更新，把降频开销摊开）。
   private frameIndex = 0;
+  private nextSlowHudUpdateAt = 0;
+  private lastSlowHudPhase: GamePhase | null = null;
+  private lastHpText = '';
+  private lastShieldDisplay = '';
+  private lastShieldText = '';
+  private lastLevelText = '';
+  private lastTimerText = '';
+  private lastKillText = '';
+  private lastSilverEarned = -1;
+  private lastGold = -1;
+  private vfxEventBudgetRemaining = Number.MAX_SAFE_INTEGER;
+  private currentRenderPixelRatio = 0;
+  private renderCssWidth = 1;
+  private renderCssHeight = 1;
+  private dynamicDprSampleTime = 0;
+  private dynamicDprSampleFrames = 0;
+  private dynamicDprCooldown = 0;
   // 复用的视锥/矩阵，避免每帧分配。renderEnemies 开头由当前相机重建后做点剔除。
   private readonly cullFrustum = new THREE.Frustum();
   private readonly cullMatrix = new THREE.Matrix4();
@@ -3155,8 +3175,8 @@ export class GameScene {
       powerPreference: 'high-performance',
       alpha: true, // 允许透明背景，便于支持高质量天空盒/CSS天空背景
     });
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; // 开启高质量实时阴影
+    this.renderer.shadowMap.enabled = this.renderProfile.shadowsEnabled;
+    this.renderer.shadowMap.type = this.renderProfile.shadowMapType;
     this.renderer.toneMapping = THREE.NeutralToneMapping; // 更亮、更保饱和（Q 版鲜艳调性，替代偏暗去饱和的 ACES）
     this.renderer.toneMappingExposure = WEATHER_DAY_EXPOSURE; // 曝光：调参面板调定的整体亮度（Q 版鲜亮调性）
     this.renderer.outputColorSpace = THREE.SRGBColorSpace; // 显式 sRGB，保证饱和度正确还原
@@ -3237,6 +3257,7 @@ export class GameScene {
       getQuestProgress().filter(p => p.completed).map(p => p.questId),
     );
     curvedWorldUniforms.uWarpStrength.value = this.renderProfile.curvedWorldStrength;
+    this.renderer.shadowMap.enabled = this.renderProfile.shadowsEnabled;
     this.renderer.shadowMap.type = this.renderProfile.shadowMapType;
     if (import.meta.env.DEV) {
       console.log(`[Render] platform profile: ${this.renderProfile.id}`, this.renderProfile);
@@ -3260,12 +3281,11 @@ export class GameScene {
       container: this.container,
       maxPixelRatio: this.renderProfile.maxPixelRatio,
       onResize: ({ width, height, pixelRatio }) => {
+        this.renderCssWidth = width;
+        this.renderCssHeight = height;
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
-        if (this.composer) {
-          this.composer.setPixelRatio(pixelRatio);
-          this.composer.setSize(width, height);
-        }
+        this.applyRenderPixelRatio(this.chooseResizePixelRatio(pixelRatio), true);
       },
     });
 
@@ -3426,7 +3446,7 @@ export class GameScene {
     const dir = new THREE.DirectionalLight('#FFF5E0', 1.35);
     dir.name = 'DirectionalLight';
     dir.position.set(15, 25, 15);
-    dir.castShadow = true;
+    dir.castShadow = this.renderProfile.shadowsEnabled;
     const shadowSize = this.renderProfile.shadowMapSize;
     dir.shadow.mapSize.width = shadowSize;
     dir.shadow.mapSize.height = shadowSize;
@@ -3836,7 +3856,7 @@ export class GameScene {
    *
    * BLOOM_ENABLED = false（默认关闭，性能优化）：UnrealBloomPass 的半分辨率降采样 +
    * 多次高斯模糊是移动端 / 集显帧率的最大单项开销，关闭后还会释放其 mip render targets 显存。
-   * 移动端 sceneRT 用 UnsignedByteType 降带宽；描边采样距离保持 1.0，避免低 DPR 手机上黑边过粗。
+   * 移动端 sceneRT 用 UnsignedByteType 降带宽；描边厚度按画质档下调，避免低 DPR 手机上黑边过粗。
    */
   private setupComposer(): void {
     const BLOOM_ENABLED = false;
@@ -3886,7 +3906,7 @@ export class GameScene {
       this.renderer,
       pxW,
       pxH,
-      { outlineTapScale: profile.outlineTapScale },
+      { outlineThickness: profile.outlineThickness, outlineTapScale: profile.outlineTapScale },
     );
     finalComposite.renderToScreen = true;
     composer.addPass(finalComposite);
@@ -3934,7 +3954,7 @@ export class GameScene {
     applyStylizedToonShading(baseMat, 0, true); // 地面底板也加风格化 + 网点
     this.groundMesh = new THREE.Mesh(tessellatedGeo, baseMat);
     this.groundMesh.name = 'Ground_Base';
-    this.groundMesh.receiveShadow = true;
+    this.groundMesh.receiveShadow = this.renderProfile.shadowsEnabled;
     this.groundMesh.position.y = -0.5;
     this.scene.add(this.groundMesh);
 
@@ -4352,12 +4372,12 @@ export class GameScene {
   }
 
   private setupVFX(): void {
-    const { billboardCapacity, particleCapacity } = this.renderProfile;
+    const { billboardCapacity, particleCapacity, particleEmissionScale } = this.renderProfile;
     // ─── Billboard VFX：贴图预载 + plane mesh 池（移动 24 / 桌面 64）───
     this.billboardPool = new BillboardPool(this.scene, billboardCapacity);
     // ─── 点云粒子池（移动 250 / 桌面 500）+ shader 自渲染 ───
     //（emitDeathBurst / emitHitSparks 等会同时调 billboardPool，所以必须在它之后）
-    this.particlePool = new ParticlePool(this.scene, this.billboardPool, particleCapacity);
+    this.particlePool = new ParticlePool(this.scene, this.billboardPool, particleCapacity, particleEmissionScale);
     // ─── 武器瞬态 VFX（剑气 / 闪电 / 火环）+ 自带常驻 lightningFlashLight ───
     this.weaponTransientVfx = new WeaponTransientVfx(this.scene, this.billboardPool, this.particlePool);
     // ─── 区域特效（毒气 / 虚空涟漪 / 灼地痕迹 / 激光线）+ 按 kind 对象池 ───
@@ -4700,6 +4720,73 @@ export class GameScene {
     this.hitStopTimer = duration;
   }
 
+  private getRenderPixelRatioCap(): number {
+    const raw = Number.isFinite(window.devicePixelRatio) ? window.devicePixelRatio : 1;
+    const cap = Math.min(raw || 1, this.renderProfile.maxPixelRatio);
+    return Math.max(this.renderProfile.minPixelRatio, cap);
+  }
+
+  private clampRenderPixelRatio(value: number): number {
+    const min = this.renderProfile.minPixelRatio;
+    const max = this.getRenderPixelRatioCap();
+    return Math.max(min, Math.min(value, max));
+  }
+
+  private chooseResizePixelRatio(pixelRatio: number): number {
+    if (!this.renderProfile.dynamicPixelRatioEnabled || this.currentRenderPixelRatio <= 0) {
+      return pixelRatio;
+    }
+    return this.currentRenderPixelRatio;
+  }
+
+  private applyRenderPixelRatio(pixelRatio: number, force = false): void {
+    const next = this.clampRenderPixelRatio(pixelRatio);
+    if (!force && Math.abs(next - this.currentRenderPixelRatio) < 0.01) return;
+
+    const width = this.renderCssWidth || this.container.clientWidth || window.innerWidth || 1;
+    const height = this.renderCssHeight || this.container.clientHeight || window.innerHeight || 1;
+    this.renderer.setPixelRatio(next);
+    this.renderer.setSize(width, height);
+    if (this.composer) {
+      this.composer.setPixelRatio(next);
+      this.composer.setSize(width, height);
+    }
+    this.currentRenderPixelRatio = next;
+    this.dynamicDprSampleTime = 0;
+    this.dynamicDprSampleFrames = 0;
+  }
+
+  private updateDynamicPixelRatio(dt: number): void {
+    const profile = this.renderProfile;
+    if (!profile.dynamicPixelRatioEnabled || this.currentRenderPixelRatio <= 0) return;
+
+    this.dynamicDprCooldown = Math.max(0, this.dynamicDprCooldown - dt);
+    this.dynamicDprSampleTime += dt;
+    this.dynamicDprSampleFrames++;
+    if (this.dynamicDprSampleTime < profile.dynamicPixelRatioSampleSeconds) return;
+
+    const fps = this.dynamicDprSampleFrames / Math.max(this.dynamicDprSampleTime, 0.001);
+    this.dynamicDprSampleTime = 0;
+    this.dynamicDprSampleFrames = 0;
+    if (this.dynamicDprCooldown > 0) return;
+
+    const cap = this.getRenderPixelRatioCap();
+    let next = this.currentRenderPixelRatio;
+    if (fps < profile.dynamicPixelRatioLowFps) {
+      next = Math.max(profile.minPixelRatio, this.currentRenderPixelRatio - profile.dynamicPixelRatioStep);
+    } else if (fps > profile.dynamicPixelRatioHighFps) {
+      next = Math.min(cap, this.currentRenderPixelRatio + profile.dynamicPixelRatioStep);
+    }
+
+    if (Math.abs(next - this.currentRenderPixelRatio) >= 0.01) {
+      this.applyRenderPixelRatio(next);
+      this.dynamicDprCooldown = profile.dynamicPixelRatioCooldownSeconds;
+      if (import.meta.env.DEV) {
+        console.log(`[Render] dynamic DPR ${this.currentRenderPixelRatio.toFixed(2)} (${fps.toFixed(1)} fps)`);
+      }
+    }
+  }
+
   // ===========================================================================
   // Animate Loop
   // ===========================================================================
@@ -4716,6 +4803,7 @@ export class GameScene {
     const dt = this.lastTime > 0 ? Math.min((now - this.lastTime) / 1000, 0.05) : 1 / 60;
     this.lastTime = now;
     this.frameDt = dt;
+    this.updateDynamicPixelRatio(dt);
 
     // Hit Stop / Freeze Frame (顿帧) — skip rendering updates while timer active
     if (this.hitStopTimer > 0) {
@@ -7229,9 +7317,21 @@ export class GameScene {
 
   // 奥秘头顶数字 / 奥术光球 / bond 事件 / 敌人状态粒子 已迁出至 vfx/BondAndStatusVfx.ts。
 
+  private resetVfxEventBudget(): void {
+    this.vfxEventBudgetRemaining = this.renderProfile.vfxEventBudgetPerTick;
+  }
+
+  private consumeVfxEventBudget(cost = 1): boolean {
+    if (this.vfxEventBudgetRemaining < cost) return false;
+    this.vfxEventBudgetRemaining -= cost;
+    return true;
+  }
+
   private updateVFX(state: GameState, dt: number, eventsFresh = true): void {
     const enemies = state.enemies;
     const player = state.player;
+    const continuousVfxDue = this.frameIndex % this.renderProfile.continuousVfxFrameStride === 0;
+    if (eventsFresh) this.resetVfxEventBudget();
 
     this.areaEffectVfx.update(state, eventsFresh);
     if (eventsFresh) this.bondStatusVfx.updateEnemyStatusVfx(state);
@@ -7249,29 +7349,31 @@ export class GameScene {
 
     // Hit sparks from damage events（事件驱动，仅新 tick 消费）
     if (eventsFresh) {
-    for (const event of state.damageEvents) {
-      if (event.isPlayerDamage) continue;
-      playSfx('hit');
+      for (const event of state.damageEvents) {
+        if (event.isPlayerDamage) continue;
+        playSfx('hit');
 
-      // Death detection
-      const isDeath = event.damage > 10 && !enemies.some(e =>
-        e.hp > 0 && Math.abs(e.x - event.x) < 0.5 && Math.abs(e.z - event.z) < 0.5
-      );
+        // Death detection
+        const isDeath = event.damage > 10 && !enemies.some(e =>
+          e.hp > 0 && Math.abs(e.x - event.x) < 0.5 && Math.abs(e.z - event.z) < 0.5
+        );
 
-      if (isDeath) {
-        this.particlePool.emitDeathBurst(event.x, event.y - 1.0, event.z, 'generic');
-      } else {
-        // Prefer the event's source weapon for spark color; fall back to first equipped weapon
-        const weaponType = event.weaponType
-          ?? (player.weapons.length > 0 ? player.weapons[0].type : 'sword');
-        this.particlePool.emitHitSparks(event.x, event.y + 0.5, event.z, weaponType);
+        if (isDeath) {
+          if (this.consumeVfxEventBudget(2)) {
+            this.particlePool.emitDeathBurst(event.x, event.y - 1.0, event.z, 'generic');
+          }
+        } else if (this.consumeVfxEventBudget()) {
+          // Prefer the event's source weapon for spark color; fall back to first equipped weapon
+          const weaponType = event.weaponType
+            ?? (player.weapons.length > 0 ? player.weapons[0].type : 'sword');
+          this.particlePool.emitHitSparks(event.x, event.y + 0.5, event.z, weaponType);
+        }
+
+        // Lightning staff: drop a column at each strike
+        if (event.weaponType === 'lightning_staff' && this.consumeVfxEventBudget(2)) {
+          this.weaponTransientVfx.spawnLightningBolt(event.x, event.y - 1.0, event.z);
+        }
       }
-
-      // Lightning staff: drop a column at each strike
-      if (event.weaponType === 'lightning_staff') {
-        this.weaponTransientVfx.spawnLightningBolt(event.x, event.y - 1.0, event.z);
-      }
-    }
     }
 
     // Continuous weapon effects
@@ -7283,8 +7385,10 @@ export class GameScene {
         const table = WEAPON_STATS.flame_ring;
         const idx = Math.max(0, Math.min(weapon.level - 1, table.length - 1));
         flameRingRadius = table[idx]?.aoeRadius ?? 3.5;
-        // 火焰粒子沿真实判定边界喷出，而非固定 2.5。
-        this.particlePool.emitFlameRingParticles(player.x, player.y, player.z, flameRingRadius);
+        // 火焰粒子沿真实判定边界喷出，而非固定 2.5；移动端按 profile 降频。
+        if (continuousVfxDue) {
+          this.particlePool.emitFlameRingParticles(player.x, player.y, player.z, flameRingRadius);
+        }
         hasFlameRing = true;
       }
     }
@@ -7305,7 +7409,7 @@ export class GameScene {
         if (!proj.fromPlayer) continue;
 
         // Other player projectiles: short trail dot every 2 ticks
-        if (state.tick % 2 === 0) {
+        if (state.tick % this.renderProfile.projectileTrailTickStride === 0 && this.consumeVfxEventBudget()) {
           const color = WEAPON_VFX_COLORS[proj.weaponType] ?? [1, 1, 1];
           // Shotgun: brighter, larger trail to read as buckshot
           const isShotgun = proj.weaponType === 'shotgun';
@@ -7367,9 +7471,10 @@ export class GameScene {
           this.weaponTransientVfx.spawnSlashSector(player.x, player.y + 0.05, player.z, sweepAngle, swordRange);
         }
 
-        // 12 lightweight particles streaking along the arc for extra punch
-        for (let i = 0; i < 12; i++) {
-          const arcAngle = slashAngle + (i - 5.5) * 0.18;
+        const slashParticleCount = this.renderProfile.swordSlashParticleCount;
+        for (let i = 0; i < slashParticleCount; i++) {
+          const centerOffset = (slashParticleCount - 1) / 2;
+          const arcAngle = slashAngle + (i - centerOffset) * 0.18;
           const dist = 1.5 + Math.random() * 0.6;
           const px = player.x + Math.sin(arcAngle) * dist;
           const pz = player.z + Math.cos(arcAngle) * dist;
@@ -7451,10 +7556,23 @@ export class GameScene {
   // HUD Update
   // ===========================================================================
 
+  private shouldRunSlowHudUpdate(now: number, phase: GamePhase): boolean {
+    if (this.renderProfile.id !== 'mobile') return true;
+    if (phase !== this.lastSlowHudPhase) {
+      this.lastSlowHudPhase = phase;
+      this.nextSlowHudUpdateAt = now + this.renderProfile.hudSlowUpdateIntervalMs;
+      return true;
+    }
+    if (now < this.nextSlowHudUpdateAt) return false;
+    this.nextSlowHudUpdateAt = now + this.renderProfile.hudSlowUpdateIntervalMs;
+    return true;
+  }
+
   private updateHUD(state: GameState, eventsFresh = true): void {
     const p = state.player;
     const time = performance.now();
     this.latestHudState = state;
+    const slowHudUpdate = this.shouldRunSlowHudUpdate(time, state.phase);
 
     // HP bar with GSAP animation + numeric label (current / max)
     const hpPercent = Math.max(0, Math.min(100, (p.hp / p.maxHp) * 100));
@@ -7462,19 +7580,33 @@ export class GameScene {
       setSvgBarPercent(this.hpBarInner, hpPercent);
       this.lastHpPercent = hpPercent;
     }
-    this.hpText.textContent = `${Math.max(0, Math.ceil(p.hp))} / ${Math.ceil(p.maxHp)}`;
+    const hpText = `${Math.max(0, Math.ceil(p.hp))} / ${Math.ceil(p.maxHp)}`;
+    if (hpText !== this.lastHpText) {
+      this.hpText.textContent = hpText;
+      this.lastHpText = hpText;
+    }
     this.updateLowHealthFx(p);
 
     // Shield bar (only shown when player has shield capacity)
     const maxShield = p.maxShield ?? 0;
     const shield = p.shield ?? 0;
     if (maxShield > 0) {
-      this.shieldBar.style.display = 'block';
+      if (this.lastShieldDisplay !== 'block') {
+        this.shieldBar.style.display = 'block';
+        this.lastShieldDisplay = 'block';
+      }
       const shieldPercent = Math.max(0, Math.min(100, (shield / maxShield) * 100));
       setSvgBarPercent(this.shieldBarInner, shieldPercent);
-      this.shieldText.textContent = `${Math.max(0, Math.ceil(shield))} / ${Math.ceil(maxShield)}`;
+      const shieldText = `${Math.max(0, Math.ceil(shield))} / ${Math.ceil(maxShield)}`;
+      if (shieldText !== this.lastShieldText) {
+        this.shieldText.textContent = shieldText;
+        this.lastShieldText = shieldText;
+      }
     } else {
-      this.shieldBar.style.display = 'none';
+      if (this.lastShieldDisplay !== 'none') {
+        this.shieldBar.style.display = 'none';
+        this.lastShieldDisplay = 'none';
+      }
     }
 
     // XP bar with GSAP animation
@@ -7485,7 +7617,11 @@ export class GameScene {
     }
 
     // Level label straddles XP bar top edge with GSAP pulse animation
-    this.levelLabel.textContent = t('hud.level', { level: String(p.level) });
+    const levelText = t('hud.level', { level: String(p.level) });
+    if (levelText !== this.lastLevelText) {
+      this.levelLabel.textContent = levelText;
+      this.lastLevelText = levelText;
+    }
     if (this.levelCompPulseTimer > 0) {
       this.levelCompPulseTimer -= 1 / 60;
       if (!this.levelPulseAnimation) {
@@ -7506,12 +7642,29 @@ export class GameScene {
     const minutes = Math.floor(totalSec / 60);
     const seconds = totalSec % 60;
     const timeStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-    this.setTierBadge(state.tier);
-    this.setStageBadge(state.stage);
-    this.timerTimeEl.textContent = timeStr;
-    this.killCountEl.textContent = String(state.stats.killCount);
-    setSilverBadgeAmount(this.silverLabel, state.stats.silverEarned);
-    setGoldBadgeAmount(this.goldLabel, p.gold);
+    if (slowHudUpdate) {
+      this.setTierBadge(state.tier);
+      this.setStageBadge(state.stage);
+    }
+    if (timeStr !== this.lastTimerText) {
+      this.timerTimeEl.textContent = timeStr;
+      this.lastTimerText = timeStr;
+    }
+    const killText = String(state.stats.killCount);
+    if (killText !== this.lastKillText) {
+      this.killCountEl.textContent = killText;
+      this.lastKillText = killText;
+    }
+    if (state.stats.silverEarned !== this.lastSilverEarned) {
+      setSilverBadgeAmount(this.silverLabel, state.stats.silverEarned);
+      this.lastSilverEarned = state.stats.silverEarned;
+    }
+    if (p.gold !== this.lastGold) {
+      setGoldBadgeAmount(this.goldLabel, p.gold);
+      this.lastGold = p.gold;
+    }
+
+    if (slowHudUpdate) {
 
     // --- Quest track: dismiss once altar boss is defeated (portal_ready / portal_used) ---
     this.updateQuestHudTrack(state);
@@ -7664,8 +7817,7 @@ export class GameScene {
     const chestInRange = nearestChest != null
       && nearestChest.dist <= CHEST_INTERACT_RADIUS
       && Math.abs((p.y ?? 0) - (nearestChest.chest.y ?? 0)) <= CHEST_INTERACT_MAX_Y_DELTA;
-    // 简易移动端判定：能 hover 的设备视作 PC，不显示按钮（避免 PC 用户看到双重 UI）
-    const isMobile = !window.matchMedia('(hover: hover)').matches;
+    const isMobile = this.renderProfile.id === 'mobile';
     if (chargeIndicatorVisible) {
       gsapAnimations.animateTeleporterIndicator(this.teleporterIndicator, false, 0.2);
     // [DISABLED] 局内飞碟位置显示
@@ -7782,6 +7934,7 @@ export class GameScene {
       }
       this.timerLabel.style.color = '#ffffff';
       this.killLabel.style.color = '#ffffff';
+    }
     }
 
     // Damage numbers
@@ -9578,6 +9731,8 @@ function syncCharacterSelectDetailLayout(): void {
   const scaleOuter = card?.querySelector('[data-region="detail-scale"]') as HTMLElement | null;
   const contentWrap = card?.querySelector('[data-region="detail-content"]') as HTMLElement | null;
   const confirmSection = card?.querySelector('[data-region="detail-confirm"]') as HTMLElement | null;
+  const weaponPanel = card?.querySelector('[data-region="detail-weapon-panel"]') as HTMLElement | null;
+  const weaponContent = card?.querySelector('[data-region="detail-weapon-content"]') as HTMLElement | null;
   if (!stage || !host || !card || !bodyArea || !scaleOuter || !contentWrap || !confirmSection) return;
 
   const stageHeight = stage.getBoundingClientRect().height;
@@ -9615,6 +9770,11 @@ function syncCharacterSelectDetailLayout(): void {
   card.style.maxWidth = '100%';
   card.style.maxHeight = 'none';
   card.style.flex = '0 0 auto';
+  const detailScale = Math.max(
+    CHARACTER_DETAIL_SCALE_MIN,
+    Math.min(cardW / CHARACTER_DETAIL_BASE_RENDER_WIDTH, CHARACTER_DETAIL_SCALE_MAX),
+  );
+  card.style.setProperty('--character-detail-scale', detailScale.toFixed(3));
 
   contentWrap.style.transform = 'none';
   contentWrap.style.width = '100%';
@@ -9632,6 +9792,24 @@ function syncCharacterSelectDetailLayout(): void {
     contentWrap.style.transform = `scale(${scale})`;
     contentWrap.style.width = `${(100 / scale).toFixed(4)}%`;
     contentWrap.style.maxWidth = `${(100 / scale).toFixed(4)}%`;
+  }
+
+  if (weaponPanel && weaponContent) {
+    weaponContent.style.transform = 'none';
+    weaponContent.style.width = '100%';
+    weaponContent.style.maxWidth = '100%';
+
+    const availableW = weaponPanel.clientWidth;
+    const availableH = weaponPanel.clientHeight;
+    const contentW = weaponContent.scrollWidth;
+    const contentH = weaponContent.scrollHeight;
+    if (availableW > 0 && availableH > 0 && (contentW > availableW + 0.5 || contentH > availableH + 0.5)) {
+      const scale = Math.min(availableW / contentW, availableH / contentH);
+      weaponContent.style.transformOrigin = 'center center';
+      weaponContent.style.transform = `scale(${scale})`;
+      weaponContent.style.width = `${(100 / scale).toFixed(4)}%`;
+      weaponContent.style.maxWidth = `${(100 / scale).toFixed(4)}%`;
+    }
   }
 }
 
@@ -10272,18 +10450,24 @@ function refreshCharacterSelectDetail(): void {
   `;
 
   const weaponPanel = document.createElement('div');
+  weaponPanel.dataset.region = 'detail-weapon-panel';
   weaponPanel.style.cssText = `
     box-sizing:border-box;width:${weaponPanelWidth};max-width:100%;height:100%;
     display:flex;align-items:center;
-    padding:clamp(6px,1.5vw,12px) clamp(10px,2.4vw,20px);
+    padding:clamp(4px,calc(8px * var(--character-detail-scale,1)),12px)
+      clamp(8px,calc(14px * var(--character-detail-scale,1)),20px);
+    min-height:0;overflow:hidden;
   `;
 
   const weaponRow = document.createElement('div');
+  weaponRow.dataset.region = 'detail-weapon-content';
   weaponRow.style.cssText = `
-    display:flex;align-items:center;gap:clamp(4px,1vw,7px);width:100%;box-sizing:border-box;
+    display:flex;align-items:center;gap:clamp(4px,calc(6px * var(--character-detail-scale,1)),8px);
+    width:100%;height:auto;
+    min-height:0;box-sizing:border-box;overflow:hidden;
   `;
 
-  const weaponBoxSize = 'clamp(56px,14vw,84px)';
+  const weaponBoxSize = 'clamp(48px,calc(64px * var(--character-detail-scale,1)),84px)';
   const weaponImgWrap = document.createElement('div');
   weaponImgWrap.style.cssText = `
     flex-shrink:0;display:flex;align-items:center;justify-content:center;
@@ -10316,21 +10500,29 @@ function refreshCharacterSelectDetail(): void {
   const weaponTextCol = document.createElement('div');
   const weaponTextMarginTop = weapon === 'axe' ? '-6px' : '0';
   weaponTextCol.style.cssText = `
-    flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;margin-top:${weaponTextMarginTop};
+    flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;
+    gap:clamp(1px,calc(2px * var(--character-detail-scale,1)),3px);
+    margin-top:${weaponTextMarginTop};overflow:hidden;
   `;
 
   const weaponNameEl = document.createElement('div');
-  weaponNameEl.style.cssText = detailFont('clamp(9px,2.2vw,12px)', 'font-weight:bold;');
+  weaponNameEl.style.cssText = detailFont('clamp(9px,calc(12px * var(--character-detail-scale,1)),14px)', 'font-weight:bold;line-height:1.2;flex:0 0 auto;');
   weaponNameEl.textContent = t(`upgrade.weapon.${weapon}`);
   weaponTextCol.appendChild(weaponNameEl);
 
   const weaponDescEl = document.createElement('p');
-  weaponDescEl.style.cssText = detailFont('clamp(8px,1.9vw,10px)', 'font-weight:bold;margin-top:1px;margin-bottom:0;');
+  weaponDescEl.style.cssText = detailFont(
+    'clamp(8px,calc(10px * var(--character-detail-scale,1)),12px)',
+    'font-weight:bold;line-height:1.22;margin-top:1px;margin-bottom:0;flex:0 1 auto;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;',
+  );
   weaponDescEl.textContent = t(`upgrade.weapon.${weapon}_desc`);
   weaponTextCol.appendChild(weaponDescEl);
 
   const weaponStatsEl = document.createElement('div');
-  weaponStatsEl.style.cssText = detailFont('clamp(7px,1.7vw,9px)', 'display:flex;flex-direction:column;gap:0;');
+  weaponStatsEl.style.cssText = detailFont(
+    'clamp(7px,calc(9px * var(--character-detail-scale,1)),10.5px)',
+    'display:flex;flex-direction:column;gap:0;line-height:1.18;min-height:0;overflow:hidden;',
+  );
   for (const line of formatWeaponStatLines(weapon)) {
     const row = document.createElement('div');
     row.textContent = line;

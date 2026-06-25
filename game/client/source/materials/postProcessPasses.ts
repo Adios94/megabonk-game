@@ -540,7 +540,7 @@ export class FinalCompositePass extends Pass {
     private readonly renderer: THREE.WebGLRenderer,
     w: number,
     h: number,
-    opts: { outlineTapScale: number },
+    opts: { outlineThickness: number; outlineTapScale: number },
   ) {
     super();
     this.needsSwap = false;
@@ -552,7 +552,7 @@ export class FinalCompositePass extends Pass {
         uResolution: { value: new THREE.Vector2(w, h) },
         uCameraNear: { value: camera.near },
         uCameraFar: { value: camera.far },
-        uThickness: { value: 1.5 },
+        uThickness: { value: opts.outlineThickness },
         uOutlineAlpha: { value: 0.85 },
         uOutlineTapScale: { value: opts.outlineTapScale },
         uExposure: { value: renderer.toneMappingExposure },

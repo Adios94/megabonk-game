@@ -939,6 +939,7 @@ const HUD_RELIC_BAR_MIN_HEIGHT = 'clamp(28px,7.5vw,34px)';
 const HUD_WEAPON_SLOT_SIZE = 'clamp(22px,6.4vw,28px)';
 /** 局内典籍槽尺寸，与武器槽保持一致。 */
 const HUD_TOME_SLOT_SIZE = HUD_WEAPON_SLOT_SIZE;
+const BACKPACK_ICONS_PER_ROW = 5;
 const HUD_QUEST_TRACK_WIDTH = 'min(38vw,180px)';
 const HUD_QUEST_TRACK_FONT = 'clamp(6px,1.5vw,8px)';
 /** 局内连击提示缩放（相对原始字号） */
@@ -952,6 +953,12 @@ const SILVER_BADGE_ICON_SIZE = 'clamp(22px,6vw,28px)';
 const SILVER_BADGE_PILL_HEIGHT = 'clamp(16px,4.2vw,20px)';
 /** 底框左缘伸入图标水平中心（约为图标宽度一半） */
 const SILVER_BADGE_PILL_OVERLAP = 'clamp(11px,3vw,14px)';
+
+function backpackRowMaxWidth(slotSizeCss: string, gapCss: string, slots = BACKPACK_ICONS_PER_ROW): string {
+  const slotTerms = Array.from({ length: slots }, () => slotSizeCss).join(' + ');
+  const gapTerms = Array.from({ length: Math.max(0, slots - 1) }, () => gapCss).join(' + ');
+  return gapTerms ? `calc(${slotTerms} + ${gapTerms})` : `calc(${slotTerms})`;
+}
 
 function createSilverBadge(count: number, prefix = ''): HTMLDivElement {
   const badge = document.createElement('div');
@@ -3216,6 +3223,10 @@ export class GameScene {
   private bondSlotsContainer!: HTMLDivElement;
   private itemTooltip: HTMLDivElement | null = null;
   private itemTooltipContent = new WeakMap<HTMLElement, string>();
+  /** 触屏点击 tooltip（局内 HUD）：当前锚定的图标元素，用于「再点同图标关闭 / 点别的图标切换」判定。 */
+  private touchTooltipTarget: HTMLElement | null = null;
+  /** 触屏 tooltip 的 1.5s 自动关闭计时器。 */
+  private touchTooltipTimer: number | null = null;
   private bossHpContainer!: HTMLDivElement;
   private bossHpBarInner!: HTMLImageElement;
   private bossNameLabel!: HTMLDivElement;
@@ -4652,7 +4663,7 @@ export class GameScene {
     // Weapon slots (6 total: 5 base + 1 lockable)
     this.weaponSlotsContainer = document.createElement('div');
     this.weaponSlotsContainer.dataset.cameraBlock = 'true';
-    this.weaponSlotsContainer.style.cssText = 'display:flex;gap:3px;flex-wrap:wrap;max-width:min(54vw,300px);pointer-events:auto;';
+    this.weaponSlotsContainer.style.cssText = `display:flex;gap:3px;flex-wrap:wrap;max-width:${backpackRowMaxWidth(HUD_WEAPON_SLOT_SIZE, '3px')};pointer-events:auto;`;
     topLeft.appendChild(this.weaponSlotsContainer);
 
     // Quest track (panel bg + text; left icon is baked into the image)
@@ -4749,7 +4760,7 @@ export class GameScene {
     // Row 2: tome stack (newest tome appended at the right, older shift left)
     this.tomesSlotsContainer = document.createElement('div');
     this.tomesSlotsContainer.dataset.cameraBlock = 'true';
-    this.tomesSlotsContainer.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;max-width:min(60vw,260px);justify-content:flex-end;pointer-events:auto;';
+    this.tomesSlotsContainer.style.cssText = `display:flex;gap:4px;flex-wrap:wrap;max-width:${backpackRowMaxWidth(HUD_TOME_SLOT_SIZE, '4px')};justify-content:flex-end;pointer-events:auto;`;
     topRight.appendChild(this.tomesSlotsContainer);
 
     this.hudContainer.appendChild(topRight);
@@ -4771,12 +4782,12 @@ export class GameScene {
     this.consumableBuffsContainer = document.createElement('div');
     this.consumableBuffsContainer.dataset.cameraBlock = 'true';
     this.consumableBuffsContainer.style.cssText = 'display:flex;gap:6px;align-items:flex-end;pointer-events:auto;';
-    this.onConsumableTapCapture = (e: PointerEvent) => this.handleConsumableTapCapture(e);
+    this.onConsumableTapCapture = (e: PointerEvent) => this.handleHudItemTapCapture(e);
     window.addEventListener('pointerdown', this.onConsumableTapCapture, { capture: true });
     this.buffRow.appendChild(this.consumableBuffsContainer);
     this.bondSlotsContainer = document.createElement('div');
     this.bondSlotsContainer.dataset.cameraBlock = 'true';
-    this.bondSlotsContainer.style.cssText = 'display:flex;gap:6px;align-items:flex-end;justify-content:flex-end;flex-wrap:wrap;max-width:60vw;pointer-events:auto;';
+    this.bondSlotsContainer.style.cssText = `display:flex;gap:6px;align-items:flex-end;justify-content:flex-end;flex-wrap:wrap;max-width:${backpackRowMaxWidth(HUD_WEAPON_SLOT_SIZE, '6px')};pointer-events:auto;`;
     this.buffRow.appendChild(this.bondSlotsContainer);
     bottomGroup.appendChild(this.buffRow);
 
@@ -4817,9 +4828,10 @@ export class GameScene {
     this.bondDetailOverlay.style.cssText = `
       position:fixed;left:0;bottom:0;display:none;z-index:240;pointer-events:auto;
       max-width:min(320px,calc(100vw - 24px));padding:10px 12px;border-radius:10px;
-      background:linear-gradient(180deg,rgba(18,18,32,0.97),rgba(8,8,16,0.97));
+      background:linear-gradient(180deg,rgba(18,18,32,0.62),rgba(8,8,16,0.62));
       border:1px solid rgba(255,255,255,0.18);box-shadow:0 12px 34px rgba(0,0,0,0.6);
       ${uiPlainText('font-size:12px;line-height:1.35;')}
+      backdrop-filter:blur(6px);
     `;
     document.body.appendChild(this.bondDetailOverlay);
 
@@ -4827,16 +4839,16 @@ export class GameScene {
     this.itemTooltip.style.cssText = `
       position:fixed;left:0;top:0;display:none;z-index:650;pointer-events:none;
       max-width:min(320px,calc(100vw - 24px));padding:10px 12px;border-radius:10px;
-      background:linear-gradient(180deg,rgba(18,18,32,0.96),rgba(8,8,16,0.96));
+      background:linear-gradient(180deg,rgba(18,18,32,0.62),rgba(8,8,16,0.62));
       border:1px solid rgba(255,255,255,0.18);box-shadow:0 12px 34px rgba(0,0,0,0.55);
       ${uiPlainText('font-size:12px;line-height:1.35;')}
-      backdrop-filter:blur(4px);
+      backdrop-filter:blur(6px);
     `;
     document.body.appendChild(this.itemTooltip);
-    this.installItemTooltipHandlers(this.weaponSlotsContainer);
-    this.installItemTooltipHandlers(this.tomesSlotsContainer);
-    this.installItemTooltipHandlers(this.relicSlotsContainer);
-    this.installItemTooltipHandlers(this.bondSlotsContainer);
+    this.installItemTooltipHandlers(this.weaponSlotsContainer, { touchTap: true });
+    this.installItemTooltipHandlers(this.tomesSlotsContainer, { touchTap: true });
+    this.installItemTooltipHandlers(this.relicSlotsContainer, { touchTap: true });
+    this.installItemTooltipHandlers(this.bondSlotsContainer, { touchTap: true });
 
     // Boss HP bar (top-center, hidden by default)
     this.bossHpContainer = document.createElement('div');
@@ -8696,25 +8708,168 @@ export class GameScene {
     slot.appendChild(secs);
     this.consumableSecsEl = secs;
 
-    // 点击拦截统一走 window 捕获阶段（handleConsumableTapCapture），此处不再单独绑定。
+    // 点击拦截统一走 window 捕获阶段（handleHudItemTapCapture），此处不再单独绑定。
     this.consumableBuffsContainer.appendChild(slot);
   }
 
   /**
-   * window 捕获阶段命中检测：若点击落在道具槽矩形内，则在摇杆触控区接管之前拦截，
-   * 切换道具说明浮层（触屏点击图标弹窗）。
+   * window 捕获阶段命中检测（仅局内触屏）：在摇杆 / 镜头触控区接管之前拦截，
+   * 统一处理所有道具图标（武器 / 典籍 / 羁绊 / 遗物 / 消耗品）的点击说明浮层。
+   *
+   * 规则：点击图标 → 在图标附近锚定弹出说明（1.5s 自动消失，不可拖动）；
+   * 1.5s 内再次点击同一图标 → 立即关闭；点击另一图标 → 立即切换到新图标说明；
+   * 点击空白处不关闭（仅等待计时结束）。鼠标交互保持原 hover 逻辑，不走此分支。
    */
-  private handleConsumableTapCapture(e: PointerEvent): void {
-    if (!this.touchControlsEnabled) return;
-    const slot = this.consumableBuffsContainer?.firstElementChild as HTMLElement | null;
-    if (!slot) return;
-    const r = slot.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) return;
-    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-    this.toggleConsumableTooltip(slot, this.consumableSlotSig as ConsumableId);
+  private handleHudItemTapCapture(e: PointerEvent): void {
+    if (e.pointerType === 'mouse') return;     // 鼠标走 hover / 点击逻辑
+    if (!this.touchControlsEnabled) return;     // 仅局内（模态打开时禁用）
+
+    // 1) 消耗品：独立浮层（其槽位可能被摇杆触控区覆盖，按矩形命中）。
+    const consumableSlot = this.consumableBuffsContainer?.firstElementChild as HTMLElement | null;
+    if (consumableSlot && this.consumableSlotSig && this.pointInElement(e.clientX, e.clientY, consumableSlot)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      this.toggleConsumableTooltip(consumableSlot, this.consumableSlotSig as ConsumableId);
+      return;
+    }
+
+    // 2) 其它道具槽（武器 / 典籍 / 羁绊 / 遗物）：共享锚定 tooltip。
+    const slot = this.findHudTooltipSlotAt(e.clientX, e.clientY);
+    if (slot) {
+      const html = this.itemTooltipContent.get(slot);
+      if (html) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        this.handleTouchTooltipTap(slot, html);
+      }
+      return;
+    }
+    // 命中空白：不关闭已显示的说明（仅等待 1.5s 计时），也不拦截原始手势。
+  }
+
+  private pointInElement(x: number, y: number, el: HTMLElement): boolean {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  }
+
+  /** 命中点处最上层、且属于局内 HUD 4 个容器之一的带 tooltip 图标槽。 */
+  private findHudTooltipSlotAt(x: number, y: number): HTMLElement | null {
+    const stack = document.elementsFromPoint(x, y);
+    for (const el of stack) {
+      const slot = (el as HTMLElement).closest?.('[data-tooltip-item]') as HTMLElement | null;
+      if (slot && this.isInGameTooltipContainer(slot)) return slot;
+    }
+    return null;
+  }
+
+  private isInGameTooltipContainer(el: HTMLElement): boolean {
+    return this.weaponSlotsContainer.contains(el)
+      || this.tomesSlotsContainer.contains(el)
+      || this.relicSlotsContainer.contains(el)
+      || this.bondSlotsContainer.contains(el);
+  }
+
+  /** 触屏点击图标：再点同一图标→关闭；点别的图标→切换；否则锚定弹出（1.5s）。 */
+  private handleTouchTooltipTap(target: HTMLElement, html: string): void {
+    // 同一时刻只允许一个说明框：关闭消耗品独立浮层。
+    this.hideConsumableTooltip();
+    if (this.touchTooltipTarget === target) {
+      this.hideTouchItemTooltip();
+      return;
+    }
+    this.showTouchItemTooltip(target, html);
+  }
+
+  /**
+   * 局外暂停 / 结算背包的触屏点击：
+   * - 点击图标：再点同图标→关闭；点别的图标→切换；否则锚定弹出（**不自动消失**）。
+   * - 点击说明框以外的任何地方：关闭（说明框 pointer-events:none，用矩形命中判定豁免）。
+   */
+  private handleOverlayTooltipTap(event: PointerEvent, container: HTMLElement): void {
+    const target = (event.target as HTMLElement).closest('[data-tooltip-item]') as HTMLElement | null;
+    if (target && container.contains(target)) {
+      const html = this.itemTooltipContent.get(target);
+      if (html) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (this.touchTooltipTarget === target) {
+          this.hideTouchItemTooltip();
+        } else {
+          this.showOverlayItemTooltip(target, html);
+        }
+        return;
+      }
+    }
+    // 点击非图标处：若点在说明框矩形内则保留，否则关闭。
+    if (this.touchTooltipTarget) {
+      if (
+        this.itemTooltip &&
+        this.itemTooltip.style.display !== 'none' &&
+        this.pointInElement(event.clientX, event.clientY, this.itemTooltip)
+      ) {
+        return;
+      }
+      this.hideTouchItemTooltip();
+    }
+  }
+
+  /** 暂停 / 结算背包：锚定弹出说明框，无自动消失计时器。 */
+  private showOverlayItemTooltip(target: HTMLElement, html: string): void {
+    if (!this.itemTooltip) return;
+    this.clearTouchTooltipTimer();
+    if (this.itemTooltip.innerHTML !== html) this.itemTooltip.innerHTML = html;
+    this.itemTooltip.style.display = 'block';
+    this.anchorItemTooltipTo(target);
+    this.touchTooltipTarget = target;
+  }
+
+  private showTouchItemTooltip(target: HTMLElement, html: string): void {
+    if (!this.itemTooltip) return;
+    this.clearTouchTooltipTimer();
+    if (this.itemTooltip.innerHTML !== html) this.itemTooltip.innerHTML = html;
+    this.itemTooltip.style.display = 'block';
+    this.anchorItemTooltipTo(target);
+    this.touchTooltipTarget = target;
+    this.touchTooltipTimer = window.setTimeout(() => {
+      this.touchTooltipTimer = null;
+      this.hideTouchItemTooltip();
+    }, 1500);
+  }
+
+  private hideTouchItemTooltip(): void {
+    this.clearTouchTooltipTimer();
+    this.touchTooltipTarget = null;
+    this.hideItemTooltip();
+  }
+
+  private clearTouchTooltipTimer(): void {
+    if (this.touchTooltipTimer !== null) {
+      clearTimeout(this.touchTooltipTimer);
+      this.touchTooltipTimer = null;
+    }
+  }
+
+  /** 把 tooltip 锚定到图标四周合适位置：优先上方，空间不足翻到下方，左右夹取入屏；不跟随手指。 */
+  private anchorItemTooltipTo(target: HTMLElement): void {
+    if (!this.itemTooltip) return;
+    const margin = 8;
+    const gap = 8;
+    const rect = target.getBoundingClientRect();
+    const tip = this.itemTooltip.getBoundingClientRect();
+    let left = rect.left + rect.width / 2 - tip.width / 2;
+    left = Math.max(margin, Math.min(left, window.innerWidth - tip.width - margin));
+    let top = rect.top - tip.height - gap;
+    if (top < margin) {
+      top = rect.bottom + gap;
+      if (top + tip.height > window.innerHeight - margin) {
+        top = Math.max(margin, window.innerHeight - tip.height - margin);
+      }
+    }
+    this.itemTooltip.style.left = `${Math.round(left)}px`;
+    this.itemTooltip.style.top = `${Math.round(top)}px`;
   }
 
   /** 点击道具图标：浮层未显示则在图标上方弹出（1.5s 后自动消失）；已显示则立即关闭。 */
@@ -8728,9 +8883,12 @@ export class GameScene {
 
   private showConsumableTooltip(slot: HTMLElement, id: ConsumableId): void {
     this.hideConsumableTooltip();
+    // 同一时刻只允许一个说明框：关闭其它道具的共享锚定 tooltip。
+    this.hideTouchItemTooltip();
     const el = document.createElement('div');
-    el.style.cssText = `position:fixed;z-index:320;max-width:min(72vw,240px);background:rgba(20,12,34,0.96);border:1px solid rgba(180,120,255,0.6);border-radius:8px;padding:7px 10px;box-shadow:0 4px 16px rgba(0,0,0,0.55);pointer-events:none;${UI_PLAIN_TEXT_STYLE}`;
-    el.innerHTML = `<div style="font-weight:bold;color:#f3e9ff;font-size:clamp(11px,3vw,13px);margin-bottom:3px;">${escapeTooltipText(t(`consumable.${id}`))}</div><div style="color:#cdb7ff;font-size:clamp(10px,2.6vw,12px);line-height:1.4;">${escapeTooltipText(t(`consumable.${id}_desc`))}</div>`;
+    const accent = `#${(CONSUMABLE_COLORS[id] ?? 0xcc66ff).toString(16).padStart(6, '0')}`;
+    el.style.cssText = `position:fixed;z-index:320;max-width:min(72vw,240px);background:linear-gradient(180deg,rgba(18,18,32,0.62),rgba(8,8,16,0.62));border:1px solid rgba(255,255,255,0.18);border-radius:10px;padding:10px 12px;box-shadow:0 12px 34px rgba(0,0,0,0.55);pointer-events:none;backdrop-filter:blur(6px);${UI_PLAIN_TEXT_STYLE}`;
+    el.innerHTML = `<div style="font-weight:bold;color:${accent};font-size:clamp(11px,3vw,13px);margin-bottom:3px;">${escapeTooltipText(t(`consumable.${id}`))}</div><div style="color:#ffffff;font-size:clamp(10px,2.6vw,12px);line-height:1.4;">${escapeTooltipText(t(`consumable.${id}_desc`))}</div>`;
     document.body.appendChild(el);
     this.consumableTooltipEl = el;
 
@@ -8866,8 +9024,25 @@ export class GameScene {
     }
   }
 
-  private installItemTooltipHandlers(container: HTMLElement): void {
+  /**
+   * 给容器内带 `data-tooltip-item` 的图标安装 tooltip 交互。
+   * - 鼠标：hover 跟随显示（局内 / 局外暂停·结算面板通用）。
+   * - `touchTap`（仅局内 HUD）：触屏点击不在此处理，统一交给 `handleHudItemTapCapture`
+   *   做「锚定弹出 / 1.5s 自动消失 / 再点同图标关闭 / 点别的图标切换」，且严禁拖动跟随。
+   * - `overlayTap`（仅局外暂停 / 结算背包）：触屏点击在此处理，锚定弹出且**不自动消失**；
+   *   再点同图标 / 点别的图标 / 点说明框以外的任何地方都关闭，严禁拖动跟随。
+   */
+  private installItemTooltipHandlers(
+    container: HTMLElement,
+    options: { touchTap?: boolean; overlayTap?: boolean } = {},
+  ): void {
+    const touchTap = options.touchTap === true;
+    const overlayTap = options.overlayTap === true;
+    const tapManaged = touchTap || overlayTap;
+
     container.addEventListener('mousemove', (event) => {
+      // 触屏锚定 tooltip 显示期间忽略模拟 mouse 事件，避免覆盖锚定位置。
+      if (tapManaged && this.touchTooltipTarget) return;
       const target = (event.target as HTMLElement).closest('[data-tooltip-item]') as HTMLElement | null;
       if (!target || !container.contains(target)) {
         this.hideItemTooltip();
@@ -8881,6 +9056,13 @@ export class GameScene {
       this.showItemTooltip(html, event);
     });
     container.addEventListener('pointerdown', (event) => {
+      // 局内触屏点击由 handleHudItemTapCapture（window 捕获阶段）统一处理。
+      if (touchTap && event.pointerType !== 'mouse') return;
+      // 局外暂停 / 结算背包：触屏点击在此做常驻锚定 tooltip。
+      if (overlayTap && event.pointerType !== 'mouse') {
+        this.handleOverlayTooltipTap(event, container);
+        return;
+      }
       const target = (event.target as HTMLElement).closest('[data-tooltip-item]') as HTMLElement | null;
       if (!target || !container.contains(target)) {
         this.hideItemTooltip();
@@ -8894,13 +9076,23 @@ export class GameScene {
       this.showItemTooltipAt(html, event.clientX, event.clientY);
     });
     container.addEventListener('pointermove', (event) => {
+      // 触屏 tooltip 严禁拖动跟随。
+      if (tapManaged && event.pointerType !== 'mouse') return;
+      if (tapManaged && this.touchTooltipTarget) return;
       if (!this.itemTooltip || this.itemTooltip.style.display === 'none') return;
       const target = (event.target as HTMLElement).closest('[data-tooltip-item]') as HTMLElement | null;
       if (!target || !container.contains(target)) return;
       this.moveItemTooltipTo(event.clientX, event.clientY);
     });
-    container.addEventListener('pointercancel', () => this.hideItemTooltip());
-    container.addEventListener('mouseleave', () => this.hideItemTooltip());
+    container.addEventListener('pointercancel', (event) => {
+      // 触屏 tooltip 的关闭由计时器（局内）/ 显式点击（局外）控制，不在 pointercancel 关闭。
+      if (tapManaged && event.pointerType !== 'mouse') return;
+      this.hideItemTooltip();
+    });
+    container.addEventListener('mouseleave', () => {
+      if (tapManaged && this.touchTooltipTarget) return;
+      this.hideItemTooltip();
+    });
   }
 
   private setItemTooltip(el: HTMLElement, html: string): void {
@@ -8969,7 +9161,6 @@ export class GameScene {
 
     return `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-        <div style="width:7px;height:24px;border-radius:999px;background:${args.accent};box-shadow:0 0 12px ${args.accent}aa;"></div>
         <div>
           <div style="font-size:14px;font-weight:800;display:flex;align-items:center;gap:6px;${UI_PLAIN_TEXT_STYLE}">${args.iconSrc ? iconImgHtml(args.iconSrc, 18) : ''}<span>${escapeTooltipText(args.title)}</span></div>
           ${args.subtitle ? `<div style="font-size:10px;color:${args.accent};font-weight:700;letter-spacing:0.4px;">${escapeTooltipText(args.subtitle)}</div>` : ''}
@@ -9182,7 +9373,6 @@ export class GameScene {
 
     return `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-        <div style="width:7px;height:24px;border-radius:999px;background:${tierColor};box-shadow:0 0 12px ${tierColor}aa;"></div>
         <div>
           <div style="font-size:14px;font-weight:800;display:flex;align-items:center;gap:6px;${UI_PLAIN_TEXT_STYLE}">${iconImgHtml(bondIconSrc(bondId), 18)}<span>${escapeTooltipText(name)}</span></div>
           <div style="font-size:10px;color:${tierColor};font-weight:700;letter-spacing:0.4px;">${escapeTooltipText(tierName)} · T${tier}</div>
@@ -9497,7 +9687,7 @@ export class GameScene {
     const overlay = document.createElement('div');
     overlay.dataset.cameraBlock = 'true';
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:400;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
-    this.installItemTooltipHandlers(overlay);
+    this.installItemTooltipHandlers(overlay, { overlayTap: true });
 
     const sideMaxH = `calc(100% - ${sideInset * 2}px)`;
     // 侧栏锚定屏幕上方：标题常驻顶部，内容从上往下排，不做垂直居中。
@@ -9670,6 +9860,7 @@ export class GameScene {
     gsapAnimations.cancelAnimation('new-quest-done-pulse');
     this.gameOverPanel?.remove();
     this.gameOverPanel = null;
+    this.hideTouchItemTooltip();
     this.cameraOrbit.setEnabled(true);
     this.syncInGameTouchControlsEnabled();
   }
@@ -9684,7 +9875,10 @@ export class GameScene {
       this.pausePanel,
     );
     this.touchControlsEnabled = !modalOpen;
-    if (modalOpen) this.hideConsumableTooltip();
+    if (modalOpen) {
+      this.hideConsumableTooltip();
+      this.hideTouchItemTooltip();
+    }
     setInGameTouchControlsEnabled(!modalOpen, this.platformInput.getMobileInput());
   }
 
@@ -9755,7 +9949,7 @@ export class GameScene {
   private hidePauseMenu(): void {
     this.pausePanel?.remove();
     this.pausePanel = null;
-    this.hideItemTooltip();
+    this.hideTouchItemTooltip();
     this.syncInGameTouchControlsEnabled();
   }
 
@@ -9776,7 +9970,7 @@ export class GameScene {
     const overlay = document.createElement('div');
     overlay.dataset.cameraBlock = 'true';
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:420;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
-    this.installItemTooltipHandlers(overlay);
+    this.installItemTooltipHandlers(overlay, { overlayTap: true });
 
     const sideMaxH = `calc(100% - ${sideInset * 2}px)`;
     const sidePos = `position:absolute;top:${sideInset}px;width:${sideW}px;max-width:calc(50% - ${centerHalf + sideGap}px - 4px);max-height:${sideMaxH};overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;align-items:stretch;`;
@@ -9926,6 +10120,7 @@ export class GameScene {
     const cellW = compact ? HUD_WEAPON_SLOT_SIZE : `clamp(${uiPx(34)}px,9vmin,${uiPx(40)}px)`;
     const boxSize = compact ? HUD_WEAPON_SLOT_SIZE : `clamp(${uiPx(32)}px,8.5vmin,${uiPx(38)}px)`;
     const iconFont = compact ? 'clamp(10px,2.8vw,12px)' : `clamp(${uiPx(13)}px,3.6vmin,${uiPx(17)}px)`;
+    const rowGap = compact ? '3px' : `clamp(4px,1.2vmin,8px)`;
 
     const section = document.createElement('div');
     section.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
@@ -9936,7 +10131,7 @@ export class GameScene {
     section.appendChild(label);
 
     const row = document.createElement('div');
-    row.style.cssText = `display:flex;flex-wrap:wrap;gap:${compact ? '3px' : `clamp(4px,1.2vmin,8px)`};`;
+    row.style.cssText = `display:flex;flex-wrap:wrap;gap:${rowGap};max-width:${backpackRowMaxWidth(cellW, rowGap)};`;
 
     if (items.length === 0) {
       const slots = Math.max(1, emptySlotCount);

@@ -58,9 +58,9 @@ import { tickProjectiles } from './systems/projectiles.ts';
 import { processCollisions } from './systems/collisions.ts';
 import { tickStatusEffects } from './systems/statusEffects.ts';
 import { tickAreaEffects } from './systems/areaEffects.ts';
-import { processDeaths, tickPickups, tickThorns } from './systems/pickups.ts';
+import { processDeaths, tickPickups, tickThorns, recyclePickupArrays } from './systems/pickups.ts';
 import { recordWeaponDamage, refreshAllWeaponDps } from './systems/weaponDamageStats.ts';
-import { applyPlayerHit, tickConsumableEffects, tickConsumablePickups } from './systems/consumables.ts';
+import { applyPlayerHit, tickConsumableEffects, tickConsumablePickups, recycleConsumablePickups } from './systems/consumables.ts';
 import { tickSpawning, checkBossSpawn, getBossOvertimeGrowthContext } from './systems/spawning.ts';
 import { tickAltars, generateAltars } from './systems/altars.ts';
 import { tickChests, generateChests, nextChestId, nextChestRespawnDelay } from './systems/chests.ts';
@@ -213,9 +213,9 @@ export class GameInstance {
     state.enemies = [];
     state.projectiles = [];
     state.areaEffects = [];
-    state.pickups = [];
-    state.consumablePickups = [];
-    state.goldMotes = [];
+    // pickups / goldMotes / consumablePickups 归还对象池后清空（重开时复用上一局对象壳）
+    recyclePickupArrays(state);
+    recycleConsumablePickups(state);
     state.damageEvents = [];
     state.bondVfxEvents = [];
     state.levelUpCompensationEvents = [];

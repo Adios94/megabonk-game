@@ -3,7 +3,10 @@ import type { Engine } from './types.ts';
 
 const DPS_WINDOW_SECONDS = 5;
 
-type DamageWindow = { times: number[]; damages: number[] };
+type DamageWindow = { times: number[]; damages: number[]; head: number };
+
+/** head 段攒到这么多条才触发一次 copyWithin 压实（平摊掉前移成本）。 */
+const WINDOW_COMPACT_THRESHOLD = 64;
 
 /** 取（或新建）对应武器/羁绊的滚动窗口；并行数组结构避免 per-hit 对象 alloc。 */
 function getWindow(
@@ -12,41 +15,57 @@ function getWindow(
 ): DamageWindow {
   let win = engine.weaponDamageWindows[key];
   if (!win) {
-    win = { times: [], damages: [] };
+    win = { times: [], damages: [], head: 0 };
     engine.weaponDamageWindows[key] = win;
   }
   return win;
 }
 
-/** 滑动窗口：丢弃 cutoff 之前的条目并返回剩余 damage 总和。 */
+/**
+ * 滑动窗口：推进 head 游标越过 cutoff 之前的过期条目，返回剩余 damage 总和。
+ * 用游标代替每次命中 shift()（O(n) 重排 + 数组 backing 抖动）；过期前缀攒够后用
+ * copyWithin 一次性前移压实（无分配），避免数组无限增长。times 按 record 顺序单调递增。
+ */
 function sumRecentDamage(win: DamageWindow, cutoff: number): number {
   const { times, damages } = win;
-  // 清掉过期 head 段；times 单调递增（按 record 顺序写入）。
-  // shift() O(n)，但窗口长度小（5s × 命中频率，几十到几百），可接受。
-  while (times.length > 0 && times[0] < cutoff) {
-    times.shift();
-    damages.shift();
-  }
+  const len = times.length;
+  let head = win.head;
+  while (head < len && times[head] < cutoff) head++;
+
   let sum = 0;
-  for (let i = 0; i < damages.length; i++) sum += damages[i];
+  for (let i = head; i < len; i++) sum += damages[i];
+
+  if (head >= WINDOW_COMPACT_THRESHOLD && head * 2 > len) {
+    const remaining = len - head;
+    times.copyWithin(0, head);
+    times.length = remaining;
+    damages.copyWithin(0, head);
+    damages.length = remaining;
+    win.head = 0;
+  } else {
+    win.head = head;
+  }
   return sum;
 }
 
 function getWeaponStat(engine: Engine, weaponType: WeaponType): WeaponDamageStats {
-  let stat = engine.state.weaponDamageStats.find(s => s.weaponType === weaponType);
-  if (!stat) {
-    stat = { weaponType, killCount: 0, totalDamage: 0, dps: 0 };
-    engine.state.weaponDamageStats.push(stat);
+  // for 循环代替 .find(closure)：避免每次命中新建箭头闭包（密集战斗下是 GC churn 热点）。
+  const stats = engine.state.weaponDamageStats;
+  for (let i = 0; i < stats.length; i++) {
+    if (stats[i].weaponType === weaponType) return stats[i];
   }
+  const stat: WeaponDamageStats = { weaponType, killCount: 0, totalDamage: 0, dps: 0 };
+  stats.push(stat);
   return stat;
 }
 
 function getBondStat(engine: Engine, bondId: BondId): BondDamageStats {
-  let stat = engine.state.bondDamageStats.find(s => s.bondId === bondId);
-  if (!stat) {
-    stat = { bondId, killCount: 0, totalDamage: 0, dps: 0 };
-    engine.state.bondDamageStats.push(stat);
+  const stats = engine.state.bondDamageStats;
+  for (let i = 0; i < stats.length; i++) {
+    if (stats[i].bondId === bondId) return stats[i];
   }
+  const stat: BondDamageStats = { bondId, killCount: 0, totalDamage: 0, dps: 0 };
+  stats.push(stat);
   return stat;
 }
 

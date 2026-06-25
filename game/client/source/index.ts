@@ -3232,6 +3232,9 @@ export class GameScene {
   // 见 03:20 截图：mem 100↔178MB 78MB 振幅 / GC 10.9/min）。所有命名形如 _scratch* 的容器，
   // 使用前必 clear()，使用后允许任意键残留 —— 仅用作"本帧 active id 集合"短暂查询。
   private readonly _scratchEnemyAlive = new Set<number>();
+  // full-mesh 预算用：每帧把所有敌人到相机的 distSq 填进来排序，取第 N 近作为本帧 mesh↔impostor 切换阈值。
+  // 复用同一 Float64Array（不足时翻倍扩容），sort 走 subarray 视图，避免每帧分配大数组。
+  private _fullMeshDistScratch = new Float64Array(256);
   private readonly _scratchSilverActive = new Set<number>();
   private readonly _scratchGoldActive = new Set<number>();
   private readonly _scratchConsumableActive = new Set<number>();
@@ -5871,7 +5874,8 @@ export class GameScene {
     this.hitFlash.cacheBases(root);
   }
   private applyObjectHitFlashTint(root: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
-    this.hitFlash.applyTint(root, weaponType, hitFlashColor);
+    // 敌人走共享基础材质 + 染色材质池的 swap 版（不再每只私有 clone）。
+    this.hitFlash.applyEnemyTint(root, weaponType, hitFlashColor);
   }
   private setEnemyHitFlashTint(enemyId: number, obj: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
     this.hitFlash.setEnemyTint(enemyId, obj, weaponType, hitFlashColor);
@@ -5916,6 +5920,38 @@ export class GameScene {
 
     // 玩家坐标（敌人朝向用）只需每帧读一次，避免在循环内对每个敌人重复 getRenderState。
     const playerPos = this.session.getRenderState().player;
+
+    // ── full-mesh 预算：只让最近的 N 只怪用骨骼网格，其余近身怪也强制转 impostor。──
+    //    impostor 分支会 `continue` 跳过后面的 mixer.update + 蒙皮，因此该预算同时压住
+    //    渲染/蒙皮/动画三块 GC（后期怪海近身才是真正的分配大头）。
+    //    做法：算出第 budget 近的 distSq，与 impostorDistSq 取 min 作为本帧切换阈值——
+    //    主循环里原有的 `cullDistSq > 阈值` 判定无需改动逻辑形态，零额外每怪分支。
+    let effectiveImpostorDistSq = enemyImpostorDistSq;
+    const fullMeshBudget = this.renderProfile.enemyFullMeshBudget;
+    if (
+      this.renderProfile.enemyImpostorEnabled
+      && Number.isFinite(fullMeshBudget)
+      && enemies.length > fullMeshBudget
+    ) {
+      const n = enemies.length;
+      if (this._fullMeshDistScratch.length < n) {
+        let cap = this._fullMeshDistScratch.length;
+        while (cap < n) cap *= 2;
+        this._fullMeshDistScratch = new Float64Array(cap);
+      }
+      const dist = this._fullMeshDistScratch;
+      for (let i = 0; i < n; i++) {
+        const e = enemies[i];
+        const ddx = e.x - camX;
+        const ddy = (e.y + 1) - camY;
+        const ddz = e.z - camZ;
+        dist[i] = ddx * ddx + ddy * ddy + ddz * ddz;
+      }
+      // 升序排序前 n 个（typed array 数值排序，原地、无比较器分配）。
+      dist.subarray(0, n).sort();
+      const cutoffSq = dist[fullMeshBudget - 1];
+      if (cutoffSq < effectiveImpostorDistSq) effectiveImpostorDistSq = cutoffSq;
+    }
 
     // Track which enemy IDs are alive this frame（复用 scratch Set，避免每帧新建 / GC）
     const aliveIds = this._scratchEnemyAlive;
@@ -6000,15 +6036,17 @@ export class GameScene {
             obj = cloneSkeleton(model) as THREE.Object3D;
             // KayKit 角色：武器已烘焙进 SkinnedMesh（详见 scripts/blender/merge-kaykit.py），
             // 不再需要运行时挂载到 handslot.r/.l 骨。
-            this.prepareHitFlashMaterials(obj);
+            // 注意：敌人不再 clone 私有材质，直接共享模型的（已 toon 化的）基础材质——
+            // 受击染色改由 HitFlashSystem 在闪烁时"借料 swap"实现（见 applyEnemyTint）。
+            // 共享材质让 cloneSkeleton 出的新怪复用已编译 program，省掉后期成片的
+            // getParameters/getProgramCacheKey 分配（堆采样实测占比最高的一块）。
             // 首次创建：在 obj.userData 上建立 mixer/actions 缓存，未来池复用直接重用
             this.setupEnemyAnimationsFor(obj, enemy.id, enemy.type);
           } else {
-            // Fallback: colored box
+            // Fallback: colored box（同样共享自身材质，闪烁时借料 swap）。
             const geo = new THREE.BoxGeometry(0.9, 1.2, 0.9);
             const mat = new THREE.MeshToonMaterial({ color: ENEMY_COLORS[enemy.type] ?? 0x888888, gradientMap: toonGradientMap });
             obj = new THREE.Mesh(geo, mat);
-            this.prepareHitFlashMaterials(obj);
           }
           obj.name = `Enemy_${enemy.type}_${enemy.id}`;
           obj.userData['enemyType'] = enemy.type;
@@ -6055,7 +6093,7 @@ export class GameScene {
       if (
         this.renderProfile.enemyImpostorEnabled
         && this.enemyImpostorMesh
-        && cullDistSq > enemyImpostorDistSq
+        && cullDistSq > effectiveImpostorDistSq
         && !enemy.isMiniBoss
       ) {
         if (obj.visible) obj.visible = false;

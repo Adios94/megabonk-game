@@ -20,7 +20,7 @@
 import type { EnemyState } from '../types.ts';
 import type { Engine } from './types.ts';
 import { SpatialHash } from '../helpers/spatialHash.ts';
-import { tryMoveHorizontally } from './horizontalMove.ts';
+import { tryMoveHorizontally, type HorizontalMoveOptions, type MovePoint } from './horizontalMove.ts';
 
 /** 普通怪的分离半径（米）—— 比 ENEMY_RADIUS(0.4) 大一圈，把站桩同伴推到肉眼可见的间距。 */
 const SEPARATION_RADIUS_BASE = 0.65;
@@ -32,6 +32,9 @@ const SEPARATION_MAX_PUSH_PER_TICK = 0.25;
 const SEPARATION_MAX_Y_DELTA = 1.5;
 /** tryMoveHorizontally 的半径（与 _move.ts 的 ENEMY_RADIUS 一致，保持墙体阻挡口径相同）。 */
 const ENEMY_WALL_RADIUS = 0.4;
+// 复用的移动选项 / 落点 scratch：分离每 tick 每怪都跑，避免每次新建对象。结果立即写回 e.x/e.z。
+const SEP_MOVE_OPTS: HorizontalMoveOptions = { radius: ENEMY_WALL_RADIUS, includeClimb: true };
+const _sepOut: MovePoint = { x: 0, z: 0 };
 
 let separationHash: SpatialHash | null = null;
 /** 复用的 id → enemy 索引：按 tick 内的 enemies 快照填充，避免 query 后线性扫描。 */
@@ -125,10 +128,7 @@ export function tickEnemySeparation(engine: Engine): void {
     // 4) 走墙体阻挡（沿墙滑），避免被挤进墙里
     const desiredX = e.x + pushX;
     const desiredZ = e.z + pushZ;
-    const moved = tryMoveHorizontally(engine.geo, e.x, e.z, desiredX, desiredZ, e.y, {
-      radius: ENEMY_WALL_RADIUS,
-      includeClimb: true,
-    });
+    const moved = tryMoveHorizontally(engine.geo, e.x, e.z, desiredX, desiredZ, e.y, SEP_MOVE_OPTS, _sepOut);
     e.x = moved.x;
     e.z = moved.z;
   }

@@ -16,10 +16,13 @@ import type { BossState, EnemyState, WeaponType } from '../types.ts';
 import type { Engine } from './types.ts';
 import { onBossDefeated } from './altars.ts';
 import { spawnBossChests } from './chests.ts';
-import { tryMoveHorizontally } from './horizontalMove.ts';
+import { tryMoveHorizontally, type HorizontalMoveOptions, type MovePoint } from './horizontalMove.ts';
 
 /** 敌人横向碰撞半径（与 _move.ts 一致）。 */
 const ENEMY_RADIUS = 0.4;
+// 击退每次命中每怪都可能触发，复用选项 / 落点 scratch（结果立即写回 enemy.x/z）。
+const KNOCKBACK_MOVE_OPTS: HorizontalMoveOptions = { radius: ENEMY_RADIUS, includeClimb: true };
+const _knockbackOut: MovePoint = { x: 0, z: 0 };
 const BOSS_XP_REWARD = 100;
 const BOSS_XP_PICKUP_OFFSET_Y = 0.2;
 
@@ -198,10 +201,7 @@ export function applyKnockback(
   const targetX = Math.max(-halfMap, Math.min(halfMap, enemy.x + dir.x * force));
   const targetZ = Math.max(-halfMap, Math.min(halfMap, enemy.z + dir.z * force));
   // 击退尊重墙体：撞墙停 / 沿墙滑，不再把怪塞进墙里（gargoyle 飞行也按此，影响可忽略）。
-  const moved = tryMoveHorizontally(engine.geo, enemy.x, enemy.z, targetX, targetZ, enemy.y, {
-    radius: ENEMY_RADIUS,
-    includeClimb: true,
-  });
+  const moved = tryMoveHorizontally(engine.geo, enemy.x, enemy.z, targetX, targetZ, enemy.y, KNOCKBACK_MOVE_OPTS, _knockbackOut);
   enemy.x = moved.x;
   enemy.z = moved.z;
 }

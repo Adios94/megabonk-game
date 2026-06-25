@@ -47,6 +47,13 @@ export type PlatformRenderProfile = {
   enemyImpostorCullDistance: LodRange;
   /** Impostor 朝向更新帧步长：怪多时取大值降频。 */
   enemyImpostorUpdateStride: LodRange;
+  /**
+   * 全身骨骼网格数量预算：每帧最多让最近的 N 只怪用 mesh，其余即便在 impostor 距离内也强制转 impostor。
+   * 这是后期“怪海近身”时 GC/CPU 的真正大头来源——蒙皮网格的 mixer.update + 骨骼变换分配随 full-mesh 数量线性增长。
+   * 转 impostor 的怪会跳过 mixer.update，因此该预算同时压住渲染、蒙皮、动画三块分配。
+   * 桌面档设 Infinity（不限）。
+   */
+  enemyFullMeshBudget: number;
   enemyHitReactEnabled: boolean;
   enemyHitFxDistance: LodRange;
   enemyMarkerDistance: LodRange;
@@ -169,6 +176,8 @@ function buildProfile(): PlatformRenderProfile {
       enemyImpostorDistance: { loose: 22, tight: 10 },
       enemyImpostorCullDistance: { loose: 34, tight: 18 },
       enemyImpostorUpdateStride: { loose: 2, tight: 4 },
+      // 最多 14 只全身骨骼网格；怪海时多出来的近身怪走 impostor，省下蒙皮动画的 GC/CPU。
+      enemyFullMeshBudget: 14,
       enemyHitReactEnabled: false,
       enemyHitFxDistance: { loose: 12, tight: 6 },
       enemyMarkerDistance: { loose: 15, tight: 8 },
@@ -210,6 +219,7 @@ function buildProfile(): PlatformRenderProfile {
     enemyImpostorDistance: fixedRange(Number.POSITIVE_INFINITY),
     enemyImpostorCullDistance: fixedRange(Number.POSITIVE_INFINITY),
     enemyImpostorUpdateStride: fixedRange(1),
+    enemyFullMeshBudget: Number.POSITIVE_INFINITY,
     enemyHitReactEnabled: true,
     enemyHitFxDistance: fixedRange(Number.POSITIVE_INFINITY),
     enemyMarkerDistance: fixedRange(Number.POSITIVE_INFINITY),

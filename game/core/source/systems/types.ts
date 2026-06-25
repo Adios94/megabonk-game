@@ -71,6 +71,8 @@ export interface Engine {
    * 历史上每条命中都 push 一个 `{ time, damage }` 对象 —— 密集战斗时每秒数百次 alloc。
    * 改为并行 number 数组（times[] + damages[]）：push 仅写入两个 number，零对象 alloc。
    * 长度始终保持 times.length === damages.length。
+   * head：滑动窗口已过期前缀的游标 —— 用游标推进代替每次 shift()（O(n) 重排 + backing 抖动），
+   * 攒到一定量再用 copyWithin 一次性前移压实。
    */
-  weaponDamageWindows: Partial<Record<WeaponType | `bond:${BondId}`, { times: number[]; damages: number[] }>>;
+  weaponDamageWindows: Partial<Record<WeaponType | `bond:${BondId}`, { times: number[]; damages: number[]; head: number }>>;
 }

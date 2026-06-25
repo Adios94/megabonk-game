@@ -19,6 +19,15 @@ export interface HorizontalMoveOptions {
   includeClimb?: boolean;
 }
 
+/** 落点结果。热路径调用方可传入复用对象（out 参数）以避免每帧每怪一个 {x,z} 的 GC churn。 */
+export interface MovePoint {
+  x: number;
+  z: number;
+}
+
+/** findNearestEscape 的径向搜索半径表（提到模块常量，避免每次调用重建数组）。 */
+const ESCAPE_RADII = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0];
+
 /**
  * 沿 (oldX,oldZ)→(desiredX,desiredZ) 分段采样（≤0.2/步，防穿薄墙），
  * 每个采样点查 isBlockedHorizontallyAt。ramp 侧/端面阻挡已并入该函数（位置式判定），
@@ -55,16 +64,23 @@ function canMoveAlong(
 function findNearestEscape(
   x: number,
   z: number,
-  blocked: (x: number, z: number) => boolean,
-): { x: number; z: number } | null {
-  const radii = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0];
+  geo: LevelGeometry,
+  feetY: number,
+  includeClimb: boolean,
+  radius: number | undefined,
+  out: MovePoint,
+): MovePoint | null {
   const dirs = 8;
-  for (const r of radii) {
+  for (const r of ESCAPE_RADII) {
     for (let i = 0; i < dirs; i++) {
       const a = (i / dirs) * Math.PI * 2;
       const cx = x + Math.cos(a) * r;
       const cz = z + Math.sin(a) * r;
-      if (!blocked(cx, cz)) return { x: cx, z: cz };
+      if (!isBlockedHorizontallyAt(geo, cx, cz, feetY, includeClimb, radius)) {
+        out.x = cx;
+        out.z = cz;
+        return out;
+      }
     }
   }
   return null;
@@ -90,36 +106,30 @@ export function tryMoveHorizontally(
   desiredZ: number,
   feetY: number,
   options: HorizontalMoveOptions = {},
-): { x: number; z: number } {
+  out: MovePoint = { x: 0, z: 0 },
+): MovePoint {
   const includeClimb = options.includeClimb ?? true;
   const radius = options.radius;
-  const blocked = (x: number, z: number): boolean =>
-    isBlockedHorizontallyAt(geo, x, z, feetY, includeClimb, radius);
 
   // 脱困：当前位置已嵌在实体内（出生点落在实体 / 残留旧存档等绕过碰撞导致）。
   // 此时常规路径采样会因"起点就被挡"而每个方向都失败 → 永久卡死。
   // 先挑一个"终点未被挡"的相邻候选把 mover 救出去；若三者都被挡，则做径向搜索
   // 找最近的无阻挡出口（避免直接放行 desired 把玩家越推越深）；彻底找不到才原地不动。
-  if (blocked(oldX, oldZ)) {
-    if (!blocked(desiredX, desiredZ)) return { x: desiredX, z: desiredZ };
-    if (!blocked(desiredX, oldZ)) return { x: desiredX, z: oldZ };
-    if (!blocked(oldX, desiredZ)) return { x: oldX, z: desiredZ };
-    const escape = findNearestEscape(oldX, oldZ, blocked);
-    return escape ?? { x: oldX, z: oldZ };
+  if (isBlockedHorizontallyAt(geo, oldX, oldZ, feetY, includeClimb, radius)) {
+    if (!isBlockedHorizontallyAt(geo, desiredX, desiredZ, feetY, includeClimb, radius)) { out.x = desiredX; out.z = desiredZ; return out; }
+    if (!isBlockedHorizontallyAt(geo, desiredX, oldZ, feetY, includeClimb, radius)) { out.x = desiredX; out.z = oldZ; return out; }
+    if (!isBlockedHorizontallyAt(geo, oldX, desiredZ, feetY, includeClimb, radius)) { out.x = oldX; out.z = desiredZ; return out; }
+    const escape = findNearestEscape(oldX, oldZ, geo, feetY, includeClimb, radius, out);
+    if (escape) return escape;
+    out.x = oldX; out.z = oldZ; return out;
   }
 
   // Path 1: 整体直走
-  if (canMoveAlong(geo, oldX, oldZ, desiredX, desiredZ, feetY, includeClimb, radius)) {
-    return { x: desiredX, z: desiredZ };
-  }
+  if (canMoveAlong(geo, oldX, oldZ, desiredX, desiredZ, feetY, includeClimb, radius)) { out.x = desiredX; out.z = desiredZ; return out; }
   // Path 2: 沿 Z 滑行（保留新 X，旧 Z）
-  if (canMoveAlong(geo, oldX, oldZ, desiredX, oldZ, feetY, includeClimb, radius)) {
-    return { x: desiredX, z: oldZ };
-  }
+  if (canMoveAlong(geo, oldX, oldZ, desiredX, oldZ, feetY, includeClimb, radius)) { out.x = desiredX; out.z = oldZ; return out; }
   // Path 3: 沿 X 滑行（旧 X，保留新 Z）
-  if (canMoveAlong(geo, oldX, oldZ, oldX, desiredZ, feetY, includeClimb, radius)) {
-    return { x: oldX, z: desiredZ };
-  }
+  if (canMoveAlong(geo, oldX, oldZ, oldX, desiredZ, feetY, includeClimb, radius)) { out.x = oldX; out.z = desiredZ; return out; }
   // Path 4: 全方向被挡 → 原地不动
-  return { x: oldX, z: oldZ };
+  out.x = oldX; out.z = oldZ; return out;
 }

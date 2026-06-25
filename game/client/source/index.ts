@@ -31,6 +31,7 @@ import {
   CHEST_INTERACT_RADIUS,
   CHEST_INTERACT_MAX_Y_DELTA,
   RELICS,
+  ALL_RELIC_IDS,
   BONDS,
   evalBondCounts,
   bondThresholds,
@@ -184,7 +185,6 @@ import {
 
 // Post-process passes — see materials/postProcessPasses.ts
 import {
-  type OutlineMode,
   SceneRenderPass,
   FinalCompositePass,
   ColorGradePass,
@@ -1739,6 +1739,24 @@ function getEnemyModelMap(): Record<string, keyof LoadedModels> {
   return ENEMY_MODEL_MAP;
 }
 
+/**
+ * 敌人视觉缩放（目标世界高度，米）—— 模型按实际高度归一化后缩放到此值。
+ * 整体比玩家(1.8)矮一截以凸显角色（约 ×0.8）。
+ *
+ * 注意：所有敌人共享 core 的 ENEMY_RADIUS=0.4 水平碰撞半径，视觉体型 ≫ 该半径时多只
+ * 同类（特别是 charge 行为）会在玩家脚下视觉重叠。各值已按此约束权衡。
+ *
+ * 提到模块顶层（曾每帧 renderEnemies 内重建字面量对象，pickup 多时是 GC 热点之一）。
+ */
+const ENEMY_VISUAL_SCALES: Record<string, number> = {
+  skeleton_soldier: 1.2,   // KayKit 小兵 — 略矮于玩家
+  zombie: 1.1,             // 高 HP 僵尸
+  skeleton_archer: 1.2,    // KayKit 法师 — 落地人形
+  skeleton_knight: 1.6,    // KayKit 战士 — 精英 (再叠 isElite ×1.2 ≈ 1.92m)
+  necromancer: 0.7,        // 法师 — 飘浮幽灵（小巧）
+  gargoyle: 0.7,           // 蝙蝠 — 小型飞行
+};
+
 // 把模型重定位为「脚底贴地(min.y=0) + 水平居中」。渲染路径只克隆+缩放、不再居中，
 // 依赖模型原点在脚底中心；KayKit 导出原点不一定如此，这里统一对齐。
 function alignModelToFeet(model: THREE.Object3D): THREE.Group {
@@ -3148,7 +3166,7 @@ export class GameScene {
   private readonly renderer: THREE.WebGLRenderer;
   private composer: EffectComposer | null = null;
   private sceneRenderPass: SceneRenderPass | null = null;
-  private finalCompositePass: FinalCompositePass | null = null; // 含 screenSpace/none 描边开关（dev perf overlay 可读 mode）
+  private finalCompositePass: FinalCompositePass | null = null;
   private readonly renderProfile: PlatformRenderProfile = getPlatformRenderProfile();
   private bloomPass: UnrealBloomPass | null = null;
   private colorGradePass: ColorGradePass | null = null;
@@ -3165,6 +3183,29 @@ export class GameScene {
   private readonly _dummy = new THREE.Object3D();
   private readonly _tempVec = new THREE.Vector3();
   private readonly _tempColor = new THREE.Color();
+  // 渲染热路径每帧 alloc 复用容器（避免 60Hz × N 元素 Set/Map 创建造成 GC 颠簸；
+  // 见 03:20 截图：mem 100↔178MB 78MB 振幅 / GC 10.9/min）。所有命名形如 _scratch* 的容器，
+  // 使用前必 clear()，使用后允许任意键残留 —— 仅用作"本帧 active id 集合"短暂查询。
+  private readonly _scratchEnemyAlive = new Set<number>();
+  private readonly _scratchSilverActive = new Set<number>();
+  private readonly _scratchGoldActive = new Set<number>();
+  private readonly _scratchConsumableActive = new Set<number>();
+  private readonly _scratchConsumableCurrent = new Set<number>();
+  private readonly _scratchAxeActive = new Set<number>();
+  private readonly _scratchWeaponProjActive = new Set<number>();
+  private readonly _scratchBossProjActive = new Set<number>();
+  private readonly _scratchPickupCounts = new Map<THREE.InstancedMesh, number>();
+  private readonly _scratchVisibleChestIds = new Set<number>();
+  private readonly _scratchSeenIds = new Set<number>();
+  private readonly _scratchMarkerAlive = new Set<number>();
+  private readonly _scratchParalysisIds = new Set<number>();
+  private readonly _scratchAliveEnemyGrid = new Set<number>();
+  /**
+   * HUD relic 槽位用：updateHUD 每帧把 player.relicStacks 投影为 [id, count] tuple 列表用于排序/切片。
+   * 复用同一个 array + 同一组 entry array，避免每帧 Object.entries + filter + slice 产生 12+ 个临时数组
+   * （玩家有 10 个 relic 时是 alloc 大头之一，间接拉爆 Major GC 节奏）。
+   */
+  private readonly _scratchAcquiredRelics: Array<[RelicId, number]> = [];
   // HitFlash 受击 tint 系统 — 见 render/HitFlashSystem.ts
   private hitFlash!: HitFlashSystem;
   // 敌人弹幕火焰 billboard 朝向计算的临时量（避免每帧每弹分配）
@@ -3424,6 +3465,12 @@ export class GameScene {
   private seenChestOpenEvents = new Set<string>();
   // 渲染帧计数器（动画 LOD 错峰用：不同 id 的敌人在不同帧更新，把降频开销摊开）。
   private frameIndex = 0;
+  /**
+   * Pickup 渲染降采样：拥挤场景下 renderPickups 每 N 帧才更新一次 instance matrix。
+   * 181 个 XP pickup 各 1 次 updateMatrix + setMatrixAt + 整个 instanceBuffer GPU 上传，每帧 1-2ms；
+   * 30Hz 对静态/匀速 pickup 视觉无感（attracted 吸附走 silver/gold/consumable 独立 sprite 路径，不影响）。
+   */
+  private pickupRenderPhase = 0;
   private nextSlowHudUpdateAt = 0;
   private lastSlowHudPhase: GamePhase | null = null;
   private lastHpText = '';
@@ -3483,6 +3530,8 @@ export class GameScene {
   private tomesSig = '';
   private relicsSig = '';
   private bondsSig = '';
+  /** bondDetailOverlay 当前展示内容的 sig；避免每帧重写 innerHTML（GC 大头之一）。 */
+  private bondDetailSig = '';
   /** 羁绊槽点击展开时使用最近一帧 state，避免 DOM 缓存后闭包拿到旧数值。 */
   private latestHudState?: GameState;
   /**
@@ -3543,6 +3592,10 @@ export class GameScene {
     });
     this.renderer.shadowMap.enabled = this.renderProfile.shadowsEnabled;
     this.renderer.shadowMap.type = this.renderProfile.shadowMapType;
+    // 关掉 info 自动 reset：默认每次 renderer.render() 调用会清零 info.render.calls/triangles，
+    // 在 EffectComposer 多 pass 链路下只剩最后一个 pass 的统计（FinalComposite=1 quad），
+    // overlay 上看到 draw=1/tris=0 是假象。改为帧首手动 reset，让数据累计整帧所有 pass。
+    this.renderer.info.autoReset = false;
     this.renderer.toneMapping = THREE.NeutralToneMapping; // 更亮、更保饱和（Q 版鲜艳调性，替代偏暗去饱和的 ACES）
     this.renderer.toneMappingExposure = WEATHER_DAY_EXPOSURE; // 曝光：调参面板调定的整体亮度（Q 版鲜亮调性）
     this.renderer.outputColorSpace = THREE.SRGBColorSpace; // 显式 sRGB，保证饱和度正确还原
@@ -5530,8 +5583,12 @@ export class GameScene {
     }
 
     // Ring pulse when many pickups attracted
+    // 手写计数避免 state.pickups.filter() 每帧分配新数组（pickups 多时是 GC 热点）。
     const ringMat = this.playerRing.material as THREE.MeshBasicMaterial;
-    const attractedCount = state.pickups.filter(pk => pk.attracted).length;
+    let attractedCount = 0;
+    for (let i = 0; i < state.pickups.length; i++) {
+      if (state.pickups[i].attracted) attractedCount++;
+    }
     if (attractedCount > 5) {
       const pulse = 0.7 + Math.sin(time * 8) * 0.3;
       ringMat.opacity = pulse;
@@ -5750,8 +5807,9 @@ export class GameScene {
     // 玩家坐标（敌人朝向用）只需每帧读一次，避免在循环内对每个敌人重复 getRenderState。
     const playerPos = this.session.getRenderState().player;
 
-    // Track which enemy IDs are alive this frame
-    const aliveIds = new Set<number>();
+    // Track which enemy IDs are alive this frame（复用 scratch Set，避免每帧新建 / GC）
+    const aliveIds = this._scratchEnemyAlive;
+    aliveIds.clear();
     for (const enemy of enemies) {
       aliveIds.add(enemy.id);
     }
@@ -5809,18 +5867,8 @@ export class GameScene {
     // Map enemy types to model keys（见 ENEMY_MODEL_MAP）
     const enemyModelMap = getEnemyModelMap();
 
-    // 目标世界高度（米）—— 模型按实际高度归一化后缩放到此值。整体比玩家(1.8)矮一截以凸显角色（约 ×0.8）。
-    // 注意：所有敌人共享 core 的 ENEMY_RADIUS=0.4 水平碰撞半径，视觉体型 ≫ 该半径时多只
-    // 同类（特别是 charge 行为）会在玩家脚下视觉重叠。各值已按此约束权衡。
-    const enemyScales: Record<string, number> = {
-      skeleton_soldier: 1.2,   // KayKit 小兵 — 略矮于玩家
-      zombie: 1.1,             // 高 HP 僵尸
-      skeleton_archer: 1.2,    // KayKit 法师 — 落地人形
-      skeleton_knight: 1.6,    // KayKit 战士 — 精英 (再叠 isElite ×1.2 ≈ 1.92m)：明显大于小兵/法师，
-                               // 又不至于像之前 2.6 那样把 0.4m 碰撞半径远远撑爆、多只冲锋时严重穿模
-      necromancer: 0.7,        // 法师 — 飘浮幽灵（小巧）
-      gargoyle: 0.7,           // 蝙蝠 — 小型飞行
-    };
+    // 敌人视觉缩放表：见 ENEMY_VISUAL_SCALES（已提到模块顶层避免每帧 alloc）。
+    const enemyScales = ENEMY_VISUAL_SCALES;
 
     // Update or create objects for each alive enemy
     for (const enemy of enemies) {
@@ -6024,7 +6072,8 @@ export class GameScene {
   }
 
   private updateParalysisTriangleSprites(enemies: EnemyState[], playerPos: GameState['player']): void {
-    const markedIds = new Set<number>();
+    const markedIds = this._scratchParalysisIds;
+    markedIds.clear();
     const offsets = [
       { x: 0.0, y: 1.45, z: 0.0, scale: 0.46, phase: 0.0 },
       { x: -0.34, y: 1.15, z: 0.18, scale: 0.36, phase: 1.2 },
@@ -6090,7 +6139,9 @@ export class GameScene {
     predicate: (e: EnemyState) => boolean,
     cfg: { y: number; scale: number; renderOrder: number; additive: boolean; baseOpacity: number },
   ): void {
-    const alive = new Set<number>();
+    // 复用 scratch Set：本 helper 在 renderEnemies 末尾依次给 3 种 marker 调用，每次进来先 clear。
+    const alive = this._scratchMarkerAlive;
+    alive.clear();
     const time = performance.now() * 0.004;
     for (const e of enemies) {
       if (e.hp <= 0 || !predicate(e)) continue;
@@ -6149,9 +6200,9 @@ export class GameScene {
     let count = 0;
     let enemyCount = 0;
     const time = performance.now() * 0.005;
-    const activeAxeIds = new Set<number>();
-    const activeWeaponIds = new Set<number>();
-    const activeBossProjIds = new Set<number>();
+    const activeAxeIds = this._scratchAxeActive; activeAxeIds.clear();
+    const activeWeaponIds = this._scratchWeaponProjActive; activeWeaponIds.clear();
+    const activeBossProjIds = this._scratchBossProjActive; activeBossProjIds.clear();
     // 敌人弹幕火焰 billboard 需要相机世界坐标做朝向计算
     this.camera.getWorldPosition(this._camWorldPos);
     // 循环外取一次 player 引用，避免 axe/hammer 分支内每个投射物都 getRenderState() 走 facade。
@@ -6465,7 +6516,8 @@ export class GameScene {
 
   private renderConsumablePickups(pickups: NonNullable<GameState['consumablePickups']>): void {
     const time = performance.now() * 0.004;
-    const active = new Set<number>();
+    const active = this._scratchConsumableActive;
+    active.clear();
     for (const pickup of pickups) {
       if (active.size >= MAX_CONSUMABLE_PICKUPS) break;
       active.add(pickup.id);
@@ -6508,7 +6560,8 @@ export class GameScene {
 
   private playConsumablePickupSfx(state: GameState): void {
     const pickups = state.consumablePickups ?? [];
-    const current = new Set<number>();
+    const current = this._scratchConsumableCurrent;
+    current.clear();
     for (const pickup of pickups) current.add(pickup.id);
 
     for (const [id, previous] of this.lastConsumablePickups) {
@@ -6520,20 +6573,46 @@ export class GameScene {
       }
     }
 
-    this.lastConsumablePickups = new Map(
-      pickups.map(pickup => [pickup.id, {
-        x: pickup.x,
-        z: pickup.z,
-        attracted: pickup.attracted,
-      }]),
-    );
+    // 复用同一 Map：原地 update / delete 失效条目，避免每帧 new Map + new 每个 entry 对象
+    // （旧实现每帧 alloc N 个 {x, z, attracted} 字面量 + 一个新 Map，pickups 多时是 GC 主犯）
+    const last = this.lastConsumablePickups;
+    for (const pickup of pickups) {
+      const existing = last.get(pickup.id);
+      if (existing) {
+        existing.x = pickup.x;
+        existing.z = pickup.z;
+        existing.attracted = pickup.attracted;
+      } else {
+        last.set(pickup.id, { x: pickup.x, z: pickup.z, attracted: pickup.attracted });
+      }
+    }
+    for (const id of last.keys()) {
+      if (!current.has(id)) last.delete(id);
+    }
   }
+
+  /** Pickup LOD：pickups 数超过此阈值时 renderPickups 走 stride（30Hz 更新 instanceMatrix）。 */
+  private static readonly PICKUP_STRIDE_THRESHOLD = 60;
+  /** Stride 步长：2 = 每 2 帧一次（30Hz @ 60fps）。 */
+  private static readonly PICKUP_STRIDE = 2;
 
   private renderPickups(pickups: PickupState[]): void {
     const time = performance.now() * 0.004; // Faster spin
 
+    // 拥挤场景降采样：> 阈值时每 N 帧才完整更新 instance matrix，跳过的帧保留上次 buffer。
+    // 视觉上 pickup 短暂停顿 16ms，玩家无感（XP/普通拾取多为静态或缓慢匀速移动）。
+    // 一旦 pickup 数回落，立即回到 60Hz（重置 phase 确保下次拥挤起始帧不会被跳）。
+    if (pickups.length > GameScene.PICKUP_STRIDE_THRESHOLD) {
+      this.pickupRenderPhase = (this.pickupRenderPhase + 1) % GameScene.PICKUP_STRIDE;
+      if (this.pickupRenderPhase !== 0) return;
+    } else {
+      this.pickupRenderPhase = 0;
+    }
+
     // 每个类型 mesh 独立计数（同 geometry 的 xp 四档也各自一个 mesh）
-    const counts: Map<THREE.InstancedMesh, number> = new Map();
+    // 复用 scratch Map：clear() 而非 new Map() —— pickups 多时这里每帧分配是 GC 主犯之一
+    const counts = this._scratchPickupCounts;
+    counts.clear();
     for (const mesh of this.pickupMeshes.values()) counts.set(mesh, 0);
 
     for (const pickup of pickups) {
@@ -6572,7 +6651,8 @@ export class GameScene {
 
   private renderSilverPickups(pickups: PickupState[]): void {
     const time = performance.now() * 0.004;
-    const active = new Set<number>();
+    const active = this._scratchSilverActive;
+    active.clear();
 
     for (const pickup of pickups) {
       if (pickup.type !== 'silver') continue;
@@ -6618,7 +6698,8 @@ export class GameScene {
 
   private renderGoldMotes(goldMotes: GoldMoteState[]): void {
     const time = performance.now() * 0.004;
-    const active = new Set<number>();
+    const active = this._scratchGoldActive;
+    active.clear();
     for (const mote of goldMotes) {
       active.add(mote.id);
       let sprite = this.goldMoteSprites.get(mote.id);
@@ -7382,7 +7463,8 @@ export class GameScene {
     const chests = state.chests;
     // 当前正在等待玩家选择奖励的宝箱 id（chest_reward 阶段）。
     const pendingChestId = state.pendingChestReward?.chestId ?? null;
-    const visibleChestIds = new Set<number>();
+    const visibleChestIds = this._scratchVisibleChestIds;
+    visibleChestIds.clear();
     const time = performance.now() * 0.001;
 
     for (const chest of chests) {
@@ -7496,7 +7578,8 @@ export class GameScene {
    */
   private renderShrines(shrines: ShrineState[], playerX: number, playerZ: number): void {
     const time = performance.now() * 0.001;
-    const seenIds = new Set<number>();
+    const seenIds = this._scratchSeenIds;
+    seenIds.clear();
 
     for (const shrine of shrines) {
       seenIds.add(shrine.id);
@@ -7841,9 +7924,11 @@ export class GameScene {
       // 改为先把活敌人按 0.5m 网格分桶（O(enemies)），事件查 ±1 格共 9 个 key（O(9)）。
       // 网格 key 用 int32 位掩码（避免字符串 hashing 开销）：(gx & 0xffff) << 16 | (gz & 0xffff)。
       // 仅当本 tick 真有 damageEvents 时才构建（无伤害的间隔帧零开销）。
+      // 复用 scratch Set；null 表示本帧无伤害事件，不需要构建（间隔帧零开销）。
       let aliveEnemyGrid: Set<number> | null = null;
       if (state.damageEvents.length > 0) {
-        aliveEnemyGrid = new Set<number>();
+        aliveEnemyGrid = this._scratchAliveEnemyGrid;
+        aliveEnemyGrid.clear();
         for (const e of enemies) {
           if (e.hp <= 0) continue;
           const gx = Math.round(e.x * 2) & 0xffff;
@@ -8228,16 +8313,40 @@ export class GameScene {
         this.tomesSlotsContainer.appendChild(slot);
       }
     }
-    // DOM 不重建时仍刷新 tooltip，避免 growth / 文案里的动态数值停留在旧快照。
+    // DOM 不重建时仍刷新 tooltip，但走 sig 缓存：type/level/growth 是 tome tooltip 唯一依赖，
+    // 任一变化才重生成 HTML，避免每帧 createTomeTooltipHtml() 产生 KB 级临时字符串。
     for (let i = 0; i < orderedTomes.length; i++) {
       const slot = this.tomesSlotsContainer.children[i] as HTMLElement | undefined;
-      if (slot) this.setItemTooltip(slot, this.createTomeTooltipHtml(orderedTomes[i]));
+      const tome = orderedTomes[i];
+      if (!slot) continue;
+      const sig = `${tome.type}:${tome.level}:${tome.growth ?? -1}`;
+      this.setItemTooltipCached(slot, sig, () => this.createTomeTooltipHtml(tome));
     }
 
     // --- Relic bar (bottom): SVG has 10 fixed slots, filled left → right ---
-    const acquiredRelics = (Object.entries(p.relicStacks ?? {}) as Array<[RelicId, number]>)
-      .filter(([id, count]) => count > 0 && RELICS[id]);
-    const visibleRelics = acquiredRelics.slice(0, HUD_RELIC_BAR_SLOT_COUNT);
+    // 旧实现每帧 Object.entries(relicStacks).filter().slice() 分配 12+ 临时数组，是 alloc 大头。
+    // 改为遍历常量 ALL_RELIC_IDS + 复用 scratch entry：N 个 relic 时常驻 N 个 tuple，零分配。
+    const relicStacks = p.relicStacks;
+    const acquiredRelics = this._scratchAcquiredRelics;
+    let acquiredCount = 0;
+    if (relicStacks) {
+      for (let ri = 0; ri < ALL_RELIC_IDS.length; ri++) {
+        if (acquiredCount >= HUD_RELIC_BAR_SLOT_COUNT) break;
+        const id = ALL_RELIC_IDS[ri];
+        const count = relicStacks[id] ?? 0;
+        if (count <= 0 || !RELICS[id]) continue;
+        const existing = acquiredRelics[acquiredCount];
+        if (existing) {
+          existing[0] = id;
+          existing[1] = count;
+        } else {
+          acquiredRelics[acquiredCount] = [id, count];
+        }
+        acquiredCount++;
+      }
+    }
+    acquiredRelics.length = acquiredCount;
+    const visibleRelics = acquiredRelics;
     // 仅在可见的前 10 个遗物集合 / 数量变化时重建；超出 10 个不渲染。
     let relicsSig = '';
     for (const [id, count] of visibleRelics) relicsSig += `|${id}:${count}`;
@@ -8274,11 +8383,15 @@ export class GameScene {
         this.relicSlotsContainer.appendChild(slot);
       }
     }
-    // 部分遗物 tooltip 依赖当前武器等级 / overtime 秒数，结构不变时也需要刷新。
+    // 部分遗物 tooltip 依赖当前武器等级（arsenal_badge）/ overtime 秒数（hourglass），结构不变时也需要刷新。
+    // sig 用 weaponSlotsSig 覆盖武器变化、用整秒粒度的 overtime 覆盖 hourglass —— 仅二者改变才重生成。
+    const overtimeBucket = Math.floor(state.overtimeSeconds);
     for (let i = 0; i < visibleRelics.length; i++) {
       const slot = this.relicSlotsContainer.children[i] as HTMLElement | undefined;
       const [id, count] = visibleRelics[i];
-      if (slot) this.setItemTooltip(slot, this.createRelicTooltipHtml(id, count, state));
+      if (!slot) continue;
+      const sig = `${id}:${count}|${this.weaponSlotsSig}|${overtimeBucket}`;
+      this.setItemTooltipCached(slot, sig, () => this.createRelicTooltipHtml(id, count, state));
     }
 
     // --- Bond slots (right of buff row); tap to expand a detail layer ---
@@ -8575,6 +8688,8 @@ export class GameScene {
     }
 
     // 每帧只更新冷却遮罩高度（结构不变，避免重建整排 DOM）。
+    // tooltip 走 sig 缓存：武器 type/level + tomes/relics 影响计算属性，未变则跳过 HTML 生成。
+    // 冷却秒数那行文案不进 sig（见 setItemTooltipCached），由独立的 overlay 高度可视化。
     for (let i = 0; i < TOTAL_SLOTS; i++) {
       const weapon = p.weapons[i];
       const overlay = this.weaponCooldownOverlays[i];
@@ -8583,7 +8698,9 @@ export class GameScene {
       overlay.style.height = `${pct}%`;
       const slot = overlay.parentElement;
       if (slot instanceof HTMLElement) {
-        this.setItemTooltip(slot, this.createWeaponTooltipHtml(weapon));
+        // sig 覆盖所有可能改变武器有效属性的来源：自身 type/level + tomes/relics/bonds 三类 buff 源。
+        const sig = `${weapon.type}:${weapon.level}|${this.tomesSig}|${this.relicsSig}|${this.bondsSig}`;
+        this.setItemTooltipCached(slot, sig, () => this.createWeaponTooltipHtml(weapon));
       }
     }
   }
@@ -8817,22 +8934,32 @@ export class GameScene {
         this.bondSlotsContainer.appendChild(slot);
       }
     }
-    // 羁绊 tooltip 展示已持有武器等级等动态内容，槽位未重建时也刷新。
+    // 羁绊 tooltip 展示已持有武器等级等动态内容，槽位未重建时也刷新；走 sig 缓存。
+    // bond 文案依赖 player.weapons[*].level —— weaponSlotsSig 已包含该字段，直接复用。
     for (let i = 0; i < bonds.length; i++) {
       const prog = bonds[i];
       const slot = this.bondSlotsContainer.children[i] as HTMLElement | undefined;
-      if (slot) this.setItemTooltip(slot, this.createBondTooltipHtml(prog.bondId, prog.tier, state));
+      if (!slot) continue;
+      const sig = `${prog.bondId}:${prog.tier}|${this.weaponSlotsSig}`;
+      this.setItemTooltipCached(slot, sig, () => this.createBondTooltipHtml(prog.bondId, prog.tier, state));
     }
 
-    // 浮层若已打开，刷新其内容（数值会随游戏推进变化）
+    // 浮层若已打开，刷新其内容（数值会随游戏推进变化）；同样走 sig 缓存避免每帧 innerHTML 重写。
     if (this.openBondId) {
       const prog = bonds.find(b => b.bondId === this.openBondId);
-      if (prog) this.bondDetailOverlay.innerHTML = this.createBondTooltipHtml(prog.bondId, prog.tier, state);
+      if (prog) {
+        const sig = `${prog.bondId}:${prog.tier}|${this.weaponSlotsSig}`;
+        if (this.bondDetailSig !== sig) {
+          this.bondDetailSig = sig;
+          this.bondDetailOverlay.innerHTML = this.createBondTooltipHtml(prog.bondId, prog.tier, state);
+        }
+      }
     }
   }
 
   private openBondDetail(bondId: BondId, tier: BondTier, state: GameState, anchor: HTMLElement): void {
     this.openBondId = bondId;
+    this.bondDetailSig = `${bondId}:${tier}|${this.weaponSlotsSig}`;
     this.bondDetailOverlay.innerHTML = this.createBondTooltipHtml(bondId, tier, state);
     this.bondDetailOverlay.style.display = 'block';
     // 定位到锚点正上方，避免超出视口
@@ -8864,6 +8991,7 @@ export class GameScene {
 
   private closeBondDetail(): void {
     this.openBondId = null;
+    this.bondDetailSig = '';
     this.bondDetailOverlay.style.display = 'none';
     if (this.bondDetailOutsideHandler) {
       window.removeEventListener('pointerdown', this.bondDetailOutsideHandler);
@@ -8911,6 +9039,23 @@ export class GameScene {
   private setItemTooltip(el: HTMLElement, html: string): void {
     el.dataset.tooltipItem = 'true';
     this.itemTooltipContent.set(el, html);
+  }
+
+  /**
+   * 缓存版：sig 与上次一致就跳过 factory 调用 + WeakMap 写入。
+   *
+   * 用途：HUD 每帧调用的 tooltip 刷新热路径（武器槽 / 法书 / 遗物 / 羁绊）。
+   * 旧实现每帧无条件 createXxxTooltipHtml() 生成 1-5KB 字符串再扔掉，全程 GC 颠簸的主因
+   * （见 docs/perf 03:20 截图：mem 102 → 160MB 反复，每分钟 6 次 Major GC pause）。
+   *
+   * sig 应包含影响 tooltip 文案的所有动态字段；故意省略每帧变化的过场数值（如冷却倒计时秒数），
+   * 那行文案会延迟 1 帧到几秒同步，玩家在悬停查看时游戏一般已暂停，无感。
+   */
+  private setItemTooltipCached(el: HTMLElement, sig: string, factory: () => string): void {
+    el.dataset.tooltipItem = 'true';
+    if (el.dataset.tooltipSig === sig) return;
+    el.dataset.tooltipSig = sig;
+    this.itemTooltipContent.set(el, factory());
   }
 
   private showItemTooltip(html: string, event: MouseEvent): void {

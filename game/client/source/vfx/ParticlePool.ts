@@ -325,20 +325,18 @@ export class ParticlePool {
 
   /** 拾取爆点（不带 billboard，仅粒子）：8 颗按 color RGB 染色。 */
   spawnPickupBurst(x: number, y: number, z: number, color: number): void {
-    const c = new THREE.Color(color);
+    // 位运算解码 0xRRGGBB，避免每次 new THREE.Color()；改走 spawn() 接口而非闭包 .find(),
+    // 拾取节奏快时（一波吸到 20+ pickup）这条路径的 alloc 是 GC 颠簸来源之一。
+    const r = ((color >> 16) & 0xff) / 255;
+    const g = ((color >> 8) & 0xff) / 255;
+    const b = (color & 0xff) / 255;
     const count = this.scaledCount(8, 3);
     for (let i = 0; i < count; i++) {
-      const p = this.particles.find(pp => !pp.active);
-      if (!p) break;
-      p.active = true;
-      p.x = x; p.y = y; p.z = z;
-      p.vx = (Math.random() - 0.5) * 3;
-      p.vy = 2 + Math.random() * 3;
-      p.vz = (Math.random() - 0.5) * 3;
-      p.r = c.r; p.g = c.g; p.b = c.b;
-      p.size = 3 + Math.random() * 2;
-      p.life = 0.8;
-      p.maxLife = 0.8;
+      const vx = (Math.random() - 0.5) * 3;
+      const vy = 2 + Math.random() * 3;
+      const vz = (Math.random() - 0.5) * 3;
+      const size = 3 + Math.random() * 2;
+      this.spawn(x, y, z, vx, vy, vz, size, 0.8, r, g, b);
     }
   }
 

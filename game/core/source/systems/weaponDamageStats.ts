@@ -3,6 +3,35 @@ import type { Engine } from './types.ts';
 
 const DPS_WINDOW_SECONDS = 5;
 
+type DamageWindow = { times: number[]; damages: number[] };
+
+/** 取（或新建）对应武器/羁绊的滚动窗口；并行数组结构避免 per-hit 对象 alloc。 */
+function getWindow(
+  engine: Engine,
+  key: WeaponType | `bond:${BondId}`,
+): DamageWindow {
+  let win = engine.weaponDamageWindows[key];
+  if (!win) {
+    win = { times: [], damages: [] };
+    engine.weaponDamageWindows[key] = win;
+  }
+  return win;
+}
+
+/** 滑动窗口：丢弃 cutoff 之前的条目并返回剩余 damage 总和。 */
+function sumRecentDamage(win: DamageWindow, cutoff: number): number {
+  const { times, damages } = win;
+  // 清掉过期 head 段；times 单调递增（按 record 顺序写入）。
+  // shift() O(n)，但窗口长度小（5s × 命中频率，几十到几百），可接受。
+  while (times.length > 0 && times[0] < cutoff) {
+    times.shift();
+    damages.shift();
+  }
+  let sum = 0;
+  for (let i = 0; i < damages.length; i++) sum += damages[i];
+  return sum;
+}
+
 function getWeaponStat(engine: Engine, weaponType: WeaponType): WeaponDamageStats {
   let stat = engine.state.weaponDamageStats.find(s => s.weaponType === weaponType);
   if (!stat) {
@@ -22,24 +51,23 @@ function getBondStat(engine: Engine, bondId: BondId): BondDamageStats {
 }
 
 function refreshWeaponDps(engine: Engine, weaponType: WeaponType): void {
-  const now = engine.state.gameTime;
-  const cutoff = now - DPS_WINDOW_SECONDS;
-  const window = engine.weaponDamageWindows[weaponType] ?? [];
-  while (window.length > 0 && window[0].time < cutoff) window.shift();
-
-  const recentDamage = window.reduce((sum, entry) => sum + entry.damage, 0);
-  getWeaponStat(engine, weaponType).dps = recentDamage / DPS_WINDOW_SECONDS;
+  const cutoff = engine.state.gameTime - DPS_WINDOW_SECONDS;
+  const win = engine.weaponDamageWindows[weaponType];
+  if (!win) {
+    getWeaponStat(engine, weaponType).dps = 0;
+    return;
+  }
+  getWeaponStat(engine, weaponType).dps = sumRecentDamage(win, cutoff) / DPS_WINDOW_SECONDS;
 }
 
 function refreshBondDps(engine: Engine, bondId: BondId): void {
-  const now = engine.state.gameTime;
-  const cutoff = now - DPS_WINDOW_SECONDS;
-  const key = `bond:${bondId}` as const;
-  const window = engine.weaponDamageWindows[key] ?? [];
-  while (window.length > 0 && window[0].time < cutoff) window.shift();
-
-  const recentDamage = window.reduce((sum, entry) => sum + entry.damage, 0);
-  getBondStat(engine, bondId).dps = recentDamage / DPS_WINDOW_SECONDS;
+  const cutoff = engine.state.gameTime - DPS_WINDOW_SECONDS;
+  const win = engine.weaponDamageWindows[`bond:${bondId}` as const];
+  if (!win) {
+    getBondStat(engine, bondId).dps = 0;
+    return;
+  }
+  getBondStat(engine, bondId).dps = sumRecentDamage(win, cutoff) / DPS_WINDOW_SECONDS;
 }
 
 function applyLifesteal(engine: Engine, damage: number): void {
@@ -62,9 +90,9 @@ export function recordWeaponDamage(
   stat.totalDamage += damage;
   applyLifesteal(engine, damage);
 
-  const window = engine.weaponDamageWindows[weaponType] ?? [];
-  window.push({ time: engine.state.gameTime, damage });
-  engine.weaponDamageWindows[weaponType] = window;
+  const win = getWindow(engine, weaponType);
+  win.times.push(engine.state.gameTime);
+  win.damages.push(damage);
   refreshWeaponDps(engine, weaponType);
 
   if (target) {
@@ -94,10 +122,9 @@ export function recordBondDamage(
   stat.totalDamage += damage;
   applyLifesteal(engine, damage);
 
-  const key = `bond:${bondId}` as const;
-  const window = engine.weaponDamageWindows[key] ?? [];
-  window.push({ time: engine.state.gameTime, damage });
-  engine.weaponDamageWindows[key] = window;
+  const win = getWindow(engine, `bond:${bondId}` as const);
+  win.times.push(engine.state.gameTime);
+  win.damages.push(damage);
   refreshBondDps(engine, bondId);
 
   if (target && creditWeaponType) {

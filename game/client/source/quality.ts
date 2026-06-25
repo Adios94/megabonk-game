@@ -139,7 +139,7 @@ function buildProfile(): PlatformRenderProfile {
     return {
       id: 'mobile',
       minPixelRatio: 1,
-      maxPixelRatio: 1.25,
+      maxPixelRatio: 1.5,
       dynamicPixelRatioEnabled: true,
       dynamicPixelRatioStep: 0.25,
       dynamicPixelRatioSampleSeconds: 2.5,

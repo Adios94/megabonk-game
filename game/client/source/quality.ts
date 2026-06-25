@@ -34,6 +34,10 @@ export type PlatformRenderProfile = {
   continuousVfxFrameStride: number;
   swordSlashParticleCount: number;
   hudSlowUpdateIntervalMs: number;
+  enemyImpostorEnabled: boolean;
+  enemyImpostorDistance: number;
+  enemyHitReactEnabled: boolean;
+  enemyHitFxDistance: number;
 };
 
 /**
@@ -79,6 +83,10 @@ function buildProfile(): PlatformRenderProfile {
       continuousVfxFrameStride: 3,
       swordSlashParticleCount: 5,
       hudSlowUpdateIntervalMs: 100,
+      enemyImpostorEnabled: true,
+      enemyImpostorDistance: 12,
+      enemyHitReactEnabled: false,
+      enemyHitFxDistance: 9,
     };
   }
   return {
@@ -109,6 +117,10 @@ function buildProfile(): PlatformRenderProfile {
     continuousVfxFrameStride: 1,
     swordSlashParticleCount: 12,
     hudSlowUpdateIntervalMs: 0,
+    enemyImpostorEnabled: false,
+    enemyImpostorDistance: Number.POSITIVE_INFINITY,
+    enemyHitReactEnabled: true,
+    enemyHitFxDistance: Number.POSITIVE_INFINITY,
   };
 }
 

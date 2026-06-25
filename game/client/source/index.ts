@@ -2937,6 +2937,8 @@ export class GameScene {
   // id → 上一帧 x/z + 静止累计时长。core(setInterval 60Hz) 与渲染(rAF, 可能 120/144Hz) 不同步，
   // 很多渲染帧位置没变，故用"距上次位移过了多久"做滞后判定，而非单帧瞬时速度。
   private enemyPrevPos: Map<number, { x: number; z: number; stillTime: number }> = new Map();
+  private enemyImpostorMesh: THREE.InstancedMesh | null = null;
+  private enemyImpostorCount = 0;
   // modelKey → 把该模型几何高度归一化到 1 单位高的系数（= 1 / 实际包围盒高度）。
   // 用于让来源尺寸各异的敌人模型统一缩放到目标高度（参考玩家），首次用到时按 loadedModels 实测缓存。
   private enemyModelNormHeight: Map<string, number> = new Map();
@@ -2961,10 +2963,12 @@ export class GameScene {
   private areaEffectVfx!: AreaEffectVfx;
   private pickupMeshes: Map<PickupType, THREE.InstancedMesh> = new Map();
   private silverPickupObjects: Map<number, THREE.Object3D> = new Map();
+  private silverPickupPool: THREE.Object3D[] = [];
   private consumableSprites: Map<number, THREE.Sprite> = new Map();
   private lastConsumablePickups: Map<number, { x: number; z: number; attracted: boolean }> = new Map();
   private goldMoteTexture!: THREE.Texture;
   private goldMoteSprites: Map<number, THREE.Sprite> = new Map();
+  private goldMoteSpritePool: THREE.Sprite[] = [];
 
   // === VFX systems ===
   // 点云粒子池（500 槽，shader 点云）+ 各种 emit* 辅助 — 见 vfx/ParticlePool.ts。
@@ -3269,6 +3273,7 @@ export class GameScene {
     this.hitFlash = new HitFlashSystem(WEAPON_VFX_COLORS);
     this.damageNumbers = new DamageNumbersOverlay(this.camera);
     this.setupPlayer();
+    this.setupEnemyImpostorMesh();
     this.setupProjectileMesh();
     this.setupPickupMesh();
     this.setupGoldMoteMesh();
@@ -4386,6 +4391,52 @@ export class GameScene {
     this.bondStatusVfx = new BondAndStatusVfx(this.scene, this.billboardPool, this.particlePool);
   }
 
+  private setupEnemyImpostorMesh(): void {
+    if (!this.renderProfile.enemyImpostorEnabled) return;
+
+    const geo = new THREE.BoxGeometry(0.75, 1, 0.75);
+    const mat = new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: toonGradientMap });
+    const mesh = new THREE.InstancedMesh(geo, mat, MAX_ENEMIES);
+    mesh.name = 'EnemyImpostors';
+    mesh.count = 0;
+    mesh.frustumCulled = false;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.scene.add(mesh);
+    this.enemyImpostorMesh = mesh;
+  }
+
+  private placeEnemyImpostor(
+    enemy: EnemyState,
+    targetHeight: number,
+    sizeMultiplier: number,
+    hoverOffset: number,
+    playerPos: GameState['player'],
+  ): void {
+    const mesh = this.enemyImpostorMesh;
+    if (!mesh || this.enemyImpostorCount >= MAX_ENEMIES) return;
+
+    const h = targetHeight * sizeMultiplier;
+    const w = Math.max(0.35, h * 0.45);
+    this._dummy.position.set(enemy.x, enemy.y + hoverOffset + h * 0.5, enemy.z);
+    this._dummy.rotation.set(0, Math.atan2(playerPos.x - enemy.x, playerPos.z - enemy.z), 0);
+    this._dummy.scale.set(w, h, w);
+    this._dummy.updateMatrix();
+    mesh.setMatrixAt(this.enemyImpostorCount, this._dummy.matrix);
+    this._tempColor.setHex(ENEMY_COLORS[enemy.type] ?? 0x888888);
+    mesh.setColorAt(this.enemyImpostorCount, this._tempColor);
+    this.enemyImpostorCount++;
+  }
+
+  private commitEnemyImpostors(): void {
+    const mesh = this.enemyImpostorMesh;
+    if (!mesh) return;
+    mesh.count = this.enemyImpostorCount;
+    if (this.enemyImpostorCount > 0) {
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+  }
+
   // spawnBillboard / updateBillboardVfx 已迁出至 BillboardPool；
   // 调用方改为 this.billboardPool.spawn(...) / this.billboardPool.update(camera, dt)。
 
@@ -5296,6 +5347,9 @@ export class GameScene {
   }
 
   private renderEnemies(enemies: EnemyState[], damageEvents: readonly DamageEvent[]): void {
+    this.enemyImpostorCount = 0;
+    const enemyImpostorDistSq = this.renderProfile.enemyImpostorDistance * this.renderProfile.enemyImpostorDistance;
+    const enemyHitFxDistSq = this.renderProfile.enemyHitFxDistance * this.renderProfile.enemyHitFxDistance;
     // 动画 LOD：每帧重建一次视锥（点剔除）+ 缓存相机位置，循环内据此对 mixer 降频。
     this.cullMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
     this.cullFrustum.setFromProjectionMatrix(this.cullMatrix);
@@ -5449,6 +5503,20 @@ export class GameScene {
         if (obj.visible) obj.visible = false;
         continue;
       }
+
+      if (
+        this.renderProfile.enemyImpostorEnabled
+        && this.enemyImpostorMesh
+        && cullDistSq > enemyImpostorDistSq
+        && !enemy.isMiniBoss
+      ) {
+        if (obj.visible) obj.visible = false;
+        if (enemy.type !== 'gargoyle') {
+          this.blobShadows?.place(enemy.x, enemy.y, enemy.z, targetHeight * sizeMultiplier * 0.3);
+        }
+        this.placeEnemyImpostor(enemy, targetHeight, sizeMultiplier, hoverOffset, playerPos);
+        continue;
+      }
       obj.visible = true;
 
       // Blob 阴影贴脚下（飞行的 gargoyle 不贴 —— 它在空中，脚位非地面）
@@ -5479,12 +5547,13 @@ export class GameScene {
         prevPos.z = enemy.z;
       }
       const isMoving = prevPos.stillTime < 0.2;
-      const hitFlashWeaponType = enemy.hitFlashTimer > 0 ? enemy.hitFlashWeaponType : undefined;
-      const hitFlashColor = enemy.hitFlashTimer > 0 ? enemy.hitFlashColor : undefined;
+      const enemyHitFxEnabled = cullDistSq <= enemyHitFxDistSq;
+      const hitFlashWeaponType = enemy.hitFlashTimer > 0 && enemyHitFxEnabled ? enemy.hitFlashWeaponType : undefined;
+      const hitFlashColor = enemy.hitFlashTimer > 0 && enemyHitFxEnabled ? enemy.hitFlashColor : undefined;
       this.setEnemyHitFlashTint(enemy.id, obj, hitFlashWeaponType, hitFlashColor);
 
       // Choose enemy animation based on state
-      if (enemy.hitFlashTimer > 0) {
+      if (enemy.hitFlashTimer > 0 && this.renderProfile.enemyHitReactEnabled) {
         this.playEnemyAnim(enemy.id, 'HitReact');
         obj.visible = hitFlashWeaponType || hitFlashColor !== undefined ? true : Math.sin(performance.now() * 0.03) > 0;
       } else if (enemy.chargeState === 'charging') {
@@ -5553,6 +5622,7 @@ export class GameScene {
       }
     }
 
+    this.commitEnemyImpostors();
     this.updateParalysisTriangleSprites(enemies);
     this.updateBondEnemyMarkers(enemies);
   }
@@ -6112,12 +6182,16 @@ export class GameScene {
 
       let obj = this.silverPickupObjects.get(pickup.id);
       if (!obj) {
-        if (!silverCoinModel) continue;
-        obj = silverCoinModel.clone();
+        obj = this.silverPickupPool.pop();
+        if (!obj) {
+          if (!silverCoinModel) continue;
+          obj = silverCoinModel.clone();
+          this.scene.add(obj);
+        }
         obj.name = `SilverPickup_${pickup.id}`;
-        this.scene.add(obj);
         this.silverPickupObjects.set(pickup.id, obj);
       }
+      obj.visible = true;
 
       const bob = Math.sin(time * 1.5 + pickup.id) * 0.3;
       obj.position.set(pickup.x, pickup.y + 0.2 + bob, pickup.z);
@@ -6132,7 +6206,13 @@ export class GameScene {
 
     for (const [id, obj] of this.silverPickupObjects) {
       if (active.has(id)) continue;
-      this.scene.remove(obj);
+      obj.visible = false;
+      if (this.silverPickupPool.length < MAX_PICKUPS) {
+        this.silverPickupPool.push(obj);
+      } else {
+        this.scene.remove(obj);
+        disposeOwnedResources(obj);
+      }
       this.silverPickupObjects.delete(id);
     }
   }
@@ -6144,20 +6224,24 @@ export class GameScene {
       active.add(mote.id);
       let sprite = this.goldMoteSprites.get(mote.id);
       if (!sprite) {
-        const mat = new THREE.SpriteMaterial({
-          map: this.goldMoteTexture,
-          color: 0xffffff,
-          transparent: true,
-          opacity: 1,
-          depthWrite: false,
-          depthTest: true,
-          toneMapped: false,
-        });
-        sprite = new THREE.Sprite(mat);
+        sprite = this.goldMoteSpritePool.pop();
+        if (!sprite) {
+          const mat = new THREE.SpriteMaterial({
+            map: this.goldMoteTexture,
+            color: 0xffffff,
+            transparent: true,
+            opacity: 1,
+            depthWrite: false,
+            depthTest: true,
+            toneMapped: false,
+          });
+          sprite = new THREE.Sprite(mat);
+          this.scene.add(sprite);
+        }
         sprite.name = `GoldMote_${mote.id}`;
-        this.scene.add(sprite);
         this.goldMoteSprites.set(mote.id, sprite);
       }
+      sprite.visible = true;
       const pulse = 0.85 + Math.sin(time * 9 + mote.id) * 0.25;
       sprite.position.set(mote.x, mote.y, mote.z);
       sprite.scale.set(0.36 * pulse, 0.36 * pulse, 0.36 * pulse);
@@ -6165,8 +6249,13 @@ export class GameScene {
     }
     for (const [id, sprite] of this.goldMoteSprites) {
       if (active.has(id)) continue;
-      this.scene.remove(sprite);
-      sprite.material.dispose();
+      sprite.visible = false;
+      if (this.goldMoteSpritePool.length < MAX_PICKUPS) {
+        this.goldMoteSpritePool.push(sprite);
+      } else {
+        this.scene.remove(sprite);
+        sprite.material.dispose();
+      }
       this.goldMoteSprites.delete(id);
     }
   }

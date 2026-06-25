@@ -95,6 +95,8 @@ export class BillboardPool {
   private readonly slots: BillboardVfxItem[] = [];
   private readonly planeGeo: THREE.PlaneGeometry;
   private readonly camPos = new THREE.Vector3();
+  /** 自增计数：远距 billboard lookAt 按 4 帧节流（近距仍每帧朝向相机，肉眼无感知差异）。 */
+  private updateTick = 0;
 
   constructor(private readonly scene: THREE.Scene, capacity: number = DEFAULT_BILLBOARD_CAPACITY) {
     const loader = new THREE.TextureLoader();
@@ -184,6 +186,11 @@ export class BillboardPool {
    */
   update(camera: THREE.Camera, dt: number): void {
     camera.getWorldPosition(this.camPos);
+    this.updateTick = (this.updateTick + 1) & 3; // 0..3 循环
+    // 远距 lookAt 节流：camPos 距 mesh > 15m 的，每 4 帧才更新一次朝向。
+    // 4 帧 ≈ 66ms（60fps），远处大块贴片旋转延迟肉眼几乎不可察。
+    const FAR_LOOKAT_DIST_SQ = 15 * 15;
+    const farLookAtPhase = this.updateTick === 0;
 
     for (const b of this.slots) {
       if (!b.active) continue;
@@ -220,10 +227,16 @@ export class BillboardPool {
       }
 
       if (b.facing === 'camera') {
-        // 让 plane 法线指向相机（保留 z 自旋）
-        const zRot = b.mesh.rotation.z;
-        b.mesh.lookAt(this.camPos);
-        b.mesh.rotation.z = zRot;
+        const dxc = b.mesh.position.x - this.camPos.x;
+        const dyc = b.mesh.position.y - this.camPos.y;
+        const dzc = b.mesh.position.z - this.camPos.z;
+        const distSq = dxc * dxc + dyc * dyc + dzc * dzc;
+        // 近距每帧更新；远距按 farLookAtPhase 节流。自旋仍每帧叠加 → 不会"卡住不转"。
+        if (distSq <= FAR_LOOKAT_DIST_SQ || farLookAtPhase) {
+          const zRot = b.mesh.rotation.z;
+          b.mesh.lookAt(this.camPos);
+          b.mesh.rotation.z = zRot;
+        }
       }
     }
   }

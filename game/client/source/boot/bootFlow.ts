@@ -13,6 +13,13 @@ import enLocale from '../../../../i18n/en.json';
 export interface BootFlowDeps {
   loadModels: () => Promise<void>;
   tryLoadLevel: (name: string) => Promise<void>;
+  /** 可选：将关卡 + 模型的 shader/贴图预先推送到 GPU，避免首局进入时 lazy 编译造成"场景没加载出来"。 */
+  warmUpGpuAssets?: () => Promise<void>;
+  /**
+   * 可选：批量预拉所有 UI 图片（主菜单 / 角色选择 / 商店 / 任务 / HUD ...）。
+   * 进度回调用于推进 loading 条。
+   */
+  preloadUiAssets?: (onProgress: (loaded: number, total: number) => void) => Promise<void>;
   defaultLevelName: string;
   hardTestLevelName: string;
   showMainMenu: () => void;
@@ -74,14 +81,47 @@ export async function runBootFlow(deps: BootFlowDeps): Promise<void> {
   installButtonClickSfx();
 
   showBootLoadingOverlay();
-  // 进度封顶 95%，留最后 5% 给关卡解析 / 主菜单构建，hide 时补满到 100%。
+  // 进度段位（hide 时再补满到 100%）：
+  //   0-60%   3D 资源（GLTF：关卡 + 模型 + 道具）
+  //   60-92%  UI 图片（主菜单 / 角色选择 / 商店 / 任务 / HUD）
+  //   92-97%  GPU 预热（shader 编译 + 纹理上传）
+  //   留 3% 给 hide 之后的主菜单构建落屏
+  const GLTF_PROGRESS_MAX = 60;
+  const UI_PROGRESS_MIN = 60;
+  const UI_PROGRESS_MAX = 92;
   bootLoadingManager.onProgress = (_url, loaded, total) => {
-    if (total > 0) setBootLoadingProgress((loaded / total) * 95);
+    if (total > 0) setBootLoadingProgress((loaded / total) * GLTF_PROGRESS_MAX);
   };
   bootLoadingManager.onError = (url) => console.warn('[Boot] asset failed:', url);
 
   try {
     await preloadBootAssets(deps);
+    setBootLoadingProgress(GLTF_PROGRESS_MAX);
+
+    // UI 图片全量预热（boot 阶段就把主菜单 / 角色选择 / HUD 用到的图全 fetch + decode 完）
+    if (deps.preloadUiAssets) {
+      try {
+        await deps.preloadUiAssets((loaded, total) => {
+          if (total <= 0) return;
+          const ratio = loaded / total;
+          setBootLoadingProgress(UI_PROGRESS_MIN + ratio * (UI_PROGRESS_MAX - UI_PROGRESS_MIN));
+        });
+      } catch (err) {
+        console.warn('[Boot] UI asset preload failed (non-fatal):', err);
+      }
+      setBootLoadingProgress(UI_PROGRESS_MAX);
+    }
+
+    // 资源解析完成后立刻做 GPU 预热（在 loading overlay 关闭前进行，
+    // 把开销吸收进加载条而不是用户点击"开始"之后）。
+    if (deps.warmUpGpuAssets) {
+      try {
+        await deps.warmUpGpuAssets();
+      } catch (err) {
+        console.warn('[Boot] GPU warmup failed (non-fatal):', err);
+      }
+      setBootLoadingProgress(97);
+    }
   } finally {
     hideBootLoadingOverlay();
   }

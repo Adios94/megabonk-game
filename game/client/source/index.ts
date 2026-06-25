@@ -78,6 +78,7 @@ import {
   type ShrineRewardOption,
   type LevelData,
   type RelicId,
+  type RelicRarity,
   type RampVolume,
 } from '@minigame/core';
 import { PlatformInput } from '@minigame/platform';
@@ -403,6 +404,13 @@ const RARITY_COLORS: Record<string, string> = {
   legendary: '#ffaa00',
 };
 
+const RELIC_RARITY_SORT_RANK: Record<RelicRarity, number> = {
+  legendary: 0,
+  rare: 1,
+  uncommon: 2,
+  common: 3,
+};
+
 // 羁绊档位边框：T1 灰 / T2 橙 / T3 金
 const BOND_TIER_COLORS: Record<number, string> = {
   1: '#aaaaaa',
@@ -469,6 +477,7 @@ import { UI_FONT_FACE, GAME_UI_FONT_FILES, installGameUIFonts, ensureGameUIFonts
 const CHARACTER_SELECT_BACK_ICON = '/ui/button/back.svg';
 const LANG_BUTTON_CN = '/ui/button/btn_lang_cn.png';
 const LANG_BUTTON_EN = '/ui/button/btn_lang_en.png';
+const WEAPON_SLOT_LOCK_ICON_PATH = '/ui/icon/icon_weapon_lock.png';
 const CHARACTER_DETAIL_PANEL_BG = '/ui/panel/svg/character_detail.svg';
 /**
  * character_detail.svg 原图 3465×4897（AR 0.708，竖卡）。
@@ -1178,7 +1187,7 @@ function createLanguageSwitcherButton(): HTMLButtonElement | null {
 // =============================================================================
 /**
  * 游戏内风格化调参面板（仅 dev）。把 stylizedUniforms + 雾 + bloom 全部接上滑块，实时拖动即时生效，
- * 不用改代码重编译。按 ` 键（反引号）或点右上角按钮开关。"复制参数"把当前值导成可粘回代码的片段。
+ * 不用改代码重编译。GM Tool 打开时点右上角按钮开关。"复制参数"把当前值导成可粘回代码的片段。
  */
 function createStylizedDebugPanel(opts: {
   scene: THREE.Scene;
@@ -1337,8 +1346,20 @@ function createStylizedDebugPanel(opts: {
   ].join(';');
 
   const title = document.createElement('div');
-  title.textContent = '🎨 风格化调参 (按 ` 开关)';
-  title.style.cssText = 'font-weight:700;margin-bottom:8px;color:#9fc0ff;';
+  title.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:700;margin-bottom:8px;color:#9fc0ff;';
+  const titleText = document.createElement('span');
+  titleText.textContent = '🎨 风格化调参';
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.textContent = '×';
+  closeBtn.title = '关闭风格化调参';
+  closeBtn.style.cssText = 'width:22px;height:22px;border:1px solid rgba(159,192,255,0.45);border-radius:6px;background:rgba(30,40,70,0.9);color:#dfe6ff;font-weight:800;line-height:18px;cursor:pointer;';
+  closeBtn.addEventListener('click', () => {
+    panel.style.display = 'none';
+    syncStylizedDebugPanelWithGM(gmPanel !== null);
+  });
+  title.appendChild(titleText);
+  title.appendChild(closeBtn);
   panel.appendChild(title);
 
   for (const sec of sections) {
@@ -1408,10 +1429,11 @@ function createStylizedDebugPanel(opts: {
   document.body.appendChild(panel);
 
   const toggleBtn = document.createElement('button');
+  toggleBtn.id = 'stylized-debug-toggle';
   toggleBtn.textContent = '🎨';
-  toggleBtn.title = '风格化调参（`）';
+  toggleBtn.title = '风格化调参';
   toggleBtn.style.cssText = [
-    'position:fixed', 'top:8px', 'right:8px', 'z-index:99998', 'width:34px', 'height:34px',
+    'position:fixed', 'top:8px', 'right:8px', 'z-index:99998', 'display:none', 'width:34px', 'height:34px',
     'border:none', 'border-radius:8px', 'background:rgba(60,90,160,0.85)', 'color:#fff',
     'font-size:16px', 'cursor:pointer', 'box-shadow:0 2px 8px rgba(0,0,0,0.4)',
   ].join(';');
@@ -1422,9 +1444,20 @@ function createStylizedDebugPanel(opts: {
   };
   toggleBtn.addEventListener('click', toggle);
   document.body.appendChild(toggleBtn);
-  window.addEventListener('keydown', (e) => {
-    if (e.code === 'Backquote') { e.preventDefault(); toggle(); }
-  });
+}
+
+function syncStylizedDebugPanelWithGM(open: boolean): void {
+  const panel = document.getElementById('stylized-debug-panel') as HTMLDivElement | null;
+  const toggleBtn = document.getElementById('stylized-debug-toggle') as HTMLButtonElement | null;
+  if (!panel || !toggleBtn) return;
+
+  if (!open) {
+    panel.style.display = 'none';
+    toggleBtn.style.display = 'none';
+    return;
+  }
+
+  toggleBtn.style.display = panel.style.display === 'none' ? 'block' : 'none';
 }
 
 const WEATHER_DAY_EXPOSURE = 1.85;
@@ -8069,23 +8102,25 @@ export class GameScene {
       if (slot) this.setItemTooltip(slot, this.createTomeTooltipHtml(orderedTomes[i]));
     }
 
-    // --- Relic bar (bottom): SVG has 10 fixed slots, filled left → right ---
+    // --- Relic bar (bottom): always show 10 slots; filled left → right by rarity, then acquisition order. ---
     const acquiredRelics = (Object.entries(p.relicStacks ?? {}) as Array<[RelicId, number]>)
-      .filter(([id, count]) => count > 0 && RELICS[id]);
+      .map(([id, count], acquiredIndex) => ({ id, count, acquiredIndex, relic: RELICS[id] }))
+      .filter(entry => entry.count > 0 && entry.relic)
+      .sort((a, b) => {
+        const rarityDelta = RELIC_RARITY_SORT_RANK[a.relic.rarity] - RELIC_RARITY_SORT_RANK[b.relic.rarity];
+        return rarityDelta !== 0 ? rarityDelta : a.acquiredIndex - b.acquiredIndex;
+      });
     const visibleRelics = acquiredRelics.slice(0, HUD_RELIC_BAR_SLOT_COUNT);
-    // 仅在可见的前 10 个遗物集合 / 数量变化时重建；超出 10 个不渲染。
-    let relicsSig = '';
-    for (const [id, count] of visibleRelics) relicsSig += `|${id}:${count}`;
+    // 仅在排序后的可见遗物 / 数量变化时重建；空槽常显，超出 10 个不渲染。
+    let relicsSig = `slots:${HUD_RELIC_BAR_SLOT_COUNT}`;
+    for (const { id, count } of visibleRelics) relicsSig += `|${id}:${count}`;
     if (relicsSig !== this.relicsSig) {
       this.relicsSig = relicsSig;
       this.relicSlotsContainer.innerHTML = '';
-      for (let i = 0; i < visibleRelics.length; i++) {
-        const entry = visibleRelics[i];
+      for (let i = 0; i < HUD_RELIC_BAR_SLOT_COUNT; i++) {
+        const entry = visibleRelics[i] ?? null;
         const slot = document.createElement('div');
-        const [id, count] = entry;
-        const relic = RELICS[id];
-        const borderColor = RARITY_COLORS[relic.rarity] ?? '#aaaaaa';
-        this.setItemTooltip(slot, this.createRelicTooltipHtml(id, count, state));
+        const borderColor = entry ? (RARITY_COLORS[entry.relic.rarity] ?? '#aaaaaa') : 'rgba(255,255,255,0.16)';
         const slotCenterX = HUD_RELIC_SLOT_VIEWBOX.x + HUD_RELIC_SLOT_VIEWBOX.w / 2 + i * HUD_RELIC_SLOT_VIEWBOX.pitch;
         slot.style.cssText = `
           position:absolute;
@@ -8095,9 +8130,15 @@ export class GameScene {
           transform:translate(-50%,-50%);
           display:flex;align-items:center;justify-content:center;
           background:url("${HUD_RELIC_SLOT_BG}") center/100% 100% no-repeat;
-          border-radius:7px;box-sizing:border-box;cursor:help;
-          filter:drop-shadow(0 0 5px ${borderColor}80);
+          border:1.5px solid ${borderColor};border-radius:7px;box-sizing:border-box;
+          cursor:${entry ? 'help' : 'default'};
         `;
+        if (!entry) {
+          this.relicSlotsContainer.appendChild(slot);
+          continue;
+        }
+        const { id, count, relic } = entry;
+        this.setItemTooltip(slot, this.createRelicTooltipHtml(id, count, state));
         const icon = document.createElement('span');
         icon.style.cssText = 'font-size:clamp(13px,3.4vw,16px);';
         setIconImage(icon, relicIconSrc(id), relic.emoji);
@@ -8112,7 +8153,7 @@ export class GameScene {
     // 部分遗物 tooltip 依赖当前武器等级 / overtime 秒数，结构不变时也需要刷新。
     for (let i = 0; i < visibleRelics.length; i++) {
       const slot = this.relicSlotsContainer.children[i] as HTMLElement | undefined;
-      const [id, count] = visibleRelics[i];
+      const { id, count } = visibleRelics[i];
       if (slot) this.setItemTooltip(slot, this.createRelicTooltipHtml(id, count, state));
     }
 
@@ -8433,9 +8474,11 @@ export class GameScene {
       slot.style.cssText = `width:${HUD_WEAPON_SLOT_SIZE};height:${HUD_WEAPON_SLOT_SIZE};background:${isLocked ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.6)'};position:relative;display:flex;align-items:center;justify-content:center;flex-shrink:0;${isLocked ? '' : 'cursor:help;'}`;
 
       if (isLocked) {
-        const lock = document.createElement('span');
-        lock.style.cssText = 'font-size:clamp(9px,2.6vw,11px);opacity:0.7;';
-        lock.textContent = '🔒';
+        const lock = document.createElement('img');
+        lock.src = WEAPON_SLOT_LOCK_ICON_PATH;
+        lock.alt = '';
+        lock.draggable = false;
+        lock.style.cssText = 'width:72%;height:72%;object-fit:contain;opacity:0.8;display:block;pointer-events:none;';
         slot.appendChild(lock);
         this.setItemTooltip(slot, `<div style="max-width:200px;">${escapeTooltipText(t('hud.weaponSlotLocked'))}</div>`);
         this.weaponSlotsContainer.appendChild(slot);
@@ -9215,6 +9258,7 @@ export class GameScene {
           t('stage.notice.secondTitle'),
           t('stage.notice.secondBody'),
           '#ffcc00',
+          { frameless: true },
         );
       }
     }
@@ -9236,7 +9280,12 @@ export class GameScene {
     this.handleChestRewardPhaseChange(state);
   }
 
-  private showMajorNotice(titleText: string, bodyText: string, accentColor: string): void {
+  private showMajorNotice(
+    titleText: string,
+    bodyText: string,
+    accentColor: string,
+    options: { frameless?: boolean } = {},
+  ): void {
     if (this.majorNoticeTimer) {
       clearTimeout(this.majorNoticeTimer);
       this.majorNoticeTimer = null;
@@ -9244,7 +9293,13 @@ export class GameScene {
     this.majorNoticeEl?.remove();
 
     const notice = document.createElement('div');
-    notice.style.cssText = `
+    notice.style.cssText = options.frameless ? `
+      position:fixed;left:50%;top:42%;transform:translate(-50%,-50%) scale(0.92);
+      width:min(86vw,560px);padding:0;
+      color:#fff;text-align:center;pointer-events:none;z-index:260;opacity:0;
+      transition:opacity 180ms ease,transform 220ms ease;
+      font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;box-sizing:border-box;
+    ` : `
       position:fixed;left:50%;top:42%;transform:translate(-50%,-50%) scale(0.92);
       width:min(86vw,560px);padding:clamp(20px,5vw,34px);
       border:2px solid ${accentColor};border-radius:18px;
@@ -12790,6 +12845,7 @@ function toggleGMPanel(): void {
   if (gmPanel) {
     gmPanel.remove();
     gmPanel = null;
+    syncStylizedDebugPanelWithGM(false);
     return;
   }
 
@@ -12880,6 +12936,7 @@ function toggleGMPanel(): void {
   gmPanel.appendChild(picker);
 
   document.body.appendChild(gmPanel);
+  syncStylizedDebugPanelWithGM(true);
 }
 
 setupGMTool();

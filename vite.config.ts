@@ -42,12 +42,18 @@ export default defineConfig({
     target: 'ES2020',
     minify: 'esbuild',
     rollupOptions: {
-      // three is served from CDN via importmap in index.html — exclude from bundle
-      external: ['three'],
       output: {
-        manualChunks: {
-          'platform': ['@minigame/platform', '@minigame/render-adapter'],
-          'game-logic': ['@minigame/core', '@minigame/i18n'],
+        manualChunks(id) {
+          if (id.includes('/node_modules/three/') || id.includes('/node_modules/.pnpm/three@')) {
+            return 'three-vendor';
+          }
+          if (id.includes('@minigame/platform') || id.includes('@minigame/render-adapter')) {
+            return 'platform';
+          }
+          if (id.includes('@minigame/core') || id.includes('@minigame/i18n')) {
+            return 'game-logic';
+          }
+          return undefined;
         },
         chunkFileNames: 'assets/[name]-[hash].js',
         entryFileNames: 'assets/[name]-[hash].js',

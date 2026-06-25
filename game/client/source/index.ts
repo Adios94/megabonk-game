@@ -82,7 +82,7 @@ import {
 } from '@minigame/core';
 import { PlatformInput } from '@minigame/platform';
 import { installThreeHighDpi } from '@minigame/render-adapter';
-import { initI18n, t, getLocale, setLocale, getAvailableLocales, getMode } from '@minigame/i18n';
+import { t, getLocale, setLocale, getAvailableLocales, getMode } from '@minigame/i18n';
 import { CameraOrbit } from './systems/cameraOrbit.ts';
 import { PlayerInvincibilityFx } from './systems/playerFx.ts';
 import { BlobShadowPool } from './systems/blobShadows.ts';
@@ -134,7 +134,6 @@ import {
   applyGameStartAudioPolicy,
   fadeOutMenuMusic,
   getAudioSettings,
-  installButtonClickSfx,
   onAudioSettingsChange,
   playCombatMusic,
   playLevelTwoTransitionSfx,
@@ -145,11 +144,8 @@ import {
   toggleSfxMuted,
   type AudioSettings,
 } from './audio/musicManager.ts';
-import type { I18nMode } from '@minigame/i18n';
 import { EventEmitter } from './session/EventEmitter.ts';
-
-import zhLocale from '../../../i18n/zh.json';
-import enLocale from '../../../i18n/en.json';
+import { runBootFlow } from './boot/bootFlow.ts';
 
 const ALTAR_INTERACT_RADIUS = 2.0;
 const ALTAR_INTERACT_MAX_Y_DELTA = ALTAR_INTERACT_RADIUS;
@@ -463,7 +459,7 @@ const CHARACTER_FULL_PATHS: Record<CharacterType, string> = {
 
 const CHARACTER_LOCKED_OVERLAY_PATH = '/ui/characters/locked_character.png';
 
-import { UI_FONT_FACE, GAME_UI_FONT_FILES, installGameUIFonts, ensureGameUIFontsLoaded } from './ui/fonts.ts';
+import { GAME_UI_FONT_FILES, installGameUIFonts } from './ui/fonts.ts';
 
 const CHARACTER_SELECT_BACK_ICON = '/ui/button/back.svg';
 const LANG_BUTTON_CN = '/ui/button/btn_lang_cn.png';
@@ -9753,7 +9749,7 @@ function createFramedLabelButton(
   const labelEl = document.createElement('span');
   labelEl.textContent = label;
   labelEl.style.cssText = uiPlainText(`
-    position:absolute;left:0;top:1.6%;width:100%;height:92%;
+    position:absolute;left:0;top:-6%;width:100%;height:92%;
     display:flex;align-items:center;justify-content:center;
     font-size:clamp(${uiPx(9)}px,2.6vmin,${uiPx(12)}px);font-weight:bold;line-height:1.2;
     padding:0 clamp(4px,1.2vmin,8px);box-sizing:border-box;text-align:center;
@@ -11681,127 +11677,14 @@ function startGame(character: CharacterType = 'megachad'): void {
 // Bootstrap
 // =============================================================================
 
-// =============================================================================
-// 启动 loading 进度条
-// =============================================================================
-// 旧行为：boot 期间（加载所有模型 + 关卡）整屏停在 index.html 的纯蓝背景，无任何反馈，
-// 手机慢网下几十秒白屏，用户易以为卡死退出。这里加一个进度浮层，由 bootLoadingManager
-// 的 onProgress 汇总「已加载/总数」驱动，进度只增不减（新 load 入队会抬高 total，避免回跳）。
-let bootLoadingOverlay: HTMLDivElement | null = null;
-let bootLoadingBar: HTMLDivElement | null = null;
-let bootLoadingPct = 0;
-
-function showBootLoadingOverlay(): void {
-  const overlay = document.createElement('div');
-  overlay.id = 'boot-loading';
-  overlay.style.cssText =
-    'position:fixed;inset:0;z-index:5000;display:flex;flex-direction:column;align-items:center;' +
-    'justify-content:center;gap:18px;background:#87ceeb;color:#fff;' +
-    `font-family:${UI_FONT_FACE};`;
-
-  const title = document.createElement('div');
-  title.textContent = t('game.title');
-  // 主菜单游戏标题（loading 屏 / 大 logo 字）：32–64px 用 2px 8 向描边统一卡通厚度感。
-  title.style.cssText = uiPlainTextBold('font-size:clamp(32px,10vw,64px);font-weight:700;letter-spacing:2px;');
-
-  const track = document.createElement('div');
-  track.style.cssText =
-    'width:min(70vw,420px);height:14px;border:3px solid rgba(0,0,0,0.5);border-radius:8px;' +
-    'background:rgba(0,0,0,0.2);overflow:hidden;';
-  const bar = document.createElement('div');
-  bar.style.cssText = 'width:0%;height:100%;background:#ffd93b;transition:width 0.2s ease-out;';
-  track.appendChild(bar);
-
-  const hint = document.createElement('div');
-  hint.textContent = t('boot.loading');
-  hint.style.cssText = 'font-size:clamp(8px,2.5vw,11px);opacity:0.85;';
-
-  overlay.appendChild(title);
-  overlay.appendChild(track);
-  overlay.appendChild(hint);
-  document.body.appendChild(overlay);
-
-  bootLoadingOverlay = overlay;
-  bootLoadingBar = bar;
-  bootLoadingPct = 0;
-}
-
-function setBootLoadingProgress(pct: number): void {
-  // 单调不减：load 队列 total 会随阶段增长导致比例回跳，这里取历史最大值平滑显示。
-  const clamped = Math.max(bootLoadingPct, Math.min(100, Math.round(pct)));
-  bootLoadingPct = clamped;
-  if (bootLoadingBar) bootLoadingBar.style.width = `${clamped}%`;
-}
-
-function hideBootLoadingOverlay(): void {
-  setBootLoadingProgress(100);
-  const overlay = bootLoadingOverlay;
-  if (!overlay) return;
-  bootLoadingOverlay = null;
-  bootLoadingBar = null;
-  overlay.style.transition = 'opacity 0.35s ease-out';
-  overlay.style.opacity = '0';
-  window.setTimeout(() => overlay.remove(), 400);
-}
-
-/** 平台生命周期：资源加载完毕、主菜单可交互时通知一次（duko / KubeeClient）。 */
-let kubeeGameLoadedSent = false;
-function notifyKubeeGameLoaded(): void {
-  if (kubeeGameLoadedSent) return;
-  const client = globalThis.KubeeClient;
-  if (!client?.game?.loaded) return;
-  try {
-    client.game.loaded();
-    kubeeGameLoadedSent = true;
-  } catch (err) {
-    console.warn('[Boot] KubeeClient.game.loaded() failed:', err);
-  }
-}
-
-async function main(): Promise<void> {
-  const i18nMode = (import.meta.env.VITE_I18N_MODE as I18nMode | undefined) ?? 'locked';
-  const i18nLocale = import.meta.env.VITE_I18N_LOCALE as string | undefined;
-
-  await ensureGameUIFontsLoaded();
-
-  initI18n({
-    locales: { zh: zhLocale, en: enLocale },
-    defaultLocale: 'en',
-    fallbackLocale: 'en',
-    mode: i18nMode,
-    locale: i18nLocale,
-  });
-  installButtonClickSfx();
-
-  showBootLoadingOverlay();
-  // 进度封顶 95%，留最后 5% 给关卡解析 / 主菜单构建，hide 时补满到 100%。
-  bootLoadingManager.onProgress = (_url, loaded, total) => {
-    if (total > 0) setBootLoadingProgress((loaded / total) * 95);
-  };
-  bootLoadingManager.onError = (url) => console.warn('[Boot] asset failed:', url);
-
-  try {
-    await loadModels();
-    // 默认关卡（whitebox）必须加载成功。
-    await tryLoadLevel(DEFAULT_LEVEL_NAME);
-    // Hard 测试关（stage2）尽力预加载；缺失时不阻塞启动。
-    try {
-      await tryLoadLevel(HARD_TEST_LEVEL_NAME);
-    } catch (error) {
-      console.warn(`[Level] Optional hard test level "${HARD_TEST_LEVEL_NAME}" preload failed:`, error);
-    }
-    // 菜单默认回到第一关关卡上下文。
-    await tryLoadLevel(DEFAULT_LEVEL_NAME);
-  } finally {
-    hideBootLoadingOverlay();
-  }
-
-  showMainMenu();
-  notifyKubeeGameLoaded();
-}
-
 export function bootGameClient(): void {
-  void main().catch((error) => {
+  void runBootFlow({
+    loadModels,
+    tryLoadLevel,
+    defaultLevelName: DEFAULT_LEVEL_NAME,
+    hardTestLevelName: HARD_TEST_LEVEL_NAME,
+    showMainMenu,
+  }).catch((error) => {
     console.error('[MegaBonk] Boot failed:', error);
   });
 }

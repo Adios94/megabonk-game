@@ -6,9 +6,13 @@
   "scripts": {
     "dev": "VITE_I18N_LOCALE=zh VITE_I18N_MODE=dev vite --host",
     "dev:manual": "vite --host --port 5173",
-    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "build": "pnpm typecheck && vite build",
     "build:analyze": "VITE_I18N_MODE=dev NODE_ENV=analyze vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "pnpm test:unit",
+    "test:unit": "pnpm --filter @minigame/core exec vitest run",
+    "quality": "pnpm typecheck && pnpm test:unit"
   },
   "dependencies": {
     "@eebuk/cli": "1.0.5",

@@ -13,8 +13,8 @@
 export const UI_FONT_FACE = '"Lilita One","Noto Sans SC",Arial,sans-serif';
 
 export const GAME_UI_FONT_FILES = {
-  lilitaOneTtf: '/fonts/LilitaOne-Regular.ttf',
-  notoSansScVf: '/fonts/NotoSansSC-VF.ttf',
+  lilitaOneWoff2: '/fonts/LilitaOne-Regular.woff2',
+  notoSansScVfWoff2: '/fonts/NotoSansSC-VF.woff2',
 } as const;
 
 export function installGameUIFonts(): void {
@@ -27,14 +27,14 @@ export function installGameUIFonts(): void {
   style.textContent = `
 @font-face {
   font-family: 'Lilita One';
-  src: url('${GAME_UI_FONT_FILES.lilitaOneTtf}') format('truetype');
+  src: url('${GAME_UI_FONT_FILES.lilitaOneWoff2}') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Noto Sans SC';
-  src: url('${GAME_UI_FONT_FILES.notoSansScVf}') format('truetype');
+  src: url('${GAME_UI_FONT_FILES.notoSansScVfWoff2}') format('woff2');
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;

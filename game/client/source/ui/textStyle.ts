@@ -1,22 +1,29 @@
-/** 局内普通文案：白字 + 8 向黑描边（卡通描边风） */
+/** 局内普通文案：白字 + 响应式 8 向黑描边（手机更细，桌面保持原厚度） */
+
+const UI_TEXT_OUTLINE_PX = 'clamp(0.65px,0.18vmin,1px)';
+const UI_TEXT_OUTLINE_NEG_PX = 'clamp(-1px,-0.18vmin,-0.65px)';
+const UI_TEXT_OUTLINE_BOLD_PX = 'clamp(1.2px,0.36vmin,2px)';
+const UI_TEXT_OUTLINE_BOLD_NEG_PX = 'clamp(-2px,-0.36vmin,-1.2px)';
+const UI_TEXT_OUTLINE_BOLD_BOTTOM_PX = 'clamp(1.8px,0.54vmin,3px)';
+const UI_TEXT_FAUX_BOLD_PX = 'clamp(0.25px,0.07vmin,0.4px)';
 
 export const UI_TEXT_OUTLINE_SHADOW = [
 
-  '-1px -1px 0 #000',
+  `${UI_TEXT_OUTLINE_NEG_PX} ${UI_TEXT_OUTLINE_NEG_PX} 0 #000`,
 
-  '1px -1px 0 #000',
+  `${UI_TEXT_OUTLINE_PX} ${UI_TEXT_OUTLINE_NEG_PX} 0 #000`,
 
-  '-1px 1px 0 #000',
+  `${UI_TEXT_OUTLINE_NEG_PX} ${UI_TEXT_OUTLINE_PX} 0 #000`,
 
-  '1px 1px 0 #000',
+  `${UI_TEXT_OUTLINE_PX} ${UI_TEXT_OUTLINE_PX} 0 #000`,
 
-  '0 -1px 0 #000',
+  `0 ${UI_TEXT_OUTLINE_NEG_PX} 0 #000`,
 
-  '0 1px 0 #000',
+  `0 ${UI_TEXT_OUTLINE_PX} 0 #000`,
 
-  '-1px 0 0 #000',
+  `${UI_TEXT_OUTLINE_NEG_PX} 0 0 #000`,
 
-  '1px 0 0 #000',
+  `${UI_TEXT_OUTLINE_PX} 0 0 #000`,
 
 ].join(',');
 
@@ -34,39 +41,39 @@ export const UI_TEXT_OUTLINE_SHADOW = [
  */
 export const UI_TEXT_OUTLINE_SHADOW_BOLD = [
 
-  '-2px -2px 0 #000',
+  `${UI_TEXT_OUTLINE_BOLD_NEG_PX} ${UI_TEXT_OUTLINE_BOLD_NEG_PX} 0 #000`,
 
-  '-1px -2px 0 #000',
+  `${UI_TEXT_OUTLINE_NEG_PX} ${UI_TEXT_OUTLINE_BOLD_NEG_PX} 0 #000`,
 
-  '0 -2px 0 #000',
+  `0 ${UI_TEXT_OUTLINE_BOLD_NEG_PX} 0 #000`,
 
-  '1px -2px 0 #000',
+  `${UI_TEXT_OUTLINE_PX} ${UI_TEXT_OUTLINE_BOLD_NEG_PX} 0 #000`,
 
-  '2px -2px 0 #000',
+  `${UI_TEXT_OUTLINE_BOLD_PX} ${UI_TEXT_OUTLINE_BOLD_NEG_PX} 0 #000`,
 
-  '-2px -1px 0 #000',
+  `${UI_TEXT_OUTLINE_BOLD_NEG_PX} ${UI_TEXT_OUTLINE_NEG_PX} 0 #000`,
 
-  '2px -1px 0 #000',
+  `${UI_TEXT_OUTLINE_BOLD_PX} ${UI_TEXT_OUTLINE_NEG_PX} 0 #000`,
 
-  '-2px 0 0 #000',
+  `${UI_TEXT_OUTLINE_BOLD_NEG_PX} 0 0 #000`,
 
-  '2px 0 0 #000',
+  `${UI_TEXT_OUTLINE_BOLD_PX} 0 0 #000`,
 
-  '-2px 1px 0 #000',
+  `${UI_TEXT_OUTLINE_BOLD_NEG_PX} ${UI_TEXT_OUTLINE_PX} 0 #000`,
 
-  '2px 1px 0 #000',
+  `${UI_TEXT_OUTLINE_BOLD_PX} ${UI_TEXT_OUTLINE_PX} 0 #000`,
 
-  '-2px 2px 0 #000',
+  `${UI_TEXT_OUTLINE_BOLD_NEG_PX} ${UI_TEXT_OUTLINE_BOLD_PX} 0 #000`,
 
-  '-1px 2px 0 #000',
+  `${UI_TEXT_OUTLINE_NEG_PX} ${UI_TEXT_OUTLINE_BOLD_PX} 0 #000`,
 
-  '0 2px 0 #000',
+  `0 ${UI_TEXT_OUTLINE_BOLD_PX} 0 #000`,
 
-  '1px 2px 0 #000',
+  `${UI_TEXT_OUTLINE_PX} ${UI_TEXT_OUTLINE_BOLD_PX} 0 #000`,
 
-  '2px 2px 0 #000',
+  `${UI_TEXT_OUTLINE_BOLD_PX} ${UI_TEXT_OUTLINE_BOLD_PX} 0 #000`,
 
-  '0 3px 0 rgba(0,0,0,0.55)',
+  `0 ${UI_TEXT_OUTLINE_BOLD_BOTTOM_PX} 0 rgba(0,0,0,0.55)`,
 
 ].join(',');
 
@@ -84,7 +91,7 @@ export const UI_TEXT_OUTLINE_GUTTER = 'padding-inline:3px;box-sizing:border-box;
  * 单纯调 weight 也会让中文（Noto Sans SC 走可变轴真实变粗）和英文（不动）观感脱节。
  * text-stroke 对所有字体一视同仁，能保证中英文同步加粗。
  */
-export const UI_TEXT_FAUX_BOLD = '-webkit-text-stroke:0.4px currentColor;text-stroke:0.4px currentColor;paint-order:stroke fill;';
+export const UI_TEXT_FAUX_BOLD = `-webkit-text-stroke:${UI_TEXT_FAUX_BOLD_PX} currentColor;text-stroke:${UI_TEXT_FAUX_BOLD_PX} currentColor;paint-order:stroke fill;`;
 
 
 

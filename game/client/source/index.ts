@@ -87,6 +87,7 @@ import { CameraOrbit } from './systems/cameraOrbit.ts';
 import { PlayerInvincibilityFx } from './systems/playerFx.ts';
 import { BlobShadowPool } from './systems/blobShadows.ts';
 import { gsapAnimations } from './gsapAnimations.ts';
+import { perfOverlay } from './dev/perfOverlay.ts';
 import { uiPlainText, uiPlainTextBold, uiColoredText, uiColoredTextBold, UI_PLAIN_TEXT_STYLE, UI_TEXT_OUTLINE_SHADOW, UI_BAR_TEXT_LAYER } from './ui/textStyle.ts';
 import {
   createUpgradeFrameCard,
@@ -5209,6 +5210,8 @@ export class GameScene {
     // GL context 丢失期间停止一切渲染 / 状态读取（GPU 资源已失效），保留 rAF 循环以便恢复后续跑。
     if (this.contextLost) return;
 
+    perfOverlay.markFrameStart();
+
     this.frameIndex++;
 
     const now = performance.now();
@@ -5338,6 +5341,18 @@ export class GameScene {
     this.updateHUD(state, eventsFresh);
 
     this.renderFrame();
+
+    perfOverlay.frame({
+      renderer: this.renderer,
+      enemyCount: state.enemies.length,
+      projectileCount: state.projectiles.length,
+      pickupCount: state.pickups.length + (state.consumablePickups?.length ?? 0) + (state.goldMotes?.length ?? 0),
+      vfxAreaCount: state.areaEffects.length,
+      lodDensity: this.currentEnemyLod.density,
+      lodImpostorDist: this.currentEnemyLod.impostorDistance,
+      lodCullDist: this.currentEnemyLod.cullDistance,
+      pixelRatio: this.currentRenderPixelRatio,
+    });
   }
 
   // ===========================================================================

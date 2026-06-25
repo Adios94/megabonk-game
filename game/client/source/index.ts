@@ -108,6 +108,8 @@ import { applyPlatformJoystickSkin } from './ui/joystickSkin.ts';
 import {
   setMobileAltarInteractState,
   setMobileChestInteractState,
+  CHEST_OPEN_BUTTON_IMG,
+  JUMP_BUTTON_IMG,
   removeMobileActionCluster,
   setInGameTouchControlsEnabled,
   setupMobileActionButtons,
@@ -932,12 +934,108 @@ const HUD_COMBO_SCALE = 2 / 3;
 const HUD_COMBO_FONT_BASE = 28;
 const HUD_COMBO_FONT_PER_STACK = 1.5;
 const HUD_COMBO_FONT_MAX = 56;
+const INITIAL_UI_READY_TIMEOUT_MS = 2500;
 const SILVER_BADGE_BG = '#1a3a6e';
 const SILVER_BADGE_ICON_SIZE = 'clamp(22px,6vw,28px)';
 /** 底框高度（略低于图标） */
 const SILVER_BADGE_PILL_HEIGHT = 'clamp(16px,4.2vw,20px)';
 /** 底框左缘伸入图标水平中心（约为图标宽度一半） */
 const SILVER_BADGE_PILL_OVERLAP = 'clamp(11px,3vw,14px)';
+
+const uiImageReadyCache = new Map<string, Promise<void>>();
+
+function waitForAnimationFrames(count: number): Promise<void> {
+  return new Promise((resolve) => {
+    const step = (remaining: number): void => {
+      if (remaining <= 0) {
+        resolve();
+        return;
+      }
+      requestAnimationFrame(() => step(remaining - 1));
+    };
+    step(count);
+  });
+}
+
+function withUiReadyTimeout(work: Promise<void>, ms = INITIAL_UI_READY_TIMEOUT_MS): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(resolve, ms);
+    const finish = (): void => {
+      window.clearTimeout(timer);
+      resolve();
+    };
+    work.then(finish, finish);
+  });
+}
+
+function preloadUiImage(src: string): Promise<void> {
+  const existing = uiImageReadyCache.get(src);
+  if (existing) return existing;
+
+  const ready = withUiReadyTimeout(new Promise<void>((resolve) => {
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => resolve();
+    img.onerror = () => resolve();
+    img.src = src;
+    if (img.complete) {
+      resolve();
+    } else if (typeof img.decode === 'function') {
+      img.decode().then(resolve, resolve);
+    }
+  }));
+  uiImageReadyCache.set(src, ready);
+  return ready;
+}
+
+function waitForDomImageReady(img: HTMLImageElement): Promise<void> {
+  if (!img.currentSrc && !img.src) return Promise.resolve();
+  if (img.complete) return Promise.resolve();
+  if (typeof img.decode === 'function') {
+    return withUiReadyTimeout(img.decode().then(() => undefined, () => undefined));
+  }
+
+  return withUiReadyTimeout(new Promise<void>((resolve) => {
+    img.addEventListener('load', () => resolve(), { once: true });
+    img.addEventListener('error', () => resolve(), { once: true });
+  }));
+}
+
+function initialGameUiAssetPaths(): string[] {
+  return [
+    BAR_ASSETS.hp.track,
+    BAR_ASSETS.hp.fill,
+    BAR_ASSETS.shield.track,
+    BAR_ASSETS.shield.fill,
+    BAR_ASSETS.xp.track,
+    BAR_ASSETS.xp.fill,
+    BAR_ASSETS.boss.track,
+    BAR_ASSETS.boss.fill,
+    HUD_TASK_TRACK_BG,
+    HUD_RELIC_BAR_BG,
+    HUD_RELIC_SLOT_BG,
+    HUD_PAUSE_BUTTON_NORMAL,
+    HUD_RESUME_BUTTON_NORMAL,
+    GOLD_COIN_ICON_PATH,
+    SILVER_COIN_ICON_PATH,
+    KILL_COUNT_ICON_PATH,
+    CHEST_OPEN_BUTTON_IMG,
+    JUMP_BUTTON_IMG,
+    overtimeNoticeImagePath(),
+    finalSwarmNoticeImagePath(),
+  ];
+}
+
+async function waitForInitialGameUiReady(root: HTMLElement): Promise<void> {
+  const imagePaths = [...new Set(initialGameUiAssetPaths())];
+  const domImages = Array.from(root.querySelectorAll('img'));
+  await Promise.all([
+    ...imagePaths.map(preloadUiImage),
+    ...domImages.map(waitForDomImageReady),
+  ]);
+  // 等 CSS background 解码、字体度量与 DOM append 后的布局/绘制落到屏幕。
+  await waitForAnimationFrames(2);
+}
 
 function createSilverBadge(count: number, prefix = ''): HTMLDivElement {
   const badge = document.createElement('div');
@@ -2874,6 +2972,7 @@ export class GameScene {
 
   // DOM overlays
   private hudContainer!: HTMLDivElement;
+  private initialUiReady: Promise<void> = Promise.resolve();
   private hpBar!: HTMLDivElement;
   private hpBarInner!: HTMLImageElement;
   private hpText!: HTMLDivElement;
@@ -3154,6 +3253,7 @@ export class GameScene {
     this.setupGoldMoteMesh();
     this.setupVFX();
     this.setupHUD();
+    this.initialUiReady = waitForInitialGameUiReady(this.hudContainer);
 
     this.removeDisplayListener = installThreeHighDpi({
       renderer: this.renderer,
@@ -3184,6 +3284,10 @@ export class GameScene {
     );
 
     this.animate();
+  }
+
+  waitForInitialUiReady(): Promise<void> {
+    return this.initialUiReady;
   }
 
   playStartIntro(onComplete: () => void): void {
@@ -10499,7 +10603,7 @@ function showTierSelectScreen(): void {
       playTransition(
         () => {
           destroyTierSelectScreen();
-          startGame(character);
+          void startGame(character);
         },
         { duration: 800 },
       );
@@ -11633,7 +11737,7 @@ function formatQuestReward(reward: { type: string; value: string | number }): st
 
 let activeScene: GameScene | null = null;
 
-function startGame(character: CharacterType = 'megachad'): void {
+async function startGame(character: CharacterType = 'megachad'): Promise<void> {
   if (activeScene) {
     activeScene.destroy();
     activeScene = null;
@@ -11666,6 +11770,8 @@ function startGame(character: CharacterType = 'megachad'): void {
   const scene = new GameScene(session);
   activeScene = scene;
   scene.start();
+  await scene.waitForInitialUiReady();
+  if (activeScene !== scene) return;
   session.start({ startTickLoop: false });
   scene.playStartIntro(() => session.startTicks());
 

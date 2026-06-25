@@ -70,6 +70,7 @@ import { tickTierTransition } from './systems/tierTransition.ts';
 import { tickShrines, generateShrines, applyShrineReward } from './systems/shrines.ts';
 import { tickEnemySeparation } from './systems/enemySeparation.ts';
 import { addDamageEvent, applyKnockback, checkGameOver, resetDamageEventPool } from './systems/helpers.ts';
+import { acquireHitIds } from './helpers/hitIdsPool.ts';
 import { pickRandomOne } from './factories/spawnPick.ts';
 
 export class GameInstance {
@@ -558,7 +559,12 @@ function makeEffects(engine: Engine): AiEffects {
     },
     spawnProjectile: (p) => {
       if (!p.fromPlayer) {
-        const enemyProjectileCount = engine.state.projectiles.filter(proj => !proj.fromPlayer).length;
+        // 原 .filter().length 每次 spawn 分配新数组 + 闭包；改为 for-loop 计数零 alloc。
+        let enemyProjectileCount = 0;
+        const projectiles = engine.state.projectiles;
+        for (let i = 0; i < projectiles.length; i++) {
+          if (!projectiles[i].fromPlayer) enemyProjectileCount++;
+        }
         if (enemyProjectileCount >= 10) return null;
       }
       if (engine.state.projectiles.length >= MAX_PROJECTILES) return null;
@@ -566,7 +572,7 @@ function makeEffects(engine: Engine): AiEffects {
       const durationMult = p.fromPlayer ? (engine.state.player.durationMult ?? 1) : 1;
       engine.state.projectiles.push({
         id,
-        hitEnemyIds: [],
+        hitEnemyIds: acquireHitIds(),
         ...p,
         lifetime: p.lifetime * durationMult,
       });

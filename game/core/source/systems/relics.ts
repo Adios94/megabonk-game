@@ -84,7 +84,12 @@ export function getRelicDamageMultiplier(engine: Engine): number {
 
   const arsenalBadge = getRelicStack(player, 'arsenal_badge');
   if (arsenalBadge > 0) {
-    const level10Weapons = player.weapons.filter(w => w.level >= 10).length;
+    // 原 .filter().length 在每次武器开火都触发；用 for-loop 计数零 alloc。
+    let level10Weapons = 0;
+    const weapons = player.weapons;
+    for (let i = 0; i < weapons.length; i++) {
+      if (weapons[i].level >= 10) level10Weapons++;
+    }
     mult *= 1 + level10Weapons * 0.04 * arsenalBadge;
   }
 

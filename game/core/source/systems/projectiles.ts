@@ -14,6 +14,7 @@
 import { TICK_INTERVAL_MS } from '../config.ts';
 import { updateOrbitingProjectile } from '../helpers/projectileMath.ts';
 import { getTerrainHeightAt, isProjectileBlockedAt } from './levelGeometry.ts';
+import { releaseHitIds } from '../helpers/hitIdsPool.ts';
 import type { ProjectileState } from '../types.ts';
 import type { Engine } from './types.ts';
 
@@ -39,6 +40,7 @@ export function tickProjectiles(engine: Engine, dt: number): void {
       proj.z += proj.vz * dt;
 
       if (projectilePathBlocked(engine, proj, prevX, prevY, prevZ)) {
+        releaseHitIds(proj.hitEnemyIds);
         projectiles.splice(i, 1);
         continue;
       }
@@ -68,12 +70,14 @@ export function tickProjectiles(engine: Engine, dt: number): void {
 
     proj.lifetime -= dt;
     if (proj.lifetime <= 0) {
+      releaseHitIds(proj.hitEnemyIds);
       projectiles.splice(i, 1);
       continue;
     }
 
     const halfMap = (engine.config.mapSize + 20) * 0.5;
     if (Math.abs(proj.x) > halfMap || Math.abs(proj.z) > halfMap) {
+      releaseHitIds(proj.hitEnemyIds);
       projectiles.splice(i, 1);
     }
   }

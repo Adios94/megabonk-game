@@ -89,6 +89,7 @@ import { PlayerInvincibilityFx } from './systems/playerFx.ts';
 import { BlobShadowPool } from './systems/blobShadows.ts';
 import { gsapAnimations } from './gsapAnimations.ts';
 import { perfOverlay } from './dev/perfOverlay.ts';
+import { tryScheduleGC } from './dev/gcScheduler.ts';
 import { uiPlainText, uiPlainTextBold, uiColoredText, uiColoredTextBold, UI_PLAIN_TEXT_STYLE, UI_TEXT_OUTLINE_SHADOW, UI_BAR_TEXT_LAYER } from './ui/textStyle.ts';
 import {
   createUpgradeFrameCard,
@@ -161,8 +162,23 @@ const ALTAR_INTERACT_MAX_Y_DELTA = ALTAR_INTERACT_RADIUS;
 // 之所以要设上限：游戏过程中如果某个瞬间有很多敌人/投射物同时存在，池子会被
 // 撑大；当后续不再需要那么多时，多余的实例若不释放，会一直占据内存（材质/
 // 骨架包装器/动画 mixer 都会留在 GPU/JS 堆里），最终触发 Major GC 大暂停。
-const ENEMY_POOL_CAP_PER_TYPE = 24;
-const PROJECTILE_POOL_CAP = 16;
+// 池容量：经堆快照取证后从 24 / 16 砍下。原值同屏同种敌人 100% 池命中，但 1.45M 节点 / 6.6M 边
+// 让 Major GC 单次 ~80-200ms。降到 8 / 6 后命中率 ~90%+，偶尔的"冷起手 clone"≤16ms 远比 GC
+// 大卡顿不可见。节点数砍 ~80k，Major GC 时间 -10ms / Heap -10MB。详见 docs/perf-notes.md 与
+// .cursor/transcripts 里 GC 调查那条链路。
+const ENEMY_POOL_CAP_PER_TYPE = 8;
+const PROJECTILE_POOL_CAP = 6;
+
+// 判定"全屏暂停 UI"phase：进入瞬间适合做 Major GC（玩家在看面板，几十毫秒无感）。
+// 故意不把 'boss_intro' / 'menu' 算进来：前者只是 1-2s 倒计时不能确保用户停在面板上，
+// 后者是切场景，自然会触发 GC。menu/playing 之间的过渡不算。
+function isPausePhaseForGc(phase: GamePhase): boolean {
+  return phase === 'level_up'
+    || phase === 'chest_reward'
+    || phase === 'shrine_reward'
+    || phase === 'paused';
+}
+
 import { OWNED_CLONE_KEY, disposeOwnedResources } from './materials/disposeOwned.ts';
 
 // GPU Curved World (Rolling Horizon) — see materials/curvedWorld.ts
@@ -1255,6 +1271,51 @@ function bootUiPreloadPaths(): string[] {
  * 的 2.5s 软超时，否则 loading 100% 时图还没回来）。带进度回调可以让
  * loading 条平滑推进。
  */
+/**
+ * 同时最多发起的 UI 图片预加载请求数。
+ *
+ * 为什么是 6 而不是无限并发：Android WebView / 微信 / 抖音 等内嵌浏览器内核对单域
+ * 并发连接有上限（默认 6-8），当 boot 一次性 Promise.all 几十张图时，超出部分会被
+ * cancel / queue 超时 / 静默失败，导致"首次进入有图缺失"。改成限流后每张图都能稳
+ * 拿到 connection slot，配合 retry 几乎能保证全部成功。
+ */
+const BOOT_UI_PRELOAD_CONCURRENCY = 6;
+
+/**
+ * 单张 UI 图片预加载失败时的重试次数。
+ * 第一次：立即；第二次：250ms 后；第三次：750ms 后。三次都失败才放弃（不阻塞 boot）。
+ */
+const BOOT_UI_PRELOAD_RETRIES = 2;
+
+function loadOneUiImageWithRetry(src: string, retries: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let attempt = 0;
+    const tryOnce = (): void => {
+      const img = new Image();
+      img.decoding = 'async';
+      const succeed = (): void => {
+        if (typeof img.decode === 'function') img.decode().then(() => resolve(), () => resolve());
+        else resolve();
+      };
+      img.onload = succeed;
+      img.onerror = () => {
+        if (attempt >= retries) {
+          console.warn(`[Boot] UI image preload failed after ${attempt + 1} attempts:`, src);
+          resolve();
+          return;
+        }
+        const backoffMs = 250 * Math.pow(3, attempt);
+        attempt++;
+        setTimeout(tryOnce, backoffMs);
+      };
+      // cache-buster 不要加 —— 我们想命中 HTTP cache；WebView 失败大概率是 connection 层不是 cache 层。
+      img.src = src;
+      if (img.complete && img.naturalWidth > 0) succeed();
+    };
+    tryOnce();
+  });
+}
+
 async function preloadBootUiAssets(
   onProgress?: (loaded: number, total: number) => void,
 ): Promise<void> {
@@ -1263,48 +1324,32 @@ async function preloadBootUiAssets(
   if (total === 0) return;
 
   let loaded = 0;
-  const reportOne = () => {
+  const reportOne = (): void => {
     loaded += 1;
     onProgress?.(loaded, total);
   };
 
-  await Promise.all(paths.map((src) => {
-    const task = new Promise<void>((resolve) => {
-      let settled = false;
-      const done = (): void => {
-        if (settled) return;
-        settled = true;
-        reportOne();
-        resolve();
-      };
-      const img = new Image();
-      img.decoding = 'async';
-      img.onload = () => {
-        if (typeof img.decode === 'function') {
-          img.decode().then(done, done);
-        } else {
-          done();
-        }
-      };
-      img.onerror = () => {
-        console.warn('[Boot] UI image preload failed:', src);
-        done();
-      };
-      img.src = src;
-      if (img.complete && img.naturalWidth > 0) {
-        if (typeof img.decode === 'function') {
-          img.decode().then(done, done);
-        } else {
-          done();
-        }
+  // 并发限流：worker pool 模式 —— N 个 worker 从队列里取 path 启动 fetch，每完成一个
+  // 立刻拉下一个。关键点：fetch 必须在 worker 里才启动（不能预先 map 出 Promise 数组，
+  // 那样所有 fetch 会立刻同时发出，限流失效）。
+  const queue = paths.slice();
+  const runWorker = async (): Promise<void> => {
+    while (queue.length > 0) {
+      const src = queue.shift();
+      if (src === undefined) break;
+      // 复用 cache：另一处（preloadUiImage）已经在 fetch 同张图就等它就好，不再起新 Image
+      let task = uiImageReadyCache.get(src);
+      if (!task) {
+        task = loadOneUiImageWithRetry(src, BOOT_UI_PRELOAD_RETRIES);
+        uiImageReadyCache.set(src, task);
       }
-    });
-    // 让 waitForInitialGameUiReady 走 cache 直接命中（避免再起一个 Image 二次 fetch）。
-    if (!uiImageReadyCache.has(src)) {
-      uiImageReadyCache.set(src, task);
+      try { await task; } catch { /* loadOneUiImageWithRetry 永远 resolve，这里只是兜底 */ }
+      reportOne();
     }
-    return task;
-  }));
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(BOOT_UI_PRELOAD_CONCURRENCY, paths.length) }, runWorker),
+  );
 }
 
 async function waitForInitialGameUiReady(root: HTMLElement): Promise<void> {
@@ -3206,6 +3251,12 @@ export class GameScene {
    * （玩家有 10 个 relic 时是 alloc 大头之一，间接拉爆 Major GC 节奏）。
    */
   private readonly _scratchAcquiredRelics: Array<[RelicId, number]> = [];
+  /**
+   * HUD tome 槽位用：updateHUD 每帧把 player.tomes 按 TOME_HUD_TYPE_RANK 排序展示。
+   * 旧实现用 `.map().sort().map()` 三段链，每帧分配 3 个数组 + N 个 {tome, index} 中间对象。
+   * 复用 scratch + 原地 sort，借 Array.prototype.sort 稳定性保留 tomes 原始顺序作为次序。
+   */
+  private readonly _scratchOrderedTomes: Array<GameState['player']['tomes'][number]> = [];
   // HitFlash 受击 tint 系统 — 见 render/HitFlashSystem.ts
   private hitFlash!: HitFlashSystem;
   // 敌人弹幕火焰 billboard 朝向计算的临时量（避免每帧每弹分配）
@@ -3473,12 +3524,16 @@ export class GameScene {
   private pickupRenderPhase = 0;
   private nextSlowHudUpdateAt = 0;
   private lastSlowHudPhase: GamePhase | null = null;
-  private lastHpText = '';
+  // HUD 差分缓存：以**数字输入**为键，避免每帧 template literal 分配字符串再做字符串比较。
+  // 60Hz × 5 个文本 = ~300 string/sec，整数比较是零 alloc。
+  private lastHpInt = -1;
+  private lastMaxHpInt = -1;
   private lastShieldDisplay = '';
-  private lastShieldText = '';
-  private lastLevelText = '';
-  private lastTimerText = '';
-  private lastKillText = '';
+  private lastShieldInt = -1;
+  private lastMaxShieldInt = -1;
+  private lastLevelNum = -1;
+  private lastTotalSec = -1;
+  private lastKillCountNum = -1;
   private lastSilverEarned = -1;
   private lastGold = -1;
   private vfxEventBudgetRemaining = Number.MAX_SAFE_INTEGER;
@@ -3527,9 +3582,12 @@ export class GameScene {
    */
   private weaponSlotsSig = '';
   private weaponCooldownOverlays: Array<HTMLElement | null> = [];
-  private tomesSig = '';
-  private relicsSig = '';
-  private bondsSig = '';
+  // tomesSig / relicsSig / bondsSig 从字符串 sig 改为 32-bit 数字哈希：避免每帧 `+=` 字符串拼接
+  // 产生临时字符串。模板字面量 `${num}` 仍能拼成最终 cache key，对下游无破坏。
+  // 碰撞概率 ~1/2^32，可接受（最坏后果 = DOM 漏更新一帧，下帧自愈）。
+  private tomesSig = 0;
+  private relicsSig = 0;
+  private bondsSig = 0;
   /** bondDetailOverlay 当前展示内容的 sig；避免每帧重写 innerHTML（GC 大头之一）。 */
   private bondDetailSig = '';
   /** 羁绊槽点击展开时使用最近一帧 state，避免 DOM 缓存后闭包拿到旧数值。 */
@@ -5561,6 +5619,21 @@ export class GameScene {
       this.spawnLevelUpBurst(p.x, p.y, p.z);
       this.triggerScreenFlash('#ffcc00', 0.2);
     }
+
+    // 进入"全屏暂停 UI"那一刻做两件事，把 Major GC 卡顿挪到玩家不感知的暂停期：
+    //  1) tryScheduleGC: Chrome + --expose-gc 才有效；直接强制走一次 Mark-Sweep。
+    //  2) drainPoolsForPause: WebView 友好的替代方案 —— 把 enemy / projectile 对象池
+    //     抽空到一半，让被抽掉的 mesh + 材质 + mixer 整体变成 unreachable。下次 V8
+    //     自然 Major GC 时存活集变小，GC 自身耗时下降，间接降低战斗中卡顿。
+    // 两条腿一起走：开了 --expose-gc 的 Chrome 调试时双重收益；WebView 真机也至少
+    // 拿到 drain 的那一部分。
+    if (
+      isPausePhaseForGc(state.phase)
+      && !isPausePhaseForGc(this.lastPhase)
+    ) {
+      this.drainPoolsForPause();
+      tryScheduleGC(state.phase);
+    }
     this.lastPhase = state.phase;
 
     if (this.levelUpAnimTimer > 0 && p.alive && this.deathAnimTimer <= 0) {
@@ -5748,6 +5821,43 @@ export class GameScene {
   private triggerScreenFlash(color: string, duration: number): void {
     // 使用 GSAP 屏幕闪光动画
     gsapAnimations.screenFlash(color, duration);
+  }
+
+  /**
+   * 暂停瞬间把对象池抽空到一半，释放掉的 mesh 走 scene.remove + disposeOwnedResources。
+   *
+   * 目的：降低 V8 自然 Major GC 的"存活集"，从而缩短下次 GC 自身耗时（Mark-Sweep
+   * 是 O(live nodes)）。这是 WebView 友好的 GC 优化路径 —— 不需要 window.gc，纯靠
+   * "把暂停期产生的可回收对象塞给 V8 待回收"。
+   *
+   * 触发时机：进入 level_up / chest_reward / shrine_reward / paused 的瞬间，玩家正
+   * 在看面板，~10-30ms 的 dispose 工作完全不可见。
+   *
+   * 取舍：drain 后池命中率从 ~95% 降到 ~80%，第一次回到战斗时可能多 1-2 次 cold
+   * clone (~16ms/次)，发生在战斗刚开始没人会注意。每池保底留 2 个避免完全 cold。
+   */
+  private drainPoolsForPause(): void {
+    let drained = 0;
+
+    const drainArr = (pool: THREE.Object3D[], minKeep: number): void => {
+      const target = Math.max(minKeep, pool.length >> 1);
+      while (pool.length > target) {
+        const obj = pool.pop();
+        if (!obj) break;
+        this.scene.remove(obj);
+        disposeOwnedResources(obj);
+        drained++;
+      }
+    };
+
+    for (const pool of this.enemyPool.values()) drainArr(pool, 2);
+    for (const pool of this.weaponPool.values()) drainArr(pool, 1);
+    drainArr(this.axePool, 1);
+    drainArr(this.bossProjPool, 1);
+
+    if (drained > 0 && import.meta.env.DEV) {
+      console.log(`[gc] drained ${drained} pooled meshes on pause`);
+    }
   }
 
   // ─── Hit flash delegates — 实现已迁至 render/HitFlashSystem.ts ───
@@ -8187,10 +8297,12 @@ export class GameScene {
       setSvgBarPercent(this.hpBarInner, hpPercent);
       this.lastHpPercent = hpPercent;
     }
-    const hpText = `${Math.max(0, Math.ceil(p.hp))} / ${Math.ceil(p.maxHp)}`;
-    if (hpText !== this.lastHpText) {
-      this.hpText.textContent = hpText;
-      this.lastHpText = hpText;
+    const hpInt = Math.max(0, Math.ceil(p.hp));
+    const maxHpInt = Math.ceil(p.maxHp);
+    if (hpInt !== this.lastHpInt || maxHpInt !== this.lastMaxHpInt) {
+      this.lastHpInt = hpInt;
+      this.lastMaxHpInt = maxHpInt;
+      this.hpText.textContent = `${hpInt} / ${maxHpInt}`;
     }
     this.updateLowHealthFx(p);
 
@@ -8204,10 +8316,12 @@ export class GameScene {
       }
       const shieldPercent = Math.max(0, Math.min(100, (shield / maxShield) * 100));
       setSvgBarPercent(this.shieldBarInner, shieldPercent);
-      const shieldText = `${Math.max(0, Math.ceil(shield))} / ${Math.ceil(maxShield)}`;
-      if (shieldText !== this.lastShieldText) {
-        this.shieldText.textContent = shieldText;
-        this.lastShieldText = shieldText;
+      const shieldInt = Math.max(0, Math.ceil(shield));
+      const maxShieldInt = Math.ceil(maxShield);
+      if (shieldInt !== this.lastShieldInt || maxShieldInt !== this.lastMaxShieldInt) {
+        this.lastShieldInt = shieldInt;
+        this.lastMaxShieldInt = maxShieldInt;
+        this.shieldText.textContent = `${shieldInt} / ${maxShieldInt}`;
       }
     } else {
       if (this.lastShieldDisplay !== 'none') {
@@ -8223,11 +8337,11 @@ export class GameScene {
       this.lastXpPercent = xpPercent;
     }
 
-    // Level label straddles XP bar top edge with GSAP pulse animation
-    const levelText = t('hud.level', { level: String(p.level) });
-    if (levelText !== this.lastLevelText) {
-      this.levelLabel.textContent = levelText;
-      this.lastLevelText = levelText;
+    // Level label straddles XP bar top edge with GSAP pulse animation.
+    // 数字缓存：仅在等级变化时才走 i18n 插值（i18n 调用本身分配对象 + 字符串）。
+    if (p.level !== this.lastLevelNum) {
+      this.lastLevelNum = p.level;
+      this.levelLabel.textContent = t('hud.level', { level: String(p.level) });
     }
     if (this.levelCompPulseTimer > 0) {
       this.levelCompPulseTimer -= 1 / 60;
@@ -8245,22 +8359,22 @@ export class GameScene {
     }
 
     // Difficulty / timer / silver / kills
-    const totalSec = Math.floor(state.gameTime);
-    const minutes = Math.floor(totalSec / 60);
-    const seconds = totalSec % 60;
-    const timeStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
     if (slowHudUpdate) {
       this.setTierBadge(state.tier);
       this.setStageBadge(state.stage);
     }
-    if (timeStr !== this.lastTimerText) {
-      this.timerTimeEl.textContent = timeStr;
-      this.lastTimerText = timeStr;
+    // 计时器：秒级粒度。totalSec 是 number，每秒最多变 1 次 → template literal 也只调 1 次/秒。
+    const totalSec = Math.floor(state.gameTime);
+    if (totalSec !== this.lastTotalSec) {
+      this.lastTotalSec = totalSec;
+      const minutes = Math.floor(totalSec / 60);
+      const seconds = totalSec % 60;
+      this.timerTimeEl.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
     }
-    const killText = String(state.stats.killCount);
-    if (killText !== this.lastKillText) {
-      this.killCountEl.textContent = killText;
-      this.lastKillText = killText;
+    // 击杀数：直接以 number 比较，避免每帧 String() 转换。
+    if (state.stats.killCount !== this.lastKillCountNum) {
+      this.lastKillCountNum = state.stats.killCount;
+      this.killCountEl.textContent = String(state.stats.killCount);
     }
     if (state.stats.silverEarned !== this.lastSilverEarned) {
       setSilverBadgeAmount(this.silverLabel, state.stats.silverEarned);
@@ -8284,16 +8398,22 @@ export class GameScene {
 
     // --- Tome stack (top-right second column): grouped by tome type, stable within each group ---
     // 仅在法书集合 / 等级变化时重建（旧实现每帧全量重建 DOM）。
-    const orderedTomes = p.tomes
-      .map((tome, index) => ({ tome, index }))
-      .sort((a, b) => {
-        const ar = TOME_HUD_TYPE_RANK.get(a.tome.type) ?? Number.MAX_SAFE_INTEGER;
-        const br = TOME_HUD_TYPE_RANK.get(b.tome.type) ?? Number.MAX_SAFE_INTEGER;
-        return ar - br || a.index - b.index;
-      })
-      .map(entry => entry.tome);
-    let tomesSig = '';
-    for (const tome of orderedTomes) tomesSig += `${tome.type}:${tome.level}|`;
+    // 复用 scratch；Array.prototype.sort 在现代引擎是 stable，原始 p.tomes 顺序自然成为次序键。
+    const orderedTomes = this._scratchOrderedTomes;
+    orderedTomes.length = 0;
+    for (let ti = 0; ti < p.tomes.length; ti++) orderedTomes.push(p.tomes[ti]);
+    orderedTomes.sort((a, b) => {
+      const ar = TOME_HUD_TYPE_RANK.get(a.type) ?? Number.MAX_SAFE_INTEGER;
+      const br = TOME_HUD_TYPE_RANK.get(b.type) ?? Number.MAX_SAFE_INTEGER;
+      return ar - br;
+    });
+    // 数字哈希：rank * 1000 + level 一定唯一（level 通常 < 100），用 (h * 33) ^ x 累积。
+    let tomesSig = orderedTomes.length | 0;
+    for (let ti = 0; ti < orderedTomes.length; ti++) {
+      const tome = orderedTomes[ti];
+      const rank = TOME_HUD_TYPE_RANK.get(tome.type) ?? 9999;
+      tomesSig = ((tomesSig * 33) ^ (rank * 1000 + tome.level)) | 0;
+    }
     if (tomesSig !== this.tomesSig) {
       this.tomesSig = tomesSig;
       this.tomesSlotsContainer.innerHTML = '';
@@ -8348,8 +8468,13 @@ export class GameScene {
     acquiredRelics.length = acquiredCount;
     const visibleRelics = acquiredRelics;
     // 仅在可见的前 10 个遗物集合 / 数量变化时重建；超出 10 个不渲染。
-    let relicsSig = '';
-    for (const [id, count] of visibleRelics) relicsSig += `|${id}:${count}`;
+    // 数字哈希：用 RELIC 在 ALL_RELIC_IDS 里的索引（稳定）+ count 累积。
+    let relicsSig = visibleRelics.length | 0;
+    for (let ri = 0; ri < visibleRelics.length; ri++) {
+      const entry = visibleRelics[ri];
+      const idIdx = ALL_RELIC_IDS.indexOf(entry[0]);
+      relicsSig = ((relicsSig * 33) ^ (idIdx * 10000 + entry[1])) | 0;
+    }
     if (relicsSig !== this.relicsSig) {
       this.relicsSig = relicsSig;
       this.relicSlotsContainer.innerHTML = '';
@@ -8894,8 +9019,17 @@ export class GameScene {
     }
 
     // 仅在羁绊集合 / 档位变化时重建槽位（旧实现每帧重建 + 每帧重绑 pointerdown 监听）。
-    let bondsSig = '';
-    for (const prog of bonds) bondsSig += `${prog.bondId}:${prog.tier}|`;
+    // 数字哈希：bondId 字符串 hash + tier 累积。bondId 用 stringHashCode 转 int 后混入。
+    let bondsSig = bonds.length | 0;
+    for (let bi = 0; bi < bonds.length; bi++) {
+      const prog = bonds[bi];
+      // 简易字符串哈希：FNV-1a-lite，避免每帧 charCodeAt 数百次（bondId 通常 ≤ 16 chars）。
+      let h = 2166136261 | 0;
+      for (let ci = 0; ci < prog.bondId.length; ci++) {
+        h = ((h ^ prog.bondId.charCodeAt(ci)) * 16777619) | 0;
+      }
+      bondsSig = ((bondsSig * 33) ^ (h ^ prog.tier)) | 0;
+    }
     if (bondsSig !== this.bondsSig) {
       this.bondsSig = bondsSig;
       this.bondSlotsContainer.innerHTML = '';

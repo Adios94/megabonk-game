@@ -161,7 +161,13 @@ export function onBondWeaponHit(
           if (targetIsEnemy(target)) {
             const { lSum } = evalBondCounts(player, def);
             const cap = Math.min(lSum, CONDUCTOR_MARK_CAP);
-            const markedCount = engine.state.enemies.filter(e => (e.conductorMarkTimer ?? 0) > 0).length;
+            // 原 .filter().length 在每次 void_ripple 命中触发；late game 100+ enemy
+            // × 高频命中 = 每秒数百次数组 + 闭包 alloc。改为 for-loop 计数零 alloc。
+            let markedCount = 0;
+            const enemyList = engine.state.enemies;
+            for (let i = 0; i < enemyList.length; i++) {
+              if ((enemyList[i].conductorMarkTimer ?? 0) > 0) markedCount++;
+            }
             if ((target.conductorMarkTimer ?? 0) > 0 || markedCount < cap) {
               target.conductorMarkTimer = dur;
             }

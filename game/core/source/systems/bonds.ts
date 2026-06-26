@@ -14,7 +14,7 @@ import {
   BONDS, ALL_BOND_IDS, BONDS_BY_WEAPON,
   evalBondCounts, getBondTier, bondThresholds, bondUpgradeTargets,
 } from '../data/bonds.ts';
-import { loadSave, saveSave } from '../services/save.ts';
+import { loadSave, recordBondT3Activated, saveSave } from '../services/save.ts';
 import { distanceSqBetween } from '../helpers/physics.ts';
 import { AOE_MAX_Y_DELTA } from '../config.ts';
 import { bossDamageEventY, enemyDamageEventY } from '../helpers/combatHeight.ts';
@@ -76,6 +76,7 @@ export function applyBondUpgrade(player: PlayerState, bondId: BondId, toTier: Bo
   if (!BONDS[bondId]) return false;
   player.bonds ??= [];
   const existing = player.bonds.find(b => b.bondId === bondId);
+  const fromTier = existing?.tier ?? 0;
   if (existing) {
     if (toTier <= existing.tier) return false;
     existing.tier = toTier;
@@ -92,6 +93,9 @@ export function applyBondUpgrade(player: PlayerState, bondId: BondId, toTier: Bo
     } catch {
       // localStorage 不可用时静默跳过（与 checkWeaponEvolutions 旧行为一致）
     }
+  }
+  if (fromTier < 3 && toTier === 3) {
+    recordBondT3Activated(bondId);
   }
   return true;
 }

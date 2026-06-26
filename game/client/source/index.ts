@@ -12068,10 +12068,12 @@ function getQuestCategory(type: Quest['type']): QuestCategory {
     case 'survive':
     case 'level':
     case 'bond':
+    case 'bond_t3':
       return 'growth';
     case 'collect':
       return 'wealth';
     case 'weapons_used':
+    case 'weapon_mastery':
       return 'weapons';
     default:
       return 'all';

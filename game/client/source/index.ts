@@ -792,6 +792,22 @@ function setIconImage(el: HTMLElement, src: string, fallbackEmoji = ''): void {
   el.appendChild(img);
 }
 
+type TranslationParams = Record<string, string>;
+
+function hasLocaleKey(key: string): boolean {
+  const locale = getLocale() === 'zh' ? zhLocale : enLocale;
+  let cur: unknown = locale;
+  for (const part of key.split('.')) {
+    if (!cur || typeof cur !== 'object' || !(part in cur)) return false;
+    cur = (cur as Record<string, unknown>)[part];
+  }
+  return typeof cur === 'string';
+}
+
+function tOptional(key: string, params?: TranslationParams): string | null {
+  return hasLocaleKey(key) ? t(key, params) : null;
+}
+
 /** 生成可嵌入模板字符串（tooltip/标题）的图标 <img> HTML。 */
 function iconImgHtml(src: string, sizePx = 16): string {
   return `<img src="${src}" draggable="false" style="width:${sizePx}px;height:${sizePx}px;object-fit:contain;vertical-align:middle;flex-shrink:0;" />`;
@@ -7089,13 +7105,15 @@ export class GameScene {
       title: '???',
       width: 'min(72vw,240px)',
       interactive: false,
+      statsBoxCss: 'padding:clamp(7px,2.4vw,12px) clamp(10px,3vw,16px);',
     });
     card.style.transition = 'transform 0.22s cubic-bezier(0.2,1.5,0.4,1), opacity 0.18s ease-out, filter 0.08s';
     card.style.transform = 'scale(0.8) rotate(-2deg)';
     card.style.opacity = '0';
 
-    iconSlot.style.fontSize = 'clamp(38px,11.2vw,54px)';
+    iconSlot.style.fontSize = 'clamp(34px,10vw,48px)';
     iconSlot.style.marginTop = 'clamp(4px,1.4vw,8px)';
+    iconSlot.style.marginBottom = 'clamp(3px,1vw,6px)';
     iconSlot.textContent = '?';
     descEl.style.display = 'none';
     levelEl.style.display = 'none';
@@ -7107,7 +7125,7 @@ export class GameScene {
     // 单句描述（无逗号）保持单行渲染，只有多句描述（如"护盾值 +2，最大护盾值 +5"）才会拆行。
     const relicAttribute = document.createElement('div');
     relicAttribute.style.cssText = uiPlainText(
-      'font-size:11px;line-height:1.4;text-align:center;width:100%;white-space:pre-line;word-break:keep-all;overflow-wrap:break-word;',
+      'font-size:clamp(9px,2.7vw,12px);line-height:1.35;text-align:center;width:100%;white-space:pre-line;word-break:keep-all;overflow-wrap:break-word;',
     );
     relicAttribute.textContent = reward.bossDrop || reward.cost <= 0
       ? t('chest.bossFreeOpen')
@@ -7181,7 +7199,8 @@ export class GameScene {
         rarityEl.textContent = t(`shrine.rarity.${reward.rarity}`);
         setIconImage(iconSlot, relicIconSrc(reward.relicId), relic.emoji);
         // 中文逗号 `，` 转换行符 → 在 white-space:pre-line 下强制断行，避免末尾 "+N" 被挤到孤行。
-        relicAttribute.textContent = t(`relic.${reward.relicId}.desc`).replace(/，\s*/g, '\n').replace(/,\s*/g, '\n');
+        const relicDesc = tOptional(`relic.${reward.relicId}.card_desc`) ?? t(`relic.${reward.relicId}.desc`);
+        relicAttribute.textContent = relicDesc.replace(/，\s*/g, '\n').replace(/,\s*/g, '\n');
         card.style.transform = 'scale(1.12) rotate(0deg)';
         setTimeout(() => { card.style.transform = 'scale(1) rotate(0deg)'; }, 140);
         buttonRow.style.display = 'flex';
@@ -7727,14 +7746,16 @@ export class GameScene {
   private createShrineRewardCard(option: ShrineRewardOption, width = 'min(180px,90vw)'): HTMLDivElement {
     const accentColor = RARITY_COLORS[option.rarity] ?? '#aaaaaa';
     const percent = Math.round(option.value * 1000) / 10; // %.1
-    const title = t(`shrine.reward.${option.reward}_name`, {
+    const params = {
+      value: String(option.value),
+      percent: String(percent),
+    };
+    const title = tOptional(`shrine.reward.${option.reward}_card_name`, params) ?? t(`shrine.reward.${option.reward}_name`, {
       value: String(option.value),
       percent: String(percent),
     });
-    const desc = t(`shrine.reward.${option.reward}_desc`, {
-      value: String(option.value),
-      percent: String(percent),
-    });
+    const desc = tOptional(`shrine.reward.${option.reward}_card_desc`, params)
+      ?? t(`shrine.reward.${option.reward}_desc`, params);
 
     // 神殿奖励卡与升级卡保持同一布局：顶部名称、上方图标、中部深色数值框、底部稀有度。
     const { card, iconSlot, descEl, statsBox, levelEl, rarityEl } = createUpgradeFrameCard({
@@ -7743,6 +7764,8 @@ export class GameScene {
       title,
       width,
       interactive: true,
+      descLineClamp: 2,
+      statsBoxCss: 'padding:clamp(6px,2vw,10px) clamp(7px,2.4vw,12px);',
     });
 
     // Icon
@@ -7752,7 +7775,7 @@ export class GameScene {
     descEl.style.display = 'none';
     const rewardAttribute = document.createElement('div');
     rewardAttribute.style.cssText = uiPlainText(
-      'font-size:clamp(7.3px,2vw,9.3px);line-height:1.35;text-align:center;width:100%;',
+      'font-size:clamp(8px,2vw,10px);line-height:1.28;text-align:center;width:100%;white-space:pre-line;overflow-wrap:break-word;',
     );
     rewardAttribute.textContent = desc;
     statsBox.appendChild(rewardAttribute);
@@ -9579,6 +9602,8 @@ export class GameScene {
       title: this.getUpgradeName(option),
       width,
       interactive: true,
+      descLineClamp: isBond ? 5 : 4,
+      statsBoxCss: isBond ? 'padding:clamp(6px,2vw,10px) clamp(8px,2.6vw,14px);' : '',
     });
 
     // Icon
@@ -9597,26 +9622,44 @@ export class GameScene {
     }
 
     // Description
-    descEl.textContent = this.getUpgradeDesc(option);
+    const upgradeDesc = this.getUpgradeDesc(option);
+    descEl.textContent = upgradeDesc;
     const upgradeSteps = option.newLevel - option.currentLevel;
     if (!isBond && upgradeSteps > 1) {
       descEl.textContent = `${descEl.textContent} · ${t('upgrade.doubleLevel', { count: String(upgradeSteps) })}`;
     }
 
-    // 数值预览（基础步进 × 稀有度 / 典籍每级增益）
-    const previewLines = getUpgradePreviewLines(option, player);
-    if (previewLines.length > 0) {
-      for (const line of previewLines) {
-        const key = line.labelKey.replace('upgrade.stat.', '');
-        statsBox.appendChild(upgradeStatRow(t(`upgrade.stat.${key}`), line.value, statValueColor));
-      }
+    if (isBond) {
+      // 羁绊卡强调图标和档位：说明放入中部深色框，底部等级槽改为档位变化。
+      iconSlot.style.fontSize = 'clamp(34px,10vw,48px)';
+      iconSlot.style.marginTop = 'clamp(4px,1.4vw,8px)';
+      iconSlot.style.marginBottom = 'clamp(3px,1vw,6px)';
+      descEl.style.display = 'none';
+
+      const bondDesc = document.createElement('div');
+      bondDesc.style.cssText = uiPlainText(
+        'font-size:clamp(8px,2vw,10px);line-height:1.28;text-align:center;width:100%;white-space:pre-line;overflow-wrap:break-word;',
+      );
+      bondDesc.textContent = upgradeDesc;
+      statsBox.appendChild(bondDesc);
     } else {
-      // 无数值时给个占位，避免数值面板坍成空盒
-      statsBox.style.display = 'none';
+      // 数值预览（基础步进 × 稀有度 / 典籍每级增益）
+      const previewLines = getUpgradePreviewLines(option, player);
+      if (previewLines.length > 0) {
+        for (const line of previewLines) {
+          const key = line.labelKey.replace('upgrade.stat.', '');
+          statsBox.appendChild(upgradeStatRow(t(`upgrade.stat.${key}`), line.value, statValueColor));
+        }
+      } else {
+        // 无数值时给个占位，避免数值面板坍成空盒
+        statsBox.style.display = 'none';
+      }
     }
 
     // 等级行（"等级 1 → 2"）位于数值面板与稀有度 tab 之间
-    levelEl.textContent = t('upgrade.levelUp', { from: String(option.currentLevel), to: String(option.newLevel) });
+    levelEl.textContent = isBond
+      ? `${t('upgrade.stat.bondTier')} T${option.currentLevel} → T${option.newLevel}`
+      : t('upgrade.levelUp', { from: String(option.currentLevel), to: String(option.newLevel) });
 
     // 底部 tab：稀有度文案
     rarityEl.textContent = t(`shrine.rarity.${option.rarity}`);
@@ -9637,8 +9680,7 @@ export class GameScene {
       return t(`upgrade.weapon.${option.weaponType}`);
     }
     if (option.kind === 'bond_activate' || option.kind === 'bond_upgrade') {
-      const label = option.kind === 'bond_activate' ? t('bond.activate') : t('bond.upgrade');
-      return option.bondId ? `${t(`bond.${option.bondId}.name`)} — ${label}` : label;
+      return option.bondId ? t(`bond.${option.bondId}.name`) : t('bond.activate');
     }
     const tomeType = option.tomeType ?? option.passiveType;
     return t(`upgrade.tome.${tomeType}`);
@@ -9646,13 +9688,15 @@ export class GameScene {
 
   private getUpgradeDesc(option: UpgradeOption): string {
     if (option.kind === 'new_weapon' || option.kind === 'weapon_upgrade') {
-      return t(`upgrade.weapon.${option.weaponType}_desc`);
+      return tOptional(`upgrade.weapon.${option.weaponType}_card_desc`) ?? t(`upgrade.weapon.${option.weaponType}_desc`);
     }
     if (option.kind === 'bond_activate' || option.kind === 'bond_upgrade') {
-      return option.bondId ? t(`bond.${option.bondId}.t${option.newLevel}`) : '';
+      return option.bondId
+        ? (tOptional(`bond.${option.bondId}.t${option.newLevel}_card`) ?? t(`bond.${option.bondId}.t${option.newLevel}`))
+        : '';
     }
     const tomeType = option.tomeType ?? option.passiveType;
-    return t(`upgrade.tome.${tomeType}_desc`);
+    return tOptional(`upgrade.tome.${tomeType}_card_desc`) ?? t(`upgrade.tome.${tomeType}_desc`);
   }
 
   private hideUpgradePanel(): void {

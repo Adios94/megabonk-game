@@ -33,7 +33,7 @@ import type { AiEffects, AiContext } from './ai/types.ts';
 
 import { SpatialHash } from './helpers/spatialHash.ts';
 import { createWorld } from './world.ts';
-import { addSilver, updateRunStats, recordWeaponsUsed } from './services/save.ts';
+import { addSilver, updateRunStats, recordWeaponsUsed, recordWeaponMasteryRun } from './services/save.ts';
 import { getShopBonuses } from './data/shop.ts';
 import { checkQuestCompletion } from './data/quests.ts';
 import { spawnEnemy } from './factories/spawnEnemy.ts';
@@ -453,16 +453,31 @@ export class GameInstance {
     const baseSilver = Math.floor(state.stats.killCount * 0.5 + state.player.level * 5);
     const victoryBonus = state.phase === 'victory' ? 100 : 0;
     const totalSilver = Math.round((baseSilver + victoryBonus + state.stats.silverEarned) * tierCfg.silverMultiplier);
+    const survivalTime = Math.floor(state.gameTime);
+    const weaponDamageStats = state.player.weapons.map((weapon) => (
+      state.weaponDamageStats.find(stat => stat.weaponType === weapon.type) ?? {
+        weaponType: weapon.type,
+        killCount: 0,
+        totalDamage: 0,
+        dps: 0,
+      }
+    ));
 
     if (!this.resultSettled) {
       addSilver(totalSilver);
       recordWeaponsUsed(state.player.weapons.map(w => w.type));
       updateRunStats(
         state.stats.killCount,
-        Math.floor(state.gameTime),
+        survivalTime,
         state.player.level,
         state.phase === 'victory',
         state.stats.damageTaken,
+      );
+      recordWeaponMasteryRun(
+        weaponDamageStats,
+        state.player.weapons.map(w => w.type),
+        state.phase === 'victory',
+        survivalTime,
       );
       checkQuestCompletion();
       this.resultSettled = true;
@@ -470,18 +485,11 @@ export class GameInstance {
 
     return {
       victory: state.phase === 'victory',
-      survivalTime: Math.floor(state.gameTime),
+      survivalTime,
       killCount: state.stats.killCount,
       level: state.player.level,
       silverEarned: totalSilver,
-      weaponDamageStats: state.player.weapons.map((weapon) => (
-        state.weaponDamageStats.find(stat => stat.weaponType === weapon.type) ?? {
-          weaponType: weapon.type,
-          killCount: 0,
-          totalDamage: 0,
-          dps: 0,
-        }
-      )),
+      weaponDamageStats,
     };
   }
 }

@@ -4,14 +4,20 @@
  */
 
 import { loadSave, saveSave } from '../services/save.ts';
+import type { BondId, WeaponType } from '../types.ts';
 import type { SaveData } from '../services/save.ts';
+
+export type WeaponMasteryMetric = 'mvp_count' | 'solo_victory_count' | 'best_run_damage';
 
 export interface Quest {
   id: string;
   description: string;
-  type: 'kill' | 'survive' | 'collect' | 'bond' | 'level' | 'no_damage' | 'boss' | 'weapons_used';
+  type: 'kill' | 'survive' | 'collect' | 'bond' | 'level' | 'no_damage' | 'boss' | 'weapons_used' | 'weapon_mastery' | 'bond_t3';
   target: number;
   reward: QuestReward;
+  weaponType?: WeaponType;
+  bondId?: BondId;
+  metric?: WeaponMasteryMetric;
 }
 
 export interface QuestReward {
@@ -72,6 +78,28 @@ export const QUESTS: Quest[] = [
 
   // 唯一局外 +1 武器槽任务：累计装备过 7 把不同武器
   { id: 'q31', description: 'quest.use_7_weapons', type: 'weapons_used', target: 7, reward: { type: 'weapon_slot', value: 1 } },
+
+  // Weapon mastery quests（精选武器挑战）
+  { id: 'q32', description: 'quest.sword_mvp_3', type: 'weapon_mastery', weaponType: 'sword', metric: 'mvp_count', target: 3, reward: { type: 'silver', value: 250 } },
+  { id: 'q33', description: 'quest.sword_solo_victory', type: 'weapon_mastery', weaponType: 'sword', metric: 'solo_victory_count', target: 1, reward: { type: 'silver', value: 500 } },
+  { id: 'q34', description: 'quest.axe_damage_10000000', type: 'weapon_mastery', weaponType: 'axe', metric: 'best_run_damage', target: 10000000, reward: { type: 'silver', value: 300 } },
+  { id: 'q35', description: 'quest.bone_bouncer_mvp_3', type: 'weapon_mastery', weaponType: 'bone_bouncer', metric: 'mvp_count', target: 3, reward: { type: 'silver', value: 300 } },
+  { id: 'q36', description: 'quest.bone_bouncer_damage_10000000', type: 'weapon_mastery', weaponType: 'bone_bouncer', metric: 'best_run_damage', target: 10000000, reward: { type: 'silver', value: 300 } },
+  { id: 'q37', description: 'quest.lightning_staff_mvp_3', type: 'weapon_mastery', weaponType: 'lightning_staff', metric: 'mvp_count', target: 3, reward: { type: 'silver', value: 350 } },
+  { id: 'q38', description: 'quest.lightning_staff_damage_10000000', type: 'weapon_mastery', weaponType: 'lightning_staff', metric: 'best_run_damage', target: 10000000, reward: { type: 'silver', value: 450 } },
+  { id: 'q39', description: 'quest.flame_ring_solo_victory', type: 'weapon_mastery', weaponType: 'flame_ring', metric: 'solo_victory_count', target: 1, reward: { type: 'silver', value: 600 } },
+  { id: 'q40', description: 'quest.flame_ring_damage_10000000', type: 'weapon_mastery', weaponType: 'flame_ring', metric: 'best_run_damage', target: 10000000, reward: { type: 'silver', value: 450 } },
+
+  // Bond mastery quests（全部羁绊 T3 挑战）
+  { id: 'q41', description: 'quest.iron_blood_t3', type: 'bond_t3', bondId: 'iron_blood', target: 1, reward: { type: 'silver', value: 450 } },
+  { id: 'q42', description: 'quest.arcane_t3', type: 'bond_t3', bondId: 'arcane', target: 1, reward: { type: 'silver', value: 600 } },
+  { id: 'q43', description: 'quest.zero_range_t3', type: 'bond_t3', bondId: 'zero_range', target: 1, reward: { type: 'silver', value: 600 } },
+  { id: 'q44', description: 'quest.ember_trail_t3', type: 'bond_t3', bondId: 'ember_trail', target: 1, reward: { type: 'silver', value: 450 } },
+  { id: 'q45', description: 'quest.volley_t3', type: 'bond_t3', bondId: 'volley', target: 1, reward: { type: 'silver', value: 600 } },
+  { id: 'q46', description: 'quest.bone_crush_t3', type: 'bond_t3', bondId: 'bone_crush', target: 1, reward: { type: 'silver', value: 450 } },
+  { id: 'q47', description: 'quest.arc_conductor_t3', type: 'bond_t3', bondId: 'arc_conductor', target: 1, reward: { type: 'silver', value: 550 } },
+  { id: 'q48', description: 'quest.poison_master_t3', type: 'bond_t3', bondId: 'poison_master', target: 1, reward: { type: 'silver', value: 500 } },
+  { id: 'q49', description: 'quest.hunter_mark_t3', type: 'bond_t3', bondId: 'hunter_mark', target: 1, reward: { type: 'silver', value: 550 } },
 ];
 
 function getQuestStatProgress(save: SaveData, quest: Quest): number {
@@ -92,6 +120,21 @@ function getQuestStatProgress(save: SaveData, quest: Quest): number {
       return save.totalSilverEarned;
     case 'weapons_used':
       return save.stats.uniqueWeaponsUsed.length;
+    case 'weapon_mastery': {
+      if (!quest.weaponType || !quest.metric) return 0;
+      const mastery = save.stats.weaponMastery[quest.weaponType];
+      if (!mastery) return 0;
+      switch (quest.metric) {
+        case 'mvp_count':
+          return mastery.mvpCount;
+        case 'solo_victory_count':
+          return mastery.soloVictoryCount;
+        case 'best_run_damage':
+          return mastery.bestRunDamage;
+      }
+    }
+    case 'bond_t3':
+      return quest.bondId ? (save.stats.bondT3Activations[quest.bondId] ?? 0) : 0;
     default:
       return 0;
   }

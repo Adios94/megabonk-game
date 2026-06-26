@@ -124,14 +124,18 @@
       "shotgun_desc": "面前方向扇形散射",
       "ray_gun": "射线枪",
       "ray_gun_desc": "瞬发激光，沿直线无限穿透",
+      "ray_gun_card_desc": "直线激光，无限穿透",
       "poison_bomb": "毒气弹",
       "poison_bomb_desc": "投出毒气云，持续毒伤敌人",
+      "poison_bomb_card_desc": "投出毒云，持续毒伤。",
       "paralysis_gun": "麻痹枪",
       "paralysis_gun_desc": "自动索敌弹，命中强力减速",
       "void_ripple": "虚空涟漪",
       "void_ripple_desc": "以你为圆心扩散的环波，近处敌人先结算",
+      "void_ripple_card_desc": "环波扩散，近敌先受击。",
       "scorch_boots": "灼地靴",
-      "scorch_boots_desc": "走过留下灼地痕迹，灼伤路过的敌人"
+      "scorch_boots_desc": "走过留下灼地痕迹，灼伤路过的敌人",
+      "scorch_boots_card_desc": "移动留下灼地，持续灼伤。"
     },
     "tome": {
       "attack_speed_tome": "攻速典籍",
@@ -239,54 +243,63 @@
       "name": "铁血",
       "t1": "立即 +10 护甲；剑与斧伤害 +6%。",
       "t2": "受击时立即刷新剑冷却并叠 1 层，下次斩击每层 +8% 伤害。",
+      "t2_card": "受击刷新剑冷却；下次斩击按层增伤。",
       "t3": "再受击触发暴怒 10s：伤害 +15%、攻速 +15%。"
     },
     "arcane": {
       "name": "奥术",
       "t1": "奥术武器伤害 +4%；伤害倍率 +0.1。",
       "t2": "奥术武器命中积攒奥秘。满 60 对范围内血量最高的敌人爆发，周围受 50% 溅射。",
+      "t2_card": "奥秘满 60 后爆发，攻击最高血敌并溅射。",
       "t3": "奥秘阈值 60→30；爆发伤害 ×1.5。"
     },
     "zero_range": {
       "name": "零距寸劲",
       "t1": "对 3m 内敌人，组内武器伤害 +8%。",
       "t2": "命中附加击退，并按击退位移造成额外冲击伤害。",
+      "t2_card": "命中击退，并按位移追加冲击伤害。",
       "t3": "击退 ×1.6；将敌人撞向地形时造成高额碰撞伤害。"
     },
     "ember_trail": {
       "name": "余烬轨迹",
       "t1": "烈焰环与灼地靴伤害 +8%。",
       "t2": "被这些武器击杀的敌人爆炸，对周围造成其最大生命 40% 的伤害。",
+      "t2_card": "击杀敌人会爆炸，按最大生命造成范围伤害。",
       "t3": "爆炸范围 ×1.5、伤害 ×1.6；爆点留 3s 灼烧痕迹。"
     },
     "volley": {
       "name": "弹幕",
       "t1": "组内武器伤害 +5%、攻速 +5%。",
       "t2": "每个组内武器等级额外 +1% 攻速（叠加在 T1 之上）。",
+      "t2_card": "组内武器等级越高，攻速额外越高。",
       "t3": "组内武器可击落敌方弹幕。"
     },
     "bone_crush": {
       "name": "碎骨震",
       "t1": "对血量 >50% 的敌人，组内武器伤害 +8%。",
       "t2": "优先攻击血量 >70% 的敌人；命中后其 5s 内受组内武器伤害 +16%。",
+      "t2_card": "优先高血敌；命中后其受组内武器增伤。",
       "t3": "骨弹弹射血量 >50% 的敌人时不消耗弹射次数。"
     },
     "arc_conductor": {
       "name": "弧光导体",
       "t1": "组内武器伤害 +6%；攻击间隔略降。",
       "t2": "虚空涟漪为敌人附加导体标记（3s）。其他组内武器命中时对所有标记敌人连锁 8% 伤害。",
+      "t2_card": "虚空涟漪标记敌人，组内命中会连锁。",
       "t3": "连锁伤害 8%→16%；标记持续 3s→6s。"
     },
     "poison_master": {
       "name": "毒师",
       "t1": "组内武器施加的负面效果持续 +0.8s。",
       "t2": "施加神经毒素（5s，5 层）：每 2s 触发 1s 强减速；每层每秒损失 1% 最大生命（精英 ×0.5）。",
+      "t2_card": "施加神经毒素：强减速并按层持续扣血。",
       "t3": "持续 +2s、层数上限 +2（共 7 层）；减速更强。"
     },
     "hunter_mark": {
       "name": "猎标烙印",
       "t1": "组内武器暴击率 +5%、暴击伤害 +10%。",
       "t2": "麻痹枪为敌人烙印：优先索敌，且受组内武器伤害 +16%。",
+      "t2_card": "麻痹枪烙印敌人：优先索敌并增伤。",
       "t3": "组内武器处决血量 <16% 的烙印敌人（精英免疫）。"
     }
   },
@@ -360,6 +373,24 @@
     "collect_10000_silver": "累计获得10000银币",
     "collect_25000_silver": "累计获得25000银币",
     "use_7_weapons": "使用过至少七把不同的武器",
+    "sword_mvp_3": "大剑成为本局 MVP 3 次",
+    "sword_solo_victory": "只使用大剑赢得一局",
+    "axe_damage_10000000": "一局内用旋转飞斧造成 10,000,000 伤害",
+    "bone_bouncer_mvp_3": "弹射骨头成为本局 MVP 3 次",
+    "bone_bouncer_damage_10000000": "一局内用弹射骨头造成 10,000,000 伤害",
+    "lightning_staff_mvp_3": "闪电法杖成为本局 MVP 3 次",
+    "lightning_staff_damage_10000000": "一局内用闪电法杖造成 10,000,000 伤害",
+    "flame_ring_solo_victory": "只使用烈焰环赢得一局",
+    "flame_ring_damage_10000000": "一局内用烈焰环造成 10,000,000 伤害",
+    "iron_blood_t3": "将铁血羁绊升至 T3",
+    "arcane_t3": "将奥术羁绊升至 T3",
+    "zero_range_t3": "将零距寸劲羁绊升至 T3",
+    "ember_trail_t3": "将余烬轨迹羁绊升至 T3",
+    "volley_t3": "将弹幕羁绊升至 T3",
+    "bone_crush_t3": "将碎骨震羁绊升至 T3",
+    "arc_conductor_t3": "将弧光导体羁绊升至 T3",
+    "poison_master_t3": "将毒师羁绊升至 T3",
+    "hunter_mark_t3": "将猎标烙印羁绊升至 T3",
     "reward_silver": "+{{count}} 银币",
     "reward_weapon_unlock": "解锁: {{weapon}}",
     "reward_character_unlock": "解锁: {{character}}",
@@ -442,7 +473,8 @@
     },
     "small_shield_charm": {
       "name": "小盾护符",
-      "desc": "护盾值 +2，最大护盾值 +5"
+      "desc": "护盾值 +2，最大护盾值 +5",
+      "card_desc": "护盾 +2\n最大护盾 +5"
     },
     "blood_fang": {
       "name": "嗜血牙",
@@ -454,7 +486,8 @@
     },
     "arsenal_badge": {
       "name": "武库徽章",
-      "desc": "每把 Lv10 武器全局伤害 +4%"
+      "desc": "每把 Lv10 武器全局伤害 +4%",
+      "card_desc": "每把 Lv10 武器\n全局伤害 +4%"
     },
     "elite_writ": {
       "name": "精英猎令",
@@ -466,11 +499,13 @@
     },
     "magazine_expander": {
       "name": "弹匣扩槽",
-      "desc": "投射物 +1"
+      "desc": "投射物 +1",
+      "card_desc": "投射物 +1"
     },
     "hourglass": {
       "name": "时间沙漏",
-      "desc": "超时模式内全伤 +0.12%/s（按层累加）"
+      "desc": "超时模式内全伤 +0.12%/s（按层累加）",
+      "card_desc": "超时每秒\n全伤 +0.12%"
     },
     "iron_heart": {
       "name": "铁心",
@@ -512,36 +547,53 @@
     "reward": {
       "damage_name": "伤害",
       "damage_desc": "获得 {{percent}}% 伤害。增加你造成的伤害量。",
+      "damage_card_desc": "造成伤害 +{{percent}}%",
       "shield_name": "护盾",
       "shield_desc": "获得 +{{value}} 护盾。任何护盾值都会优先于生命值受到伤害，且护盾的恢复速度比生命值快得多。",
+      "shield_card_desc": "护盾 +{{value}}\n优先承受伤害",
       "pickup_range_name": "拾取范围",
       "pickup_range_desc": "拾取范围增加 {{percent}}%。增加拾取经验值的距离。",
+      "pickup_range_card_desc": "拾取范围 +{{percent}}%",
       "crit_damage_name": "暴击伤害",
       "crit_damage_desc": "暴击伤害提高 {{percent}}%。增加你造成的暴击伤害量。",
+      "crit_damage_card_desc": "暴击伤害 +{{percent}}%",
       "luck_name": "幸运",
       "luck_desc": "获得 {{percent}}% 幸运值。增加获得更高稀有度物品的几率。",
+      "luck_card_desc": "幸运 +{{percent}}%\n提高稀有掉落",
       "projectile_count_name": "+{{value}} 投射物",
       "projectile_count_desc": "你所有拥有弹药数量的武器都会额外获得一枚弹药。",
+      "projectile_count_card_desc": "投射物数量 +{{value}}",
       "hp_regen_name": "生命值回复",
       "hp_regen_desc": "获得 +{{value}} 生命值回复。增加随时间恢复的生命值。",
+      "hp_regen_card_desc": "生命回复 +{{value}}/秒",
       "knockback_name": "击退",
       "knockback_desc": "获得 {{percent}}% 击退效果。",
+      "knockback_card_desc": "击退 +{{percent}}%",
       "attack_speed_name": "攻击速度",
       "attack_speed_desc": "攻击速度提升 {{percent}}%。",
+      "attack_speed_card_desc": "攻击速度 +{{percent}}%",
       "difficulty_name": "难度",
       "difficulty_desc": "难度增加 {{percent}}%。",
+      "difficulty_card_desc": "难度 +{{percent}}%",
       "lifesteal_name": "生命偷取",
       "lifesteal_desc": "获得 {{percent}}% 生命偷取。",
+      "lifesteal_card_desc": "生命偷取 +{{percent}}%",
       "powerup_multiplier_name": "能量提升倍率",
       "powerup_multiplier_desc": "获得 {{percent}}% 能量提升倍率。",
+      "powerup_multiplier_card_name": "能量倍率",
+      "powerup_multiplier_card_desc": "能量提升 +{{percent}}%",
       "elite_damage_name": "精英伤害",
       "elite_damage_desc": "对精英怪造成额外 {{percent}}% 伤害。增加对精英敌人（小头目、头目）造成的伤害量。",
+      "elite_damage_card_desc": "对精英/头目\n伤害 +{{percent}}%",
       "duration_name": "持续时间",
       "duration_desc": "持续时间增加 {{percent}}%。",
+      "duration_card_desc": "持续时间 +{{percent}}%",
       "jump_height_name": "跳跃高度",
       "jump_height_desc": "跳跃高度提升 {{percent}}%。",
+      "jump_height_card_desc": "跳跃高度 +{{percent}}%",
       "movement_speed_name": "移动速度",
-      "movement_speed_desc": "获得 {{percent}}% 移动速度。"
+      "movement_speed_desc": "获得 {{percent}}% 移动速度。",
+      "movement_speed_card_desc": "移动速度 +{{percent}}%"
     }
   },
   "result": {

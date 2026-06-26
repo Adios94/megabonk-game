@@ -940,6 +940,7 @@ const HUD_WEAPON_SLOT_SIZE = 'clamp(22px,6.4vw,28px)';
 /** 局内典籍槽尺寸，与武器槽保持一致。 */
 const HUD_TOME_SLOT_SIZE = HUD_WEAPON_SLOT_SIZE;
 const BACKPACK_ICONS_PER_ROW = 5;
+const HUD_WEAPON_TOME_ICONS_PER_ROW = 6;
 const HUD_QUEST_TRACK_WIDTH = 'min(38vw,180px)';
 const HUD_QUEST_TRACK_FONT = 'clamp(6px,1.5vw,8px)';
 /** 局内连击提示缩放（相对原始字号） */
@@ -4627,7 +4628,7 @@ export class GameScene {
 
   private setupHUD(): void {
     this.hudContainer = document.createElement('div');
-    this.hudContainer.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:100;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);box-sizing:border-box;';
+    this.hudContainer.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:100;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);box-sizing:border-box;';
     document.body.appendChild(this.hudContainer);
 
     // ---------------------------------------------------------------------
@@ -4653,7 +4654,7 @@ export class GameScene {
     shieldContainer.style.cssText = 'position:relative;width:clamp(90px,26vw,138px);height:clamp(16px,4.4vw,19px);overflow:visible;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5));display:none;';
     this.shieldBarInner = mountSvgBar(shieldContainer, BAR_ASSETS.shield.track, BAR_ASSETS.shield.fill).fill;
     this.shieldText = document.createElement('div');
-    this.shieldText.style.cssText = `${UI_BAR_TEXT_LAYER}color:#eaf7ff;font-size:clamp(9px,2.3vw,12px);font-weight:bold;text-shadow:0 1px 2px rgba(0,0,0,0.95);white-space:nowrap;`;
+    this.shieldText.style.cssText = uiPlainText(`${UI_BAR_TEXT_LAYER}color:#eaf7ff;font-size:clamp(9px,2.3vw,12px);font-weight:bold;white-space:nowrap;`);
     shieldContainer.appendChild(this.shieldText);
     this.shieldBar = shieldContainer;
     barsRow.appendChild(shieldContainer);
@@ -4663,7 +4664,7 @@ export class GameScene {
     // Weapon slots (6 total: 5 base + 1 lockable)
     this.weaponSlotsContainer = document.createElement('div');
     this.weaponSlotsContainer.dataset.cameraBlock = 'true';
-    this.weaponSlotsContainer.style.cssText = `display:flex;gap:3px;flex-wrap:wrap;max-width:${backpackRowMaxWidth(HUD_WEAPON_SLOT_SIZE, '3px')};pointer-events:auto;`;
+    this.weaponSlotsContainer.style.cssText = `display:flex;gap:3px;flex-wrap:wrap;max-width:${backpackRowMaxWidth(HUD_WEAPON_SLOT_SIZE, '3px', HUD_WEAPON_TOME_ICONS_PER_ROW)};pointer-events:auto;`;
     topLeft.appendChild(this.weaponSlotsContainer);
 
     // Quest track (panel bg + text; left icon is baked into the image)
@@ -4760,7 +4761,7 @@ export class GameScene {
     // Row 2: tome stack (newest tome appended at the right, older shift left)
     this.tomesSlotsContainer = document.createElement('div');
     this.tomesSlotsContainer.dataset.cameraBlock = 'true';
-    this.tomesSlotsContainer.style.cssText = `display:flex;gap:4px;flex-wrap:wrap;max-width:${backpackRowMaxWidth(HUD_TOME_SLOT_SIZE, '4px')};justify-content:flex-end;pointer-events:auto;`;
+    this.tomesSlotsContainer.style.cssText = `display:flex;gap:4px;flex-wrap:wrap;max-width:${backpackRowMaxWidth(HUD_TOME_SLOT_SIZE, '4px', HUD_WEAPON_TOME_ICONS_PER_ROW)};justify-content:flex-end;pointer-events:auto;`;
     topRight.appendChild(this.tomesSlotsContainer);
 
     this.hudContainer.appendChild(topRight);
@@ -4874,7 +4875,7 @@ export class GameScene {
 
     // Teleporter / 宝箱距离指示器（与充能神殿进度共用位置）
     this.teleporterIndicator = document.createElement('div');
-    this.teleporterIndicator.style.cssText = `position:absolute;top:calc(${HUD_TOP_BELOW_CLUSTER} + 36px);left:50%;transform:translateX(-50%);color:#00ccff;font-size:clamp(11px,2.8vw,13px);font-weight:bold;text-shadow:0 0 8px #00ccff,0 1px 3px rgba(0,0,0,0.8);display:none;pointer-events:none;max-width:min(92vw,360px);text-align:center;white-space:nowrap;`;
+    this.teleporterIndicator.style.cssText = uiColoredText('#00ccff', '0 0 8px #00ccff') + `position:absolute;top:calc(${HUD_TOP_BELOW_CLUSTER} + 36px);left:50%;transform:translateX(-50%);font-size:clamp(11px,2.8vw,13px);font-weight:bold;display:none;pointer-events:none;max-width:min(92vw,360px);text-align:center;white-space:nowrap;`;
     this.hudContainer.appendChild(this.teleporterIndicator);
 
     // 充能神殿圆形进度（与 teleporterIndicator 同位置，充能时优先显示）
@@ -4933,7 +4934,7 @@ export class GameScene {
 
     // Combo label (hidden initially)
     this.comboLabel = document.createElement('div');
-    this.comboLabel.style.cssText = `position:absolute;top:35%;left:50%;transform:translate(-50%,-50%);color:#ffd700;font-size:${uiPx(Math.round(HUD_COMBO_FONT_BASE * HUD_COMBO_SCALE))}px;font-weight:bold;text-shadow:0 0 ${uiPx(8)}px rgba(255,215,0,0.8),0 ${uiPx(2)}px ${uiPx(3)}px rgba(0,0,0,0.9);pointer-events:none;opacity:0;transition:opacity 0.3s ease-out;white-space:nowrap;`;
+    this.comboLabel.style.cssText = uiColoredText('#ffd700', `0 0 ${uiPx(8)}px rgba(255,215,0,0.8)`) + `position:absolute;top:35%;left:50%;transform:translate(-50%,-50%);font-size:${uiPx(Math.round(HUD_COMBO_FONT_BASE * HUD_COMBO_SCALE))}px;font-weight:bold;pointer-events:none;opacity:0;transition:opacity 0.3s ease-out;white-space:nowrap;`;
     this.hudContainer.appendChild(this.comboLabel);
   }
 
@@ -7071,7 +7072,7 @@ export class GameScene {
     overlay.style.cssText = inGameChoiceOverlayStyle(`
       z-index:320;pointer-events:auto;
       background:radial-gradient(circle at 50% 45%, rgba(255,220,120,0.16), rgba(0,0,0,0.78) 62%);
-      font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;    `);
+      font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;    `);
 
     const centerGroup = createInGameChoiceCenterGroup();
     const title = document.createElement('div');
@@ -7207,12 +7208,12 @@ export class GameScene {
     toast.style.cssText = `
       position:fixed;top:18%;left:50%;transform:translateX(-50%) scale(0.85);
       z-index:250;pointer-events:none;text-align:center;
-      font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;opacity:0;
+      font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;opacity:0;
     `;
 
     const title = document.createElement('div');
-    // 2px 8 向黑描边 + 原本的彩色 glow + 软投影：描边吃在最前保证字形锐利，glow/投影叠在外圈。
-    title.style.cssText = uiColoredTextBold(accent, `0 0 20px ${accent}88,0 2px 8px rgba(0,0,0,0.8)`)
+    // 2px 黑描边 + 原本的彩色 glow：描边吃在最前保证字形锐利。
+    title.style.cssText = uiColoredTextBold(accent, `0 0 20px ${accent}88`)
       + 'font-size:clamp(22px,7vw,28px);font-weight:bold;letter-spacing:2px;';
     title.textContent = t('upgrade.compensationTitle');
     toast.appendChild(title);
@@ -7695,7 +7696,7 @@ export class GameScene {
     this.shrinePanel = document.createElement('div');
     this.shrinePanel.dataset.cameraBlock = 'true';
     this.shrinePanel.style.cssText = inGameChoiceOverlayStyle(
-      'background:radial-gradient(ellipse at center,rgba(40,30,80,0.85),rgba(0,0,0,0.85));z-index:300;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;',
+      'background:radial-gradient(ellipse at center,rgba(40,30,80,0.85),rgba(0,0,0,0.85));z-index:300;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;',
     );
 
     const centerGroup = createInGameChoiceCenterGroup('min(96vw,760px)');
@@ -8102,7 +8103,7 @@ export class GameScene {
         slot.appendChild(icon);
         // Level number (Lv.N) bottom-center
         const lvl = document.createElement('span');
-        lvl.style.cssText = uiPlainText('position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:8px;line-height:1;font-weight:bold;pointer-events:none;');
+        lvl.style.cssText = uiPlainText('position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:clamp(7px,1.8vw,9px);line-height:1;font-weight:bold;pointer-events:none;');
         lvl.textContent = `Lv.${tome.level}`;
         slot.appendChild(lvl);
         this.tomesSlotsContainer.appendChild(slot);
@@ -8156,7 +8157,7 @@ export class GameScene {
         setIconImage(icon, relicIconSrc(id), relic.emoji);
         slot.appendChild(icon);
         const stack = document.createElement('span');
-        stack.style.cssText = 'position:absolute;left:50%;bottom:-7px;transform:translateX(-50%);height:14px;color:#fff;font-size:8px;font-weight:bold;display:flex;align-items:center;justify-content:center;text-shadow:0 1px 2px #000;white-space:nowrap;';
+        stack.style.cssText = uiPlainText('position:absolute;left:50%;bottom:-7px;transform:translateX(-50%);height:14px;font-size:clamp(7px,1.8vw,9px);font-weight:bold;display:flex;align-items:center;justify-content:center;white-space:nowrap;');
         stack.textContent = `x${count}`;
         slot.appendChild(stack);
         this.relicSlotsContainer.appendChild(slot);
@@ -8240,8 +8241,8 @@ export class GameScene {
       const canAfford = isBossChest || p.gold >= chestCost;
       this.teleporterIndicator.style.color = canAfford ? '#ffdd66' : '#999999';
       this.teleporterIndicator.style.textShadow = canAfford
-        ? '0 0 8px #ffcc33,0 1px 3px rgba(0,0,0,0.8)'
-        : '0 1px 3px rgba(0,0,0,0.8)';
+        ? `${UI_TEXT_OUTLINE_SHADOW},0 0 8px #ffcc33`
+        : UI_TEXT_OUTLINE_SHADOW;
       this.teleporterIndicator.innerHTML = isBossChest
         ? `${chestIconHtml()}<span>${escapeTooltipText(t('chest.prompt.openBossKey'))}</span>`
         : canAfford
@@ -8256,7 +8257,7 @@ export class GameScene {
       // 使用 GSAP 动画显示传送门指示器
       gsapAnimations.animateTeleporterIndicator(this.teleporterIndicator, true, 0.2);
       this.teleporterIndicator.style.color = '#00ccff';
-      this.teleporterIndicator.style.textShadow = '0 0 8px #00ccff,0 1px 3px rgba(0,0,0,0.8)';
+      this.teleporterIndicator.style.textShadow = `${UI_TEXT_OUTLINE_SHADOW},0 0 8px #00ccff`;
       const dx = visibleAltar.x - p.x;
       const dz = visibleAltar.z - p.z;
       const dist = Math.round(Math.sqrt(dx * dx + dz * dz));
@@ -8311,7 +8312,7 @@ export class GameScene {
           ? t('chest.prompt.openBoss')
           : t('chest.prompt.open', { cost: String(chestCost) });
       } else if (portalInRange) {
-        setMobileAltarInteractState(this.interactBtn, t('altar.prompt.enterPortal'));
+        setMobileAltarInteractState(this.interactBtn);
       }
     } else {
       gsapAnimations.animateInteractButton(this.interactBtn, false, 0.3);
@@ -8509,7 +8510,7 @@ export class GameScene {
         slot.appendChild(overlay);
         this.weaponCooldownOverlays[i] = overlay;
         const lvl = document.createElement('span');
-        lvl.style.cssText = uiPlainText('position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:7px;line-height:1;font-weight:bold;pointer-events:none;');
+        lvl.style.cssText = uiPlainText('position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:clamp(7px,1.8vw,9px);line-height:1;font-weight:bold;pointer-events:none;');
         lvl.textContent = `Lv.${weapon.level}`;
         slot.appendChild(lvl);
       }
@@ -8704,7 +8705,7 @@ export class GameScene {
 
     // 剩余秒数：置于槽框图层上方（z-index 最高），位置参考武器等级标签。
     const secs = document.createElement('span');
-    secs.style.cssText = uiPlainText('position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:8px;line-height:1;font-weight:bold;z-index:3;pointer-events:none;');
+    secs.style.cssText = uiPlainText('position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:clamp(7px,1.8vw,9px);line-height:1;font-weight:bold;z-index:3;pointer-events:none;');
     slot.appendChild(secs);
     this.consumableSecsEl = secs;
 
@@ -8952,7 +8953,7 @@ export class GameScene {
         slot.appendChild(icon);
         // Tier label (T1/T2/T3) bottom-center
         const tierLabel = document.createElement('span');
-        tierLabel.style.cssText = `position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:8px;font-weight:bold;color:${tierColor};text-shadow:0 1px 2px rgba(0,0,0,0.95);z-index:2;`;
+        tierLabel.style.cssText = uiColoredText(tierColor) + 'position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:clamp(7px,1.8vw,9px);font-weight:bold;z-index:2;';
         tierLabel.textContent = `T${prog.tier}`;
         slot.appendChild(tierLabel);
 
@@ -9488,7 +9489,7 @@ export class GameScene {
       width:min(86vw,560px);padding:0;
       color:#fff;text-align:center;pointer-events:none;z-index:260;opacity:0;
       transition:opacity 180ms ease,transform 220ms ease;
-      font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;box-sizing:border-box;
+      font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;box-sizing:border-box;
     ` : `
       position:fixed;left:50%;top:42%;transform:translate(-50%,-50%) scale(0.92);
       width:min(86vw,560px);padding:clamp(20px,5vw,34px);
@@ -9497,12 +9498,12 @@ export class GameScene {
       box-shadow:0 0 34px ${accentColor}88,0 18px 70px rgba(0,0,0,0.68);
       color:#fff;text-align:center;pointer-events:none;z-index:260;opacity:0;
       transition:opacity 180ms ease,transform 220ms ease;
-      font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;box-sizing:border-box;
+      font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;box-sizing:border-box;
     `;
 
     const title = document.createElement('div');
-    // boss banner：保留 accent glow + 黑色硬投影，再叠 2px 黑描边让 28–54px 大字在彩色背景里仍清晰。
-    title.style.cssText = uiColoredTextBold(accentColor, `0 0 18px ${accentColor},0 3px 8px #000`)
+    // boss banner：保留 accent glow，再叠 2px 黑描边让 28–54px 大字在彩色背景里仍清晰。
+    title.style.cssText = uiColoredTextBold(accentColor, `0 0 18px ${accentColor}`)
       + 'font-size:clamp(28px,8vw,54px);font-weight:900;letter-spacing:2px;';
     title.textContent = titleText;
 
@@ -9538,7 +9539,7 @@ export class GameScene {
     this.upgradePanel = document.createElement('div');
     this.upgradePanel.dataset.cameraBlock = 'true';
     this.upgradePanel.style.cssText = inGameChoiceOverlayStyle(
-      'background:rgba(0,0,0,0.7);z-index:300;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;',
+      'background:rgba(0,0,0,0.7);z-index:300;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;',
     );
 
     const centerGroup = createInGameChoiceCenterGroup();
@@ -9686,7 +9687,7 @@ export class GameScene {
 
     const overlay = document.createElement('div');
     overlay.dataset.cameraBlock = 'true';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:400;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:400;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
     this.installItemTooltipHandlers(overlay, { overlayTap: true });
 
     const sideMaxH = `calc(100% - ${sideInset * 2}px)`;
@@ -9969,7 +9970,7 @@ export class GameScene {
 
     const overlay = document.createElement('div');
     overlay.dataset.cameraBlock = 'true';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:420;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:420;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
     this.installItemTooltipHandlers(overlay, { overlayTap: true });
 
     const sideMaxH = `calc(100% - ${sideInset * 2}px)`;
@@ -10158,8 +10159,8 @@ export class GameScene {
         const inner = document.createElement('span');
         inner.style.cssText = uiPlainText(
           compact
-            ? 'position:absolute;bottom:1px;left:0;right:0;text-align:center;font-size:7px;line-height:1;font-weight:bold;pointer-events:none;'
-            : `position:absolute;bottom:-1px;left:0;right:0;text-align:center;font-size:${uiPx(7)}px;font-weight:bold;`,
+            ? 'position:absolute;bottom:1px;left:0;right:0;text-align:center;font-size:clamp(7px,1.8vw,9px);line-height:1;font-weight:bold;pointer-events:none;'
+            : 'position:absolute;bottom:-1px;left:0;right:0;text-align:center;font-size:clamp(7px,1.8vw,9px);font-weight:bold;',
         );
         inner.textContent = it.inner;
         box.appendChild(inner);
@@ -10328,7 +10329,7 @@ function ensureSelectableCharacter(): void {
 
 const PREP_SCREEN_STYLE = `
   position:fixed;top:0;left:0;width:100%;height:100%;box-sizing:border-box;
-  z-index:550;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;  background:#0a0a1a url(${UI_COMMON_BG_PATH}) center center/cover no-repeat;
+  z-index:550;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;  background:#0a0a1a url(${UI_COMMON_BG_PATH}) center center/cover no-repeat;
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
   padding-left:env(safe-area-inset-left,0px);
@@ -10402,7 +10403,7 @@ function createPrepScreenHeader(
   backBtn.style.position = 'relative';
 
   const titleEl = document.createElement('span');
-  // 描边走 textStyle.uiPlainTextBold（2px 8 向 + 底投影），项目里大字号标题统一用这套。
+  // 描边走 textStyle.uiPlainTextBold，项目里大字号标题统一用这套。
   titleEl.style.cssText = uiPlainTextBold(
     'position:absolute;left:50px;top:7px;pointer-events:none;'
     + 'font-weight:bold;font-size:24px;line-height:1;letter-spacing:0.04em;white-space:nowrap;',
@@ -10419,7 +10420,7 @@ const SHOP_OVERLAY_STYLE = `
   position:fixed;top:0;left:0;width:100%;height:100%;box-sizing:border-box;
   background:#1a2332 url(${SHOP_QUEST_PAGE_BG_IMAGE}) center center/cover no-repeat;
   display:flex;flex-direction:column;
-  z-index:600;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;  padding-top:env(safe-area-inset-top,0px);
+  z-index:600;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;  padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
   padding-left:env(safe-area-inset-left,0px);
   padding-right:env(safe-area-inset-right,0px);
@@ -10429,7 +10430,7 @@ const QUESTS_OVERLAY_STYLE = `
   position:fixed;top:0;left:0;width:100%;height:100%;box-sizing:border-box;
   background:#1a2332 url(${SHOP_QUEST_PAGE_BG_IMAGE}) center center/cover no-repeat;
   display:flex;flex-direction:column;
-  z-index:600;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;  padding-top:env(safe-area-inset-top,0px);
+  z-index:600;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;  padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
   padding-left:env(safe-area-inset-left,0px);
   padding-right:env(safe-area-inset-right,0px);
@@ -11029,7 +11030,7 @@ function refreshCharacterSelectDetail(): void {
     padding:0 ${characterDetailInsetXPct(CHARACTER_DETAIL_TITLE_BAR_PAD_X)};
   `;
   const nameEl = document.createElement('h2');
-  // 与"商店"红丝带标题、商店卡片标题统一描边强度（uiPlainTextBold：2px 8 向 + 底投影），
+  // 与"商店"红丝带标题、商店卡片标题统一描边强度（uiPlainTextBold：2px 黑描边），
   // 让所有"卡通丝带 logo"风的大字号标题保持一致；这里 16~22px 字号正好在 bold 描边的安全区间。
   nameEl.style.cssText = uiPlainTextBold(
     'margin:0;line-height:1.45;font-size:clamp(16px,4.2vw,22px);font-weight:bold;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;',
@@ -11735,7 +11736,7 @@ function createMainMenuButton(
   // label 区域 = [icon 右沿 + gap, 按钮右沿 - 内 padding]
   // left = icon.left(10) + icon.width(27) + gap(8) = 45；右侧留 12 与 icon 视觉对称。
   // text-align:center → 短标签（"商店"/"任务"）也在右侧矩形里居中，不会贴 icon 也不会贴右边框。
-  // 与"商店"红丝带标题、商店卡片标题、角色名统一描边强度（uiPlainTextBold：2px 8 向 + 底投影），
+  // 与"商店"红丝带标题、商店卡片标题、角色名统一描边强度（uiPlainTextBold：2px 黑描边），
   // 让首页"开始游戏 / 商店 / 任务"按钮文字也吃同一档"卡通丝带 logo"风的厚描边。
   labelEl.style.cssText = uiPlainTextBold(`
     position:absolute;left:${uiPx(45)}px;right:${uiPx(12)}px;top:50%;transform:translateY(-50%);
@@ -11769,7 +11770,7 @@ function showMainMenu(): void {
   mainMenuEl.style.cssText = `
     position:fixed;top:0;left:0;width:100%;height:100%;
     display:flex;flex-direction:column;align-items:stretch;
-    z-index:500;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;    overflow:hidden;
+    z-index:500;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;    overflow:hidden;
     background:#0a0a1a url(${LOBBY_BG_PATH}) center center/cover no-repeat;
     ${OVERLAY_SAFE_AREA}
     padding-top:max(16px,env(safe-area-inset-top,0px));
@@ -11944,7 +11945,7 @@ function showShopOverlay(): void {
     `;
 
     const nameEl = document.createElement('div');
-    // 与商店红丝带标题（uiPlainTextBold，2px 8 向描边 + 底投影）统一描边强度，
+    // 与商店红丝带标题（uiPlainTextBold，2px 黑描边）统一描边强度，
     // 让卡片标题在浅蓝面板上的"卡通丝带 logo"质感一致；不再用 1px 细描边的 uiPlainText。
     nameEl.style.cssText = uiPlainTextBold(
       'margin:0;font-size:1.2em;line-height:1.2;font-weight:bold;text-overflow:ellipsis;white-space:nowrap;max-width:100%;flex-shrink:0;',

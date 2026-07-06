@@ -2,6 +2,14 @@
  * MegaBonk Save System - Persistent progression stored in localStorage.
  */
 
+import type { BondId, WeaponDamageStats, WeaponType } from '../types.ts';
+
+export interface WeaponMasteryStats {
+  mvpCount: number;
+  soloVictoryCount: number;
+  bestRunDamage: number;
+}
+
 export interface SaveData {
   version: number;
   silver: number;
@@ -24,6 +32,10 @@ export interface SaveData {
     noDamageRuns: number;
     /** 累计使用过的不同武器 type（跨局去重）。 */
     uniqueWeaponsUsed: string[];
+    /** 按武器累计的精通任务进度。 */
+    weaponMastery: Record<string, WeaponMasteryStats>;
+    /** 按羁绊累计的 T3 达成次数。 */
+    bondT3Activations: Record<string, number>;
   };
 }
 
@@ -50,6 +62,8 @@ export function getDefaultSave(): SaveData {
       bondsActivated: 0,
       noDamageRuns: 0,
       uniqueWeaponsUsed: [],
+      weaponMastery: {},
+      bondT3Activations: {},
     },
   };
 }
@@ -118,6 +132,61 @@ export function recordWeaponsUsed(weaponTypes: string[]): void {
       changed = true;
     }
   }
+  if (changed) saveSave(save);
+}
+
+export function recordBondT3Activated(bondId: BondId): void {
+  const save = loadSave();
+  save.stats.bondT3Activations[bondId] = (save.stats.bondT3Activations[bondId] ?? 0) + 1;
+  saveSave(save);
+}
+
+function getWeaponMastery(save: SaveData, weaponType: WeaponType): WeaponMasteryStats {
+  save.stats.weaponMastery[weaponType] ??= {
+    mvpCount: 0,
+    soloVictoryCount: 0,
+    bestRunDamage: 0,
+  };
+  return save.stats.weaponMastery[weaponType];
+}
+
+function getRunMvpWeapon(stats: WeaponDamageStats[]): WeaponType | null {
+  const ranked = [...stats]
+    .filter(stat => stat.totalDamage > 0 || stat.killCount > 0)
+    .sort((a, b) => (b.totalDamage - a.totalDamage) || (b.killCount - a.killCount));
+  return ranked[0]?.weaponType ?? null;
+}
+
+export function recordWeaponMasteryRun(
+  weaponStats: WeaponDamageStats[],
+  weaponTypes: WeaponType[],
+  victory: boolean,
+  survivalTime: number,
+): void {
+  const save = loadSave();
+  let changed = false;
+
+  for (const stat of weaponStats) {
+    const mastery = getWeaponMastery(save, stat.weaponType);
+    const runDamage = Math.floor(stat.totalDamage);
+    if (runDamage > mastery.bestRunDamage) {
+      mastery.bestRunDamage = runDamage;
+      changed = true;
+    }
+  }
+
+  const validMvpRun = victory || survivalTime >= 300;
+  const mvpWeapon = validMvpRun ? getRunMvpWeapon(weaponStats) : null;
+  if (mvpWeapon) {
+    getWeaponMastery(save, mvpWeapon).mvpCount++;
+    changed = true;
+  }
+
+  if (victory && weaponTypes.length === 1) {
+    getWeaponMastery(save, weaponTypes[0]).soloVictoryCount++;
+    changed = true;
+  }
+
   if (changed) saveSave(save);
 }
 

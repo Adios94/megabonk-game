@@ -33,7 +33,7 @@ export class DamageNumbersOverlay {
     }
   }
 
-  /** 弹出伤害数字（含暴击放大 / "CRIT!" 后缀 / 护盾蓝色 / 玩家受伤红色）。 */
+  /** 弹出伤害数字（含暴击放大 / 护盾蓝色 / 玩家受伤红色）。 */
   spawnDamage(evt: DamageEvent): void {
     const el = this.elements[this.nextIndex];
     this.nextIndex = (this.nextIndex + 1) % POOL_SIZE;
@@ -56,7 +56,7 @@ export class DamageNumbersOverlay {
     if (evt.damage > 50) fontSize = 24;
     else if (evt.damage > 20) fontSize = 18;
 
-    // Crits: 1.5x size + "CRIT!" suffix
+    // Crits: 1.5x size; color already communicates the critical hit state.
     if (evt.isCrit) {
       fontSize = Math.round(fontSize * 1.5);
     }
@@ -66,7 +66,7 @@ export class DamageNumbersOverlay {
 
     const dmgText = evt.isShield ? `+${Math.round(evt.damage)}` : String(Math.round(evt.damage));
     gsapAnimations.showDamageNumber(el, {
-      text: evt.isCrit ? `${dmgText} CRIT!` : dmgText,
+      text: dmgText,
       color: color,
       x: screenX,
       y: screenY,

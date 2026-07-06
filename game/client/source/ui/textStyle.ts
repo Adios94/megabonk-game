@@ -30,7 +30,7 @@ export const UI_TEXT_OUTLINE_SHADOW = [
  * 8 个偏移，(±2,±1) 与 (±1,±2) 这 8 个"中间方向"会留下空缺 → 描边边缘呈
  * 星芒/毛刺状。补满 16 向后描边轮廓是平滑圆角，毛刺消失。
  *
- * 末尾叠一道 0 3px 0 半透黑做底部投影厚度感（参考商店/任务红丝带标题）。
+ * 只保留黑色描边，不叠底部投影。
  */
 export const UI_TEXT_OUTLINE_SHADOW_BOLD = [
 
@@ -66,8 +66,6 @@ export const UI_TEXT_OUTLINE_SHADOW_BOLD = [
 
   '2px 2px 0 #000',
 
-  '0 3px 0 rgba(0,0,0,0.55)',
-
 ].join(',');
 
 
@@ -81,7 +79,7 @@ export const UI_TEXT_OUTLINE_GUTTER = 'padding-inline:3px;box-sizing:border-box;
 /**
  * 全局轻量加粗：用同色 text-stroke 模拟 ~0.4px 的字重增加。
  * 之所以不直接调 font-weight：Lilita One 只有 400 一档，浏览器合成的假粗体会扭曲笔画，
- * 单纯调 weight 也会让中文（Noto Sans SC 走可变轴真实变粗）和英文（不动）观感脱节。
+ * 单纯调 weight 也会让中文（江城圆体固定 600w）和英文（不动）观感脱节。
  * text-stroke 对所有字体一视同仁，能保证中英文同步加粗。
  */
 export const UI_TEXT_FAUX_BOLD = '-webkit-text-stroke:0.4px currentColor;text-stroke:0.4px currentColor;paint-order:stroke fill;';
@@ -93,11 +91,11 @@ export const UI_PLAIN_TEXT_COLOR = '#ffffff';
 
 
 /**
- * 统一字体族：英文/数字优先 Lilita One，中文优先 Noto Sans SC，最终回退到系统 Arial / sans-serif。
+ * 统一字体族：英文/数字优先 Lilita One，中文优先 Jiang Cheng Yuan Ti，最终回退到系统 Arial / sans-serif。
  * 与 game/client/source/index.ts 的 UI_FONT_FACE 保持一致。
  * 字体文件本地装载，见 installGameUIFonts()。
  */
-export const UI_FONT_FAMILY = '"Lilita One","Noto Sans SC",Arial,sans-serif';
+export const UI_FONT_FAMILY = '"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif';
 
 
 

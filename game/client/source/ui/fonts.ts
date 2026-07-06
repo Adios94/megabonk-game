@@ -1,5 +1,5 @@
 /**
- * 游戏 UI 字体加载（Lilita One + Noto Sans SC 本地两件套）。
+ * 游戏 UI 字体加载（Lilita One + Jiang Cheng Yuan Ti 本地两件套）。
  *
  * - 不依赖 Google Fonts CDN（自托管 woff/ttf）。
  * - `installGameUIFonts()` 注入一次 `<style id="megabonk-ui-fonts">`（idempotent）。
@@ -8,22 +8,22 @@
  * `UI_FONT_FACE` 是默认的 font-family stack，HUD / 菜单都从这里读。
  */
 
-// 本地 Lilita One（拉丁） + Noto Sans SC（中文/CJK）。
+// 本地 Lilita One（拉丁） + Jiang Cheng Yuan Ti 600w（中文/CJK）。
 // 不再走 Google Fonts CDN，也不再叠像素字体 fallback。
-export const UI_FONT_FACE = '"Lilita One","Noto Sans SC",Arial,sans-serif';
+export const UI_FONT_FACE = '"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif';
 
 export const GAME_UI_FONT_FILES = {
   lilitaOneTtf: '/fonts/LilitaOne-Regular.ttf',
-  notoSansScVf: '/fonts/NotoSansSC-VF.ttf',
+  jiangChengYuanTi600Ttf: '/fonts/JiangChengYuanTi-600.ttf',
 } as const;
 
 export function installGameUIFonts(): void {
   if (document.getElementById('megabonk-ui-fonts')) return;
   const style = document.createElement('style');
   style.id = 'megabonk-ui-fonts';
-  // Noto Sans SC 用可变字体（wght 100~900），单文件覆盖 Regular/Bold；
+  // Jiang Cheng Yuan Ti 只注册 600w；加粗状态由浏览器匹配到最接近的 600 字重。
   // font-synthesis: none 防止浏览器对 Lilita One（仅 400 一档）合成假粗体扭曲笔画——
-  // 中文加粗由 Noto 可变轴提供真实 700 字重。
+  // 中文保持江城圆体自身字形，不再额外合成假粗体。
   style.textContent = `
 @font-face {
   font-family: 'Lilita One';
@@ -33,9 +33,9 @@ export function installGameUIFonts(): void {
   font-display: swap;
 }
 @font-face {
-  font-family: 'Noto Sans SC';
-  src: url('${GAME_UI_FONT_FILES.notoSansScVf}') format('truetype');
-  font-weight: 100 900;
+  font-family: 'Jiang Cheng Yuan Ti';
+  src: url('${GAME_UI_FONT_FILES.jiangChengYuanTi600Ttf}') format('truetype');
+  font-weight: 600;
   font-style: normal;
   font-display: swap;
 }
@@ -68,7 +68,7 @@ export async function ensureGameUIFontsLoaded(): Promise<void> {
   await Promise.all([
     document.fonts.load(`16px "Lilita One"`),
     document.fonts.load(`bold 60px "Lilita One"`),
-    document.fonts.load(`16px "Noto Sans SC"`),
-    document.fonts.load(`bold 16px "Noto Sans SC"`),
+    document.fonts.load(`600 16px "Jiang Cheng Yuan Ti"`),
+    document.fonts.load(`600 24px "Jiang Cheng Yuan Ti"`),
   ]);
 }

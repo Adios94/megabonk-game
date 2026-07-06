@@ -78,6 +78,7 @@ import {
   type ShrineRewardOption,
   type LevelData,
   type RelicId,
+  type RelicRarity,
   type RampVolume,
 } from '@minigame/core';
 import { PlatformInput } from '@minigame/platform';
@@ -403,6 +404,13 @@ const RARITY_COLORS: Record<string, string> = {
   legendary: '#ffaa00',
 };
 
+const RELIC_RARITY_SORT_RANK: Record<RelicRarity, number> = {
+  legendary: 0,
+  rare: 1,
+  uncommon: 2,
+  common: 3,
+};
+
 // 羁绊档位边框：T1 灰 / T2 橙 / T3 金
 const BOND_TIER_COLORS: Record<number, string> = {
   1: '#aaaaaa',
@@ -469,6 +477,7 @@ import { UI_FONT_FACE, GAME_UI_FONT_FILES, installGameUIFonts, ensureGameUIFonts
 const CHARACTER_SELECT_BACK_ICON = '/ui/button/back.svg';
 const LANG_BUTTON_CN = '/ui/button/btn_lang_cn.png';
 const LANG_BUTTON_EN = '/ui/button/btn_lang_en.png';
+const WEAPON_SLOT_LOCK_ICON_PATH = '/ui/icon/icon_weapon_lock.png';
 const CHARACTER_DETAIL_PANEL_BG = '/ui/panel/svg/character_detail.svg';
 /**
  * character_detail.svg 原图 3465×4897（AR 0.708，竖卡）。
@@ -783,6 +792,22 @@ function setIconImage(el: HTMLElement, src: string, fallbackEmoji = ''): void {
   el.appendChild(img);
 }
 
+type TranslationParams = Record<string, string>;
+
+function hasLocaleKey(key: string): boolean {
+  const locale = getLocale() === 'zh' ? zhLocale : enLocale;
+  let cur: unknown = locale;
+  for (const part of key.split('.')) {
+    if (!cur || typeof cur !== 'object' || !(part in cur)) return false;
+    cur = (cur as Record<string, unknown>)[part];
+  }
+  return typeof cur === 'string';
+}
+
+function tOptional(key: string, params?: TranslationParams): string | null {
+  return hasLocaleKey(key) ? t(key, params) : null;
+}
+
 /** 生成可嵌入模板字符串（tooltip/标题）的图标 <img> HTML。 */
 function iconImgHtml(src: string, sizePx = 16): string {
   return `<img src="${src}" draggable="false" style="width:${sizePx}px;height:${sizePx}px;object-fit:contain;vertical-align:middle;flex-shrink:0;" />`;
@@ -930,6 +955,8 @@ const HUD_RELIC_BAR_MIN_HEIGHT = 'clamp(28px,7.5vw,34px)';
 const HUD_WEAPON_SLOT_SIZE = 'clamp(22px,6.4vw,28px)';
 /** 局内典籍槽尺寸，与武器槽保持一致。 */
 const HUD_TOME_SLOT_SIZE = HUD_WEAPON_SLOT_SIZE;
+const BACKPACK_ICONS_PER_ROW = 5;
+const HUD_WEAPON_TOME_ICONS_PER_ROW = 6;
 const HUD_QUEST_TRACK_WIDTH = 'min(38vw,180px)';
 const HUD_QUEST_TRACK_FONT = 'clamp(6px,1.5vw,8px)';
 /** 局内连击提示缩放（相对原始字号） */
@@ -943,6 +970,12 @@ const SILVER_BADGE_ICON_SIZE = 'clamp(22px,6vw,28px)';
 const SILVER_BADGE_PILL_HEIGHT = 'clamp(16px,4.2vw,20px)';
 /** 底框左缘伸入图标水平中心（约为图标宽度一半） */
 const SILVER_BADGE_PILL_OVERLAP = 'clamp(11px,3vw,14px)';
+
+function backpackRowMaxWidth(slotSizeCss: string, gapCss: string, slots = BACKPACK_ICONS_PER_ROW): string {
+  const slotTerms = Array.from({ length: slots }, () => slotSizeCss).join(' + ');
+  const gapTerms = Array.from({ length: Math.max(0, slots - 1) }, () => gapCss).join(' + ');
+  return gapTerms ? `calc(${slotTerms} + ${gapTerms})` : `calc(${slotTerms})`;
+}
 
 function createSilverBadge(count: number, prefix = ''): HTMLDivElement {
   const badge = document.createElement('div');
@@ -1178,7 +1211,7 @@ function createLanguageSwitcherButton(): HTMLButtonElement | null {
 // =============================================================================
 /**
  * 游戏内风格化调参面板（仅 dev）。把 stylizedUniforms + 雾 + bloom 全部接上滑块，实时拖动即时生效，
- * 不用改代码重编译。按 ` 键（反引号）或点右上角按钮开关。"复制参数"把当前值导成可粘回代码的片段。
+ * 不用改代码重编译。GM Tool 打开时点右上角按钮开关。"复制参数"把当前值导成可粘回代码的片段。
  */
 function createStylizedDebugPanel(opts: {
   scene: THREE.Scene;
@@ -1337,8 +1370,20 @@ function createStylizedDebugPanel(opts: {
   ].join(';');
 
   const title = document.createElement('div');
-  title.textContent = '🎨 风格化调参 (按 ` 开关)';
-  title.style.cssText = 'font-weight:700;margin-bottom:8px;color:#9fc0ff;';
+  title.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:700;margin-bottom:8px;color:#9fc0ff;';
+  const titleText = document.createElement('span');
+  titleText.textContent = '🎨 风格化调参';
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.textContent = '×';
+  closeBtn.title = '关闭风格化调参';
+  closeBtn.style.cssText = 'width:22px;height:22px;border:1px solid rgba(159,192,255,0.45);border-radius:6px;background:rgba(30,40,70,0.9);color:#dfe6ff;font-weight:800;line-height:18px;cursor:pointer;';
+  closeBtn.addEventListener('click', () => {
+    panel.style.display = 'none';
+    syncStylizedDebugPanelWithGM(gmPanel !== null);
+  });
+  title.appendChild(titleText);
+  title.appendChild(closeBtn);
   panel.appendChild(title);
 
   for (const sec of sections) {
@@ -1408,10 +1453,11 @@ function createStylizedDebugPanel(opts: {
   document.body.appendChild(panel);
 
   const toggleBtn = document.createElement('button');
+  toggleBtn.id = 'stylized-debug-toggle';
   toggleBtn.textContent = '🎨';
-  toggleBtn.title = '风格化调参（`）';
+  toggleBtn.title = '风格化调参';
   toggleBtn.style.cssText = [
-    'position:fixed', 'top:8px', 'right:8px', 'z-index:99998', 'width:34px', 'height:34px',
+    'position:fixed', 'top:8px', 'right:8px', 'z-index:99998', 'display:none', 'width:34px', 'height:34px',
     'border:none', 'border-radius:8px', 'background:rgba(60,90,160,0.85)', 'color:#fff',
     'font-size:16px', 'cursor:pointer', 'box-shadow:0 2px 8px rgba(0,0,0,0.4)',
   ].join(';');
@@ -1422,9 +1468,20 @@ function createStylizedDebugPanel(opts: {
   };
   toggleBtn.addEventListener('click', toggle);
   document.body.appendChild(toggleBtn);
-  window.addEventListener('keydown', (e) => {
-    if (e.code === 'Backquote') { e.preventDefault(); toggle(); }
-  });
+}
+
+function syncStylizedDebugPanelWithGM(open: boolean): void {
+  const panel = document.getElementById('stylized-debug-panel') as HTMLDivElement | null;
+  const toggleBtn = document.getElementById('stylized-debug-toggle') as HTMLButtonElement | null;
+  if (!panel || !toggleBtn) return;
+
+  if (!open) {
+    panel.style.display = 'none';
+    toggleBtn.style.display = 'none';
+    return;
+  }
+
+  toggleBtn.style.display = panel.style.display === 'none' ? 'block' : 'none';
 }
 
 const WEATHER_DAY_EXPOSURE = 1.85;
@@ -3183,6 +3240,10 @@ export class GameScene {
   private bondSlotsContainer!: HTMLDivElement;
   private itemTooltip: HTMLDivElement | null = null;
   private itemTooltipContent = new WeakMap<HTMLElement, string>();
+  /** 触屏点击 tooltip（局内 HUD）：当前锚定的图标元素，用于「再点同图标关闭 / 点别的图标切换」判定。 */
+  private touchTooltipTarget: HTMLElement | null = null;
+  /** 触屏 tooltip 的 1.5s 自动关闭计时器。 */
+  private touchTooltipTimer: number | null = null;
   private bossHpContainer!: HTMLDivElement;
   private bossHpBarInner!: HTMLImageElement;
   private bossNameLabel!: HTMLDivElement;
@@ -4583,7 +4644,7 @@ export class GameScene {
 
   private setupHUD(): void {
     this.hudContainer = document.createElement('div');
-    this.hudContainer.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:100;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);box-sizing:border-box;';
+    this.hudContainer.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:100;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);box-sizing:border-box;';
     document.body.appendChild(this.hudContainer);
 
     // ---------------------------------------------------------------------
@@ -4609,7 +4670,7 @@ export class GameScene {
     shieldContainer.style.cssText = 'position:relative;width:clamp(90px,26vw,138px);height:clamp(16px,4.4vw,19px);overflow:visible;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5));display:none;';
     this.shieldBarInner = mountSvgBar(shieldContainer, BAR_ASSETS.shield.track, BAR_ASSETS.shield.fill).fill;
     this.shieldText = document.createElement('div');
-    this.shieldText.style.cssText = `${UI_BAR_TEXT_LAYER}color:#eaf7ff;font-size:clamp(9px,2.3vw,12px);font-weight:bold;text-shadow:0 1px 2px rgba(0,0,0,0.95);white-space:nowrap;`;
+    this.shieldText.style.cssText = uiPlainText(`${UI_BAR_TEXT_LAYER}color:#eaf7ff;font-size:clamp(9px,2.3vw,12px);font-weight:bold;white-space:nowrap;`);
     shieldContainer.appendChild(this.shieldText);
     this.shieldBar = shieldContainer;
     barsRow.appendChild(shieldContainer);
@@ -4619,7 +4680,7 @@ export class GameScene {
     // Weapon slots (6 total: 5 base + 1 lockable)
     this.weaponSlotsContainer = document.createElement('div');
     this.weaponSlotsContainer.dataset.cameraBlock = 'true';
-    this.weaponSlotsContainer.style.cssText = 'display:flex;gap:3px;flex-wrap:wrap;max-width:min(54vw,300px);pointer-events:auto;';
+    this.weaponSlotsContainer.style.cssText = `display:flex;gap:3px;flex-wrap:wrap;max-width:${backpackRowMaxWidth(HUD_WEAPON_SLOT_SIZE, '3px', HUD_WEAPON_TOME_ICONS_PER_ROW)};pointer-events:auto;`;
     topLeft.appendChild(this.weaponSlotsContainer);
 
     // Quest track (panel bg + text; left icon is baked into the image)
@@ -4716,7 +4777,7 @@ export class GameScene {
     // Row 2: tome stack (newest tome appended at the right, older shift left)
     this.tomesSlotsContainer = document.createElement('div');
     this.tomesSlotsContainer.dataset.cameraBlock = 'true';
-    this.tomesSlotsContainer.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;max-width:min(60vw,260px);justify-content:flex-end;pointer-events:auto;';
+    this.tomesSlotsContainer.style.cssText = `display:flex;gap:4px;flex-wrap:wrap;max-width:${backpackRowMaxWidth(HUD_TOME_SLOT_SIZE, '4px', HUD_WEAPON_TOME_ICONS_PER_ROW)};justify-content:flex-end;pointer-events:auto;`;
     topRight.appendChild(this.tomesSlotsContainer);
 
     this.hudContainer.appendChild(topRight);
@@ -4738,12 +4799,12 @@ export class GameScene {
     this.consumableBuffsContainer = document.createElement('div');
     this.consumableBuffsContainer.dataset.cameraBlock = 'true';
     this.consumableBuffsContainer.style.cssText = 'display:flex;gap:6px;align-items:flex-end;pointer-events:auto;';
-    this.onConsumableTapCapture = (e: PointerEvent) => this.handleConsumableTapCapture(e);
+    this.onConsumableTapCapture = (e: PointerEvent) => this.handleHudItemTapCapture(e);
     window.addEventListener('pointerdown', this.onConsumableTapCapture, { capture: true });
     this.buffRow.appendChild(this.consumableBuffsContainer);
     this.bondSlotsContainer = document.createElement('div');
     this.bondSlotsContainer.dataset.cameraBlock = 'true';
-    this.bondSlotsContainer.style.cssText = 'display:flex;gap:6px;align-items:flex-end;justify-content:flex-end;flex-wrap:wrap;max-width:60vw;pointer-events:auto;';
+    this.bondSlotsContainer.style.cssText = `display:flex;gap:6px;align-items:flex-end;justify-content:flex-end;flex-wrap:wrap;max-width:${backpackRowMaxWidth(HUD_WEAPON_SLOT_SIZE, '6px')};pointer-events:auto;`;
     this.buffRow.appendChild(this.bondSlotsContainer);
     bottomGroup.appendChild(this.buffRow);
 
@@ -4784,9 +4845,10 @@ export class GameScene {
     this.bondDetailOverlay.style.cssText = `
       position:fixed;left:0;bottom:0;display:none;z-index:240;pointer-events:auto;
       max-width:min(320px,calc(100vw - 24px));padding:10px 12px;border-radius:10px;
-      background:linear-gradient(180deg,rgba(18,18,32,0.97),rgba(8,8,16,0.97));
+      background:linear-gradient(180deg,rgba(18,18,32,0.62),rgba(8,8,16,0.62));
       border:1px solid rgba(255,255,255,0.18);box-shadow:0 12px 34px rgba(0,0,0,0.6);
       ${uiPlainText('font-size:12px;line-height:1.35;')}
+      backdrop-filter:blur(6px);
     `;
     document.body.appendChild(this.bondDetailOverlay);
 
@@ -4794,16 +4856,16 @@ export class GameScene {
     this.itemTooltip.style.cssText = `
       position:fixed;left:0;top:0;display:none;z-index:650;pointer-events:none;
       max-width:min(320px,calc(100vw - 24px));padding:10px 12px;border-radius:10px;
-      background:linear-gradient(180deg,rgba(18,18,32,0.96),rgba(8,8,16,0.96));
+      background:linear-gradient(180deg,rgba(18,18,32,0.62),rgba(8,8,16,0.62));
       border:1px solid rgba(255,255,255,0.18);box-shadow:0 12px 34px rgba(0,0,0,0.55);
       ${uiPlainText('font-size:12px;line-height:1.35;')}
-      backdrop-filter:blur(4px);
+      backdrop-filter:blur(6px);
     `;
     document.body.appendChild(this.itemTooltip);
-    this.installItemTooltipHandlers(this.weaponSlotsContainer);
-    this.installItemTooltipHandlers(this.tomesSlotsContainer);
-    this.installItemTooltipHandlers(this.relicSlotsContainer);
-    this.installItemTooltipHandlers(this.bondSlotsContainer);
+    this.installItemTooltipHandlers(this.weaponSlotsContainer, { touchTap: true });
+    this.installItemTooltipHandlers(this.tomesSlotsContainer, { touchTap: true });
+    this.installItemTooltipHandlers(this.relicSlotsContainer, { touchTap: true });
+    this.installItemTooltipHandlers(this.bondSlotsContainer, { touchTap: true });
 
     // Boss HP bar (top-center, hidden by default)
     this.bossHpContainer = document.createElement('div');
@@ -4829,7 +4891,7 @@ export class GameScene {
 
     // Teleporter / 宝箱距离指示器（与充能神殿进度共用位置）
     this.teleporterIndicator = document.createElement('div');
-    this.teleporterIndicator.style.cssText = `position:absolute;top:calc(${HUD_TOP_BELOW_CLUSTER} + 36px);left:50%;transform:translateX(-50%);color:#00ccff;font-size:clamp(11px,2.8vw,13px);font-weight:bold;text-shadow:0 0 8px #00ccff,0 1px 3px rgba(0,0,0,0.8);display:none;pointer-events:none;max-width:min(92vw,360px);text-align:center;white-space:nowrap;`;
+    this.teleporterIndicator.style.cssText = uiColoredText('#00ccff', '0 0 8px #00ccff') + `position:absolute;top:calc(${HUD_TOP_BELOW_CLUSTER} + 36px);left:50%;transform:translateX(-50%);font-size:clamp(11px,2.8vw,13px);font-weight:bold;display:none;pointer-events:none;max-width:min(92vw,360px);text-align:center;white-space:nowrap;`;
     this.hudContainer.appendChild(this.teleporterIndicator);
 
     // 充能神殿圆形进度（与 teleporterIndicator 同位置，充能时优先显示）
@@ -4888,7 +4950,7 @@ export class GameScene {
 
     // Combo label (hidden initially)
     this.comboLabel = document.createElement('div');
-    this.comboLabel.style.cssText = `position:absolute;top:35%;left:50%;transform:translate(-50%,-50%);color:#ffd700;font-size:${uiPx(Math.round(HUD_COMBO_FONT_BASE * HUD_COMBO_SCALE))}px;font-weight:bold;text-shadow:0 0 ${uiPx(8)}px rgba(255,215,0,0.8),0 ${uiPx(2)}px ${uiPx(3)}px rgba(0,0,0,0.9);pointer-events:none;opacity:0;transition:opacity 0.3s ease-out;white-space:nowrap;`;
+    this.comboLabel.style.cssText = uiColoredText('#ffd700', `0 0 ${uiPx(8)}px rgba(255,215,0,0.8)`) + `position:absolute;top:35%;left:50%;transform:translate(-50%,-50%);font-size:${uiPx(Math.round(HUD_COMBO_FONT_BASE * HUD_COMBO_SCALE))}px;font-weight:bold;pointer-events:none;opacity:0;transition:opacity 0.3s ease-out;white-space:nowrap;`;
     this.hudContainer.appendChild(this.comboLabel);
   }
 
@@ -7026,7 +7088,7 @@ export class GameScene {
     overlay.style.cssText = inGameChoiceOverlayStyle(`
       z-index:320;pointer-events:auto;
       background:radial-gradient(circle at 50% 45%, rgba(255,220,120,0.16), rgba(0,0,0,0.78) 62%);
-      font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;    `);
+      font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;    `);
 
     const centerGroup = createInGameChoiceCenterGroup();
     const title = document.createElement('div');
@@ -7043,13 +7105,15 @@ export class GameScene {
       title: '???',
       width: 'min(72vw,240px)',
       interactive: false,
+      statsBoxCss: 'padding:clamp(7px,2.4vw,12px) clamp(10px,3vw,16px);',
     });
     card.style.transition = 'transform 0.22s cubic-bezier(0.2,1.5,0.4,1), opacity 0.18s ease-out, filter 0.08s';
     card.style.transform = 'scale(0.8) rotate(-2deg)';
     card.style.opacity = '0';
 
-    iconSlot.style.fontSize = 'clamp(38px,11.2vw,54px)';
+    iconSlot.style.fontSize = 'clamp(34px,10vw,48px)';
     iconSlot.style.marginTop = 'clamp(4px,1.4vw,8px)';
+    iconSlot.style.marginBottom = 'clamp(3px,1vw,6px)';
     iconSlot.textContent = '?';
     descEl.style.display = 'none';
     levelEl.style.display = 'none';
@@ -7061,7 +7125,7 @@ export class GameScene {
     // 单句描述（无逗号）保持单行渲染，只有多句描述（如"护盾值 +2，最大护盾值 +5"）才会拆行。
     const relicAttribute = document.createElement('div');
     relicAttribute.style.cssText = uiPlainText(
-      'font-size:11px;line-height:1.4;text-align:center;width:100%;white-space:pre-line;word-break:keep-all;overflow-wrap:break-word;',
+      'font-size:clamp(9px,2.7vw,12px);line-height:1.35;text-align:center;width:100%;white-space:pre-line;word-break:keep-all;overflow-wrap:break-word;',
     );
     relicAttribute.textContent = reward.bossDrop || reward.cost <= 0
       ? t('chest.bossFreeOpen')
@@ -7135,7 +7199,8 @@ export class GameScene {
         rarityEl.textContent = t(`shrine.rarity.${reward.rarity}`);
         setIconImage(iconSlot, relicIconSrc(reward.relicId), relic.emoji);
         // 中文逗号 `，` 转换行符 → 在 white-space:pre-line 下强制断行，避免末尾 "+N" 被挤到孤行。
-        relicAttribute.textContent = t(`relic.${reward.relicId}.desc`).replace(/，\s*/g, '\n').replace(/,\s*/g, '\n');
+        const relicDesc = tOptional(`relic.${reward.relicId}.card_desc`) ?? t(`relic.${reward.relicId}.desc`);
+        relicAttribute.textContent = relicDesc.replace(/，\s*/g, '\n').replace(/,\s*/g, '\n');
         card.style.transform = 'scale(1.12) rotate(0deg)';
         setTimeout(() => { card.style.transform = 'scale(1) rotate(0deg)'; }, 140);
         buttonRow.style.display = 'flex';
@@ -7162,12 +7227,12 @@ export class GameScene {
     toast.style.cssText = `
       position:fixed;top:18%;left:50%;transform:translateX(-50%) scale(0.85);
       z-index:250;pointer-events:none;text-align:center;
-      font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;opacity:0;
+      font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;opacity:0;
     `;
 
     const title = document.createElement('div');
-    // 2px 8 向黑描边 + 原本的彩色 glow + 软投影：描边吃在最前保证字形锐利，glow/投影叠在外圈。
-    title.style.cssText = uiColoredTextBold(accent, `0 0 20px ${accent}88,0 2px 8px rgba(0,0,0,0.8)`)
+    // 2px 黑描边 + 原本的彩色 glow：描边吃在最前保证字形锐利。
+    title.style.cssText = uiColoredTextBold(accent, `0 0 20px ${accent}88`)
       + 'font-size:clamp(22px,7vw,28px);font-weight:bold;letter-spacing:2px;';
     title.textContent = t('upgrade.compensationTitle');
     toast.appendChild(title);
@@ -7650,7 +7715,7 @@ export class GameScene {
     this.shrinePanel = document.createElement('div');
     this.shrinePanel.dataset.cameraBlock = 'true';
     this.shrinePanel.style.cssText = inGameChoiceOverlayStyle(
-      'background:radial-gradient(ellipse at center,rgba(40,30,80,0.85),rgba(0,0,0,0.85));z-index:300;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;',
+      'background:radial-gradient(ellipse at center,rgba(40,30,80,0.85),rgba(0,0,0,0.85));z-index:300;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;',
     );
 
     const centerGroup = createInGameChoiceCenterGroup('min(96vw,760px)');
@@ -7681,14 +7746,16 @@ export class GameScene {
   private createShrineRewardCard(option: ShrineRewardOption, width = 'min(180px,90vw)'): HTMLDivElement {
     const accentColor = RARITY_COLORS[option.rarity] ?? '#aaaaaa';
     const percent = Math.round(option.value * 1000) / 10; // %.1
-    const title = t(`shrine.reward.${option.reward}_name`, {
+    const params = {
+      value: String(option.value),
+      percent: String(percent),
+    };
+    const title = tOptional(`shrine.reward.${option.reward}_card_name`, params) ?? t(`shrine.reward.${option.reward}_name`, {
       value: String(option.value),
       percent: String(percent),
     });
-    const desc = t(`shrine.reward.${option.reward}_desc`, {
-      value: String(option.value),
-      percent: String(percent),
-    });
+    const desc = tOptional(`shrine.reward.${option.reward}_card_desc`, params)
+      ?? t(`shrine.reward.${option.reward}_desc`, params);
 
     // 神殿奖励卡与升级卡保持同一布局：顶部名称、上方图标、中部深色数值框、底部稀有度。
     const { card, iconSlot, descEl, statsBox, levelEl, rarityEl } = createUpgradeFrameCard({
@@ -7697,6 +7764,8 @@ export class GameScene {
       title,
       width,
       interactive: true,
+      descLineClamp: 2,
+      statsBoxCss: 'padding:clamp(6px,2vw,10px) clamp(7px,2.4vw,12px);',
     });
 
     // Icon
@@ -7706,7 +7775,7 @@ export class GameScene {
     descEl.style.display = 'none';
     const rewardAttribute = document.createElement('div');
     rewardAttribute.style.cssText = uiPlainText(
-      'font-size:clamp(7.3px,2vw,9.3px);line-height:1.35;text-align:center;width:100%;',
+      'font-size:clamp(8px,2vw,10px);line-height:1.28;text-align:center;width:100%;white-space:pre-line;overflow-wrap:break-word;',
     );
     rewardAttribute.textContent = desc;
     statsBox.appendChild(rewardAttribute);
@@ -8057,7 +8126,7 @@ export class GameScene {
         slot.appendChild(icon);
         // Level number (Lv.N) bottom-center
         const lvl = document.createElement('span');
-        lvl.style.cssText = uiPlainText('position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:8px;line-height:1;font-weight:bold;pointer-events:none;');
+        lvl.style.cssText = uiPlainText('position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:clamp(7px,1.8vw,9px);line-height:1;font-weight:bold;pointer-events:none;');
         lvl.textContent = `Lv.${tome.level}`;
         slot.appendChild(lvl);
         this.tomesSlotsContainer.appendChild(slot);
@@ -8069,23 +8138,25 @@ export class GameScene {
       if (slot) this.setItemTooltip(slot, this.createTomeTooltipHtml(orderedTomes[i]));
     }
 
-    // --- Relic bar (bottom): SVG has 10 fixed slots, filled left → right ---
+    // --- Relic bar (bottom): always show 10 slots; filled left → right by rarity, then acquisition order. ---
     const acquiredRelics = (Object.entries(p.relicStacks ?? {}) as Array<[RelicId, number]>)
-      .filter(([id, count]) => count > 0 && RELICS[id]);
+      .map(([id, count], acquiredIndex) => ({ id, count, acquiredIndex, relic: RELICS[id] }))
+      .filter(entry => entry.count > 0 && entry.relic)
+      .sort((a, b) => {
+        const rarityDelta = RELIC_RARITY_SORT_RANK[a.relic.rarity] - RELIC_RARITY_SORT_RANK[b.relic.rarity];
+        return rarityDelta !== 0 ? rarityDelta : a.acquiredIndex - b.acquiredIndex;
+      });
     const visibleRelics = acquiredRelics.slice(0, HUD_RELIC_BAR_SLOT_COUNT);
-    // 仅在可见的前 10 个遗物集合 / 数量变化时重建；超出 10 个不渲染。
-    let relicsSig = '';
-    for (const [id, count] of visibleRelics) relicsSig += `|${id}:${count}`;
+    // 仅在排序后的可见遗物 / 数量变化时重建；空槽常显，超出 10 个不渲染。
+    let relicsSig = `slots:${HUD_RELIC_BAR_SLOT_COUNT}`;
+    for (const { id, count } of visibleRelics) relicsSig += `|${id}:${count}`;
     if (relicsSig !== this.relicsSig) {
       this.relicsSig = relicsSig;
       this.relicSlotsContainer.innerHTML = '';
-      for (let i = 0; i < visibleRelics.length; i++) {
-        const entry = visibleRelics[i];
+      for (let i = 0; i < HUD_RELIC_BAR_SLOT_COUNT; i++) {
+        const entry = visibleRelics[i] ?? null;
         const slot = document.createElement('div');
-        const [id, count] = entry;
-        const relic = RELICS[id];
-        const borderColor = RARITY_COLORS[relic.rarity] ?? '#aaaaaa';
-        this.setItemTooltip(slot, this.createRelicTooltipHtml(id, count, state));
+        const borderColor = entry ? (RARITY_COLORS[entry.relic.rarity] ?? '#aaaaaa') : 'rgba(255,255,255,0.16)';
         const slotCenterX = HUD_RELIC_SLOT_VIEWBOX.x + HUD_RELIC_SLOT_VIEWBOX.w / 2 + i * HUD_RELIC_SLOT_VIEWBOX.pitch;
         slot.style.cssText = `
           position:absolute;
@@ -8095,15 +8166,21 @@ export class GameScene {
           transform:translate(-50%,-50%);
           display:flex;align-items:center;justify-content:center;
           background:url("${HUD_RELIC_SLOT_BG}") center/100% 100% no-repeat;
-          border-radius:7px;box-sizing:border-box;cursor:help;
-          filter:drop-shadow(0 0 5px ${borderColor}80);
+          border:1.5px solid ${borderColor};border-radius:7px;box-sizing:border-box;
+          cursor:${entry ? 'help' : 'default'};
         `;
+        if (!entry) {
+          this.relicSlotsContainer.appendChild(slot);
+          continue;
+        }
+        const { id, count, relic } = entry;
+        this.setItemTooltip(slot, this.createRelicTooltipHtml(id, count, state));
         const icon = document.createElement('span');
         icon.style.cssText = 'font-size:clamp(13px,3.4vw,16px);';
         setIconImage(icon, relicIconSrc(id), relic.emoji);
         slot.appendChild(icon);
         const stack = document.createElement('span');
-        stack.style.cssText = 'position:absolute;left:50%;bottom:-7px;transform:translateX(-50%);height:14px;color:#fff;font-size:8px;font-weight:bold;display:flex;align-items:center;justify-content:center;text-shadow:0 1px 2px #000;white-space:nowrap;';
+        stack.style.cssText = uiPlainText('position:absolute;left:50%;bottom:-7px;transform:translateX(-50%);height:14px;font-size:clamp(7px,1.8vw,9px);font-weight:bold;display:flex;align-items:center;justify-content:center;white-space:nowrap;');
         stack.textContent = `x${count}`;
         slot.appendChild(stack);
         this.relicSlotsContainer.appendChild(slot);
@@ -8112,7 +8189,7 @@ export class GameScene {
     // 部分遗物 tooltip 依赖当前武器等级 / overtime 秒数，结构不变时也需要刷新。
     for (let i = 0; i < visibleRelics.length; i++) {
       const slot = this.relicSlotsContainer.children[i] as HTMLElement | undefined;
-      const [id, count] = visibleRelics[i];
+      const { id, count } = visibleRelics[i];
       if (slot) this.setItemTooltip(slot, this.createRelicTooltipHtml(id, count, state));
     }
 
@@ -8187,8 +8264,8 @@ export class GameScene {
       const canAfford = isBossChest || p.gold >= chestCost;
       this.teleporterIndicator.style.color = canAfford ? '#ffdd66' : '#999999';
       this.teleporterIndicator.style.textShadow = canAfford
-        ? '0 0 8px #ffcc33,0 1px 3px rgba(0,0,0,0.8)'
-        : '0 1px 3px rgba(0,0,0,0.8)';
+        ? `${UI_TEXT_OUTLINE_SHADOW},0 0 8px #ffcc33`
+        : UI_TEXT_OUTLINE_SHADOW;
       this.teleporterIndicator.innerHTML = isBossChest
         ? `${chestIconHtml()}<span>${escapeTooltipText(t('chest.prompt.openBossKey'))}</span>`
         : canAfford
@@ -8203,7 +8280,7 @@ export class GameScene {
       // 使用 GSAP 动画显示传送门指示器
       gsapAnimations.animateTeleporterIndicator(this.teleporterIndicator, true, 0.2);
       this.teleporterIndicator.style.color = '#00ccff';
-      this.teleporterIndicator.style.textShadow = '0 0 8px #00ccff,0 1px 3px rgba(0,0,0,0.8)';
+      this.teleporterIndicator.style.textShadow = `${UI_TEXT_OUTLINE_SHADOW},0 0 8px #00ccff`;
       const dx = visibleAltar.x - p.x;
       const dz = visibleAltar.z - p.z;
       const dist = Math.round(Math.sqrt(dx * dx + dz * dz));
@@ -8258,7 +8335,7 @@ export class GameScene {
           ? t('chest.prompt.openBoss')
           : t('chest.prompt.open', { cost: String(chestCost) });
       } else if (portalInRange) {
-        setMobileAltarInteractState(this.interactBtn, t('altar.prompt.enterPortal'));
+        setMobileAltarInteractState(this.interactBtn);
       }
     } else {
       gsapAnimations.animateInteractButton(this.interactBtn, false, 0.3);
@@ -8433,9 +8510,11 @@ export class GameScene {
       slot.style.cssText = `width:${HUD_WEAPON_SLOT_SIZE};height:${HUD_WEAPON_SLOT_SIZE};background:${isLocked ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.6)'};position:relative;display:flex;align-items:center;justify-content:center;flex-shrink:0;${isLocked ? '' : 'cursor:help;'}`;
 
       if (isLocked) {
-        const lock = document.createElement('span');
-        lock.style.cssText = 'font-size:clamp(9px,2.6vw,11px);opacity:0.7;';
-        lock.textContent = '🔒';
+        const lock = document.createElement('img');
+        lock.src = WEAPON_SLOT_LOCK_ICON_PATH;
+        lock.alt = '';
+        lock.draggable = false;
+        lock.style.cssText = 'width:72%;height:72%;object-fit:contain;opacity:0.8;display:block;pointer-events:none;';
         slot.appendChild(lock);
         this.setItemTooltip(slot, `<div style="max-width:200px;">${escapeTooltipText(t('hud.weaponSlotLocked'))}</div>`);
         this.weaponSlotsContainer.appendChild(slot);
@@ -8454,7 +8533,7 @@ export class GameScene {
         slot.appendChild(overlay);
         this.weaponCooldownOverlays[i] = overlay;
         const lvl = document.createElement('span');
-        lvl.style.cssText = uiPlainText('position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:7px;line-height:1;font-weight:bold;pointer-events:none;');
+        lvl.style.cssText = uiPlainText('position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:clamp(7px,1.8vw,9px);line-height:1;font-weight:bold;pointer-events:none;');
         lvl.textContent = `Lv.${weapon.level}`;
         slot.appendChild(lvl);
       }
@@ -8649,29 +8728,172 @@ export class GameScene {
 
     // 剩余秒数：置于槽框图层上方（z-index 最高），位置参考武器等级标签。
     const secs = document.createElement('span');
-    secs.style.cssText = uiPlainText('position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:8px;line-height:1;font-weight:bold;z-index:3;pointer-events:none;');
+    secs.style.cssText = uiPlainText('position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:clamp(7px,1.8vw,9px);line-height:1;font-weight:bold;z-index:3;pointer-events:none;');
     slot.appendChild(secs);
     this.consumableSecsEl = secs;
 
-    // 点击拦截统一走 window 捕获阶段（handleConsumableTapCapture），此处不再单独绑定。
+    // 点击拦截统一走 window 捕获阶段（handleHudItemTapCapture），此处不再单独绑定。
     this.consumableBuffsContainer.appendChild(slot);
   }
 
   /**
-   * window 捕获阶段命中检测：若点击落在道具槽矩形内，则在摇杆触控区接管之前拦截，
-   * 切换道具说明浮层（触屏点击图标弹窗）。
+   * window 捕获阶段命中检测（仅局内触屏）：在摇杆 / 镜头触控区接管之前拦截，
+   * 统一处理所有道具图标（武器 / 典籍 / 羁绊 / 遗物 / 消耗品）的点击说明浮层。
+   *
+   * 规则：点击图标 → 在图标附近锚定弹出说明（1.5s 自动消失，不可拖动）；
+   * 1.5s 内再次点击同一图标 → 立即关闭；点击另一图标 → 立即切换到新图标说明；
+   * 点击空白处不关闭（仅等待计时结束）。鼠标交互保持原 hover 逻辑，不走此分支。
    */
-  private handleConsumableTapCapture(e: PointerEvent): void {
-    if (!this.touchControlsEnabled) return;
-    const slot = this.consumableBuffsContainer?.firstElementChild as HTMLElement | null;
-    if (!slot) return;
-    const r = slot.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) return;
-    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-    this.toggleConsumableTooltip(slot, this.consumableSlotSig as ConsumableId);
+  private handleHudItemTapCapture(e: PointerEvent): void {
+    if (e.pointerType === 'mouse') return;     // 鼠标走 hover / 点击逻辑
+    if (!this.touchControlsEnabled) return;     // 仅局内（模态打开时禁用）
+
+    // 1) 消耗品：独立浮层（其槽位可能被摇杆触控区覆盖，按矩形命中）。
+    const consumableSlot = this.consumableBuffsContainer?.firstElementChild as HTMLElement | null;
+    if (consumableSlot && this.consumableSlotSig && this.pointInElement(e.clientX, e.clientY, consumableSlot)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      this.toggleConsumableTooltip(consumableSlot, this.consumableSlotSig as ConsumableId);
+      return;
+    }
+
+    // 2) 其它道具槽（武器 / 典籍 / 羁绊 / 遗物）：共享锚定 tooltip。
+    const slot = this.findHudTooltipSlotAt(e.clientX, e.clientY);
+    if (slot) {
+      const html = this.itemTooltipContent.get(slot);
+      if (html) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        this.handleTouchTooltipTap(slot, html);
+      }
+      return;
+    }
+    // 命中空白：不关闭已显示的说明（仅等待 1.5s 计时），也不拦截原始手势。
+  }
+
+  private pointInElement(x: number, y: number, el: HTMLElement): boolean {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  }
+
+  /** 命中点处最上层、且属于局内 HUD 4 个容器之一的带 tooltip 图标槽。 */
+  private findHudTooltipSlotAt(x: number, y: number): HTMLElement | null {
+    const stack = document.elementsFromPoint(x, y);
+    for (const el of stack) {
+      const slot = (el as HTMLElement).closest?.('[data-tooltip-item]') as HTMLElement | null;
+      if (slot && this.isInGameTooltipContainer(slot)) return slot;
+    }
+    return null;
+  }
+
+  private isInGameTooltipContainer(el: HTMLElement): boolean {
+    return this.weaponSlotsContainer.contains(el)
+      || this.tomesSlotsContainer.contains(el)
+      || this.relicSlotsContainer.contains(el)
+      || this.bondSlotsContainer.contains(el);
+  }
+
+  /** 触屏点击图标：再点同一图标→关闭；点别的图标→切换；否则锚定弹出（1.5s）。 */
+  private handleTouchTooltipTap(target: HTMLElement, html: string): void {
+    // 同一时刻只允许一个说明框：关闭消耗品独立浮层。
+    this.hideConsumableTooltip();
+    if (this.touchTooltipTarget === target) {
+      this.hideTouchItemTooltip();
+      return;
+    }
+    this.showTouchItemTooltip(target, html);
+  }
+
+  /**
+   * 局外暂停 / 结算背包的触屏点击：
+   * - 点击图标：再点同图标→关闭；点别的图标→切换；否则锚定弹出（**不自动消失**）。
+   * - 点击说明框以外的任何地方：关闭（说明框 pointer-events:none，用矩形命中判定豁免）。
+   */
+  private handleOverlayTooltipTap(event: PointerEvent, container: HTMLElement): void {
+    const target = (event.target as HTMLElement).closest('[data-tooltip-item]') as HTMLElement | null;
+    if (target && container.contains(target)) {
+      const html = this.itemTooltipContent.get(target);
+      if (html) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (this.touchTooltipTarget === target) {
+          this.hideTouchItemTooltip();
+        } else {
+          this.showOverlayItemTooltip(target, html);
+        }
+        return;
+      }
+    }
+    // 点击非图标处：若点在说明框矩形内则保留，否则关闭。
+    if (this.touchTooltipTarget) {
+      if (
+        this.itemTooltip &&
+        this.itemTooltip.style.display !== 'none' &&
+        this.pointInElement(event.clientX, event.clientY, this.itemTooltip)
+      ) {
+        return;
+      }
+      this.hideTouchItemTooltip();
+    }
+  }
+
+  /** 暂停 / 结算背包：锚定弹出说明框，无自动消失计时器。 */
+  private showOverlayItemTooltip(target: HTMLElement, html: string): void {
+    if (!this.itemTooltip) return;
+    this.clearTouchTooltipTimer();
+    if (this.itemTooltip.innerHTML !== html) this.itemTooltip.innerHTML = html;
+    this.itemTooltip.style.display = 'block';
+    this.anchorItemTooltipTo(target);
+    this.touchTooltipTarget = target;
+  }
+
+  private showTouchItemTooltip(target: HTMLElement, html: string): void {
+    if (!this.itemTooltip) return;
+    this.clearTouchTooltipTimer();
+    if (this.itemTooltip.innerHTML !== html) this.itemTooltip.innerHTML = html;
+    this.itemTooltip.style.display = 'block';
+    this.anchorItemTooltipTo(target);
+    this.touchTooltipTarget = target;
+    this.touchTooltipTimer = window.setTimeout(() => {
+      this.touchTooltipTimer = null;
+      this.hideTouchItemTooltip();
+    }, 1500);
+  }
+
+  private hideTouchItemTooltip(): void {
+    this.clearTouchTooltipTimer();
+    this.touchTooltipTarget = null;
+    this.hideItemTooltip();
+  }
+
+  private clearTouchTooltipTimer(): void {
+    if (this.touchTooltipTimer !== null) {
+      clearTimeout(this.touchTooltipTimer);
+      this.touchTooltipTimer = null;
+    }
+  }
+
+  /** 把 tooltip 锚定到图标四周合适位置：优先上方，空间不足翻到下方，左右夹取入屏；不跟随手指。 */
+  private anchorItemTooltipTo(target: HTMLElement): void {
+    if (!this.itemTooltip) return;
+    const margin = 8;
+    const gap = 8;
+    const rect = target.getBoundingClientRect();
+    const tip = this.itemTooltip.getBoundingClientRect();
+    let left = rect.left + rect.width / 2 - tip.width / 2;
+    left = Math.max(margin, Math.min(left, window.innerWidth - tip.width - margin));
+    let top = rect.top - tip.height - gap;
+    if (top < margin) {
+      top = rect.bottom + gap;
+      if (top + tip.height > window.innerHeight - margin) {
+        top = Math.max(margin, window.innerHeight - tip.height - margin);
+      }
+    }
+    this.itemTooltip.style.left = `${Math.round(left)}px`;
+    this.itemTooltip.style.top = `${Math.round(top)}px`;
   }
 
   /** 点击道具图标：浮层未显示则在图标上方弹出（1.5s 后自动消失）；已显示则立即关闭。 */
@@ -8685,9 +8907,12 @@ export class GameScene {
 
   private showConsumableTooltip(slot: HTMLElement, id: ConsumableId): void {
     this.hideConsumableTooltip();
+    // 同一时刻只允许一个说明框：关闭其它道具的共享锚定 tooltip。
+    this.hideTouchItemTooltip();
     const el = document.createElement('div');
-    el.style.cssText = `position:fixed;z-index:320;max-width:min(72vw,240px);background:rgba(20,12,34,0.96);border:1px solid rgba(180,120,255,0.6);border-radius:8px;padding:7px 10px;box-shadow:0 4px 16px rgba(0,0,0,0.55);pointer-events:none;${UI_PLAIN_TEXT_STYLE}`;
-    el.innerHTML = `<div style="font-weight:bold;color:#f3e9ff;font-size:clamp(11px,3vw,13px);margin-bottom:3px;">${escapeTooltipText(t(`consumable.${id}`))}</div><div style="color:#cdb7ff;font-size:clamp(10px,2.6vw,12px);line-height:1.4;">${escapeTooltipText(t(`consumable.${id}_desc`))}</div>`;
+    const accent = `#${(CONSUMABLE_COLORS[id] ?? 0xcc66ff).toString(16).padStart(6, '0')}`;
+    el.style.cssText = `position:fixed;z-index:320;max-width:min(72vw,240px);background:linear-gradient(180deg,rgba(18,18,32,0.62),rgba(8,8,16,0.62));border:1px solid rgba(255,255,255,0.18);border-radius:10px;padding:10px 12px;box-shadow:0 12px 34px rgba(0,0,0,0.55);pointer-events:none;backdrop-filter:blur(6px);${UI_PLAIN_TEXT_STYLE}`;
+    el.innerHTML = `<div style="font-weight:bold;color:${accent};font-size:clamp(11px,3vw,13px);margin-bottom:3px;">${escapeTooltipText(t(`consumable.${id}`))}</div><div style="color:#ffffff;font-size:clamp(10px,2.6vw,12px);line-height:1.4;">${escapeTooltipText(t(`consumable.${id}_desc`))}</div>`;
     document.body.appendChild(el);
     this.consumableTooltipEl = el;
 
@@ -8751,7 +8976,7 @@ export class GameScene {
         slot.appendChild(icon);
         // Tier label (T1/T2/T3) bottom-center
         const tierLabel = document.createElement('span');
-        tierLabel.style.cssText = `position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:8px;font-weight:bold;color:${tierColor};text-shadow:0 1px 2px rgba(0,0,0,0.95);z-index:2;`;
+        tierLabel.style.cssText = uiColoredText(tierColor) + 'position:absolute;bottom:-0.5em;left:0;right:0;text-align:center;font-size:clamp(7px,1.8vw,9px);font-weight:bold;z-index:2;';
         tierLabel.textContent = `T${prog.tier}`;
         slot.appendChild(tierLabel);
 
@@ -8823,8 +9048,25 @@ export class GameScene {
     }
   }
 
-  private installItemTooltipHandlers(container: HTMLElement): void {
+  /**
+   * 给容器内带 `data-tooltip-item` 的图标安装 tooltip 交互。
+   * - 鼠标：hover 跟随显示（局内 / 局外暂停·结算面板通用）。
+   * - `touchTap`（仅局内 HUD）：触屏点击不在此处理，统一交给 `handleHudItemTapCapture`
+   *   做「锚定弹出 / 1.5s 自动消失 / 再点同图标关闭 / 点别的图标切换」，且严禁拖动跟随。
+   * - `overlayTap`（仅局外暂停 / 结算背包）：触屏点击在此处理，锚定弹出且**不自动消失**；
+   *   再点同图标 / 点别的图标 / 点说明框以外的任何地方都关闭，严禁拖动跟随。
+   */
+  private installItemTooltipHandlers(
+    container: HTMLElement,
+    options: { touchTap?: boolean; overlayTap?: boolean } = {},
+  ): void {
+    const touchTap = options.touchTap === true;
+    const overlayTap = options.overlayTap === true;
+    const tapManaged = touchTap || overlayTap;
+
     container.addEventListener('mousemove', (event) => {
+      // 触屏锚定 tooltip 显示期间忽略模拟 mouse 事件，避免覆盖锚定位置。
+      if (tapManaged && this.touchTooltipTarget) return;
       const target = (event.target as HTMLElement).closest('[data-tooltip-item]') as HTMLElement | null;
       if (!target || !container.contains(target)) {
         this.hideItemTooltip();
@@ -8838,6 +9080,13 @@ export class GameScene {
       this.showItemTooltip(html, event);
     });
     container.addEventListener('pointerdown', (event) => {
+      // 局内触屏点击由 handleHudItemTapCapture（window 捕获阶段）统一处理。
+      if (touchTap && event.pointerType !== 'mouse') return;
+      // 局外暂停 / 结算背包：触屏点击在此做常驻锚定 tooltip。
+      if (overlayTap && event.pointerType !== 'mouse') {
+        this.handleOverlayTooltipTap(event, container);
+        return;
+      }
       const target = (event.target as HTMLElement).closest('[data-tooltip-item]') as HTMLElement | null;
       if (!target || !container.contains(target)) {
         this.hideItemTooltip();
@@ -8851,13 +9100,23 @@ export class GameScene {
       this.showItemTooltipAt(html, event.clientX, event.clientY);
     });
     container.addEventListener('pointermove', (event) => {
+      // 触屏 tooltip 严禁拖动跟随。
+      if (tapManaged && event.pointerType !== 'mouse') return;
+      if (tapManaged && this.touchTooltipTarget) return;
       if (!this.itemTooltip || this.itemTooltip.style.display === 'none') return;
       const target = (event.target as HTMLElement).closest('[data-tooltip-item]') as HTMLElement | null;
       if (!target || !container.contains(target)) return;
       this.moveItemTooltipTo(event.clientX, event.clientY);
     });
-    container.addEventListener('pointercancel', () => this.hideItemTooltip());
-    container.addEventListener('mouseleave', () => this.hideItemTooltip());
+    container.addEventListener('pointercancel', (event) => {
+      // 触屏 tooltip 的关闭由计时器（局内）/ 显式点击（局外）控制，不在 pointercancel 关闭。
+      if (tapManaged && event.pointerType !== 'mouse') return;
+      this.hideItemTooltip();
+    });
+    container.addEventListener('mouseleave', () => {
+      if (tapManaged && this.touchTooltipTarget) return;
+      this.hideItemTooltip();
+    });
   }
 
   private setItemTooltip(el: HTMLElement, html: string): void {
@@ -8926,7 +9185,6 @@ export class GameScene {
 
     return `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-        <div style="width:7px;height:24px;border-radius:999px;background:${args.accent};box-shadow:0 0 12px ${args.accent}aa;"></div>
         <div>
           <div style="font-size:14px;font-weight:800;display:flex;align-items:center;gap:6px;${UI_PLAIN_TEXT_STYLE}">${args.iconSrc ? iconImgHtml(args.iconSrc, 18) : ''}<span>${escapeTooltipText(args.title)}</span></div>
           ${args.subtitle ? `<div style="font-size:10px;color:${args.accent};font-weight:700;letter-spacing:0.4px;">${escapeTooltipText(args.subtitle)}</div>` : ''}
@@ -9139,7 +9397,6 @@ export class GameScene {
 
     return `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-        <div style="width:7px;height:24px;border-radius:999px;background:${tierColor};box-shadow:0 0 12px ${tierColor}aa;"></div>
         <div>
           <div style="font-size:14px;font-weight:800;display:flex;align-items:center;gap:6px;${UI_PLAIN_TEXT_STYLE}">${iconImgHtml(bondIconSrc(bondId), 18)}<span>${escapeTooltipText(name)}</span></div>
           <div style="font-size:10px;color:${tierColor};font-weight:700;letter-spacing:0.4px;">${escapeTooltipText(tierName)} · T${tier}</div>
@@ -9215,6 +9472,7 @@ export class GameScene {
           t('stage.notice.secondTitle'),
           t('stage.notice.secondBody'),
           '#ffcc00',
+          { frameless: true },
         );
       }
     }
@@ -9236,7 +9494,12 @@ export class GameScene {
     this.handleChestRewardPhaseChange(state);
   }
 
-  private showMajorNotice(titleText: string, bodyText: string, accentColor: string): void {
+  private showMajorNotice(
+    titleText: string,
+    bodyText: string,
+    accentColor: string,
+    options: { frameless?: boolean } = {},
+  ): void {
     if (this.majorNoticeTimer) {
       clearTimeout(this.majorNoticeTimer);
       this.majorNoticeTimer = null;
@@ -9244,7 +9507,13 @@ export class GameScene {
     this.majorNoticeEl?.remove();
 
     const notice = document.createElement('div');
-    notice.style.cssText = `
+    notice.style.cssText = options.frameless ? `
+      position:fixed;left:50%;top:42%;transform:translate(-50%,-50%) scale(0.92);
+      width:min(86vw,560px);padding:0;
+      color:#fff;text-align:center;pointer-events:none;z-index:260;opacity:0;
+      transition:opacity 180ms ease,transform 220ms ease;
+      font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;box-sizing:border-box;
+    ` : `
       position:fixed;left:50%;top:42%;transform:translate(-50%,-50%) scale(0.92);
       width:min(86vw,560px);padding:clamp(20px,5vw,34px);
       border:2px solid ${accentColor};border-radius:18px;
@@ -9252,12 +9521,12 @@ export class GameScene {
       box-shadow:0 0 34px ${accentColor}88,0 18px 70px rgba(0,0,0,0.68);
       color:#fff;text-align:center;pointer-events:none;z-index:260;opacity:0;
       transition:opacity 180ms ease,transform 220ms ease;
-      font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;box-sizing:border-box;
+      font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;box-sizing:border-box;
     `;
 
     const title = document.createElement('div');
-    // boss banner：保留 accent glow + 黑色硬投影，再叠 2px 黑描边让 28–54px 大字在彩色背景里仍清晰。
-    title.style.cssText = uiColoredTextBold(accentColor, `0 0 18px ${accentColor},0 3px 8px #000`)
+    // boss banner：保留 accent glow，再叠 2px 黑描边让 28–54px 大字在彩色背景里仍清晰。
+    title.style.cssText = uiColoredTextBold(accentColor, `0 0 18px ${accentColor}`)
       + 'font-size:clamp(28px,8vw,54px);font-weight:900;letter-spacing:2px;';
     title.textContent = titleText;
 
@@ -9293,7 +9562,7 @@ export class GameScene {
     this.upgradePanel = document.createElement('div');
     this.upgradePanel.dataset.cameraBlock = 'true';
     this.upgradePanel.style.cssText = inGameChoiceOverlayStyle(
-      'background:rgba(0,0,0,0.7);z-index:300;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;',
+      'background:rgba(0,0,0,0.7);z-index:300;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;',
     );
 
     const centerGroup = createInGameChoiceCenterGroup();
@@ -9333,6 +9602,8 @@ export class GameScene {
       title: this.getUpgradeName(option),
       width,
       interactive: true,
+      descLineClamp: isBond ? 5 : 4,
+      statsBoxCss: isBond ? 'padding:clamp(6px,2vw,10px) clamp(8px,2.6vw,14px);' : '',
     });
 
     // Icon
@@ -9351,26 +9622,44 @@ export class GameScene {
     }
 
     // Description
-    descEl.textContent = this.getUpgradeDesc(option);
+    const upgradeDesc = this.getUpgradeDesc(option);
+    descEl.textContent = upgradeDesc;
     const upgradeSteps = option.newLevel - option.currentLevel;
     if (!isBond && upgradeSteps > 1) {
       descEl.textContent = `${descEl.textContent} · ${t('upgrade.doubleLevel', { count: String(upgradeSteps) })}`;
     }
 
-    // 数值预览（基础步进 × 稀有度 / 典籍每级增益）
-    const previewLines = getUpgradePreviewLines(option, player);
-    if (previewLines.length > 0) {
-      for (const line of previewLines) {
-        const key = line.labelKey.replace('upgrade.stat.', '');
-        statsBox.appendChild(upgradeStatRow(t(`upgrade.stat.${key}`), line.value, statValueColor));
-      }
+    if (isBond) {
+      // 羁绊卡强调图标和档位：说明放入中部深色框，底部等级槽改为档位变化。
+      iconSlot.style.fontSize = 'clamp(34px,10vw,48px)';
+      iconSlot.style.marginTop = 'clamp(4px,1.4vw,8px)';
+      iconSlot.style.marginBottom = 'clamp(3px,1vw,6px)';
+      descEl.style.display = 'none';
+
+      const bondDesc = document.createElement('div');
+      bondDesc.style.cssText = uiPlainText(
+        'font-size:clamp(8px,2vw,10px);line-height:1.28;text-align:center;width:100%;white-space:pre-line;overflow-wrap:break-word;',
+      );
+      bondDesc.textContent = upgradeDesc;
+      statsBox.appendChild(bondDesc);
     } else {
-      // 无数值时给个占位，避免数值面板坍成空盒
-      statsBox.style.display = 'none';
+      // 数值预览（基础步进 × 稀有度 / 典籍每级增益）
+      const previewLines = getUpgradePreviewLines(option, player);
+      if (previewLines.length > 0) {
+        for (const line of previewLines) {
+          const key = line.labelKey.replace('upgrade.stat.', '');
+          statsBox.appendChild(upgradeStatRow(t(`upgrade.stat.${key}`), line.value, statValueColor));
+        }
+      } else {
+        // 无数值时给个占位，避免数值面板坍成空盒
+        statsBox.style.display = 'none';
+      }
     }
 
     // 等级行（"等级 1 → 2"）位于数值面板与稀有度 tab 之间
-    levelEl.textContent = t('upgrade.levelUp', { from: String(option.currentLevel), to: String(option.newLevel) });
+    levelEl.textContent = isBond
+      ? `${t('upgrade.stat.bondTier')} T${option.currentLevel} → T${option.newLevel}`
+      : t('upgrade.levelUp', { from: String(option.currentLevel), to: String(option.newLevel) });
 
     // 底部 tab：稀有度文案
     rarityEl.textContent = t(`shrine.rarity.${option.rarity}`);
@@ -9391,8 +9680,7 @@ export class GameScene {
       return t(`upgrade.weapon.${option.weaponType}`);
     }
     if (option.kind === 'bond_activate' || option.kind === 'bond_upgrade') {
-      const label = option.kind === 'bond_activate' ? t('bond.activate') : t('bond.upgrade');
-      return option.bondId ? `${t(`bond.${option.bondId}.name`)} — ${label}` : label;
+      return option.bondId ? t(`bond.${option.bondId}.name`) : t('bond.activate');
     }
     const tomeType = option.tomeType ?? option.passiveType;
     return t(`upgrade.tome.${tomeType}`);
@@ -9400,13 +9688,15 @@ export class GameScene {
 
   private getUpgradeDesc(option: UpgradeOption): string {
     if (option.kind === 'new_weapon' || option.kind === 'weapon_upgrade') {
-      return t(`upgrade.weapon.${option.weaponType}_desc`);
+      return tOptional(`upgrade.weapon.${option.weaponType}_card_desc`) ?? t(`upgrade.weapon.${option.weaponType}_desc`);
     }
     if (option.kind === 'bond_activate' || option.kind === 'bond_upgrade') {
-      return option.bondId ? t(`bond.${option.bondId}.t${option.newLevel}`) : '';
+      return option.bondId
+        ? (tOptional(`bond.${option.bondId}.t${option.newLevel}_card`) ?? t(`bond.${option.bondId}.t${option.newLevel}`))
+        : '';
     }
     const tomeType = option.tomeType ?? option.passiveType;
-    return t(`upgrade.tome.${tomeType}_desc`);
+    return tOptional(`upgrade.tome.${tomeType}_card_desc`) ?? t(`upgrade.tome.${tomeType}_desc`);
   }
 
   private hideUpgradePanel(): void {
@@ -9441,8 +9731,8 @@ export class GameScene {
 
     const overlay = document.createElement('div');
     overlay.dataset.cameraBlock = 'true';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:400;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
-    this.installItemTooltipHandlers(overlay);
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:400;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
+    this.installItemTooltipHandlers(overlay, { overlayTap: true });
 
     const sideMaxH = `calc(100% - ${sideInset * 2}px)`;
     // 侧栏锚定屏幕上方：标题常驻顶部，内容从上往下排，不做垂直居中。
@@ -9615,6 +9905,7 @@ export class GameScene {
     gsapAnimations.cancelAnimation('new-quest-done-pulse');
     this.gameOverPanel?.remove();
     this.gameOverPanel = null;
+    this.hideTouchItemTooltip();
     this.cameraOrbit.setEnabled(true);
     this.syncInGameTouchControlsEnabled();
   }
@@ -9629,7 +9920,10 @@ export class GameScene {
       this.pausePanel,
     );
     this.touchControlsEnabled = !modalOpen;
-    if (modalOpen) this.hideConsumableTooltip();
+    if (modalOpen) {
+      this.hideConsumableTooltip();
+      this.hideTouchItemTooltip();
+    }
     setInGameTouchControlsEnabled(!modalOpen, this.platformInput.getMobileInput());
   }
 
@@ -9700,7 +9994,7 @@ export class GameScene {
   private hidePauseMenu(): void {
     this.pausePanel?.remove();
     this.pausePanel = null;
-    this.hideItemTooltip();
+    this.hideTouchItemTooltip();
     this.syncInGameTouchControlsEnabled();
   }
 
@@ -9720,8 +10014,8 @@ export class GameScene {
 
     const overlay = document.createElement('div');
     overlay.dataset.cameraBlock = 'true';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:420;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
-    this.installItemTooltipHandlers(overlay);
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.84);display:flex;flex-direction:column;align-items:stretch;z-index:420;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;';
+    this.installItemTooltipHandlers(overlay, { overlayTap: true });
 
     const sideMaxH = `calc(100% - ${sideInset * 2}px)`;
     const sidePos = `position:absolute;top:${sideInset}px;width:${sideW}px;max-width:calc(50% - ${centerHalf + sideGap}px - 4px);max-height:${sideMaxH};overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;align-items:stretch;`;
@@ -9871,6 +10165,7 @@ export class GameScene {
     const cellW = compact ? HUD_WEAPON_SLOT_SIZE : `clamp(${uiPx(34)}px,9vmin,${uiPx(40)}px)`;
     const boxSize = compact ? HUD_WEAPON_SLOT_SIZE : `clamp(${uiPx(32)}px,8.5vmin,${uiPx(38)}px)`;
     const iconFont = compact ? 'clamp(10px,2.8vw,12px)' : `clamp(${uiPx(13)}px,3.6vmin,${uiPx(17)}px)`;
+    const rowGap = compact ? '3px' : `clamp(4px,1.2vmin,8px)`;
 
     const section = document.createElement('div');
     section.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
@@ -9881,7 +10176,7 @@ export class GameScene {
     section.appendChild(label);
 
     const row = document.createElement('div');
-    row.style.cssText = `display:flex;flex-wrap:wrap;gap:${compact ? '3px' : `clamp(4px,1.2vmin,8px)`};`;
+    row.style.cssText = `display:flex;flex-wrap:wrap;gap:${rowGap};max-width:${backpackRowMaxWidth(cellW, rowGap)};`;
 
     if (items.length === 0) {
       const slots = Math.max(1, emptySlotCount);
@@ -9908,8 +10203,8 @@ export class GameScene {
         const inner = document.createElement('span');
         inner.style.cssText = uiPlainText(
           compact
-            ? 'position:absolute;bottom:1px;left:0;right:0;text-align:center;font-size:7px;line-height:1;font-weight:bold;pointer-events:none;'
-            : `position:absolute;bottom:-1px;left:0;right:0;text-align:center;font-size:${uiPx(7)}px;font-weight:bold;`,
+            ? 'position:absolute;bottom:1px;left:0;right:0;text-align:center;font-size:clamp(7px,1.8vw,9px);line-height:1;font-weight:bold;pointer-events:none;'
+            : 'position:absolute;bottom:-1px;left:0;right:0;text-align:center;font-size:clamp(7px,1.8vw,9px);font-weight:bold;',
         );
         inner.textContent = it.inner;
         box.appendChild(inner);
@@ -10078,7 +10373,7 @@ function ensureSelectableCharacter(): void {
 
 const PREP_SCREEN_STYLE = `
   position:fixed;top:0;left:0;width:100%;height:100%;box-sizing:border-box;
-  z-index:550;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;  background:#0a0a1a url(${UI_COMMON_BG_PATH}) center center/cover no-repeat;
+  z-index:550;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;  background:#0a0a1a url(${UI_COMMON_BG_PATH}) center center/cover no-repeat;
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
   padding-left:env(safe-area-inset-left,0px);
@@ -10152,7 +10447,7 @@ function createPrepScreenHeader(
   backBtn.style.position = 'relative';
 
   const titleEl = document.createElement('span');
-  // 描边走 textStyle.uiPlainTextBold（2px 8 向 + 底投影），项目里大字号标题统一用这套。
+  // 描边走 textStyle.uiPlainTextBold，项目里大字号标题统一用这套。
   titleEl.style.cssText = uiPlainTextBold(
     'position:absolute;left:50px;top:7px;pointer-events:none;'
     + 'font-weight:bold;font-size:24px;line-height:1;letter-spacing:0.04em;white-space:nowrap;',
@@ -10169,7 +10464,7 @@ const SHOP_OVERLAY_STYLE = `
   position:fixed;top:0;left:0;width:100%;height:100%;box-sizing:border-box;
   background:#1a2332 url(${SHOP_QUEST_PAGE_BG_IMAGE}) center center/cover no-repeat;
   display:flex;flex-direction:column;
-  z-index:600;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;  padding-top:env(safe-area-inset-top,0px);
+  z-index:600;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;  padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
   padding-left:env(safe-area-inset-left,0px);
   padding-right:env(safe-area-inset-right,0px);
@@ -10179,7 +10474,7 @@ const QUESTS_OVERLAY_STYLE = `
   position:fixed;top:0;left:0;width:100%;height:100%;box-sizing:border-box;
   background:#1a2332 url(${SHOP_QUEST_PAGE_BG_IMAGE}) center center/cover no-repeat;
   display:flex;flex-direction:column;
-  z-index:600;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;  padding-top:env(safe-area-inset-top,0px);
+  z-index:600;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;  padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
   padding-left:env(safe-area-inset-left,0px);
   padding-right:env(safe-area-inset-right,0px);
@@ -10779,7 +11074,7 @@ function refreshCharacterSelectDetail(): void {
     padding:0 ${characterDetailInsetXPct(CHARACTER_DETAIL_TITLE_BAR_PAD_X)};
   `;
   const nameEl = document.createElement('h2');
-  // 与"商店"红丝带标题、商店卡片标题统一描边强度（uiPlainTextBold：2px 8 向 + 底投影），
+  // 与"商店"红丝带标题、商店卡片标题统一描边强度（uiPlainTextBold：2px 黑描边），
   // 让所有"卡通丝带 logo"风的大字号标题保持一致；这里 16~22px 字号正好在 bold 描边的安全区间。
   nameEl.style.cssText = uiPlainTextBold(
     'margin:0;line-height:1.45;font-size:clamp(16px,4.2vw,22px);font-weight:bold;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;',
@@ -11485,7 +11780,7 @@ function createMainMenuButton(
   // label 区域 = [icon 右沿 + gap, 按钮右沿 - 内 padding]
   // left = icon.left(10) + icon.width(27) + gap(8) = 45；右侧留 12 与 icon 视觉对称。
   // text-align:center → 短标签（"商店"/"任务"）也在右侧矩形里居中，不会贴 icon 也不会贴右边框。
-  // 与"商店"红丝带标题、商店卡片标题、角色名统一描边强度（uiPlainTextBold：2px 8 向 + 底投影），
+  // 与"商店"红丝带标题、商店卡片标题、角色名统一描边强度（uiPlainTextBold：2px 黑描边），
   // 让首页"开始游戏 / 商店 / 任务"按钮文字也吃同一档"卡通丝带 logo"风的厚描边。
   labelEl.style.cssText = uiPlainTextBold(`
     position:absolute;left:${uiPx(45)}px;right:${uiPx(12)}px;top:50%;transform:translateY(-50%);
@@ -11519,7 +11814,7 @@ function showMainMenu(): void {
   mainMenuEl.style.cssText = `
     position:fixed;top:0;left:0;width:100%;height:100%;
     display:flex;flex-direction:column;align-items:stretch;
-    z-index:500;font-family:"Lilita One","Noto Sans SC",Arial,sans-serif;    overflow:hidden;
+    z-index:500;font-family:"Lilita One","Jiang Cheng Yuan Ti",Arial,sans-serif;    overflow:hidden;
     background:#0a0a1a url(${LOBBY_BG_PATH}) center center/cover no-repeat;
     ${OVERLAY_SAFE_AREA}
     padding-top:max(16px,env(safe-area-inset-top,0px));
@@ -11694,7 +11989,7 @@ function showShopOverlay(): void {
     `;
 
     const nameEl = document.createElement('div');
-    // 与商店红丝带标题（uiPlainTextBold，2px 8 向描边 + 底投影）统一描边强度，
+    // 与商店红丝带标题（uiPlainTextBold，2px 黑描边）统一描边强度，
     // 让卡片标题在浅蓝面板上的"卡通丝带 logo"质感一致；不再用 1px 细描边的 uiPlainText。
     nameEl.style.cssText = uiPlainTextBold(
       'margin:0;font-size:1.2em;line-height:1.2;font-weight:bold;text-overflow:ellipsis;white-space:nowrap;max-width:100%;flex-shrink:0;',
@@ -11818,10 +12113,12 @@ function getQuestCategory(type: Quest['type']): QuestCategory {
     case 'survive':
     case 'level':
     case 'bond':
+    case 'bond_t3':
       return 'growth';
     case 'collect':
       return 'wealth';
     case 'weapons_used':
+    case 'weapon_mastery':
       return 'weapons';
     default:
       return 'all';
@@ -12790,6 +13087,7 @@ function toggleGMPanel(): void {
   if (gmPanel) {
     gmPanel.remove();
     gmPanel = null;
+    syncStylizedDebugPanelWithGM(false);
     return;
   }
 
@@ -12880,6 +13178,7 @@ function toggleGMPanel(): void {
   gmPanel.appendChild(picker);
 
   document.body.appendChild(gmPanel);
+  syncStylizedDebugPanelWithGM(true);
 }
 
 setupGMTool();

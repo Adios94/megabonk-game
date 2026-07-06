@@ -144,49 +144,22 @@ function setupChestInteractButton(interactBtn: HTMLDivElement, chestSize: number
     'transform-origin:center center',
   ].join(';');
 
-  const label = document.createElement('span');
-  label.dataset.mobileInteractLabel = 'true';
-  label.style.cssText = [
-    'position:absolute',
-    'left:50%',
-    'bottom:100%',
-    'transform:translateX(-50%)',
-    `margin-bottom:${uiPx(6)}px`,
-    'padding:6px 12px',
-    'border-radius:16px',
-    'background:rgba(170,68,255,0.88)',
-    'color:#fff',
-    'font-size:clamp(11px,2.8vw,13px)',
-    'font-weight:bold',
-    'white-space:nowrap',
-    'display:none',
-    'pointer-events:none',
-    'text-shadow:0 1px 3px rgba(0,0,0,0.8)',
-  ].join(';');
-  interactBtn.appendChild(label);
 }
 
 /** Chest open button — image only; dim when player cannot afford. */
 export function setMobileChestInteractState(interactBtn: HTMLDivElement, canAfford: boolean): void {
   interactBtn.dataset.mode = 'chest';
-  const label = interactBtn.querySelector('[data-mobile-interact-label]') as HTMLElement | null;
-  if (label) label.style.display = 'none';
   interactBtn.style.backgroundImage = `url(${CHEST_OPEN_BUTTON_IMG})`;
   interactBtn.style.opacity = canAfford ? '1' : '0.45';
   interactBtn.style.filter = canAfford ? 'none' : 'grayscale(0.55)';
 }
 
-/** Altar interact — text pill above jump cluster (no chest art). */
-export function setMobileAltarInteractState(interactBtn: HTMLDivElement, text: string): void {
+/** Altar interact — hidden touch target only; no prompt above the jump cluster. */
+export function setMobileAltarInteractState(interactBtn: HTMLDivElement): void {
   interactBtn.dataset.mode = 'altar';
   interactBtn.style.backgroundImage = 'none';
   interactBtn.style.opacity = '1';
   interactBtn.style.filter = 'none';
-  const label = interactBtn.querySelector('[data-mobile-interact-label]') as HTMLElement | null;
-  if (label) {
-    label.textContent = text;
-    label.style.display = 'block';
-  }
 }
 
 export function removeMobileActionCluster(): void {

@@ -140,7 +140,7 @@ export function itemFrameAccentLine(text: string, color: string, extraCss = ''):
 // 与 frame_item_*.svg 不同的地方：
 //   - 顶部 banner 是独立色块带，下沿有黑色 divider
 //   - 底部多了一个稀有度 tab，向下凸出于卡身
-//   - 中部预留区域里 SVG 自带一个内嵌槽（y=1309~2073），用于放数值面板
+//   - 中部预留区域里 SVG 自带一个内嵌槽（y=1220~2120），用于放数值面板
 // 三个区段按 SVG 锚点对齐（百分比对应 viewBox 的 y 坐标）：
 //   banner 区 0%~14.04%   （SVG y 0~371，含 divider；色带可视 y 25~346）
 //   主体区 14.04%~86.64%  （SVG y 371~2289，内嵌槽位于其中 y 1309~2073）
@@ -178,8 +178,8 @@ function upgradeYPct(y: number): string {
 }
 
 const UPGRADE_BODY_TOP_Y = 371;
-const UPGRADE_STATS_SLOT = { x: 132, y: 1309, w: 1607, h: 764 } as const;
-const UPGRADE_LEVEL_SLOT = { y: 2073, h: 216 } as const;
+const UPGRADE_STATS_SLOT = { x: 100, y: 1220, w: 1697, h: 900 } as const;
+const UPGRADE_LEVEL_SLOT = { y: 2120, h: 169 } as const;
 
 export interface UpgradeFrameOptions {
   rarity: ItemFrameRarity;
@@ -204,6 +204,10 @@ export interface UpgradeFrameOptions {
    * 等级行垂直微调（正值→在数值框与稀有度 tab 中间略往下）。默认 '0px'。
    */
   levelMarginTop?: string;
+  /** 附加到内嵌数值面板的样式。神殿/宝箱长文本卡可覆盖字号和行高。 */
+  statsBoxCss?: string;
+  /** 描述行最多显示几行。 */
+  descLineClamp?: number;
 }
 
 export interface UpgradeFrameParts {
@@ -233,6 +237,8 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
     titlePaddingTop = '4px',
     rarityPaddingBottom = '4px',
     levelMarginTop = '0px',
+    statsBoxCss = '',
+    descLineClamp = 4,
   } = opts;
 
   const card = document.createElement('div');
@@ -277,10 +283,10 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
 
   const descEl = document.createElement('div');
   descEl.style.cssText = uiPlainTextCrisp(
-    'font-size:clamp(10px,2.7vw,11px);line-height:1.3;text-align:center;width:100%;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;',
+    `font-size:clamp(10px,2.7vw,11px);line-height:1.3;text-align:center;width:100%;display:-webkit-box;-webkit-line-clamp:${descLineClamp};-webkit-box-orient:vertical;overflow:hidden;`,
   );
 
-  // 数值面板：SVG 自带内嵌槽（y=1309~2073，已有描边和浅色填充），CSS 这层只做内部布局，
+  // 数值面板：SVG 自带内嵌槽（y=1220~2120，已有描边和浅色填充），CSS 这层只做内部布局，
   // 不再叠加自己的 background 和 border，避免与 SVG 内嵌槽出现"框中框"。
   const statsBox = document.createElement('div');
   statsBox.style.cssText = `
@@ -288,6 +294,7 @@ export function createUpgradeFrameCard(opts: UpgradeFrameOptions): UpgradeFrameP
     width:${upgradeXPct(UPGRADE_STATS_SLOT.w)};height:${upgradeYPct(UPGRADE_STATS_SLOT.h)};
     padding:clamp(4px,2.2vw,10px) clamp(7px,3vw,14px);box-sizing:border-box;
     display:flex;flex-direction:column;justify-content:center;gap:1px;overflow:hidden;
+    ${statsBoxCss}
   `;
 
   const levelEl = document.createElement('div');

@@ -124,14 +124,18 @@
       "shotgun_desc": "Spread shot in facing direction",
       "ray_gun": "Ray Gun",
       "ray_gun_desc": "Instant laser, infinite pierce in a straight line",
+      "ray_gun_card_desc": "Straight laser with infinite pierce.",
       "poison_bomb": "Poison Bomb",
       "poison_bomb_desc": "Lobs a gas cloud, poisons enemies over time",
+      "poison_bomb_card_desc": "Lob a poison cloud that deals DoT.",
       "paralysis_gun": "Paralysis Gun",
       "paralysis_gun_desc": "Auto-aim shots that heavily slow on hit",
       "void_ripple": "Void Ripple",
       "void_ripple_desc": "Expanding ring around you, hits closer foes first",
+      "void_ripple_card_desc": "Expanding ring hits close foes first.",
       "scorch_boots": "Scorch Boots",
-      "scorch_boots_desc": "Leaves a burning trail that scorches passing enemies"
+      "scorch_boots_desc": "Leaves a burning trail that scorches passing enemies",
+      "scorch_boots_card_desc": "Leave a burning trail as you move."
     },
     "tome": {
       "attack_speed_tome": "Attack Speed Tome",
@@ -239,54 +243,63 @@
       "name": "Iron Blood",
       "t1": "+10 armor; +6% damage with Katana & Axe.",
       "t2": "On taking a hit, instantly reset Katana cooldown and add a stack — the next swing deals +8% damage per stack.",
+      "t2_card": "Taking a hit resets Katana; next swing gains stack damage.",
       "t3": "Being hit also triggers Rage for 10s: +15% damage and +15% attack speed."
     },
     "arcane": {
       "name": "Arcane",
       "t1": "+4% damage with arcane weapons; +0.1 damage multiplier.",
       "t2": "Arcane hits build Mystery. At 60, blast the highest-HP enemy nearby; surrounding foes take 50% splash.",
+      "t2_card": "At 60 Mystery, blast the highest-HP enemy and splash nearby.",
       "t3": "Mystery threshold 60 → 30; burst damage ×1.5."
     },
     "zero_range": {
       "name": "Point-Blank",
       "t1": "+8% damage with these weapons against enemies within 3m.",
       "t2": "Hits add knockback and deal bonus impact damage based on push distance.",
+      "t2_card": "Hits knock back and add impact damage by push distance.",
       "t3": "Knockback ×1.6; slamming a foe into terrain deals heavy collision damage."
     },
     "ember_trail": {
       "name": "Ember Trail",
       "t1": "+8% damage with Flame Ring & Scorch Boots.",
       "t2": "Enemies killed by these weapons explode for 40% of their max HP to nearby foes.",
+      "t2_card": "Kills explode for max-HP damage around the target.",
       "t3": "Explosion radius ×1.5 and damage ×1.6; leaves a 3s scorch patch."
     },
     "volley": {
       "name": "Volley",
       "t1": "+5% damage and +5% attack speed with these weapons.",
       "t2": "+1% attack speed per level of owned bond weapons (on top of T1).",
+      "t2_card": "Owned bond weapon levels add extra attack speed.",
       "t3": "Bond weapons can shoot down enemy projectiles."
     },
     "bone_crush": {
       "name": "Bone Crush",
       "t1": "+8% damage with these weapons against enemies above 50% HP.",
       "t2": "Prioritize foes above 70% HP; hits make them take +16% from bond weapons for 5s.",
+      "t2_card": "Prioritize high-HP foes; hits make them take more bond damage.",
       "t3": "Bone Bouncer ricochets off enemies above 50% HP without spending bounces."
     },
     "arc_conductor": {
       "name": "Arc Conductor",
       "t1": "+6% damage and slightly faster attacks with these weapons.",
       "t2": "Void Ripple marks foes as Conductors (3s). Other bond weapon hits chain 8% damage to all marked foes.",
+      "t2_card": "Void Ripple marks foes; bond hits chain to marked targets.",
       "t3": "Chain damage 8% → 16%; mark lasts 3s → 6s."
     },
     "poison_master": {
       "name": "Poison Master",
       "t1": "+0.8s duration on debuffs from these weapons.",
       "t2": "Apply Neurotoxin (5s, 5 stacks): pulses a 1s hard slow every 2s; each stack drains 1% max HP/s (×0.5 on elites).",
+      "t2_card": "Apply Neurotoxin: hard slow pulses and stacking HP drain.",
       "t3": "Duration +2s, +2 max stacks (7 total); stronger slow."
     },
     "hunter_mark": {
       "name": "Hunter's Mark",
       "t1": "+5% crit chance and +10% crit damage with these weapons.",
       "t2": "Paralysis Gun brands foes: they are targeted first and take +16% from bond weapons.",
+      "t2_card": "Paralysis Gun brands foes for priority targeting and bonus damage.",
       "t3": "Bond weapons execute branded foes below 16% HP (elite-immune)."
     }
   },
@@ -360,6 +373,24 @@
     "collect_10000_silver": "Earn 10000 total silver",
     "collect_25000_silver": "Earn 25000 total silver",
     "use_7_weapons": "Use 7 different weapons",
+    "sword_mvp_3": "Make the Sword your run MVP 3 times",
+    "sword_solo_victory": "Win a run using only the Sword",
+    "axe_damage_10000000": "Deal 10,000,000 damage with the Axe in one run",
+    "bone_bouncer_mvp_3": "Make the Bone Bouncer your run MVP 3 times",
+    "bone_bouncer_damage_10000000": "Deal 10,000,000 damage with the Bone Bouncer in one run",
+    "lightning_staff_mvp_3": "Make the Lightning Staff your run MVP 3 times",
+    "lightning_staff_damage_10000000": "Deal 10,000,000 damage with the Lightning Staff in one run",
+    "flame_ring_solo_victory": "Win a run using only the Flame Ring",
+    "flame_ring_damage_10000000": "Deal 10,000,000 damage with the Flame Ring in one run",
+    "iron_blood_t3": "Raise Iron Blood to T3",
+    "arcane_t3": "Raise Arcane to T3",
+    "zero_range_t3": "Raise Zero Range to T3",
+    "ember_trail_t3": "Raise Ember Trail to T3",
+    "volley_t3": "Raise Volley to T3",
+    "bone_crush_t3": "Raise Bone Crush to T3",
+    "arc_conductor_t3": "Raise Arc Conductor to T3",
+    "poison_master_t3": "Raise Poison Master to T3",
+    "hunter_mark_t3": "Raise Hunter Mark to T3",
     "reward_silver": "+{{count}} Silver",
     "reward_weapon_unlock": "Unlock: {{weapon}}",
     "reward_character_unlock": "Unlock: {{character}}",
@@ -442,7 +473,8 @@
     },
     "small_shield_charm": {
       "name": "Small Shield Charm",
-      "desc": "Shield +2, Max Shield +5"
+      "desc": "Shield +2, Max Shield +5",
+      "card_desc": "Shield +2\nMax Shield +5"
     },
     "blood_fang": {
       "name": "Blood Fang",
@@ -454,7 +486,8 @@
     },
     "arsenal_badge": {
       "name": "Arsenal Badge",
-      "desc": "Every Lv10 weapon: +4% global damage"
+      "desc": "Every Lv10 weapon: +4% global damage",
+      "card_desc": "Each Lv10 weapon\n+4% global damage"
     },
     "elite_writ": {
       "name": "Elite Writ",
@@ -466,11 +499,13 @@
     },
     "magazine_expander": {
       "name": "Magazine Expander",
-      "desc": "+1 Projectile"
+      "desc": "+1 Projectile",
+      "card_desc": "+1 Projectile"
     },
     "hourglass": {
       "name": "Hourglass",
-      "desc": "Overtime: +0.12% all damage/s (stacks)"
+      "desc": "Overtime: +0.12% all damage/s (stacks)",
+      "card_desc": "Overtime\n+0.12% damage/s"
     },
     "iron_heart": {
       "name": "Iron Heart",
@@ -512,36 +547,53 @@
     "reward": {
       "damage_name": "Damage",
       "damage_desc": "Gain {{percent}}% Damage. Increase the amount of damage you deal.",
+      "damage_card_desc": "Damage +{{percent}}%",
       "shield_name": "Shield",
       "shield_desc": "Gain +{{value}} Shield. Shields take damage before your Health, and regenerate much faster than HP.",
+      "shield_card_desc": "Shield +{{value}}\nAbsorbs hits first",
       "pickup_range_name": "Pickup Range",
       "pickup_range_desc": "Gain {{percent}}% Pickup Range. Increase the distance from which you can pick up XP.",
+      "pickup_range_card_desc": "Pickup Range +{{percent}}%",
       "crit_damage_name": "Crit Damage",
       "crit_damage_desc": "Gain {{percent}}% Crit Damage. Increase the amount of critical damage you deal.",
+      "crit_damage_card_desc": "Crit Damage +{{percent}}%",
       "luck_name": "Luck",
       "luck_desc": "Gain {{percent}}% Luck. Increases the chance of higher rarity items.",
+      "luck_card_desc": "Luck +{{percent}}%\nBetter rarity odds",
       "projectile_count_name": "+{{value}} Projectile",
       "projectile_count_desc": "Each weapon with a projectile count gains an extra projectile.",
+      "projectile_count_card_desc": "Projectile Count +{{value}}",
       "hp_regen_name": "HP Regen",
       "hp_regen_desc": "Gain +{{value}} HP Regen. Increase the amount of Health you regenerate over time.",
+      "hp_regen_card_desc": "HP Regen +{{value}}/s",
       "knockback_name": "Knockback",
       "knockback_desc": "Gain {{percent}}% Knockback.",
+      "knockback_card_desc": "Knockback +{{percent}}%",
       "attack_speed_name": "Attack Speed",
       "attack_speed_desc": "Gain {{percent}}% Attack Speed.",
+      "attack_speed_card_desc": "Attack Speed +{{percent}}%",
       "difficulty_name": "Difficulty",
       "difficulty_desc": "Gain {{percent}}% Difficulty.",
+      "difficulty_card_desc": "Difficulty +{{percent}}%",
       "lifesteal_name": "Lifesteal",
       "lifesteal_desc": "Gain {{percent}}% Lifesteal.",
+      "lifesteal_card_desc": "Lifesteal +{{percent}}%",
       "powerup_multiplier_name": "Powerup Multiplier",
       "powerup_multiplier_desc": "Gain {{percent}}% Powerup Multiplier.",
+      "powerup_multiplier_card_name": "Powerup Boost",
+      "powerup_multiplier_card_desc": "Powerups +{{percent}}%",
       "elite_damage_name": "Elite Damage",
       "elite_damage_desc": "Gain {{percent}}% Damage to Elites. Increase damage to elite enemies (Minibosses, Bosses).",
+      "elite_damage_card_desc": "Elite/Boss Damage\n+{{percent}}%",
       "duration_name": "Duration",
       "duration_desc": "Gain {{percent}}% Duration.",
+      "duration_card_desc": "Duration +{{percent}}%",
       "jump_height_name": "Jump Height",
       "jump_height_desc": "Gain {{percent}}% Jump Height.",
+      "jump_height_card_desc": "Jump Height +{{percent}}%",
       "movement_speed_name": "Movement Speed",
-      "movement_speed_desc": "Gain {{percent}}% Movement Speed."
+      "movement_speed_desc": "Gain {{percent}}% Movement Speed.",
+      "movement_speed_card_desc": "Move Speed +{{percent}}%"
     }
   },
   "result": {

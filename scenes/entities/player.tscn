@@ -1,0 +1,35 @@
+[gd_scene load_steps=6 format=3 uid="uid://cplayerscene0001"]
+
+[ext_resource type="Script" path="res://scripts/entities/player.gd" id="1_player"]
+
+[sub_resource type="CapsuleShape3D" id="Capsule_col"]
+radius = 0.4
+height = 1.8
+
+[sub_resource type="CapsuleMesh" id="Capsule_mesh"]
+radius = 0.4
+height = 1.8
+
+[sub_resource type="StandardMaterial3D" id="Mat_body"]
+albedo_color = Color(0.85, 0.35, 0.35, 1)
+
+[sub_resource type="BoxMesh" id="Box_facing"]
+size = Vector3(0.15, 0.15, 0.5)
+
+[sub_resource type="StandardMaterial3D" id="Mat_facing"]
+albedo_color = Color(0.9, 0.9, 0.2, 1)
+
+[node name="Player" type="CharacterBody3D"]
+script = ExtResource("1_player")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+shape = SubResource("Capsule_col")
+
+[node name="Body" type="MeshInstance3D" parent="."]
+mesh = SubResource("Capsule_mesh")
+surface_material_override/0 = SubResource("Mat_body")
+
+[node name="FacingMarker" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0.4)
+mesh = SubResource("Box_facing")
+surface_material_override/0 = SubResource("Mat_facing")

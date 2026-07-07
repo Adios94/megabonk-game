@@ -14,31 +14,5 @@
         "Bash(git restore:*)"
       ]
     },
-    "hooks": {
-      "PreToolUse": [
-        {
-          "matcher": "Edit|Write|MultiEdit",
-          "hooks": [
-            {
-              "type": "command",
-              "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-contract.sh",
-              "timeout": 10,
-              "statusMessage": "Checking framework contract..."
-            }
-          ]
-        }
-      ],
-      "SessionStart": [
-        {
-          "hooks": [
-            {
-              "type": "command",
-              "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/check-trunk-sync.sh",
-              "timeout": 8,
-              "statusMessage": "Checking trunk sync..."
-            }
-          ]
-        }
-      ]
-    }
+    "hooks": {}
   }

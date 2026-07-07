@@ -33,7 +33,7 @@ const CONFIGS := [
 
 static func get_wave_at(time_seconds: float) -> Dictionary:
 	for w in CONFIGS:
-		if time_seconds >= w["time_start"] and time_seconds < w["time_end"]:
-			return w
-	# 超过 540s 用最后一个 wave 继续
-	return CONFIGS[-1]
+		var wd: Dictionary = w as Dictionary
+		if time_seconds >= float(wd["time_start"]) and time_seconds < float(wd["time_end"]):
+			return wd
+	return CONFIGS[-1] as Dictionary

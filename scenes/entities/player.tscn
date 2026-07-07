@@ -1,12 +1,21 @@
-[gd_scene load_steps=5 format=3 uid="uid://cplayerscene0001"]
+[gd_scene load_steps=6 format=3 uid="uid://cplayerscene0001"]
 
 [ext_resource type="Script" path="res://scripts/entities/player.gd" id="1_player"]
-[ext_resource type="PackedScene" uid="uid://do5s74ni2ts7e" path="res://assets/models/player_george.glb" id="2_model"]
 [ext_resource type="Script" path="res://scripts/systems/weapon_manager.gd" id="3_wm"]
 
 [sub_resource type="CapsuleShape3D" id="Capsule_col"]
 radius = 0.4
 height = 1.6
+
+[sub_resource type="CapsuleMesh" id="Capsule_mesh"]
+radius = 0.4
+height = 1.6
+
+[sub_resource type="StandardMaterial3D" id="Mat_body"]
+albedo_color = Color(0.85, 0.35, 0.35, 1)
+
+[sub_resource type="BoxMesh" id="Box_facing"]
+size = Vector3(0.15, 0.15, 0.5)
 
 [node name="Player" type="CharacterBody3D"]
 script = ExtResource("1_player")
@@ -15,7 +24,14 @@ script = ExtResource("1_player")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
 shape = SubResource("Capsule_col")
 
-[node name="Model" parent="." instance=ExtResource("2_model")]
+[node name="Body" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
+mesh = SubResource("Capsule_mesh")
+surface_material_override/0 = SubResource("Mat_body")
+
+[node name="FacingMarker" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, 0.4)
+mesh = SubResource("Box_facing")
 
 [node name="WeaponManager" type="Node" parent="."]
 script = ExtResource("3_wm")

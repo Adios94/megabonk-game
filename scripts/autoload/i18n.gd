@@ -19,14 +19,15 @@ func _ready() -> void:
 
 func _load_all() -> void:
 	for loc in SUPPORTED:
-		var path := "res://i18n/%s.json" % loc
-		var text := FileAccess.get_file_as_string(path)
+		var loc_str: String = str(loc)
+		var path: String = "res://i18n/%s.json" % loc_str
+		var text: String = FileAccess.get_file_as_string(path)
 		if text.is_empty():
 			push_warning("[I18n] missing %s" % path)
 			continue
-		var parsed = JSON.parse_string(text)
+		var parsed: Variant = JSON.parse_string(text)
 		if typeof(parsed) == TYPE_DICTIONARY:
-			_tables[loc] = parsed
+			_tables[loc_str] = parsed
 		else:
 			push_warning("[I18n] invalid json: %s" % path)
 
@@ -34,9 +35,11 @@ func _load_all() -> void:
 func _load_saved_locale() -> String:
 	if not FileAccess.file_exists(LOCALE_CONFIG_PATH):
 		return DEFAULT_LOCALE
-	var text := FileAccess.get_file_as_string(LOCALE_CONFIG_PATH)
-	var loc := text.strip_edges()
-	return loc if loc in SUPPORTED else DEFAULT_LOCALE
+	var text: String = FileAccess.get_file_as_string(LOCALE_CONFIG_PATH)
+	var loc: String = text.strip_edges()
+	if loc in SUPPORTED:
+		return loc
+	return DEFAULT_LOCALE
 
 
 func get_locale() -> String:
@@ -56,12 +59,12 @@ func set_locale(loc: String) -> void:
 ## t("weapon.sword.name") 或 t("greeting.hi", {"name": "Ada"})
 ## 未命中键返回 key 本身（方便发现缺失）。
 func t(key: String, params: Dictionary = {}) -> String:
-	var value := _lookup(key, _current)
+	var value: Variant = _lookup(key, _current)
 	if value == null and _current != DEFAULT_LOCALE:
 		value = _lookup(key, DEFAULT_LOCALE)
 	if value == null:
 		return key
-	var s := str(value)
+	var s: String = str(value)
 	if not params.is_empty():
 		for k in params:
 			s = s.replace("{{%s}}" % k, str(params[k]))
@@ -69,7 +72,7 @@ func t(key: String, params: Dictionary = {}) -> String:
 
 
 func _lookup(key: String, loc: String) -> Variant:
-	var table = _tables.get(loc, null)
+	var table: Variant = _tables.get(loc, null)
 	if table == null:
 		return null
 	var parts := key.split(".")

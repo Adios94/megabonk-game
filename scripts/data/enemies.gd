@@ -46,4 +46,4 @@ const ENEMY_DEFS := {
 
 
 static func get_def(enemy_type: String) -> Dictionary:
-	return ENEMY_DEFS.get(enemy_type, {})
+	return ENEMY_DEFS.get(enemy_type, {}) as Dictionary

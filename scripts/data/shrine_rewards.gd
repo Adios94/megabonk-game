@@ -40,20 +40,20 @@ const RARITY_PICK_WEIGHT := {
 
 
 static func roll_options(count: int, luck_level: int, rng: RandomNumberGenerator) -> Array:
-	var luck_boost := luck_level * 5
+	var luck_boost: int = luck_level * 5
 	var adj := {
-		"common": max(20, RARITY_PICK_WEIGHT["common"] - luck_boost * 2),
-		"uncommon": RARITY_PICK_WEIGHT["uncommon"],
-		"rare": RARITY_PICK_WEIGHT["rare"] + luck_boost,
-		"legendary": RARITY_PICK_WEIGHT["legendary"] + luck_boost,
+		"common": maxi(20, int(RARITY_PICK_WEIGHT["common"]) - luck_boost * 2),
+		"uncommon": int(RARITY_PICK_WEIGHT["uncommon"]),
+		"rare": int(RARITY_PICK_WEIGHT["rare"]) + luck_boost,
+		"legendary": int(RARITY_PICK_WEIGHT["legendary"]) + luck_boost,
 	}
 
 	var result: Array = []
 	var used: Dictionary = {}
-	var attempts := 0
+	var attempts: int = 0
 	while result.size() < count and attempts < 200:
 		attempts += 1
-		var rarity := _roll_rarity(adj, rng)
+		var rarity: String = _roll_rarity(adj, rng)
 		var pool: Array = []
 		for r in REWARDS:
 			if r["rarity"] == rarity and not used.has(r["reward"]):
@@ -74,15 +74,15 @@ static func roll_options(count: int, luck_level: int, rng: RandomNumberGenerator
 
 
 static func _roll_rarity(weights: Dictionary, rng: RandomNumberGenerator) -> String:
-	var total := weights["common"] + weights["uncommon"] + weights["rare"] + weights["legendary"]
+	var total: float = float(weights["common"]) + float(weights["uncommon"]) + float(weights["rare"]) + float(weights["legendary"])
 	var roll: float = rng.randf() * total
-	roll -= weights["common"]
+	roll -= float(weights["common"])
 	if roll < 0:
 		return "common"
-	roll -= weights["uncommon"]
+	roll -= float(weights["uncommon"])
 	if roll < 0:
 		return "uncommon"
-	roll -= weights["rare"]
+	roll -= float(weights["rare"])
 	if roll < 0:
 		return "rare"
 	return "legendary"
@@ -93,10 +93,10 @@ static func _weighted_pick(defs: Array, rng: RandomNumberGenerator) -> Dictionar
 		return {}
 	var total: float = 0.0
 	for d in defs:
-		total += float(d.get("weight", 1))
-	var roll := rng.randf() * total
+		total += float((d as Dictionary).get("weight", 1))
+	var roll: float = rng.randf() * total
 	for d in defs:
-		roll -= float(d.get("weight", 1))
+		roll -= float((d as Dictionary).get("weight", 1))
 		if roll <= 0.0:
-			return d
-	return defs[-1]
+			return d as Dictionary
+	return defs[-1] as Dictionary

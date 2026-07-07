@@ -83,11 +83,10 @@ static func _xp_midgame(lv: int) -> float:
 
 
 static func compute_weapon_slots(level: int, max_slots: int) -> int:
-	# 局内武器槽：1 起步，5/10/20/30 级各 +1
-	var slots := 1
+	var slots: int = 1
 	if level >= 5: slots += 1
 	if level >= 10: slots += 1
 	if level >= 20: slots += 1
 	if level >= 30: slots += 1
 	if level >= 50 and max_slots >= MAX_WEAPONS_CAP: slots += 1
-	return min(max_slots, slots)
+	return mini(max_slots, slots)

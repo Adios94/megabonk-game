@@ -40,11 +40,12 @@ func _process(delta: float) -> void:
 			_velocity = Vector3.ZERO
 		return
 
-	var dist := global_position.distance_to(_player.global_position)
-	var attract_radius: float = _player.pickup_radius if _player.get("pickup_radius") != null else 2.0
+	var dist: float = global_position.distance_to(_player.global_position)
+	var attract_radius: float = 2.0
+	if _player.get("pickup_radius") != null:
+		attract_radius = float(_player.pickup_radius)
 	if dist < attract_radius:
-		# 被吸引，直线飞向玩家
-		var dir := (_player.global_position + Vector3(0.0, 0.8, 0.0) - global_position).normalized()
+		var dir: Vector3 = (_player.global_position + Vector3(0.0, 0.8, 0.0) - global_position).normalized()
 		global_position += dir * 12.0 * delta
 		_velocity = Vector3.ZERO
 		if dist < 0.8:

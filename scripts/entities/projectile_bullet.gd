@@ -31,7 +31,7 @@ func _process(delta: float) -> void:
 
 	# 命中检测：附近半径 0.8 的敌人
 	for e in WeaponUtil.find_enemies_in_radius(global_position, 0.8, get_tree()):
-		var eid := e.get_instance_id()
+		var eid: int = e.get_instance_id()
 		if _hit_ids.has(eid):
 			continue
 		_hit_ids[eid] = true

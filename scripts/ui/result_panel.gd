@@ -11,7 +11,7 @@ extends CanvasLayer
 func _ready() -> void:
 	_panel.visible = false
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	var player := get_tree().get_first_node_in_group("player")
+	var player: Node = get_tree().get_first_node_in_group("player")
 	if player and player.has_signal("died"):
 		player.died.connect(_on_died)
 	_btn.pressed.connect(_on_restart_pressed)
@@ -22,13 +22,13 @@ func _on_died() -> void:
 
 
 func _show_result(title: String, _extra: String) -> void:
-	var player := get_tree().get_first_node_in_group("player")
-	var kills := 0
-	var level := 1
-	var run_secs := GameManager.run_seconds
+	var player: Node = get_tree().get_first_node_in_group("player")
+	var kills: int = 0
+	var level: int = 1
+	var run_secs: float = GameManager.run_seconds
 	if player:
-		kills = player.kill_count
-		level = player.level
+		kills = int(player.kill_count)
+		level = int(player.level)
 	var base_silver: int = int(floor(kills * 0.5 + level * 5))
 	SaveGame.add_silver(base_silver)
 	SaveGame.record_run_end(run_secs, level, kills)

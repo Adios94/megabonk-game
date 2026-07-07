@@ -22,4 +22,4 @@ const DEFS := {
 
 
 static func get_def(character_type: String) -> Dictionary:
-	return DEFS.get(character_type, DEFS["megachad"])
+	return DEFS.get(character_type, DEFS["megachad"]) as Dictionary

@@ -1,11 +1,11 @@
 extends Node
-## Flame Ring: 玩家为圆心的持续 AoE。CD 到就对范围内所有敌人结算一次伤害。
+## Flame Ring: 玩家为圆心的持续 AoE。
 
 var weapon_type: String = "flame_ring"
 var player: Node3D
 
-var _cd_timer := 0.0
-var _rng := RandomNumberGenerator.new()
+var _cd_timer: float = 0.0
+var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _visual: MeshInstance3D
 
 
@@ -20,40 +20,43 @@ func _process(delta: float) -> void:
 	var stats: Dictionary = Weapons.get_stats(weapon_type, _get_level())
 	if stats.is_empty():
 		return
-	# 视觉半径动态跟随
+	var aoe: float = float(stats["aoe_radius"])
 	if _visual and _visual.mesh is TorusMesh:
-		var m := _visual.mesh as TorusMesh
-		m.inner_radius = stats["aoe_radius"] * 0.85
-		m.outer_radius = stats["aoe_radius"]
-		_visual.global_position = player.global_position + Vector3(0.0, 0.15, 0.0)
+		var m: TorusMesh = _visual.mesh as TorusMesh
+		m.inner_radius = aoe * 0.85
+		m.outer_radius = aoe
+		if _visual.is_inside_tree():
+			_visual.global_position = player.global_position + Vector3(0.0, 0.15, 0.0)
 
-	_cd_timer -= delta * player.attack_speed_mult
+	_cd_timer -= delta * float(player.attack_speed_mult)
 	if _cd_timer > 0.0:
 		return
-	_cd_timer = stats["cooldown"]
-	_fire(stats)
+	_cd_timer = float(stats["cooldown"])
+	_fire(stats, aoe)
 
 
 func _get_level() -> int:
 	for w in player.weapons:
-		if w["type"] == weapon_type:
-			return w["level"]
+		var wd: Dictionary = w as Dictionary
+		if wd["type"] == weapon_type:
+			return int(wd["level"])
 	return 1
 
 
-func _fire(stats: Dictionary) -> void:
-	var enemies := WeaponUtil.find_enemies_in_radius(player.global_position, stats["aoe_radius"], get_tree())
+func _fire(stats: Dictionary, aoe: float) -> void:
+	var damage: float = float(stats["damage"])
+	var enemies: Array = WeaponUtil.find_enemies_in_radius(player.global_position, aoe, get_tree())
 	for e in enemies:
-		WeaponUtil.deal_damage(e, stats["damage"], player, _rng, player.global_position)
+		WeaponUtil.deal_damage(e as Node, damage, player, _rng, player.global_position)
 
 
 func _ensure_visual() -> void:
 	_visual = MeshInstance3D.new()
-	var m := TorusMesh.new()
+	var m: TorusMesh = TorusMesh.new()
 	m.inner_radius = 3.0
 	m.outer_radius = 3.5
 	_visual.mesh = m
-	var mat := StandardMaterial3D.new()
+	var mat: StandardMaterial3D = StandardMaterial3D.new()
 	mat.albedo_color = Color(1.0, 0.5, 0.15, 0.4)
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED

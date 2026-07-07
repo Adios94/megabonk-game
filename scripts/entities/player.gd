@@ -157,8 +157,8 @@ func gain_xp(amount: int) -> void:
 	if _is_dead:
 		return
 	# 连击倍率：击杀累加，2 秒内无杀归零
-	var bonus := 1.0 + min(combo_count * 0.05, 1.0)
-	var final_xp := int(round(amount * bonus))
+	var bonus: float = 1.0 + minf(combo_count * 0.05, 1.0)
+	var final_xp: int = int(round(amount * bonus))
 	xp += final_xp
 	while xp >= xp_to_next and level < GameConfig.MAX_LEVEL:
 		xp -= xp_to_next
@@ -180,27 +180,29 @@ func _on_enemy_died(_enemy, _killer) -> void:
 
 func add_weapon(weapon_type: String, start_level: int = 1) -> void:
 	for w in weapons:
-		if w["type"] == weapon_type:
+		if (w as Dictionary)["type"] == weapon_type:
 			return
 	weapons.append({"type": weapon_type, "level": start_level})
-	var mgr := get_node_or_null("WeaponManager")
+	var mgr: Node = get_node_or_null("WeaponManager")
 	if mgr:
 		mgr.spawn_weapon(weapon_type, start_level)
 
 
 func upgrade_weapon(weapon_type: String) -> void:
 	for w in weapons:
-		if w["type"] == weapon_type and w["level"] < GameConfig.WEAPON_MAX_LEVEL:
-			w["level"] += 1
+		var wd: Dictionary = w as Dictionary
+		if wd["type"] == weapon_type and int(wd["level"]) < GameConfig.WEAPON_MAX_LEVEL:
+			wd["level"] = int(wd["level"]) + 1
 			return
 
 
 func add_or_upgrade_tome(tome_type: String) -> void:
 	for t in tomes:
-		if t["type"] == tome_type:
-			var def := Tomes.get_def(tome_type)
-			if t["level"] < (def.get("max_level", 8) as int):
-				t["level"] += 1
+		var td: Dictionary = t as Dictionary
+		if td["type"] == tome_type:
+			var def: Dictionary = Tomes.get_def(tome_type)
+			if int(td["level"]) < int(def.get("max_level", 8)):
+				td["level"] = int(td["level"]) + 1
 			return
 	tomes.append({"type": tome_type, "level": 1})
 	_recompute_stats()
@@ -210,37 +212,36 @@ func add_or_upgrade_tome(tome_type: String) -> void:
 ## 完整版应该是 four-layer stat pipeline（base + added + increased + more），
 ## M4/M5 再做；批 1-3 用「reset base 再 累加 tomes」的简化。
 func _recompute_stats() -> void:
-	var char_def := Characters.get_def("megachad")
-	max_hp = char_def["hp"]
-	move_speed = char_def["speed"]
-	damage_mult = char_def["damage"]
-	armor = char_def["armor"]
-	crit_chance = char_def["crit_chance"]
+	var char_def: Dictionary = Characters.get_def("megachad")
+	max_hp = float(char_def["hp"])
+	move_speed = float(char_def["speed"])
+	damage_mult = float(char_def["damage"])
+	armor = float(char_def["armor"])
+	crit_chance = float(char_def["crit_chance"])
 	crit_damage = GameConfig.PLAYER_BASE_CRIT_DAMAGE
 	pickup_radius = GameConfig.PLAYER_PICKUP_RADIUS
 	attack_speed_mult = 1.0
 
 	for t in tomes:
-		var def := Tomes.get_def(t["type"])
+		var def: Dictionary = Tomes.get_def((t as Dictionary)["type"])
 		if def.is_empty() or def["category"] != "stat":
 			continue
-		var lv: int = t["level"]
-		# 单 modifier 或 modifiers 数组
+		var lv: int = int((t as Dictionary)["level"])
 		var mods: Array = []
 		if def.has("modifier"):
 			mods.append(def["modifier"])
 		if def.has("modifiers"):
 			mods.append_array(def["modifiers"])
 		for m in mods:
-			_apply_stat_modifier(m, lv)
+			_apply_stat_modifier(m as Dictionary, lv)
 
-	hp = min(hp, max_hp)   # HP 上限压回
+	hp = minf(hp, max_hp)
 	hp_changed.emit(hp, max_hp)
 
 
 func _apply_stat_modifier(mod: Dictionary, tome_level: int) -> void:
 	var stat: String = mod["stat"]
-	var v: float = mod["value_per_level"] * tome_level
+	var v: float = float(mod["value_per_level"]) * tome_level
 	match stat:
 		"max_hp":
 			if mod["kind"] == "added":

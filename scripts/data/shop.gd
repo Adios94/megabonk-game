@@ -56,15 +56,16 @@ const UPGRADES := [
 
 static func get_upgrade(id: String) -> Dictionary:
 	for u in UPGRADES:
-		if u["id"] == id:
-			return u
+		var ud: Dictionary = u as Dictionary
+		if ud["id"] == id:
+			return ud
 	return {}
 
 
 static func get_next_cost(id: String, current_level: int) -> int:
-	var u := get_upgrade(id)
+	var u: Dictionary = get_upgrade(id)
 	if u.is_empty():
 		return -1
-	if current_level >= (u["max_level"] as int):
+	if current_level >= int(u["max_level"]):
 		return -1
-	return (u["cost_per_level"] as Array)[current_level]
+	return int((u["cost_per_level"] as Array)[current_level])

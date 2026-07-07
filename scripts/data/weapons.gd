@@ -170,10 +170,12 @@ const ALL_WEAPON_TYPES := [
 
 
 static func get_stats(weapon_type: String, level: int) -> Dictionary:
-	var stats: Array = STATS.get(weapon_type, [])
-	var idx: int = clamp(level - 1, 0, stats.size() - 1)
-	return stats[idx] if stats.size() > 0 else {}
+	var stats: Array = STATS.get(weapon_type, []) as Array
+	if stats.is_empty():
+		return {}
+	var idx: int = clampi(level - 1, 0, stats.size() - 1)
+	return stats[idx] as Dictionary
 
 
 static func get_behavior(weapon_type: String) -> String:
-	return BEHAVIORS.get(weapon_type, "")
+	return BEHAVIORS.get(weapon_type, "") as String

@@ -58,4 +58,4 @@ const ALL_TOME_TYPES := [
 
 
 static func get_def(tome_type: String) -> Dictionary:
-	return DEFS.get(tome_type, {})
+	return DEFS.get(tome_type, {}) as Dictionary

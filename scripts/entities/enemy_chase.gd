@@ -32,15 +32,15 @@ func _ready() -> void:
 
 func configure_from_type(t: String, elite_mult: float = 1.0) -> void:
 	enemy_type = t
-	var def := Enemies.get_def(t)
+	var def: Dictionary = Enemies.get_def(t)
 	if def.is_empty():
 		return
-	max_hp = def["hp"] * elite_mult
-	damage = def["damage"] * elite_mult
-	move_speed = def["speed"]
-	attack_cooldown = def["attack_cooldown"]
-	xp_reward = def["xp_reward"]
-	preferred_range = def.get("preferred_range", 0.0)
+	max_hp = float(def["hp"]) * elite_mult
+	damage = float(def["damage"]) * elite_mult
+	move_speed = float(def["speed"])
+	attack_cooldown = float(def["attack_cooldown"])
+	xp_reward = int(def["xp_reward"])
+	preferred_range = float(def.get("preferred_range", 0.0))
 	elite_multiplier = elite_mult
 	hp = max_hp
 
@@ -105,7 +105,7 @@ func _spawn_xp_pickup() -> void:
 	var scene: PackedScene = load("res://scenes/entities/xp_pickup.tscn")
 	if scene == null:
 		return
-	var p := scene.instantiate()
+	var p: Node3D = scene.instantiate() as Node3D
 	get_tree().current_scene.add_child(p)
 	p.global_position = global_position + Vector3(0.0, 0.5, 0.0)
 	if p.has_method("setup"):

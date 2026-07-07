@@ -26,15 +26,15 @@ func _ready() -> void:
 		_player.xp_changed.connect(_on_xp_changed)
 		_player.kill_count_changed.connect(_on_kill_changed)
 		_player.died.connect(_on_died)
-		_on_hp_changed(_player.hp, _player.get_max_hp())
-		_on_xp_changed(_player.xp, _player.xp_to_next, _player.level)
-		_on_kill_changed(_player.kill_count)
+		_on_hp_changed(float(_player.hp), float(_player.get_max_hp()))
+		_on_xp_changed(int(_player.xp), int(_player.xp_to_next), int(_player.level))
+		_on_kill_changed(int(_player.kill_count))
 
 
 func _process(_delta: float) -> void:
 	var t: float = GameManager.run_seconds
-	var m := int(t) / 60
-	var s := int(t) % 60
+	var m: int = int(t) / 60
+	var s: int = int(t) % 60
 	_time_label.text = "%02d:%02d" % [m, s]
 
 

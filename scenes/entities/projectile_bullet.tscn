@@ -1,0 +1,21 @@
+[gd_scene format=3 uid="uid://cs3iu5wibllsq"]
+
+[ext_resource type="Script" path="res://scripts/entities/projectile_bullet.gd" id="1_bullet"]
+
+[sub_resource type="SphereMesh" id="Sphere_1"]
+radius = 0.15
+height = 0.3
+
+[sub_resource type="StandardMaterial3D" id="Mat_1"]
+albedo_color = Color(1, 0.9, 0.4, 1)
+emission_enabled = true
+emission = Color(1, 0.7, 0.2, 1)
+emission_energy_multiplier = 2.0
+shading_mode = 0
+
+[node name="ProjectileBullet" type="Node3D"]
+script = ExtResource("1_bullet")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+mesh = SubResource("Sphere_1")
+material_override = SubResource("Mat_1")

@@ -24,6 +24,8 @@ config/icon="res://icon.svg"
 
 GameManager="*res://scripts/autoload/game_manager.gd"
 EventBus="*res://scripts/autoload/event_bus.gd"
+I18n="*res://scripts/autoload/i18n.gd"
+SaveGame="*res://scripts/autoload/save_game.gd"
 
 [display]
 

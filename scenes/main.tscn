@@ -1,16 +1,19 @@
-[gd_scene load_steps=11 format=3 uid="uid://c4mainscene0001"]
+[gd_scene load_steps=14 format=3 uid="uid://c4mainscene0001"]
 
 [ext_resource type="PackedScene" uid="uid://cplayerscene0001" path="res://scenes/entities/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://scripts/entities/follow_camera.gd" id="2_cam"]
 [ext_resource type="Script" path="res://scripts/systems/enemy_spawner.gd" id="3_spawner"]
-[ext_resource type="PackedScene" uid="uid://cenemychase0001" path="res://scenes/entities/enemy_chase.tscn" id="4_enemy"]
+[ext_resource type="PackedScene" uid="uid://da6g5kok7fd2o" path="res://scenes/entities/enemy_chase.tscn" id="4_enemy"]
 [ext_resource type="PackedScene" uid="uid://chudscene0001" path="res://scenes/ui/hud.tscn" id="5_hud"]
+[ext_resource type="PackedScene" uid="uid://clevelup0001" path="res://scenes/ui/level_up_panel.tscn" id="6_lu"]
+[ext_resource type="PackedScene" uid="uid://bvyl6yp4t22jc" path="res://scenes/ui/result_panel.tscn" id="7_rp"]
+[ext_resource type="Script" path="res://scripts/systems/boss_controller.gd" id="8_boss"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_1"]
-size = Vector2(80, 80)
+size = Vector2(120, 120)
 
 [sub_resource type="BoxShape3D" id="Box_ground"]
-size = Vector3(80, 0.2, 80)
+size = Vector3(120, 0.2, 120)
 
 [sub_resource type="ProceduralSkyMaterial" id="Sky_mat"]
 sky_top_color = Color(0.42, 0.55, 0.75, 1)
@@ -59,4 +62,11 @@ script = ExtResource("2_cam")
 script = ExtResource("3_spawner")
 enemy_scene = ExtResource("4_enemy")
 
+[node name="BossController" type="Node" parent="."]
+script = ExtResource("8_boss")
+
 [node name="HUD" parent="." instance=ExtResource("5_hud")]
+
+[node name="LevelUpPanel" parent="." instance=ExtResource("6_lu")]
+
+[node name="ResultPanel" parent="." instance=ExtResource("7_rp")]

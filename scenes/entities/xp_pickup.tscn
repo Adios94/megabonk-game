@@ -1,0 +1,15 @@
+[gd_scene format=3 uid="uid://cxppickup0001"]
+
+[ext_resource type="Script" path="res://scripts/entities/xp_pickup.gd" id="1_xp"]
+
+[sub_resource type="SphereMesh" id="Sphere_1"]
+radius = 0.2
+height = 0.4
+radial_segments = 12
+rings = 6
+
+[node name="XpPickup" type="Node3D"]
+script = ExtResource("1_xp")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+mesh = SubResource("Sphere_1")

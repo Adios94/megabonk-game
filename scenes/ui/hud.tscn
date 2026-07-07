@@ -13,9 +13,9 @@ anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
 offset_left = -180.0
-offset_top = 24.0
+offset_top = 20.0
 offset_right = 180.0
-offset_bottom = 56.0
+offset_bottom = 44.0
 grow_horizontal = 2
 max_value = 100.0
 value = 100.0
@@ -31,14 +31,63 @@ horizontal_alignment = 1
 vertical_alignment = 1
 text = "100 / 100"
 
+[node name="XpBar" type="ProgressBar" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -220.0
+offset_top = 52.0
+offset_right = 220.0
+offset_bottom = 68.0
+grow_horizontal = 2
+max_value = 10.0
+value = 0.0
+show_percentage = false
+
+[node name="Label" type="Label" parent="XpBar"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 12
+text = "0 / 10"
+
+[node name="LevelLabel" type="Label" parent="."]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -100.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = 52.0
+grow_horizontal = 0
+theme_override_font_sizes/font_size = 24
+text = "Lv 1"
+horizontal_alignment = 2
+
+[node name="KillLabel" type="Label" parent="."]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -100.0
+offset_top = 52.0
+offset_right = -20.0
+offset_bottom = 80.0
+grow_horizontal = 0
+text = "杀 0"
+horizontal_alignment = 2
+
 [node name="TimeLabel" type="Label" parent="."]
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
 offset_left = -60.0
-offset_top = 64.0
+offset_top = 76.0
 offset_right = 60.0
-offset_bottom = 96.0
+offset_bottom = 100.0
 grow_horizontal = 2
 horizontal_alignment = 1
 text = "00:00"

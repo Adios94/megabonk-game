@@ -53,4 +53,5 @@ func _apply_color() -> void:
 func _collect() -> void:
 	if _player and is_instance_valid(_player) and _player.has_method("heal"):
 		_player.heal(value)
+	Audio.play_sfx("pickup_eat")
 	queue_free()

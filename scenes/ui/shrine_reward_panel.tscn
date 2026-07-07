@@ -1,4 +1,4 @@
-[gd_scene load_steps=3 format=3 uid="uid://cshrinepanel0001"]
+[gd_scene format=3 uid="uid://cggchm0abdl8s"]
 
 [ext_resource type="Script" path="res://scripts/ui/shrine_reward_panel.gd" id="1_sp"]
 

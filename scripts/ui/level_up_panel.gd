@@ -111,6 +111,7 @@ func _on_card_pressed(index: int) -> void:
 	if index >= _pending_options.size():
 		return
 	var opt: Dictionary = _pending_options[index]
+	Audio.play_sfx("ui_select")
 	_apply_option(opt)
 	_panel.visible = false
 	get_tree().paused = false

@@ -68,6 +68,7 @@ var _invincible_timer := 0.0
 func _ready() -> void:
 	add_to_group("player")
 	GameManager.start_run()
+	Audio.play_music("fight1", 1.0)
 	_apply_character(GameManager.selected_character)
 	# defer 一帧发信号，等 HUD 连上
 	hp_changed.emit.call_deferred(hp, max_hp)
@@ -178,6 +179,7 @@ func take_damage(amount: float) -> void:
 	var final_dmg: float = max(1.0, amount - armor)
 	hp = max(0.0, hp - final_dmg)
 	_invincible_timer = GameConfig.PLAYER_INVINCIBLE_DURATION
+	Audio.play_sfx("player_hurt", 0.1)
 	hp_changed.emit(hp, max_hp)
 	if hp <= 0.0:
 		_die()
@@ -186,6 +188,8 @@ func take_damage(amount: float) -> void:
 func _die() -> void:
 	_is_dead = true
 	velocity = Vector3.ZERO
+	Audio.play_sfx("player_gameover")
+	Audio.stop_music(1.0)
 	died.emit()
 	GameManager.end_run({"cause": "death"})
 
@@ -211,6 +215,7 @@ func gain_xp(amount: int) -> void:
 		level += 1
 		xp_to_next = GameConfig.xp_for_level(level)
 		max_weapon_slots = GameConfig.compute_weapon_slots(level, 5)
+		Audio.play_sfx("player_levelup")
 		leveled_up.emit(level)
 	xp_changed.emit(xp, xp_to_next, level)
 

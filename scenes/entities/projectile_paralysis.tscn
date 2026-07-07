@@ -1,4 +1,4 @@
-[gd_scene load_steps=4 format=3 uid="uid://cprojparalysis0001"]
+[gd_scene format=3 uid="uid://cc8nrbq38gtbk"]
 
 [ext_resource type="Script" path="res://scripts/entities/projectile_bullet.gd" id="1_bullet"]
 

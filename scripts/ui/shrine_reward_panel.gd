@@ -73,6 +73,7 @@ func _on_pressed(idx: int) -> void:
 	if idx >= _options.size():
 		return
 	var picked: Dictionary = _options[idx]
+	Audio.play_sfx("ui_select")
 	_panel.visible = false
 	get_tree().paused = false
 	if _callback.is_valid():

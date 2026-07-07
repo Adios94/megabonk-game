@@ -9,6 +9,22 @@ func _ready() -> void:
 	_player = get_parent() as Node3D
 
 
+const SFX_BY_BEHAVIOR := {
+	"sweep_arc": "weapon_sword",
+	"bouncing_shot": "weapon_bone",
+	"orbiting_axe": "weapon_sword",
+	"forward_arrow": "weapon_gun",
+	"lightning_chain": "weapon_lightning",
+	"flame_aura": "weapon_firering",
+	"spread_shot": "weapon_gun",
+	"ray_beam": "weapon_raygun",
+	"poison_gas": "weapon_poison",
+	"paralysis_shot": "weapon_needle",
+	"void_ripple": "weapon_ripple",
+	"scorch_trail": "weapon_burn",
+}
+
+
 func spawn_weapon(weapon_type: String, level: int) -> void:
 	if _behaviors.has(weapon_type):
 		return
@@ -28,6 +44,7 @@ func spawn_weapon(weapon_type: String, level: int) -> void:
 	node.name = "weapon_%s" % weapon_type
 	node.set("weapon_type", weapon_type)
 	node.set("player", _player)
+	node.set("sfx_key", SFX_BY_BEHAVIOR.get(behavior_id, ""))
 	add_child(node)
 	_behaviors[weapon_type] = node
 

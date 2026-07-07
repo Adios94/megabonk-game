@@ -4,6 +4,7 @@ extends Node
 
 var weapon_type: String = "paralysis_gun"
 var player: Node3D
+var sfx_key: String = ""
 
 var _cd_timer: float = 0.0
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
@@ -23,6 +24,7 @@ func _process(delta: float) -> void:
 	if _cd_timer > 0.0:
 		return
 	_cd_timer = float(stats["cooldown"])
+	if sfx_key != "": Audio.play_sfx(sfx_key, 0.1)
 	_fire(stats)
 
 

@@ -225,6 +225,7 @@ func _try_attack() -> void:
 
 func take_damage(amount: float, source_pos: Vector3 = Vector3.ZERO) -> void:
 	hp -= amount
+	Audio.play_sfx("enemy_hit", 0.2)
 	if source_pos != Vector3.ZERO:
 		var push: Vector3 = (global_position - source_pos)
 		push.y = 0.0

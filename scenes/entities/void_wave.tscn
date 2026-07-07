@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://cvoidwave0001"]
+[gd_scene format=3 uid="uid://cvoidwave0001"]
 
 [ext_resource type="Script" path="res://scripts/entities/void_wave.gd" id="1_vw"]
 

@@ -3,6 +3,7 @@ extends Node
 
 var weapon_type: String = "axe"
 var player: Node3D
+var sfx_key: String = ""
 
 var _blades: Array = []
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()

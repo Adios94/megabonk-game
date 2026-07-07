@@ -37,7 +37,8 @@ func _ready() -> void:
 	hp = boss_hp
 	add_to_group("enemies")
 	add_to_group("boss")
-	# defer 让 UI 有机会连信号
+	Audio.play_sfx("boss_alarm")
+	Audio.play_music("fight1")
 	hp_changed.emit.call_deferred(hp, boss_hp, phase)
 
 
@@ -111,6 +112,7 @@ func _do_attack() -> void:
 	if pool.is_empty():
 		return
 	var attack: String = pool[_rng.randi_range(0, pool.size() - 1)]
+	Audio.play_sfx("boss_attack", 0.15)
 	match attack:
 		"melee_swipe": _atk_melee_swipe()
 		"ground_slam": _atk_ground_slam()

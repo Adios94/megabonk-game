@@ -13,6 +13,7 @@ func _ready() -> void:
 	_populate_character()
 	_populate_tier()
 	_update_silver()
+	Audio.play_music("begin", 1.0)
 	$VBox/PlayBtn.pressed.connect(_on_play)
 	$VBox/ShopBtn.pressed.connect(_on_shop)
 	$VBox/QuestBtn.pressed.connect(_on_quest)
@@ -52,6 +53,7 @@ func _update_silver() -> void:
 
 
 func _on_play() -> void:
+	Audio.play_sfx("ui_click")
 	var char_idx: int = _character_option.selected
 	var char_ids: Array = ["megachad", "roberto", "skateboard_skeleton"]
 	var char_id: String = char_ids[char_idx] if char_idx >= 0 and char_idx < char_ids.size() else "megachad"
@@ -62,16 +64,19 @@ func _on_play() -> void:
 
 
 func _on_shop() -> void:
+	Audio.play_sfx("ui_click")
 	if _shop_panel and _shop_panel.has_method("open"):
 		_shop_panel.open()
 		_shop_panel.closed.connect(_update_silver, CONNECT_ONE_SHOT)
 
 
 func _on_quest() -> void:
+	Audio.play_sfx("ui_click")
 	if _quest_panel and _quest_panel.has_method("open"):
 		_quest_panel.open()
 		_quest_panel.closed.connect(_update_silver, CONNECT_ONE_SHOT)
 
 
 func _on_quit() -> void:
+	Audio.play_sfx("ui_click")
 	get_tree().quit()

@@ -37,6 +37,7 @@ func _process(_delta: float) -> void:
 
 func _open() -> void:
 	_opened = true
+	Audio.play_sfx("pickup_openchest")
 	var amount: int = _rng.randi_range(SILVER_MIN, SILVER_MAX)
 	# 掉几个银币 pickup 而不是直接加数值，视觉更好
 	var count: int = 6 + int(amount / 40)

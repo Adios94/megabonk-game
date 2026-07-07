@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3 uid="uid://c4mainscene0001"]
+[gd_scene load_steps=18 format=3 uid="uid://c4mainscene0001"]
 
 [ext_resource type="PackedScene" uid="uid://cplayerscene0001" path="res://scenes/entities/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://scripts/entities/follow_camera.gd" id="2_cam"]
@@ -15,6 +15,7 @@
 [ext_resource type="PackedScene" uid="uid://cshrine0001" path="res://scenes/entities/shrine.tscn" id="12_shrine"]
 [ext_resource type="PackedScene" uid="uid://cshrinepanel0001" path="res://scenes/ui/shrine_reward_panel.tscn" id="13_shrine_panel"]
 [ext_resource type="PackedScene" uid="uid://b1i4624jvdu2l" path="res://assets/models/levels/level_whitebox.glb" id="14_level"]
+[ext_resource type="PackedScene" uid="uid://cpause0001" path="res://scenes/ui/pause_menu.tscn" id="16_pause"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_1"]
 size = Vector2(200, 200)
@@ -89,5 +90,7 @@ boss_scene = ExtResource("15_boss_scene")
 [node name="LevelUpPanel" parent="." instance=ExtResource("6_lu")]
 
 [node name="ShrineRewardPanel" parent="." instance=ExtResource("13_shrine_panel")]
+
+[node name="PauseMenu" parent="." instance=ExtResource("16_pause")]
 
 [node name="ResultPanel" parent="." instance=ExtResource("7_rp")]

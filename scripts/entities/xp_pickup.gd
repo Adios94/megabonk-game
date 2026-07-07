@@ -89,4 +89,5 @@ func _apply_color() -> void:
 func _collect() -> void:
 	if _player and is_instance_valid(_player) and _player.has_method("gain_xp"):
 		_player.gain_xp(value)
+	Audio.play_sfx("pickup_getexp", 0.1)
 	queue_free()

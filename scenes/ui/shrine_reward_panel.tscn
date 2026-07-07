@@ -1,0 +1,67 @@
+[gd_scene load_steps=3 format=3 uid="uid://cshrinepanel0001"]
+
+[ext_resource type="Script" path="res://scripts/ui/shrine_reward_panel.gd" id="1_sp"]
+
+[sub_resource type="StyleBoxFlat" id="Bg_1"]
+bg_color = Color(0.05, 0.08, 0.18, 0.9)
+
+[node name="ShrineRewardPanel" type="CanvasLayer"]
+script = ExtResource("1_sp")
+layer = 5
+
+[node name="Panel" type="PanelContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("Bg_1")
+
+[node name="VBox" type="VBoxContainer" parent="Panel"]
+layout_mode = 2
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -520.0
+offset_top = -150.0
+offset_right = 520.0
+offset_bottom = 150.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 24
+
+[node name="Title" type="Label" parent="Panel/VBox"]
+layout_mode = 2
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 32
+text = "充能神殿 · 选择祝福"
+
+[node name="HBox" type="HBoxContainer" parent="Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="Card1" type="Button" parent="Panel/VBox/HBox"]
+custom_minimum_size = Vector2(220, 180)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Card 1"
+
+[node name="Card2" type="Button" parent="Panel/VBox/HBox"]
+custom_minimum_size = Vector2(220, 180)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Card 2"
+
+[node name="Card3" type="Button" parent="Panel/VBox/HBox"]
+custom_minimum_size = Vector2(220, 180)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Card 3"
+
+[node name="Card4" type="Button" parent="Panel/VBox/HBox"]
+custom_minimum_size = Vector2(220, 180)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Card 4"

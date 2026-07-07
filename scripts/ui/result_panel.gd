@@ -30,12 +30,16 @@ func _show_result(title: String, _extra: String) -> void:
 		kills = int(player.kill_count)
 		level = int(player.level)
 	var base_silver: int = int(floor(kills * 0.5 + level * 5))
-	SaveGame.add_silver(base_silver)
+	var total_silver: int = base_silver + GameManager.run_silver
+	SaveGame.add_silver(total_silver)
 	SaveGame.record_run_end(run_secs, level, kills)
 	_title.text = title
-	_stats.text = "存活: %02d:%02d\n等级: %d\n击杀: %d\n获得银币: %d" % [
-		int(run_secs) / 60, int(run_secs) % 60,
-		level, kills, base_silver,
+	@warning_ignore("integer_division")
+	var minutes: int = int(run_secs) / 60
+	var seconds: int = int(run_secs) % 60
+	_stats.text = "存活: %02d:%02d\n等级: %d\n击杀: %d\n局内银币: %d\n结算银币: %d" % [
+		minutes, seconds,
+		level, kills, GameManager.run_silver, total_silver,
 	]
 	_panel.visible = true
 	get_tree().paused = true

@@ -28,6 +28,21 @@ var crit_damage := 1.5
 var pickup_radius := 2.0
 var attack_speed_mult := 1.0
 
+# Shrine 累加型 bonuses（乘算叠加，不被 recompute 清）
+var shrine_damage_mult := 1.0
+var shrine_attack_speed_mult := 1.0
+var shrine_move_speed_mult := 1.0
+var shrine_pickup_radius_mult := 1.0
+var shrine_crit_damage_add := 0.0
+var shrine_projectile_bonus := 0
+var shrine_knockback_mult := 1.0
+var shrine_lifesteal := 0.0
+var shrine_luck_bonus := 0.0
+var shrine_elite_damage_mult := 1.0
+var shrine_hp_regen := 0.0
+var max_shield := 0.0
+var shield := 0.0
+
 var level := 1
 var xp := 0
 var xp_to_next := GameConfig.xp_for_level(1)
@@ -264,3 +279,42 @@ func _apply_stat_modifier(mod: Dictionary, tome_level: int) -> void:
 		"pickup_radius":
 			if mod["kind"] == "added":
 				pickup_radius += v
+
+
+# --- Shrine 奖励应用 ---
+
+func apply_shrine_reward(reward: Dictionary) -> void:
+	var kind: String = reward["reward"]
+	var v: float = float(reward["value"])
+	# 直接把增量应用到属性；shrine_*_mult 状态只用于查询/UI，不做基准还原。
+	match kind:
+		"damage":
+			damage_mult *= 1.0 + v
+			shrine_damage_mult *= 1.0 + v
+		"attack_speed":
+			attack_speed_mult *= 1.0 + v
+			shrine_attack_speed_mult *= 1.0 + v
+		"movement_speed":
+			move_speed *= 1.0 + v
+			shrine_move_speed_mult *= 1.0 + v
+		"pickup_range":
+			pickup_radius *= 1.0 + v
+			shrine_pickup_radius_mult *= 1.0 + v
+		"crit_damage":
+			crit_damage += v
+			shrine_crit_damage_add += v
+		"knockback":
+			shrine_knockback_mult *= 1.0 + v
+		"lifesteal":
+			shrine_lifesteal = minf(1.0, shrine_lifesteal + v)
+		"luck":
+			shrine_luck_bonus += v
+		"elite_damage":
+			shrine_elite_damage_mult *= 1.0 + v
+		"shield":
+			max_shield += v
+			shield = max_shield
+		"hp_regen":
+			shrine_hp_regen += v
+		"projectile_count":
+			shrine_projectile_bonus += int(v)

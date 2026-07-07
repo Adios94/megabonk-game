@@ -33,6 +33,7 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	var t: float = GameManager.run_seconds
+	@warning_ignore("integer_division")
 	var m: int = int(t) / 60
 	var s: int = int(t) % 60
 	_time_label.text = "%02d:%02d" % [m, s]

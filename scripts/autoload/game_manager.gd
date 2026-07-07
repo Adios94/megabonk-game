@@ -5,6 +5,7 @@ signal game_started
 signal game_over(result: Dictionary)
 
 var run_seconds: float = 0.0
+var run_silver: int = 0
 var is_running: bool = false
 
 
@@ -16,13 +17,18 @@ func _ready() -> void:
 
 func start_run() -> void:
 	run_seconds = 0.0
+	run_silver = 0
 	is_running = true
 	game_started.emit()
 
 
+func add_run_silver(amount: int) -> void:
+	run_silver += amount
+
+
 func reset_run_state() -> void:
-	## 场景 reload 时手动清零。M2 里 reload 前会调 restart。
 	run_seconds = 0.0
+	run_silver = 0
 	is_running = true
 
 

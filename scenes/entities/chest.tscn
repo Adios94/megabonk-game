@@ -1,0 +1,26 @@
+[gd_scene load_steps=5 format=3 uid="uid://cchest0001"]
+
+[ext_resource type="Script" path="res://scripts/entities/chest.gd" id="1_c"]
+
+[sub_resource type="BoxMesh" id="Box_1"]
+size = Vector3(0.8, 0.6, 0.6)
+
+[sub_resource type="StandardMaterial3D" id="Mat_body"]
+albedo_color = Color(0.55, 0.35, 0.15, 1)
+metallic = 0.2
+
+[sub_resource type="SphereMesh" id="Sphere_prompt"]
+radius = 0.15
+height = 0.3
+
+[node name="Chest" type="Node3D"]
+script = ExtResource("1_c")
+
+[node name="Body" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, 0)
+mesh = SubResource("Box_1")
+material_override = SubResource("Mat_body")
+
+[node name="Prompt" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+mesh = SubResource("Sphere_prompt")

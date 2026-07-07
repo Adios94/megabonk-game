@@ -1,17 +1,11 @@
-[gd_scene load_steps=5 format=3 uid="uid://da6g5kok7fd2o"]
+[gd_scene load_steps=4 format=3 uid="uid://da6g5kok7fd2o"]
 
 [ext_resource type="Script" path="res://scripts/entities/enemy_chase.gd" id="1_chase"]
+[ext_resource type="PackedScene" uid="uid://43lcxcy84qc4" path="res://assets/models/skins/kaykit/Skeleton_Minion.glb" id="2_model"]
 
 [sub_resource type="CapsuleShape3D" id="Cap_col"]
 radius = 0.4
 height = 1.6
-
-[sub_resource type="CapsuleMesh" id="Cap_mesh"]
-radius = 0.4
-height = 1.6
-
-[sub_resource type="StandardMaterial3D" id="Mat_body"]
-albedo_color = Color(0.35, 0.75, 0.35, 1)
 
 [node name="EnemyChase" type="CharacterBody3D"]
 script = ExtResource("1_chase")
@@ -20,7 +14,4 @@ script = ExtResource("1_chase")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
 shape = SubResource("Cap_col")
 
-[node name="Body" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
-mesh = SubResource("Cap_mesh")
-surface_material_override/0 = SubResource("Mat_body")
+[node name="Model" parent="." instance=ExtResource("2_model")]

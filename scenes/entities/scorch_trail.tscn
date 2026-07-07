@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cscorchtrail0001"]
+
+[ext_resource type="Script" path="res://scripts/entities/scorch_trail.gd" id="1_st"]
+
+[node name="ScorchTrail" type="Node3D"]
+script = ExtResource("1_st")

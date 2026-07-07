@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3 uid="uid://c4mainscene0001"]
+[gd_scene load_steps=16 format=3 uid="uid://c4mainscene0001"]
 
 [ext_resource type="PackedScene" uid="uid://cplayerscene0001" path="res://scenes/entities/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://scripts/entities/follow_camera.gd" id="2_cam"]
@@ -8,12 +8,18 @@
 [ext_resource type="PackedScene" uid="uid://clevelup0001" path="res://scenes/ui/level_up_panel.tscn" id="6_lu"]
 [ext_resource type="PackedScene" uid="uid://bvyl6yp4t22jc" path="res://scenes/ui/result_panel.tscn" id="7_rp"]
 [ext_resource type="Script" path="res://scripts/systems/boss_controller.gd" id="8_boss"]
+[ext_resource type="Script" path="res://scripts/systems/chest_spawner.gd" id="9_chest_sp"]
+[ext_resource type="PackedScene" uid="uid://cchest0001" path="res://scenes/entities/chest.tscn" id="10_chest"]
+[ext_resource type="Script" path="res://scripts/systems/shrine_system.gd" id="11_shrine_sys"]
+[ext_resource type="PackedScene" uid="uid://cshrine0001" path="res://scenes/entities/shrine.tscn" id="12_shrine"]
+[ext_resource type="PackedScene" uid="uid://cshrinepanel0001" path="res://scenes/ui/shrine_reward_panel.tscn" id="13_shrine_panel"]
+[ext_resource type="PackedScene" uid="uid://b1i4624jvdu2l" path="res://assets/models/levels/level_whitebox.glb" id="14_level"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_1"]
-size = Vector2(120, 120)
+size = Vector2(200, 200)
 
 [sub_resource type="BoxShape3D" id="Box_ground"]
-size = Vector3(120, 0.2, 120)
+size = Vector3(200, 0.2, 200)
 
 [sub_resource type="ProceduralSkyMaterial" id="Sky_mat"]
 sky_top_color = Color(0.42, 0.55, 0.75, 1)
@@ -50,6 +56,8 @@ mesh = SubResource("PlaneMesh_1")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
 shape = SubResource("Box_ground")
 
+[node name="Level" parent="." instance=ExtResource("14_level")]
+
 [node name="Player" parent="." groups=["player"] instance=ExtResource("1_player")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
 
@@ -62,11 +70,22 @@ script = ExtResource("2_cam")
 script = ExtResource("3_spawner")
 enemy_scene = ExtResource("4_enemy")
 
+[node name="ChestSpawner" type="Node" parent="."]
+script = ExtResource("9_chest_sp")
+chest_scene = ExtResource("10_chest")
+
+[node name="ShrineSystem" type="Node" parent="."]
+script = ExtResource("11_shrine_sys")
+shrine_scene = ExtResource("12_shrine")
+reward_panel_path = NodePath("../ShrineRewardPanel")
+
 [node name="BossController" type="Node" parent="."]
 script = ExtResource("8_boss")
 
 [node name="HUD" parent="." instance=ExtResource("5_hud")]
 
 [node name="LevelUpPanel" parent="." instance=ExtResource("6_lu")]
+
+[node name="ShrineRewardPanel" parent="." instance=ExtResource("13_shrine_panel")]
 
 [node name="ResultPanel" parent="." instance=ExtResource("7_rp")]

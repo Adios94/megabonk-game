@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3 uid="uid://c4mainscene0001"]
+[gd_scene load_steps=20 format=3 uid="uid://c4mainscene0001"]
 
 [ext_resource type="PackedScene" uid="uid://cplayerscene0001" path="res://scenes/entities/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://scripts/entities/follow_camera.gd" id="2_cam"]
@@ -10,6 +10,7 @@
 [ext_resource type="Script" path="res://scripts/systems/boss_controller.gd" id="8_boss"]
 [ext_resource type="PackedScene" uid="uid://cboss0001" path="res://scenes/entities/boss.tscn" id="15_boss_scene"]
 [ext_resource type="PackedScene" uid="uid://caltar0001" path="res://scenes/entities/altar.tscn" id="17_altar_scene"]
+[ext_resource type="PackedScene" uid="uid://cdamagenums0001" path="res://scenes/ui/damage_numbers.tscn" id="18_dmg"]
 [ext_resource type="Script" path="res://scripts/systems/chest_spawner.gd" id="9_chest_sp"]
 [ext_resource type="PackedScene" uid="uid://cchest0001" path="res://scenes/entities/chest.tscn" id="10_chest"]
 [ext_resource type="Script" path="res://scripts/systems/shrine_system.gd" id="11_shrine_sys"]
@@ -96,3 +97,5 @@ altar_scene = ExtResource("17_altar_scene")
 [node name="PauseMenu" parent="." instance=ExtResource("16_pause")]
 
 [node name="ResultPanel" parent="." instance=ExtResource("7_rp")]
+
+[node name="DamageNumbers" parent="." instance=ExtResource("18_dmg")]

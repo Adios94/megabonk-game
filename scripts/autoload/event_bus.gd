@@ -4,7 +4,7 @@ extends Node
 
 # 战斗
 @warning_ignore("unused_signal")
-signal damage_dealt(source, target, amount: float, is_crit: bool)
+signal damage_dealt(target_pos: Vector3, amount: float, is_crit: bool, is_player_damage: bool, is_shield: bool)
 @warning_ignore("unused_signal")
 signal enemy_died(enemy, killer)
 

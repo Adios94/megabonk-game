@@ -43,6 +43,9 @@ static func deal_damage(target: Node, base_damage: float, player: Node, rng: Ran
 	final = round(final)
 	if target.has_method("take_damage"):
 		target.take_damage(final, source_pos)
+	# 伤害数字浮字
+	var target_pos: Vector3 = (target as Node3D).global_position + Vector3(0.0, 1.2, 0.0) if target is Node3D else Vector3.ZERO
+	EventBus.damage_dealt.emit(target_pos, final, is_crit, false, false)
 	# Lifesteal（Shrine + Relic）
 	var lifesteal: float = float(player.shrine_lifesteal) if player.get("shrine_lifesteal") != null else 0.0
 	if lifesteal > 0.0 and player.has_method("heal"):

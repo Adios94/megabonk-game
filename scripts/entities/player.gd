@@ -204,12 +204,21 @@ func take_damage(amount: float) -> void:
 	if _is_dead or _invincible_timer > 0.0:
 		return
 	var final_dmg: float = max(1.0, amount - armor)
+	# 护盾优先扣
+	var is_shield_hit: bool = false
+	if shield > 0.0:
+		var absorbed: float = minf(shield, final_dmg)
+		shield -= absorbed
+		final_dmg -= absorbed
+		is_shield_hit = absorbed > 0.0
 	hp = max(0.0, hp - final_dmg)
 	_invincible_timer = GameConfig.PLAYER_INVINCIBLE_DURATION
 	Audio.play_sfx("player_hurt", 0.1)
 	var rig: Node = get_node_or_null("Model")
 	if rig and rig.has_method("play_hit"):
 		rig.play_hit()
+	# 浮字（玩家受伤 = 红字；护盾吸收 = 蓝字）
+	EventBus.damage_dealt.emit(global_position + Vector3(0.0, 1.6, 0.0), amount, false, true, is_shield_hit)
 	hp_changed.emit(hp, max_hp)
 	if hp <= 0.0:
 		_die()

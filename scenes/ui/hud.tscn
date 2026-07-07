@@ -8,21 +8,29 @@
 [ext_resource type="Texture2D" uid="uid://bunvoshte87xs" path="res://assets/ui/bar/boss_track.svg" id="6_boss_track"]
 [ext_resource type="Texture2D" uid="uid://b217jdponq6rc" path="res://assets/ui/bar/boss_fill.svg" id="7_boss_fill"]
 
-[sub_resource type="StyleBoxFlat" id="Death_bg"]
-bg_color = Color(0, 0, 0, 0.65)
-
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1_hud")
 
-[node name="HpBar" type="TextureProgressBar" parent="."]
+[node name="TopCenter" type="VBoxContainer" parent="."]
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
-offset_left = -190.0
-offset_top = 20.0
-offset_right = 190.0
-offset_bottom = 52.0
+offset_left = -220.0
+offset_top = 16.0
+offset_right = 220.0
+offset_bottom = 80.0
 grow_horizontal = 2
+theme_override_constants/separation = 4
+
+[node name="HpBox" type="HBoxContainer" parent="TopCenter"]
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HpBar" type="TextureProgressBar" parent="TopCenter/HpBox"]
+custom_minimum_size = Vector2(360, 32)
+layout_mode = 2
+size_flags_horizontal = 3
 max_value = 100.0
 value = 100.0
 nine_patch_stretch = true
@@ -33,7 +41,7 @@ stretch_margin_bottom = 8
 texture_under = ExtResource("2_hp_track")
 texture_progress = ExtResource("3_hp_fill")
 
-[node name="Label" type="Label" parent="HpBar"]
+[node name="Label" type="Label" parent="TopCenter/HpBox/HpBar"]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -42,17 +50,18 @@ grow_vertical = 2
 horizontal_alignment = 1
 vertical_alignment = 1
 theme_override_font_sizes/font_size = 16
+theme_override_colors/font_color = Color(1, 1, 1, 1)
 text = "100 / 100"
 
-[node name="XpBar" type="TextureProgressBar" parent="."]
-anchors_preset = 5
-anchor_left = 0.5
-anchor_right = 0.5
-offset_left = -220.0
-offset_top = 56.0
-offset_right = 220.0
-offset_bottom = 76.0
-grow_horizontal = 2
+[node name="XpBox" type="HBoxContainer" parent="TopCenter"]
+custom_minimum_size = Vector2(0, 20)
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="XpBar" type="TextureProgressBar" parent="TopCenter/XpBox"]
+custom_minimum_size = Vector2(360, 18)
+layout_mode = 2
+size_flags_horizontal = 3
 max_value = 10.0
 value = 0.0
 nine_patch_stretch = true
@@ -63,7 +72,7 @@ stretch_margin_bottom = 4
 texture_under = ExtResource("4_xp_track")
 texture_progress = ExtResource("5_xp_fill")
 
-[node name="Label" type="Label" parent="XpBar"]
+[node name="Label" type="Label" parent="TopCenter/XpBox/XpBar"]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -74,90 +83,121 @@ vertical_alignment = 1
 theme_override_font_sizes/font_size = 11
 text = "0 / 10"
 
-[node name="LevelLabel" type="Label" parent="."]
+[node name="LevelBadge" type="PanelContainer" parent="TopCenter"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+
+[node name="Label" type="Label" parent="TopCenter/LevelBadge"]
+layout_mode = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 28
+theme_override_colors/font_color = Color(1, 0.85, 0.35, 1)
+text = "1"
+
+[node name="TopRight" type="VBoxContainer" parent="."]
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -110.0
-offset_top = 22.0
+offset_left = -180.0
+offset_top = 20.0
 offset_right = -20.0
-offset_bottom = 56.0
+offset_bottom = 140.0
 grow_horizontal = 0
+theme_override_constants/separation = 4
+
+[node name="TimeLabel" type="Label" parent="TopRight"]
+layout_mode = 2
+horizontal_alignment = 2
 theme_override_font_sizes/font_size = 26
 theme_override_colors/font_color = Color(1, 0.95, 0.7, 1)
-text = "Lv 1"
-horizontal_alignment = 2
-
-[node name="KillLabel" type="Label" parent="."]
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -110.0
-offset_top = 58.0
-offset_right = -20.0
-offset_bottom = 82.0
-grow_horizontal = 0
-theme_override_font_sizes/font_size = 16
-text = "杀 0"
-horizontal_alignment = 2
-
-[node name="TimeLabel" type="Label" parent="."]
-anchors_preset = 5
-anchor_left = 0.5
-anchor_right = 0.5
-offset_left = -80.0
-offset_top = 84.0
-offset_right = 80.0
-offset_bottom = 112.0
-grow_horizontal = 2
-horizontal_alignment = 1
-theme_override_font_sizes/font_size = 22
 text = "00:00"
 
-[node name="DeathPanel" type="PanelContainer" parent="."]
-anchors_preset = 15
-anchor_right = 1.0
+[node name="KillLabel" type="Label" parent="TopRight"]
+layout_mode = 2
+horizontal_alignment = 2
+theme_override_font_sizes/font_size = 18
+text = "☠ 0"
+
+[node name="SilverLabel" type="Label" parent="TopRight"]
+layout_mode = 2
+horizontal_alignment = 2
+theme_override_font_sizes/font_size = 18
+theme_override_colors/font_color = Color(1, 0.85, 0.4, 1)
+text = "💰 0"
+
+[node name="QuestHint" type="Label" parent="."]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
 anchor_bottom = 1.0
+offset_left = -280.0
+offset_top = -180.0
+offset_right = 280.0
+offset_bottom = -155.0
 grow_horizontal = 2
-grow_vertical = 2
-theme_override_styles/panel = SubResource("Death_bg")
-
-[node name="Center" type="CenterContainer" parent="DeathPanel"]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="DeathPanel/Center"]
-layout_mode = 2
-text = "YOU DIED"
+grow_vertical = 0
 horizontal_alignment = 1
-theme_override_font_sizes/font_size = 64
+theme_override_font_sizes/font_size = 16
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 0.9)
+text = "找到飞碟，召唤并击败BOSS！"
 
-[node name="BossHp" type="Control" parent="."]
-anchors_preset = 12
-anchor_left = 0.0
+[node name="BottomLeft" type="VBoxContainer" parent="."]
+anchors_preset = 3
+anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 80.0
-offset_top = -100.0
-offset_right = -80.0
-offset_bottom = -60.0
-grow_horizontal = 2
+offset_left = -420.0
+offset_top = -140.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 0
 grow_vertical = 0
+theme_override_constants/separation = 8
+alignment = 2
+
+[node name="WeaponSlots" type="HBoxContainer" parent="BottomLeft"]
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+size_flags_horizontal = 8
+theme_override_constants/separation = 4
+alignment = 2
+
+[node name="BondRow" type="HBoxContainer" parent="BottomLeft"]
+custom_minimum_size = Vector2(0, 30)
+layout_mode = 2
+size_flags_horizontal = 8
+theme_override_constants/separation = 8
+alignment = 2
+
+[node name="BossHp" type="Control" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -400.0
+offset_top = 92.0
+offset_right = 400.0
+offset_bottom = 128.0
+grow_horizontal = 2
 
 [node name="PhaseLabel" type="Label" parent="BossHp"]
 layout_mode = 0
 offset_left = 0.0
-offset_top = -26.0
+offset_top = -22.0
 offset_right = 200.0
-offset_bottom = -4.0
-theme_override_font_sizes/font_size = 18
+offset_bottom = -2.0
+theme_override_font_sizes/font_size = 16
 theme_override_colors/font_color = Color(1, 0.5, 0.5, 1)
 text = "BOSS · P1"
 
 [node name="Bar" type="TextureProgressBar" parent="BossHp"]
 layout_mode = 0
-offset_right = 1120.0
-offset_bottom = 32.0
+offset_right = 800.0
+offset_bottom = 30.0
 max_value = 30000.0
 value = 30000.0
 nine_patch_stretch = true
@@ -173,9 +213,9 @@ anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
 offset_left = -320.0
-offset_top = 140.0
+offset_top = 160.0
 offset_right = 320.0
-offset_bottom = 220.0
+offset_bottom = 240.0
 grow_horizontal = 2
 horizontal_alignment = 1
 theme_override_font_sizes/font_size = 56

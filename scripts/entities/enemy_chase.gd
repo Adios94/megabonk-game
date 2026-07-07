@@ -90,6 +90,14 @@ func _physics_process(delta: float) -> void:
 	if _target == null:
 		return
 
+	# Final Swarm boost（480~540s 移速 x1.3）
+	var effective_speed: float = move_speed
+	if GameManager.run_seconds >= GameConfig.FINAL_SWARM_START_TIME:
+		effective_speed *= GameConfig.FINAL_SWARM_SPEED_MULTIPLIER
+	# 保存原速度，恢复用
+	var orig_speed: float = move_speed
+	move_speed = effective_speed
+
 	# dive 敌人自己管 y；其他敌人常规重力
 	if behavior != "dive":
 		if not is_on_floor():
@@ -113,6 +121,8 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 	_try_attack()
+
+	move_speed = orig_speed
 
 
 func _ai_chase(_delta: float) -> void:

@@ -67,16 +67,47 @@ var _invincible_timer := 0.0
 
 func _ready() -> void:
 	add_to_group("player")
+	GameManager.start_run()
+	_apply_character(GameManager.selected_character)
 	# defer 一帧发信号，等 HUD 连上
 	hp_changed.emit.call_deferred(hp, max_hp)
 	xp_changed.emit.call_deferred(xp, xp_to_next, level)
 	kill_count_changed.emit.call_deferred(kill_count)
-	# 起手武器：sword lv1
-	add_weapon("sword", 1)
-	# EventBus 敌人死亡 → 计数（先断开旧连接，避免重开场景重复 connect）
+	# EventBus 敌人死亡 → 计数
 	if EventBus.enemy_died.is_connected(_on_enemy_died):
 		EventBus.enemy_died.disconnect(_on_enemy_died)
 	EventBus.enemy_died.connect(_on_enemy_died)
+
+
+func _apply_character(char_id: String) -> void:
+	var def: Dictionary = Characters.get_def(char_id)
+	if def.is_empty():
+		return
+	# 基础属性
+	max_hp = float(def["hp"])
+	hp = max_hp
+	move_speed = float(def["speed"])
+	damage_mult = float(def["damage"])
+	armor = float(def["armor"])
+	crit_chance = float(def["crit_chance"])
+	# 商店永久加成
+	max_hp += float(SaveGame.get_shop_level("max_hp")) * 10.0
+	hp = max_hp
+	damage_mult += float(SaveGame.get_shop_level("damage")) * 0.05
+	move_speed += float(SaveGame.get_shop_level("speed")) * 0.3
+	crit_chance += float(SaveGame.get_shop_level("crit")) * 0.02
+	pickup_radius += float(SaveGame.get_shop_level("pickup_radius")) * 0.5
+	armor += float(SaveGame.get_shop_level("armor")) * 1.0
+	# 起手等级
+	var start_lv: int = SaveGame.get_shop_level("starting_level")
+	for _i in start_lv:
+		level += 1
+		xp_to_next = GameConfig.xp_for_level(level)
+	# 武器槽（extra 来自任务）
+	max_weapon_slots = int(def["weapon_slots"]) + int(SaveGame.data.get("extra_weapon_slots", 0))
+	# 起手武器
+	var starter: String = str(def["starting_weapon"])
+	add_weapon(starter, 1)
 
 
 func get_max_hp() -> float:

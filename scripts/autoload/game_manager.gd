@@ -8,11 +8,14 @@ var run_seconds: float = 0.0
 var run_silver: int = 0
 var is_running: bool = false
 
+# 主菜单选择传递到 run
+var selected_character: String = "megachad"
+var selected_tier: int = 1
+
 
 func _ready() -> void:
 	print("[GameManager] ready")
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	start_run()
 
 
 func start_run() -> void:
@@ -42,6 +45,4 @@ func _process(delta: float) -> void:
 		run_seconds += delta
 	if Input.is_action_just_pressed("restart"):
 		get_tree().paused = false
-		get_tree().reload_current_scene()
-		run_seconds = 0.0
-		is_running = true
+		get_tree().change_scene_to_file("res://scenes/ui/main_menu.tscn")

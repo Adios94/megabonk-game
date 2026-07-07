@@ -108,3 +108,47 @@ layout_mode = 2
 text = "YOU DIED
 按 R 重开"
 horizontal_alignment = 1
+
+[node name="BossHp" type="Control" parent="."]
+anchors_preset = 12
+anchor_left = 0.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 80.0
+offset_top = -100.0
+offset_right = -80.0
+offset_bottom = -60.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="PhaseLabel" type="Label" parent="BossHp"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = -22.0
+offset_right = 200.0
+offset_bottom = -2.0
+theme_override_font_sizes/font_size = 16
+text = "BOSS · P1"
+
+[node name="Bar" type="ProgressBar" parent="BossHp"]
+layout_mode = 0
+offset_right = 1120.0
+offset_bottom = 24.0
+max_value = 30000.0
+value = 30000.0
+show_percentage = false
+
+[node name="FinalSwarmLabel" type="Label" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -320.0
+offset_top = 140.0
+offset_right = 320.0
+offset_bottom = 220.0
+grow_horizontal = 2
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 56
+theme_override_colors/font_color = Color(1, 0.35, 0.35, 1)
+text = "FINAL SWARM"

@@ -47,4 +47,4 @@ text = "存活: 00:00"
 [node name="RestartBtn" type="Button" parent="Panel/VBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-text = "重来"
+text = "回主菜单"

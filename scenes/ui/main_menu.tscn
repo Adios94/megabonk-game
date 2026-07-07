@@ -1,0 +1,216 @@
+[gd_scene load_steps=6 format=3 uid="uid://cmainmenu0001"]
+
+[ext_resource type="Script" path="res://scripts/ui/main_menu.gd" id="1_menu"]
+[ext_resource type="Script" path="res://scripts/ui/shop_panel.gd" id="2_shop"]
+[ext_resource type="Script" path="res://scripts/ui/quest_panel.gd" id="3_quest"]
+
+[sub_resource type="StyleBoxFlat" id="Bg_1"]
+bg_color = Color(0.05, 0.06, 0.12, 1)
+
+[sub_resource type="StyleBoxFlat" id="Panel_1"]
+bg_color = Color(0.08, 0.1, 0.18, 0.98)
+
+[node name="MainMenu" type="Control"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_menu")
+
+[node name="Bg" type="Panel" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("Bg_1")
+
+[node name="Title" type="Label" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -300.0
+offset_top = 80.0
+offset_right = 300.0
+offset_bottom = 160.0
+grow_horizontal = 2
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 64
+text = "梆了个梆 · Godot"
+
+[node name="VBox" type="VBoxContainer" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -220.0
+offset_top = -160.0
+offset_right = 220.0
+offset_bottom = 200.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 14
+
+[node name="SilverLabel" type="Label" parent="VBox"]
+layout_mode = 2
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 22
+text = "银币: 0"
+
+[node name="CharBox" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="CharLabel" type="Label" parent="VBox/CharBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(100, 40)
+vertical_alignment = 1
+text = "角色"
+
+[node name="CharOption" type="OptionButton" parent="VBox/CharBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(320, 40)
+
+[node name="TierBox" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TierLabel" type="Label" parent="VBox/TierBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(100, 40)
+vertical_alignment = 1
+text = "难度"
+
+[node name="TierOption" type="OptionButton" parent="VBox/TierBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(320, 40)
+
+[node name="PlayBtn" type="Button" parent="VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 56)
+theme_override_font_sizes/font_size = 26
+text = "开始游戏"
+
+[node name="ShopBtn" type="Button" parent="VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 44)
+theme_override_font_sizes/font_size = 20
+text = "商店"
+
+[node name="QuestBtn" type="Button" parent="VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 44)
+theme_override_font_sizes/font_size = 20
+text = "任务"
+
+[node name="QuitBtn" type="Button" parent="VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 44)
+theme_override_font_sizes/font_size = 20
+text = "退出"
+
+[node name="ShopPanel" type="Control" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("2_shop")
+
+[node name="Panel" type="PanelContainer" parent="ShopPanel"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -420.0
+offset_top = -280.0
+offset_right = 420.0
+offset_bottom = 280.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("Panel_1")
+
+[node name="Header" type="HBoxContainer" parent="ShopPanel/Panel"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="ShopPanel/Panel/Header"]
+layout_mode = 2
+custom_minimum_size = Vector2(400, 40)
+theme_override_font_sizes/font_size = 24
+text = "商店"
+
+[node name="SilverLabel" type="Label" parent="ShopPanel/Panel/Header"]
+layout_mode = 2
+custom_minimum_size = Vector2(280, 40)
+vertical_alignment = 1
+text = "银币: 0"
+
+[node name="CloseBtn" type="Button" parent="ShopPanel/Panel/Header"]
+layout_mode = 2
+custom_minimum_size = Vector2(80, 40)
+text = "关闭"
+
+[node name="Margin" type="MarginContainer" parent="ShopPanel/Panel"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/margin_top = 8
+
+[node name="Scroll" type="ScrollContainer" parent="ShopPanel/Panel/Margin"]
+layout_mode = 2
+
+[node name="List" type="VBoxContainer" parent="ShopPanel/Panel/Margin/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="QuestPanel" type="Control" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("3_quest")
+
+[node name="Panel" type="PanelContainer" parent="QuestPanel"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -520.0
+offset_top = -320.0
+offset_right = 520.0
+offset_bottom = 320.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("Panel_1")
+
+[node name="Header" type="HBoxContainer" parent="QuestPanel/Panel"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="QuestPanel/Panel/Header"]
+layout_mode = 2
+custom_minimum_size = Vector2(600, 40)
+theme_override_font_sizes/font_size = 24
+text = "任务"
+
+[node name="CloseBtn" type="Button" parent="QuestPanel/Panel/Header"]
+layout_mode = 2
+custom_minimum_size = Vector2(80, 40)
+text = "关闭"
+
+[node name="Margin" type="MarginContainer" parent="QuestPanel/Panel"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/margin_top = 8
+
+[node name="Scroll" type="ScrollContainer" parent="QuestPanel/Panel/Margin"]
+layout_mode = 2
+
+[node name="List" type="VBoxContainer" parent="QuestPanel/Panel/Margin/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4

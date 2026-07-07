@@ -1,0 +1,29 @@
+[gd_scene load_steps=5 format=3 uid="uid://cboss0001"]
+
+[ext_resource type="Script" path="res://scripts/entities/boss.gd" id="1_boss"]
+
+[sub_resource type="CapsuleShape3D" id="Cap_col"]
+radius = 0.9
+height = 3.2
+
+[sub_resource type="CapsuleMesh" id="Cap_mesh"]
+radius = 0.9
+height = 3.2
+
+[sub_resource type="StandardMaterial3D" id="Mat_body"]
+albedo_color = Color(0.15, 0.1, 0.2, 1)
+emission_enabled = true
+emission = Color(0.6, 0.1, 0.2, 1)
+emission_energy_multiplier = 0.4
+
+[node name="Boss" type="CharacterBody3D"]
+script = ExtResource("1_boss")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, 0)
+shape = SubResource("Cap_col")
+
+[node name="Body" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, 0)
+mesh = SubResource("Cap_mesh")
+material_override = SubResource("Mat_body")

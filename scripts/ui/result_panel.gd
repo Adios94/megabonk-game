@@ -48,4 +48,5 @@ func _show_result(title: String, _extra: String) -> void:
 func _on_restart_pressed() -> void:
 	get_tree().paused = false
 	_panel.visible = false
-	get_tree().reload_current_scene()
+	Quests.check_completions()
+	get_tree().change_scene_to_file("res://scenes/ui/main_menu.tscn")

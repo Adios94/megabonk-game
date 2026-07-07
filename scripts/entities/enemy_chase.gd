@@ -97,6 +97,9 @@ func _physics_process(delta: float) -> void:
 	var effective_speed: float = move_speed
 	if GameManager.run_seconds >= GameConfig.FINAL_SWARM_START_TIME:
 		effective_speed *= GameConfig.FINAL_SWARM_SPEED_MULTIPLIER
+	# Overtime 系数（540s+ 每 10s 递增）
+	var ot: Dictionary = _get_overtime_mults()
+	effective_speed *= float(ot["speed"])
 	# 保存原速度，恢复用
 	var orig_speed: float = move_speed
 	move_speed = effective_speed
@@ -244,13 +247,13 @@ func _die() -> void:
 	EventBus.enemy_died.emit(self, null)
 	_spawn_xp_pickup()
 	_maybe_drop_health()
+	_maybe_drop_consumable()
 	# 播 death 动画 → 0.8s 后 queue_free
 	var rig: Node = get_node_or_null("Model")
 	if rig and rig.has_method("play_death"):
 		rig.play_death()
 		set_process(false)
 		set_physics_process(false)
-		# 从 enemies 组移除，让 spawner 不再计入
 		remove_from_group("enemies")
 		var t: Timer = Timer.new()
 		t.wait_time = 0.8
@@ -260,6 +263,17 @@ func _die() -> void:
 		t.start()
 	else:
 		queue_free()
+
+
+func _maybe_drop_consumable() -> void:
+	var is_elite: bool = elite_multiplier > 1.0
+	var drop_mult: float = 1.0
+	var cid: String = Consumables.roll_for_enemy(is_elite, false, drop_mult, _rng)
+	if cid.is_empty():
+		return
+	var player: Node = get_tree().get_first_node_in_group("player")
+	if player and player.has_method("apply_consumable"):
+		player.apply_consumable(cid)
 
 
 func _spawn_xp_pickup() -> void:
@@ -290,3 +304,9 @@ func _drop_health(amount: float) -> void:
 	p.global_position = global_position + Vector3(0.0, 0.5, 0.0)
 	if p.has_method("setup"):
 		p.setup(amount)
+
+
+func _get_overtime_mults() -> Dictionary:
+	# 走 boss_controller 的 static function
+	var script = preload("res://scripts/systems/boss_controller.gd")
+	return script.get_overtime_multipliers(GameManager.run_seconds)

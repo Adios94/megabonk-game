@@ -1,4 +1,4 @@
-[gd_scene load_steps=18 format=3 uid="uid://c4mainscene0001"]
+[gd_scene load_steps=19 format=3 uid="uid://c4mainscene0001"]
 
 [ext_resource type="PackedScene" uid="uid://cplayerscene0001" path="res://scenes/entities/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://scripts/entities/follow_camera.gd" id="2_cam"]
@@ -9,6 +9,7 @@
 [ext_resource type="PackedScene" uid="uid://bvyl6yp4t22jc" path="res://scenes/ui/result_panel.tscn" id="7_rp"]
 [ext_resource type="Script" path="res://scripts/systems/boss_controller.gd" id="8_boss"]
 [ext_resource type="PackedScene" uid="uid://cboss0001" path="res://scenes/entities/boss.tscn" id="15_boss_scene"]
+[ext_resource type="PackedScene" uid="uid://caltar0001" path="res://scenes/entities/altar.tscn" id="17_altar_scene"]
 [ext_resource type="Script" path="res://scripts/systems/chest_spawner.gd" id="9_chest_sp"]
 [ext_resource type="PackedScene" uid="uid://cchest0001" path="res://scenes/entities/chest.tscn" id="10_chest"]
 [ext_resource type="Script" path="res://scripts/systems/shrine_system.gd" id="11_shrine_sys"]
@@ -84,6 +85,7 @@ reward_panel_path = NodePath("../ShrineRewardPanel")
 [node name="BossController" type="Node" parent="."]
 script = ExtResource("8_boss")
 boss_scene = ExtResource("15_boss_scene")
+altar_scene = ExtResource("17_altar_scene")
 
 [node name="HUD" parent="." instance=ExtResource("5_hud")]
 

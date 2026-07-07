@@ -32,10 +32,18 @@ static func find_enemies_in_radius(center: Vector3, radius: float, tree: SceneTr
 static func deal_damage(target: Node, base_damage: float, player: Node, rng: RandomNumberGenerator, source_pos: Vector3 = Vector3.ZERO) -> void:
 	if target == null or not is_instance_valid(target):
 		return
-	var is_crit: bool = rng.randf() < float(player.crit_chance)
+	# Trait bonus（角色 passive）
+	var trait_r: Dictionary = Traits.compute(player)
+	var crit_ch: float = float(player.crit_chance) + float(trait_r.get("crit_chance_bonus", 0.0))
+	var crit_dmg: float = float(player.crit_damage) + float(trait_r.get("crit_damage_bonus", 0.0))
+	var is_crit: bool = rng.randf() < crit_ch
 	var final: float = base_damage * float(player.damage_mult)
 	if is_crit:
-		final *= float(player.crit_damage)
+		final *= crit_dmg
 	final = round(final)
 	if target.has_method("take_damage"):
 		target.take_damage(final, source_pos)
+	# Lifesteal（Shrine + Relic）
+	var lifesteal: float = float(player.shrine_lifesteal) if player.get("shrine_lifesteal") != null else 0.0
+	if lifesteal > 0.0 and player.has_method("heal"):
+		player.heal(final * lifesteal)

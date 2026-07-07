@@ -57,6 +57,21 @@ var weapons: Array = []
 var tomes: Array = []
 var max_weapon_slots: int = 5   # 局内上限，随等级解锁到 5；局外任务后 6
 
+# Bond 状态：bond_id → tier（0-3）
+var bonds: Dictionary = {}
+# Relics：relic_id → stacks
+var relics: Dictionary = {}
+
+# Consumable timed buffs: id → 剩余秒数
+var _timed_buffs: Dictionary = {}
+# 每种 timed buff 的原始应用记录（用于到期回滚）
+var _buff_hot_soup_applied: bool = false
+var _buff_mint_candy_applied: bool = false
+var _buff_energy_bar_applied: bool = false
+var _buff_iron_meal_applied: bool = false
+var _buff_rage_applied: bool = false
+var _buff_magnet_applied: bool = false
+
 var _is_dead := false
 var _slide_timer := 0.0
 var _slide_cooldown := 0.0
@@ -176,6 +191,14 @@ func _update_timers(delta: float) -> void:
 		if _combo_timer <= 0.0:
 			combo_count = 0
 
+	# HP regen (来自 Shrine hp_regen + Relic regen_core)
+	if shrine_hp_regen > 0.0 and hp > 0.0 and hp < max_hp:
+		hp = minf(max_hp, hp + shrine_hp_regen * delta)
+		hp_changed.emit(hp, max_hp)
+
+	# Consumable timed buffs
+	_tick_timed_buffs(delta)
+
 
 func take_damage(amount: float) -> void:
 	if _is_dead or _invincible_timer > 0.0:
@@ -218,6 +241,10 @@ func gain_xp(amount: int) -> void:
 		return
 	# 连击倍率：击杀累加，2 秒内无杀归零
 	var bonus: float = 1.0 + minf(combo_count * 0.05, 1.0)
+	# Trait: megachad xp_bonus
+	var traits_result: Dictionary = Traits.compute(self)
+	if traits_result.has("xp_bonus"):
+		bonus *= 1.0 + float(traits_result["xp_bonus"])
 	var final_xp: int = int(round(amount * bonus))
 	xp += final_xp
 	while xp >= xp_to_next and level < GameConfig.MAX_LEVEL:
@@ -247,6 +274,7 @@ func add_weapon(weapon_type: String, start_level: int = 1) -> void:
 	var mgr: Node = get_node_or_null("WeaponManager")
 	if mgr:
 		mgr.spawn_weapon(weapon_type, start_level)
+	_recompute_bonds()
 
 
 func upgrade_weapon(weapon_type: String) -> void:
@@ -254,6 +282,7 @@ func upgrade_weapon(weapon_type: String) -> void:
 		var wd: Dictionary = w as Dictionary
 		if wd["type"] == weapon_type and int(wd["level"]) < GameConfig.WEAPON_MAX_LEVEL:
 			wd["level"] = int(wd["level"]) + 1
+			_recompute_bonds()
 			return
 
 
@@ -364,3 +393,179 @@ func apply_shrine_reward(reward: Dictionary) -> void:
 			shrine_hp_regen += v
 		"projectile_count":
 			shrine_projectile_bonus += int(v)
+
+
+# --- Bond 羁绊 ---
+
+## 每次装 / 升武器后重算所有 bond 档位，delta 应用 T1 数值。
+func _recompute_bonds() -> void:
+	var new_tiers: Dictionary = Bonds.compute_all_tiers(weapons)
+	for bond_id in Bonds.ALL_BOND_IDS:
+		var old_tier: int = int(bonds.get(bond_id, 0))
+		var new_tier: int = int(new_tiers.get(bond_id, 0))
+		if new_tier == old_tier:
+			continue
+		# 应用 T1 差量（简化：只有 0↔1 切换会加/减 T1 数值；T2/T3 只记 tier）
+		if old_tier == 0 and new_tier >= 1:
+			_apply_bond_t1(bond_id, 1.0)
+		elif old_tier >= 1 and new_tier == 0:
+			_apply_bond_t1(bond_id, -1.0)
+		bonds[bond_id] = new_tier
+
+
+func _apply_bond_t1(bond_id: String, sign: float) -> void:
+	var def: Dictionary = Bonds.BONDS.get(bond_id, {}) as Dictionary
+	if def.is_empty() or not def.has("t1"):
+		return
+	var t1: Dictionary = def["t1"] as Dictionary
+	if t1.has("damage_inc"):
+		damage_mult *= 1.0 + float(t1["damage_inc"]) * sign
+	if t1.has("damage_inc_close"):
+		damage_mult *= 1.0 + float(t1["damage_inc_close"]) * sign * 0.5   # 简化：近战加成折半
+	if t1.has("damage_inc_hp_above_50"):
+		damage_mult *= 1.0 + float(t1["damage_inc_hp_above_50"]) * sign * 0.7
+	if t1.has("damage_mult"):
+		damage_mult += float(t1["damage_mult"]) * sign
+	if t1.has("armor"):
+		armor += float(t1["armor"]) * sign
+	if t1.has("attack_speed"):
+		attack_speed_mult *= 1.0 + float(t1["attack_speed"]) * sign
+	if t1.has("crit_chance"):
+		crit_chance += float(t1["crit_chance"]) * sign
+	if t1.has("crit_damage"):
+		crit_damage += float(t1["crit_damage"]) * sign
+
+
+func get_bond_tier(bond_id: String) -> int:
+	return int(bonds.get(bond_id, 0))
+
+
+# --- Relic 遗物 ---
+
+## 每层效果（增量应用；每次拾取都会加）
+func apply_relic(relic_id: String) -> void:
+	var s: int = int(relics.get(relic_id, 0))
+	relics[relic_id] = s + 1
+	match relic_id:
+		"keen_lens":         # 暴击 +3% / stack
+			crit_chance += 0.03
+		"small_shield_charm": # 护甲 +2 / stack
+			armor += 2.0
+		"pact_coin":          # 局内银币 +10 / stack（触发时也影响）
+			pass
+		"blood_fang":         # 生命偷取 +5% / stack
+			shrine_lifesteal = minf(1.0, shrine_lifesteal + 0.05)
+		"elite_writ":         # 对精英 +10% / stack
+			shrine_elite_damage_mult *= 1.10
+		"regen_core":         # HP 回复 +2/s / stack
+			shrine_hp_regen += 2.0
+		"arsenal_badge":      # damage +8% / stack
+			damage_mult *= 1.08
+		"magazine_expander":  # projectile +1 / stack
+			shrine_projectile_bonus += 1
+		"hourglass":          # attack_speed +12% / stack
+			attack_speed_mult *= 1.12
+		"iron_heart":         # max_hp +20 + 完全治愈 / stack
+			max_hp += 20.0
+			hp = max_hp
+	hp_changed.emit(hp, max_hp)
+
+
+# --- Consumables ---
+
+func apply_consumable(cid: String) -> void:
+	var def: Dictionary = Consumables.DEFS.get(cid, {}) as Dictionary
+	if def.is_empty():
+		return
+	Audio.play_sfx("pickup_eat", 0.1)
+	match cid:
+		"wild_berry":
+			heal(30.0)
+		"hard_bread":
+			_invincible_timer = 5.0
+		"prophecy_book":
+			# TODO：下次升级 4 选 1（M9 再做）
+			pass
+		"craftsman_hammer":
+			# 强化一把随机武器（等级 +1）
+			if not weapons.is_empty():
+				var w: Dictionary = weapons[randi() % weapons.size()] as Dictionary
+				if int(w["level"]) < GameConfig.WEAPON_MAX_LEVEL:
+					w["level"] = int(w["level"]) + 1
+					_recompute_bonds()
+		"hot_soup":
+			if not _buff_hot_soup_applied:
+				damage_mult *= 1.25
+				_buff_hot_soup_applied = true
+			_timed_buffs[cid] = 15.0
+		"mint_candy":
+			if not _buff_mint_candy_applied:
+				move_speed *= 1.25
+				_buff_mint_candy_applied = true
+			_timed_buffs[cid] = 20.0
+		"energy_bar":
+			if not _buff_energy_bar_applied:
+				attack_speed_mult *= 1.4
+				_buff_energy_bar_applied = true
+			_timed_buffs[cid] = 25.0
+		"iron_meal":
+			if not _buff_iron_meal_applied:
+				armor += 5.0
+				_buff_iron_meal_applied = true
+			_timed_buffs[cid] = 30.0
+		"rage_potion":
+			if not _buff_rage_applied:
+				damage_mult *= 2.0
+				max_hp *= 0.5
+				hp = minf(hp, max_hp)
+				_buff_rage_applied = true
+				hp_changed.emit(hp, max_hp)
+			_timed_buffs[cid] = 20.0
+		"magnet":
+			if not _buff_magnet_applied:
+				pickup_radius *= 6.0
+				_buff_magnet_applied = true
+			_timed_buffs[cid] = 25.0
+
+
+func _tick_timed_buffs(delta: float) -> void:
+	var expired: Array = []
+	for id in _timed_buffs:
+		var t: float = float(_timed_buffs[id]) - delta
+		if t <= 0.0:
+			expired.append(id)
+		else:
+			_timed_buffs[id] = t
+	for id in expired:
+		_timed_buffs.erase(id)
+		_expire_buff(id)
+
+
+func _expire_buff(id: String) -> void:
+	match id:
+		"hot_soup":
+			if _buff_hot_soup_applied:
+				damage_mult /= 1.25
+				_buff_hot_soup_applied = false
+		"mint_candy":
+			if _buff_mint_candy_applied:
+				move_speed /= 1.25
+				_buff_mint_candy_applied = false
+		"energy_bar":
+			if _buff_energy_bar_applied:
+				attack_speed_mult /= 1.4
+				_buff_energy_bar_applied = false
+		"iron_meal":
+			if _buff_iron_meal_applied:
+				armor -= 5.0
+				_buff_iron_meal_applied = false
+		"rage_potion":
+			if _buff_rage_applied:
+				damage_mult /= 2.0
+				max_hp *= 2.0
+				hp_changed.emit(hp, max_hp)
+				_buff_rage_applied = false
+		"magnet":
+			if _buff_magnet_applied:
+				pickup_radius /= 6.0
+				_buff_magnet_applied = false

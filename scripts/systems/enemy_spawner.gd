@@ -89,5 +89,11 @@ func _spawn_one(enemy_type: String, pos: Vector3, elite_mult: float) -> void:
 	enemy.enemy_type = enemy_type
 	get_tree().current_scene.add_child(enemy)
 	enemy.global_position = pos
+	# Overtime 系数只对 hp/dmg 生效（speed 每帧在 enemy 里应用）
+	var bc_script = preload("res://scripts/systems/boss_controller.gd")
+	var ot: Dictionary = bc_script.get_overtime_multipliers(GameManager.run_seconds)
 	if enemy.has_method("configure_from_type"):
 		enemy.configure_from_type(enemy_type, elite_mult)
+		enemy.max_hp *= float(ot["hp"])
+		enemy.damage *= float(ot["damage"])
+		enemy.hp = enemy.max_hp

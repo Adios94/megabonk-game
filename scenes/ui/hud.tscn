@@ -1,0 +1,61 @@
+[gd_scene load_steps=3 format=3 uid="uid://chudscene0001"]
+
+[ext_resource type="Script" path="res://scripts/ui/hud.gd" id="1_hud"]
+
+[sub_resource type="StyleBoxFlat" id="Death_bg"]
+bg_color = Color(0, 0, 0, 0.6)
+
+[node name="HUD" type="CanvasLayer"]
+script = ExtResource("1_hud")
+
+[node name="HpBar" type="ProgressBar" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -180.0
+offset_top = 24.0
+offset_right = 180.0
+offset_bottom = 56.0
+grow_horizontal = 2
+max_value = 100.0
+value = 100.0
+show_percentage = false
+
+[node name="Label" type="Label" parent="HpBar"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "100 / 100"
+
+[node name="TimeLabel" type="Label" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -60.0
+offset_top = 64.0
+offset_right = 60.0
+offset_bottom = 96.0
+grow_horizontal = 2
+horizontal_alignment = 1
+text = "00:00"
+
+[node name="DeathPanel" type="PanelContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("Death_bg")
+
+[node name="Center" type="CenterContainer" parent="DeathPanel"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="DeathPanel/Center"]
+layout_mode = 2
+text = "YOU DIED
+按 R 重开"
+horizontal_alignment = 1

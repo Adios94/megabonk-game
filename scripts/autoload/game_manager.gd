@@ -10,6 +10,7 @@ var is_running: bool = false
 
 func _ready() -> void:
 	print("[GameManager] ready")
+	start_run()
 
 
 func start_run() -> void:
@@ -26,3 +27,7 @@ func end_run(result: Dictionary = {}) -> void:
 func _process(delta: float) -> void:
 	if is_running:
 		run_seconds += delta
+	if Input.is_action_just_pressed("restart"):
+		get_tree().reload_current_scene()
+		run_seconds = 0.0
+		is_running = true

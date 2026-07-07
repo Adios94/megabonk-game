@@ -1,0 +1,24 @@
+[gd_scene load_steps=5 format=3 uid="uid://cenemychase0001"]
+
+[ext_resource type="Script" path="res://scripts/entities/enemy_chase.gd" id="1_chase"]
+
+[sub_resource type="CapsuleShape3D" id="Cap_col"]
+radius = 0.4
+height = 1.6
+
+[sub_resource type="CapsuleMesh" id="Cap_mesh"]
+radius = 0.4
+height = 1.6
+
+[sub_resource type="StandardMaterial3D" id="Mat_body"]
+albedo_color = Color(0.35, 0.75, 0.35, 1)
+
+[node name="EnemyChase" type="CharacterBody3D"]
+script = ExtResource("1_chase")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+shape = SubResource("Cap_col")
+
+[node name="Body" type="MeshInstance3D" parent="."]
+mesh = SubResource("Cap_mesh")
+surface_material_override/0 = SubResource("Mat_body")

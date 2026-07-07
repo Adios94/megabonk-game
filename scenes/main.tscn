@@ -1,7 +1,10 @@
-[gd_scene load_steps=9 format=3 uid="uid://c4mainscene0001"]
+[gd_scene load_steps=11 format=3 uid="uid://c4mainscene0001"]
 
 [ext_resource type="PackedScene" uid="uid://cplayerscene0001" path="res://scenes/entities/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://scripts/entities/follow_camera.gd" id="2_cam"]
+[ext_resource type="Script" path="res://scripts/systems/enemy_spawner.gd" id="3_spawner"]
+[ext_resource type="PackedScene" uid="uid://cenemychase0001" path="res://scenes/entities/enemy_chase.tscn" id="4_enemy"]
+[ext_resource type="PackedScene" uid="uid://chudscene0001" path="res://scenes/ui/hud.tscn" id="5_hud"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_1"]
 size = Vector2(80, 80)
@@ -51,3 +54,9 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
 transform = Transform3D(1, 0, 0, 0, 0.707107, 0.707107, 0, -0.707107, 0.707107, 0, 12, 12)
 fov = 55.0
 script = ExtResource("2_cam")
+
+[node name="EnemySpawner" type="Node" parent="."]
+script = ExtResource("3_spawner")
+enemy_scene = ExtResource("4_enemy")
+
+[node name="HUD" parent="." instance=ExtResource("5_hud")]

@@ -1,6 +1,9 @@
 extends CharacterBody3D
 ## 玩家控制器。移动 / 跳 / 滑铲 / 兔子跳，数值沿用旧版 config.ts。
 
+signal hp_changed(hp: float, max_hp: float)
+signal died
+
 # 移动常量（对应旧版 config.ts:21-27，megachad 起手数值）
 const BASE_SPEED := 4.0
 const JUMP_FORCE := 6.0
@@ -11,13 +14,30 @@ const SLIDE_COOLDOWN := 0.3
 const BUNNY_HOP_WINDOW := 0.15
 const BUNNY_HOP_BONUS := 1.2
 
+# 基础生命（megachad 起手，旧版 CHARACTER_CONFIGS）
+const MAX_HP := 100.0
+
+var hp := MAX_HP
+var _is_dead := false
+
 var _slide_timer := 0.0
 var _slide_cooldown := 0.0
 var _land_timer := INF   # 距上次落地经过的秒数；用来判定 bunny hop 窗口
 var _was_on_floor := true
 
 
+func _ready() -> void:
+	# defer 一帧再发，等 HUD 有机会连信号
+	hp_changed.emit.call_deferred(hp, MAX_HP)
+
+
+func get_max_hp() -> float:
+	return MAX_HP
+
+
 func _physics_process(delta: float) -> void:
+	if _is_dead:
+		return
 	_update_timers(delta)
 
 	# 重力（自定义，不用项目默认 9.8）
@@ -70,3 +90,19 @@ func _update_timers(delta: float) -> void:
 		_land_timer += delta
 	else:
 		_land_timer = INF   # 空中就断掉窗口
+
+
+func take_damage(amount: float) -> void:
+	if _is_dead:
+		return
+	hp = max(0.0, hp - amount)
+	hp_changed.emit(hp, MAX_HP)
+	if hp <= 0.0:
+		_die()
+
+
+func _die() -> void:
+	_is_dead = true
+	velocity = Vector3.ZERO
+	died.emit()
+	GameManager.end_run({"cause": "death"})

@@ -1,84 +1,53 @@
-# MegaBonk · Three.js 3D Roguelike Survivor
+# MegaBonk · Godot 4 版本
 
-> **AI / 协作者必读：开始任何代码修改之前，先阅读 [`docs/contract.md`](./docs/contract.md)。**
-> 项目对一组结构性文件设有硬契约，违反会被 agent harness 直接阻断（Claude Code / Cursor preToolUse hook）。
+> ⚠️ 分支 `godot`：从 Three.js 完整迁移到 Godot 4.x + GDScript。旧代码在 `main`/`stable`。
 
 ## 项目定位
 
-- 引擎：Three.js 0.170 + TypeScript 5.7 + Vite 7.3
-- 包管理：pnpm workspace（5 个内部包 `@minigame/{core,client,i18n,platform,render-adapter}`）
+- 引擎：Godot 4.3+ Standard（GDScript，不用 .NET/C#）
+- 目标平台：PC (Windows/Mac/Linux)
 - 游戏类型：3D 类幸存者 / 类 Vampire Survivors
-- 模板来源：KUBEE `threejs-3d` 模板
+- 主场景：`scenes/main.tscn`
 
-## 框架契约（必读）
+## 目录约定
 
-完整规则：[`docs/contract.md`](./docs/contract.md) 或文档站 `docs/index.html` 的"⚠️ 框架契约"页。
-
-简版速查：
-
-| 类别 | 边界 |
+| 目录 | 用途 |
 |---|---|
-| 🔒 锁定文件 | `index.html` / `vite.config.ts` / `tsconfig.json` / `pnpm-workspace.yaml` / `package.json`（根） / `template.yml` / `kubee.json` / `packages/*/package.json` / `packages/*/source/**` / `game/*/package.json` / `game/client/main.ts` —— **harness 硬阻断 Edit/Write/MultiEdit** |
-| 📐 锁定签名 | `@minigame/core` 公开导出（`GameInstance` / `GameState` / `GameConfig` / `GameResult` / `InputState` / `TICK_INTERVAL_MS` / `DEFAULT_GAME_CONFIG`）+ `GameInstance` 类的 5 个方法签名 |
-| ♻️ 自由区 | `game/core/source/` 内部除 `index.ts` 外的一切；`game/client/source/index.ts` 渲染逻辑；新增 npm 依赖；新增子目录 |
+| `scenes/` | `.tscn` 场景 |
+| `scenes/entities/` | 玩家、敌人、投射物、拾取物场景 |
+| `scenes/ui/` | HUD、菜单、升级卡 |
+| `scripts/autoload/` | 单例（`project.godot` 里注册） |
+| `scripts/entities/` | 场景节点的行为脚本 |
+| `scripts/systems/` | 独立子系统（spawner / economy / i18n adapter） |
+| `scripts/data/` | `.gd` 或 `.tres` 数据表 |
+| `assets/` | 已 import 到 Godot 的运行时素材 |
+| `public/` | 旧版 Three.js 时代的**原始**素材，参考用，需要时再 import 到 `assets/` |
+| `i18n/` | `en.json` / `zh.json`，两文件必须同步键 |
+| `docs/` | 旧版设计文档，作为需求规格 |
 
-## 改动前的检查清单
+## 迁移原则
 
-1. 我要改的文件在锁定列表里吗？→ 在 → **停手**，开 Issue 走流程
-2. 我要改 `@minigame/core` 公开导出吗？→ 是 → 改完跑 `bash scripts/harness/check-contract.sh`
-3. 我要改 `i18n/*.json` 吗？→ 是 → en.json + zh.json 必须同步
-4. 我要新增依赖吗？→ 可以，但用 `pnpm add` 加在对应 workspace 包
+- **不复用**：TS/JS 逻辑、Vite/Vitest/pnpm 生态、Three.js material/shader 代码 —— 全部重写为 GDScript。
+- **可复用**：GLTF 模型、纹理、音频、字体、UI 图、i18n JSON、`docs/` 里的数值与设计。
+- **旧契约不沿用**：`docs/contract.md` 里的锁定文件规则针对 TS monorepo，Godot 版本没有对应结构。等 gameplay 稳定再定新契约。
 
-## 校验工具
+## 常见改动前的检查
+
+1. 改 `i18n/*.json` → **en 和 zh 必须同步键**（这条从旧版沿用）。
+2. 加素材 → 放 `assets/<类别>/`，让 Godot 自动生成 `.import`。原始素材要留档就往 `public/` 放。
+3. 加单例 → 写在 `scripts/autoload/`，然后在 `project.godot` 的 `[autoload]` 段注册。
+4. 加数据表 → 优先用 `Resource` 子类（`.tres`）而不是散落 JSON。
+
+## 运行
 
 ```bash
-# 启动开发服务器
-pnpm dev
-
-# 类型检查（提交前必跑）
-npx tsc --noEmit
-
-# 生产构建（提交前必跑）
-pnpm build
-
-# 框架契约校验
-bash scripts/harness/check-contract.sh
+godot -e project.godot        # 打开编辑器
+godot --headless --check-only # 校验脚本无语法错
 ```
 
-或在 Claude Code 里调用 skill：`/check-contract`；在 Cursor 里调用 skill：`check-contract`
+编辑器里 F5 运行主场景。
 
-## 当前重构状态
+## 参考旧版
 
-项目正在按"方案 A"重构（数据驱动 + ECS 组件化）。目录架构会演进为：
-
-```
-game/core/source/
-├── index.ts          ← 公开 API（不变）
-├── GameInstance.ts   ← 薄 facade
-├── world.ts          ← miniplex world
-├── data/             ← 数据表（武器 / 敌人 / 升级 / 波次）
-├── components/       ← ECS 数据组件
-├── systems/          ← 每帧 tick 的纯函数
-├── behaviors/        ← 行为 ID 注册表
-├── factories/        ← spawnEnemy / spawnWeapon
-├── stats/            ← 四层 stat 管线（base/added/increased/more + tag）
-└── ai/               ← Brain 组件 + boss phase script
-```
-
-详见 `docs/index.html` 的"架构"页。
-
-## 相关文件索引
-
-| 路径 | 作用 |
-|---|---|
-| `docs/contract.md` | 框架契约（markdown 源） |
-| `docs/index.html` | 文档站，含契约可视化版 |
-| `.claude/settings.json` | 项目级 harness 配置（hook 注册） |
-| `scripts/harness/` | 共享 harness 脚本（guard / trunk-sync / check-contract） |
-| `.claude/hooks/guard-contract.sh` | Claude Code PreToolUse 守卫（wrapper） |
-| `.claude/skills/check-contract/` | Claude Code 契约校验 skill |
-| `.cursor/hooks.json` | Cursor hook 注册 |
-| `.cursor/rules/` | Cursor 项目规则 |
-| `.cursor/skills/check-contract/` | Cursor 契约校验 skill |
-| `docs/kubee-template.md` | 模板原始说明（保留作为参考） |
-| `CONTRIBUTING.md` | 协作流程 |
+设计规格：`docs/design.md`、`docs/index.html`（原契约页现已不适用）。
+数值/内容：`docs/` 与旧版分支 `main`。

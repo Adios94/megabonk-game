@@ -1,8 +1,0 @@
-id: threejs-3d
-
-post_download:
-  # Strip all i18n infrastructure after download.
-  # Set i18n_mode to "dev" to skip strip (keep full i18n for local development).
-  strip_i18n: true
-  # i18n_locale: zh
-  # i18n_mode: dev

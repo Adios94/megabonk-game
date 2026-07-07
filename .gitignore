@@ -1,11 +1,25 @@
-node_modules
-dist
 .DS_Store
 *.DS_Store
-.kubee
-level-editor/loulnet-assets/
+
+# Godot 4+ specific
+.godot/
+.import/
+export.cfg
+export_presets.cfg
+
+# Exported builds
+build/
+exports/
+
+# Blender/DCC intermediates
+*.blend1
+*.blend2
+
+# IDE / harness local overrides
 .claude/settings.local.json
 .cursor/settings.local.json
 
-# Blender 中间产物（由 scripts/blender/*.py 生成，不进版本库）
-scripts/blender/out/
+# Legacy web tooling (should no longer appear, but guard against accidental checkins)
+node_modules/
+dist/
+.kubee/

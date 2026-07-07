@@ -56,6 +56,9 @@ func _ready() -> void:
 	if enemy_type != "":
 		configure_from_type(enemy_type)
 	add_to_group("enemies")
+	var rig: Node = get_node_or_null("Model")
+	if rig and rig.has_method("set_owner_body"):
+		rig.set_owner_body(self)
 
 
 func configure_from_type(t: String, elite_mult: float = 1.0) -> void:
@@ -226,6 +229,9 @@ func _try_attack() -> void:
 func take_damage(amount: float, source_pos: Vector3 = Vector3.ZERO) -> void:
 	hp -= amount
 	Audio.play_sfx("enemy_hit", 0.2)
+	var rig: Node = get_node_or_null("Model")
+	if rig and rig.has_method("play_hit"):
+		rig.play_hit()
 	if source_pos != Vector3.ZERO:
 		var push: Vector3 = (global_position - source_pos)
 		push.y = 0.0
@@ -238,7 +244,22 @@ func _die() -> void:
 	EventBus.enemy_died.emit(self, null)
 	_spawn_xp_pickup()
 	_maybe_drop_health()
-	queue_free()
+	# 播 death 动画 → 0.8s 后 queue_free
+	var rig: Node = get_node_or_null("Model")
+	if rig and rig.has_method("play_death"):
+		rig.play_death()
+		set_process(false)
+		set_physics_process(false)
+		# 从 enemies 组移除，让 spawner 不再计入
+		remove_from_group("enemies")
+		var t: Timer = Timer.new()
+		t.wait_time = 0.8
+		t.one_shot = true
+		add_child(t)
+		t.timeout.connect(queue_free)
+		t.start()
+	else:
+		queue_free()
 
 
 func _spawn_xp_pickup() -> void:

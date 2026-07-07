@@ -70,6 +70,10 @@ func _ready() -> void:
 	GameManager.start_run()
 	Audio.play_music("fight1", 1.0)
 	_apply_character(GameManager.selected_character)
+	# 动画 rig
+	var rig: Node = get_node_or_null("Model")
+	if rig and rig.has_method("set_owner_body"):
+		rig.set_owner_body(self)
 	# defer 一帧发信号，等 HUD 连上
 	hp_changed.emit.call_deferred(hp, max_hp)
 	xp_changed.emit.call_deferred(xp, xp_to_next, level)
@@ -180,6 +184,9 @@ func take_damage(amount: float) -> void:
 	hp = max(0.0, hp - final_dmg)
 	_invincible_timer = GameConfig.PLAYER_INVINCIBLE_DURATION
 	Audio.play_sfx("player_hurt", 0.1)
+	var rig: Node = get_node_or_null("Model")
+	if rig and rig.has_method("play_hit"):
+		rig.play_hit()
 	hp_changed.emit(hp, max_hp)
 	if hp <= 0.0:
 		_die()
@@ -190,6 +197,9 @@ func _die() -> void:
 	velocity = Vector3.ZERO
 	Audio.play_sfx("player_gameover")
 	Audio.stop_music(1.0)
+	var rig: Node = get_node_or_null("Model")
+	if rig and rig.has_method("play_death"):
+		rig.play_death()
 	died.emit()
 	GameManager.end_run({"cause": "death"})
 

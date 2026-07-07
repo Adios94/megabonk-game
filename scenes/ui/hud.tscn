@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://chudscene0001"]
+[gd_scene load_steps=15 format=3 uid="uid://chudscene0001"]
 
 [ext_resource type="Script" path="res://scripts/ui/hud.gd" id="1_hud"]
 [ext_resource type="Texture2D" uid="uid://bwq6umu1ydfpm" path="res://assets/ui/bar/hp_track.svg" id="2_hp_track"]
@@ -7,6 +7,13 @@
 [ext_resource type="Texture2D" uid="uid://d3iuxdfp7ts7a" path="res://assets/ui/bar/xp_fill.svg" id="5_xp_fill"]
 [ext_resource type="Texture2D" uid="uid://bunvoshte87xs" path="res://assets/ui/bar/boss_track.svg" id="6_boss_track"]
 [ext_resource type="Texture2D" uid="uid://b217jdponq6rc" path="res://assets/ui/bar/boss_fill.svg" id="7_boss_fill"]
+[ext_resource type="StyleBoxFlat" uid="uid://cpill0001" path="res://assets/ui/pill.tres" id="8_pill"]
+[ext_resource type="Texture2D" uid="uid://dp4dseutwcm4x" path="res://assets/ui/button/btn_pause_normal.png" id="9_pause_ico"]
+[ext_resource type="Texture2D" uid="uid://s02ddknjoapb" path="res://assets/ui/icon/icon_killcount.png" id="10_kill_ico"]
+[ext_resource type="Texture2D" uid="uid://ub31a0d2glr4" path="res://assets/ui/icon/coin_silver.png" id="11_silver_ico"]
+[ext_resource type="Texture2D" uid="uid://btoedg0okx5h" path="res://assets/ui/panel/svg/hud_relic_bar_bg.svg" id="12_relic_bg"]
+[ext_resource type="Texture2D" uid="uid://bm4vbeaio81x3" path="res://assets/ui/panel/hud_task_track_bg.svg" id="13_quest_bg"]
+[ext_resource type="Texture2D" uid="uid://bcdtdbydqqnt5" path="res://assets/ui/icon/task.png" id="14_quest_ico"]
 
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1_hud")
@@ -23,7 +30,7 @@ custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 
 [node name="HpBar" type="TextureProgressBar" parent="TopLeft/HpRow"]
-custom_minimum_size = Vector2(220, 28)
+custom_minimum_size = Vector2(240, 28)
 layout_mode = 2
 size_flags_horizontal = 3
 max_value = 100.0
@@ -51,9 +58,40 @@ custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
 theme_override_constants/separation = 3
 
-[node name="QuestHint" type="Label" parent="TopLeft"]
+[node name="QuestTrack" type="NinePatchRect" parent="TopLeft"]
+custom_minimum_size = Vector2(280, 34)
 layout_mode = 2
-theme_override_font_sizes/font_size = 14
+texture = ExtResource("13_quest_bg")
+patch_margin_left = 24
+patch_margin_top = 8
+patch_margin_right = 8
+patch_margin_bottom = 8
+
+[node name="HBox" type="HBoxContainer" parent="TopLeft/QuestTrack"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = 4.0
+offset_right = -8.0
+offset_bottom = -4.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 6
+
+[node name="QuestIcon" type="TextureRect" parent="TopLeft/QuestTrack/HBox"]
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+size_flags_vertical = 4
+texture = ExtResource("14_quest_ico")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="QuestLabel" type="Label" parent="TopLeft/QuestTrack/HBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 13
 autowrap_mode = 3
 text = "找到飞碟，召唤并击败BOSS！"
 
@@ -67,11 +105,12 @@ offset_right = 100.0
 offset_bottom = 60.0
 grow_horizontal = 2
 
-[node name="TimerPanel" type="PanelContainer" parent="TopCenter"]
+[node name="TimerPill" type="PanelContainer" parent="TopCenter"]
 layout_mode = 2
+theme_override_styles/panel = ExtResource("8_pill")
 
-[node name="TimerLabel" type="Label" parent="TopCenter/TimerPanel"]
-custom_minimum_size = Vector2(120, 0)
+[node name="TimerLabel" type="Label" parent="TopCenter/TimerPill"]
+custom_minimum_size = Vector2(90, 0)
 layout_mode = 2
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -82,7 +121,7 @@ text = "00:00"
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -400.0
+offset_left = -460.0
 offset_top = 12.0
 offset_right = -12.0
 offset_bottom = 200.0
@@ -93,27 +132,78 @@ theme_override_constants/separation = 8
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 alignment = 2
-theme_override_constants/separation = 12
+theme_override_constants/separation = 8
 
-[node name="TierLabel" type="Label" parent="TopRight/TopRow"]
+[node name="TierPill" type="PanelContainer" parent="TopRight/TopRow"]
+layout_mode = 2
+theme_override_styles/panel = ExtResource("8_pill")
+
+[node name="Label" type="Label" parent="TopRight/TopRow/TierPill"]
 layout_mode = 2
 vertical_alignment = 1
 text = "NORMAL"
 
-[node name="SilverLabel" type="Label" parent="TopRight/TopRow"]
+[node name="SilverPill" type="PanelContainer" parent="TopRight/TopRow"]
 layout_mode = 2
-vertical_alignment = 1
-text = "💰 0"
+theme_override_styles/panel = ExtResource("8_pill")
 
-[node name="KillLabel" type="Label" parent="TopRight/TopRow"]
+[node name="HBox" type="HBoxContainer" parent="TopRight/TopRow/SilverPill"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Icon" type="TextureRect" parent="TopRight/TopRow/SilverPill/HBox"]
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+size_flags_vertical = 4
+texture = ExtResource("11_silver_ico")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="SilverLabel" type="Label" parent="TopRight/TopRow/SilverPill/HBox"]
 layout_mode = 2
 vertical_alignment = 1
-text = "☠ 0"
+text = "0"
+
+[node name="KillPill" type="PanelContainer" parent="TopRight/TopRow"]
+layout_mode = 2
+theme_override_styles/panel = ExtResource("8_pill")
+
+[node name="HBox" type="HBoxContainer" parent="TopRight/TopRow/KillPill"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Icon" type="TextureRect" parent="TopRight/TopRow/KillPill/HBox"]
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+size_flags_vertical = 4
+texture = ExtResource("10_kill_ico")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="KillLabel" type="Label" parent="TopRight/TopRow/KillPill/HBox"]
+layout_mode = 2
+vertical_alignment = 1
+text = "0"
 
 [node name="PauseBtn" type="Button" parent="TopRight/TopRow"]
 custom_minimum_size = Vector2(44, 44)
 layout_mode = 2
-text = "⏸"
+flat = true
+
+[node name="Icon" type="TextureRect" parent="TopRight/TopRow/PauseBtn"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 4.0
+offset_top = 4.0
+offset_right = -4.0
+offset_bottom = -4.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("9_pause_ico")
+expand_mode = 1
+stretch_mode = 5
 
 [node name="TomeRow" type="HBoxContainer" parent="TopRight"]
 custom_minimum_size = Vector2(0, 40)
@@ -129,7 +219,7 @@ anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 0.0
-offset_top = -140.0
+offset_top = -150.0
 offset_right = 0.0
 offset_bottom = -12.0
 grow_horizontal = 2
@@ -164,9 +254,9 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -480.0
+offset_left = -500.0
 offset_top = -12.0
-offset_right = 480.0
+offset_right = 500.0
 offset_bottom = 12.0
 grow_horizontal = 2
 grow_vertical = 2
@@ -185,16 +275,35 @@ anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
 offset_left = -40.0
-offset_top = -18.0
+offset_top = -20.0
 offset_right = 40.0
-offset_bottom = 6.0
+offset_bottom = 4.0
 grow_horizontal = 2
 horizontal_alignment = 1
 text = "Lv 1"
 
-[node name="RelicBar" type="Control" parent="BottomGroup"]
-custom_minimum_size = Vector2(0, 38)
+[node name="RelicBar" type="NinePatchRect" parent="BottomGroup"]
+custom_minimum_size = Vector2(560, 44)
 layout_mode = 2
+size_flags_horizontal = 4
+texture = ExtResource("12_relic_bg")
+patch_margin_left = 12
+patch_margin_top = 8
+patch_margin_right = 12
+patch_margin_bottom = 8
+
+[node name="HBox" type="HBoxContainer" parent="BottomGroup/RelicBar"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = 4.0
+offset_right = -10.0
+offset_bottom = -4.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 4
+alignment = 1
 
 [node name="BossHp" type="Control" parent="."]
 anchors_preset = 5

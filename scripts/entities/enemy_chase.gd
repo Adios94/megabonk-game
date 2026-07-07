@@ -39,6 +39,16 @@ var _attack_timer: float = 0.0
 var _target: Node3D
 var _knockback: Vector3 = Vector3.ZERO
 
+# --- 状态效果 ---
+# poison: { dps: float, remain: float, tick: float }
+# slow: { factor: float (0.2 = 剩 20%), remain: float }
+# burn: { dps, remain, tick }
+# mark: { remain: float }（记标记态，deal_damage 时读加成）
+var _status_poison: Dictionary = {}
+var _status_slow: Dictionary = {}
+var _status_burn: Dictionary = {}
+var _status_mark: Dictionary = {}
+
 # charge 状态机
 var _charge_state: String = "cooldown"   # cooldown / telegraph / charging
 var _charge_timer: float = 0.0
@@ -87,6 +97,7 @@ func configure_from_type(t: String, elite_mult: float = 1.0) -> void:
 
 func _physics_process(delta: float) -> void:
 	_attack_timer = maxf(0.0, _attack_timer - delta)
+	_tick_status(delta)
 
 	if _target == null or not is_instance_valid(_target):
 		_target = get_tree().get_first_node_in_group(target_group) as Node3D
@@ -100,6 +111,13 @@ func _physics_process(delta: float) -> void:
 	# Overtime 系数（540s+ 每 10s 递增）
 	var ot: Dictionary = _get_overtime_mults()
 	effective_speed *= float(ot["speed"])
+	# Slow debuff（精英抗性）
+	if _status_slow.has("factor"):
+		var factor: float = float(_status_slow["factor"])
+		if elite_multiplier > 1.0:
+			# elite_coef = 0.5：有效减速减半
+			factor = 1.0 - (1.0 - factor) * 0.5
+		effective_speed *= factor
 	# 保存原速度，恢复用
 	var orig_speed: float = move_speed
 	move_speed = effective_speed
@@ -124,6 +142,9 @@ func _physics_process(delta: float) -> void:
 			_ai_dive(delta)
 		_:
 			_ai_chase(delta)
+
+	# 敌人分离：邻居 1.5m 内推开
+	_apply_separation()
 
 	move_and_slide()
 	_try_attack()
@@ -306,7 +327,109 @@ func _drop_health(amount: float) -> void:
 		p.setup(amount)
 
 
+func _apply_separation() -> void:
+	# 每帧只查每 3 帧一次省性能（Godot int(t)%3 hack）
+	if (Engine.get_physics_frames() + get_instance_id()) % 2 != 0:
+		return
+	var push: Vector3 = Vector3.ZERO
+	var count: int = 0
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if e == self or not (e is Node3D):
+			continue
+		var diff: Vector3 = global_position - (e as Node3D).global_position
+		diff.y = 0.0
+		var d: float = diff.length()
+		if d > 0.01 and d < 1.5:
+			push += diff.normalized() * (1.5 - d)
+			count += 1
+			if count >= 4:
+				break
+	if count > 0:
+		velocity.x += push.x * 3.0
+		velocity.z += push.z * 3.0
+
+
 func _get_overtime_mults() -> Dictionary:
 	# 走 boss_controller 的 static function
 	var script = preload("res://scripts/systems/boss_controller.gd")
 	return script.get_overtime_multipliers(GameManager.run_seconds)
+
+
+# --- 状态效果 API ---
+
+## 施加中毒：以 dps 每 0.5s 打 1 tick，持续 duration 秒。刷新时保留更高 dps + 累加时间。
+func apply_poison(dps: float, duration: float) -> void:
+	if _status_poison.is_empty():
+		_status_poison = {"dps": dps, "remain": duration, "tick": 0.5}
+	else:
+		_status_poison["dps"] = maxf(float(_status_poison["dps"]), dps)
+		_status_poison["remain"] = maxf(float(_status_poison["remain"]), duration)
+
+
+func apply_burn(dps: float, duration: float) -> void:
+	if _status_burn.is_empty():
+		_status_burn = {"dps": dps, "remain": duration, "tick": 0.4}
+	else:
+		_status_burn["dps"] = maxf(float(_status_burn["dps"]), dps)
+		_status_burn["remain"] = maxf(float(_status_burn["remain"]), duration)
+
+
+## 施加减速。factor 0.2 = 剩 20% 速度；duration 秒。
+func apply_slow(factor: float, duration: float) -> void:
+	if _status_slow.is_empty() or float(_status_slow.get("factor", 1.0)) > factor:
+		_status_slow["factor"] = factor
+	_status_slow["remain"] = maxf(float(_status_slow.get("remain", 0.0)), duration)
+
+
+## 标记（hunter_brand）：期间受伤 +16%
+func apply_mark(duration: float) -> void:
+	_status_mark["remain"] = maxf(float(_status_mark.get("remain", 0.0)), duration)
+
+
+func is_marked() -> bool:
+	return not _status_mark.is_empty() and float(_status_mark.get("remain", 0.0)) > 0.0
+
+
+func _tick_status(delta: float) -> void:
+	# Poison DoT
+	if not _status_poison.is_empty():
+		var remain: float = float(_status_poison["remain"]) - delta
+		var tick: float = float(_status_poison["tick"]) - delta
+		if tick <= 0.0:
+			var dmg: float = float(_status_poison["dps"]) * 0.5
+			hp -= dmg
+			tick = 0.5
+		_status_poison["remain"] = remain
+		_status_poison["tick"] = tick
+		if remain <= 0.0:
+			_status_poison.clear()
+		if hp <= 0.0:
+			_die()
+			return
+	# Burn DoT
+	if not _status_burn.is_empty():
+		var remain2: float = float(_status_burn["remain"]) - delta
+		var tick2: float = float(_status_burn["tick"]) - delta
+		if tick2 <= 0.0:
+			var dmg2: float = float(_status_burn["dps"]) * 0.4
+			hp -= dmg2
+			tick2 = 0.4
+		_status_burn["remain"] = remain2
+		_status_burn["tick"] = tick2
+		if remain2 <= 0.0:
+			_status_burn.clear()
+		if hp <= 0.0:
+			_die()
+			return
+	# Slow
+	if not _status_slow.is_empty():
+		var remain3: float = float(_status_slow["remain"]) - delta
+		_status_slow["remain"] = remain3
+		if remain3 <= 0.0:
+			_status_slow.clear()
+	# Mark
+	if not _status_mark.is_empty():
+		var remain4: float = float(_status_mark["remain"]) - delta
+		_status_mark["remain"] = remain4
+		if remain4 <= 0.0:
+			_status_mark.clear()

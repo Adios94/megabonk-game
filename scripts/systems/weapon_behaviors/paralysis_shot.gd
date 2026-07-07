@@ -60,6 +60,9 @@ func _fire(stats: Dictionary) -> void:
 			dir, float(stats["speed"]), float(stats["damage"]),
 			atk_range, int(stats["pierce"]), player,
 		)
+		# 命中施加减速（旧版 PARALYSIS_SLOW_FACTOR = 0.2 剩 20%，1.5s）
+		if proj.has_method("setup_status"):
+			proj.setup_status({"kind": "slow", "factor": 0.2, "duration": 1.5})
 
 
 # 简化：每颗独立找最近敌人，不去重

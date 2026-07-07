@@ -9,6 +9,8 @@ var _pierce_left := 0
 var _hit_ids: Dictionary = {}   # instance_id → true
 var _player: Node
 var _rng := RandomNumberGenerator.new()
+# 命中附加状态：{ kind: "slow"|"poison"|"burn", factor/dps: float, duration: float }
+var _on_hit_status: Dictionary = {}
 
 
 func _ready() -> void:
@@ -24,6 +26,10 @@ func setup(dir: Vector3, speed: float, damage: float, max_range: float, pierce: 
 	_player = player
 
 
+func setup_status(status: Dictionary) -> void:
+	_on_hit_status = status.duplicate()
+
+
 func _process(delta: float) -> void:
 	var step := _speed * delta
 	global_position += _dir * step
@@ -36,6 +42,8 @@ func _process(delta: float) -> void:
 			continue
 		_hit_ids[eid] = true
 		WeaponUtil.deal_damage(e, _damage, _player, _rng, global_position)
+		if not _on_hit_status.is_empty():
+			_apply_status_to(e)
 		if _pierce_left <= 0:
 			queue_free()
 			return
@@ -43,3 +51,18 @@ func _process(delta: float) -> void:
 
 	if _remaining_range <= 0.0:
 		queue_free()
+
+
+func _apply_status_to(target: Node) -> void:
+	var kind: String = _on_hit_status.get("kind", "")
+	var duration: float = float(_on_hit_status.get("duration", 1.0))
+	match kind:
+		"slow":
+			if target.has_method("apply_slow"):
+				target.apply_slow(float(_on_hit_status.get("factor", 0.5)), duration)
+		"poison":
+			if target.has_method("apply_poison"):
+				target.apply_poison(float(_on_hit_status.get("dps", 5.0)), duration)
+		"burn":
+			if target.has_method("apply_burn"):
+				target.apply_burn(float(_on_hit_status.get("dps", 5.0)), duration)

@@ -20,10 +20,6 @@ run/main_scene="res://scenes/ui/main_menu.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"
 
-[gui]
-
-theme/custom="res://assets/ui/theme.tres"
-
 [autoload]
 
 GameManager="*res://scripts/autoload/game_manager.gd"
@@ -38,6 +34,10 @@ window/size/viewport_width=1280
 window/size/viewport_height=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="keep_width"
+
+[gui]
+
+theme/custom="res://assets/ui/theme.tres"
 
 [input]
 

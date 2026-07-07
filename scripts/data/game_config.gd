@@ -62,9 +62,7 @@ const ELITE_SLOW_COEF := 0.5
 static func xp_for_level(lv: int) -> int:
 	# 与旧版 upgrades.ts xpForLevel 一致：
 	# L≤10 线性；L 11-40 加二次项；L>40 指数
-	const XP_STEEPEN_START := 10
 	const XP_CURVE_BREAK := 40
-	const XP_MID_QUAD := 0.5
 	const XP_LATE_GROWTH := 1.0725
 	if lv <= XP_CURVE_BREAK:
 		return int(floor(_xp_midgame(lv)))

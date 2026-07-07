@@ -87,11 +87,11 @@ func _spawn_beam(from: Vector3, to: Vector3, half_width: float) -> void:
 	mesh.global_position = (from + to) * 0.5
 	var dir: Vector3 = (to - from).normalized()
 	if dir.length() > 0.001:
-		var basis: Basis = Basis()
-		basis.y = dir
-		basis.x = dir.cross(Vector3.UP).normalized() if abs(dir.dot(Vector3.UP)) < 0.99 else Vector3.RIGHT
-		basis.z = basis.x.cross(basis.y).normalized()
-		mesh.global_transform.basis = basis
+		var b: Basis = Basis()
+		b.y = dir
+		b.x = dir.cross(Vector3.UP).normalized() if abs(dir.dot(Vector3.UP)) < 0.99 else Vector3.RIGHT
+		b.z = b.x.cross(b.y).normalized()
+		mesh.global_transform.basis = b
 	var tw: Tween = get_tree().create_tween()
 	tw.tween_property(mat, "albedo_color:a", 0.0, 0.12)
 	tw.tween_callback(mesh.queue_free)

@@ -3,16 +3,16 @@ extends CanvasLayer
 
 @export var player_path: NodePath
 
-@onready var _hp_bar: ProgressBar = $HpBar
+@onready var _hp_bar: TextureProgressBar = $HpBar
 @onready var _hp_label: Label = $HpBar/Label
-@onready var _xp_bar: ProgressBar = $XpBar
+@onready var _xp_bar: TextureProgressBar = $XpBar
 @onready var _xp_label: Label = $XpBar/Label
 @onready var _level_label: Label = $LevelLabel
 @onready var _kill_label: Label = $KillLabel
 @onready var _time_label: Label = $TimeLabel
 @onready var _death_panel: Control = $DeathPanel
 @onready var _boss_hp_container: Control = $BossHp
-@onready var _boss_hp_bar: ProgressBar = $BossHp/Bar
+@onready var _boss_hp_bar: TextureProgressBar = $BossHp/Bar
 @onready var _boss_phase_label: Label = $BossHp/PhaseLabel
 @onready var _final_swarm_label: Label = $FinalSwarmLabel
 

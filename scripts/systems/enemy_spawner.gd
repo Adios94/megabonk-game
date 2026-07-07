@@ -8,7 +8,6 @@ extends Node
 
 var _timer := 0.0
 var _rng := RandomNumberGenerator.new()
-var _current_wave_idx := -1
 
 
 func _ready() -> void:

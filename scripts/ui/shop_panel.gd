@@ -38,15 +38,15 @@ func _make_row(upgrade: Dictionary) -> Control:
 	var row: HBoxContainer = HBoxContainer.new()
 	row.custom_minimum_size = Vector2(0, 56)
 
-	var name: Label = Label.new()
-	name.custom_minimum_size = Vector2(180, 0)
-	name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var name_label: Label = Label.new()
+	name_label.custom_minimum_size = Vector2(180, 0)
+	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	var nk: String = upgrade["name_key"]
 	var name_text: String = I18n.t(nk)
 	if name_text.begins_with("shop."):
 		name_text = str(upgrade["id"]).capitalize()
-	name.text = name_text
-	row.add_child(name)
+	name_label.text = name_text
+	row.add_child(name_label)
 
 	var current_level: int = SaveGame.get_shop_level(upgrade["id"])
 	var max_level: int = int(upgrade["max_level"])

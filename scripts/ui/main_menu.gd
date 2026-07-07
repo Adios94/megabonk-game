@@ -29,15 +29,15 @@ func _populate_character() -> void:
 	var unlocked: Array = SaveGame.data.get("characters_unlocked", []) as Array
 	var i: int = 0
 	for c in ["megachad", "roberto", "skateboard_skeleton"]:
-		var name: String = I18n.t("character.%s" % c)
-		if name.begins_with("character."):
-			name = c.capitalize()
+		var label: String = I18n.t("character.%s" % c)
+		if label.begins_with("character."):
+			label = c.capitalize()
 		if not c in unlocked:
-			name += " (锁)"
-			_character_option.add_item(name, i)
+			label += " (锁)"
+			_character_option.add_item(label, i)
 			_character_option.set_item_disabled(i, true)
 		else:
-			_character_option.add_item(name, i)
+			_character_option.add_item(label, i)
 		i += 1
 
 

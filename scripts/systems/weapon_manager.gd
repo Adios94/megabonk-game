@@ -25,7 +25,7 @@ const SFX_BY_BEHAVIOR := {
 }
 
 
-func spawn_weapon(weapon_type: String, level: int) -> void:
+func spawn_weapon(weapon_type: String, _level: int) -> void:
 	if _behaviors.has(weapon_type):
 		return
 	var behavior_id: String = Weapons.get_behavior(weapon_type)

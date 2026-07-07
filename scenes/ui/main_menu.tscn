@@ -1,10 +1,12 @@
-[gd_scene load_steps=6 format=3 uid="uid://cmainmenu0001"]
+[gd_scene load_steps=8 format=3 uid="uid://cmainmenu0001"]
 
 [ext_resource type="Script" path="res://scripts/ui/main_menu.gd" id="1_menu"]
 [ext_resource type="Script" path="res://scripts/ui/shop_panel.gd" id="2_shop"]
 [ext_resource type="Script" path="res://scripts/ui/quest_panel.gd" id="3_quest"]
 [ext_resource type="Texture2D" uid="uid://bpar8cvvmh3td" path="res://assets/ui/common/bg_lobby.webp" id="4_bg"]
 [ext_resource type="Texture2D" uid="uid://bkbydpbtqi0xo" path="res://assets/ui/title/title_cn.webp" id="5_title"]
+[ext_resource type="Script" path="res://scripts/ui/framed_button.gd" id="6_fbtn"]
+[ext_resource type="Script" path="res://scripts/ui/silver_badge.gd" id="7_badge"]
 
 [node name="MainMenu" type="Control"]
 anchors_preset = 15
@@ -24,96 +26,89 @@ texture = ExtResource("4_bg")
 expand_mode = 1
 stretch_mode = 6
 
-[node name="Title" type="TextureRect" parent="."]
-anchors_preset = 5
-anchor_left = 0.5
-anchor_right = 0.5
-offset_left = -320.0
-offset_top = 30.0
-offset_right = 320.0
-offset_bottom = 170.0
-grow_horizontal = 2
-texture = ExtResource("5_title")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="TopBar" type="HBoxContainer" parent="."]
-anchors_preset = 10
+[node name="SilverBadge" type="Control" parent="."]
+anchors_preset = 1
+anchor_left = 1.0
 anchor_right = 1.0
-offset_left = 20.0
-offset_top = 20.0
-offset_right = -20.0
-offset_bottom = 68.0
-grow_horizontal = 2
-theme_override_constants/separation = 12
+offset_left = -200.0
+offset_top = 24.0
+offset_right = -24.0
+offset_bottom = 64.0
+grow_horizontal = 0
+script = ExtResource("7_badge")
 
-[node name="SilverLabel" type="Label" parent="TopBar"]
-custom_minimum_size = Vector2(200, 44)
-layout_mode = 2
-size_flags_horizontal = 3
-vertical_alignment = 1
-theme_override_font_sizes/font_size = 22
-theme_override_colors/font_color = Color(1, 0.85, 0.4, 1)
-text = "💰 0"
-
-[node name="ShopBtn" type="Button" parent="TopBar"]
-custom_minimum_size = Vector2(120, 44)
-layout_mode = 2
-theme_override_font_sizes/font_size = 18
-text = "商店"
-
-[node name="QuestBtn" type="Button" parent="TopBar"]
-custom_minimum_size = Vector2(120, 44)
-layout_mode = 2
-theme_override_font_sizes/font_size = 18
-text = "任务"
-
-[node name="QuitBtn" type="Button" parent="TopBar"]
-custom_minimum_size = Vector2(100, 44)
-layout_mode = 2
-theme_override_font_sizes/font_size = 18
-text = "退出"
-
-[node name="CharRow" type="HBoxContainer" parent="."]
+[node name="CenterGroup" type="VBoxContainer" parent="."]
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -460.0
-offset_top = -180.0
-offset_right = 460.0
-offset_bottom = 280.0
+offset_left = -260.0
+offset_top = -260.0
+offset_right = 260.0
+offset_bottom = 260.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 26
 alignment = 1
 
-[node name="BottomBox" type="VBoxContainer" parent="."]
-anchors_preset = 7
-anchor_left = 0.5
-anchor_top = 1.0
-anchor_right = 0.5
-anchor_bottom = 1.0
-offset_left = -320.0
-offset_top = -170.0
-offset_right = 320.0
-offset_bottom = -30.0
-grow_horizontal = 2
-grow_vertical = 0
+[node name="Title" type="TextureRect" parent="CenterGroup"]
+custom_minimum_size = Vector2(0, 160)
+layout_mode = 2
+size_flags_horizontal = 3
+texture = ExtResource("5_title")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ButtonColumn" type="VBoxContainer" parent="CenterGroup"]
+layout_mode = 2
+size_flags_horizontal = 4
 theme_override_constants/separation = 14
-
-[node name="TierRow" type="HBoxContainer" parent="BottomBox"]
-custom_minimum_size = Vector2(0, 68)
-layout_mode = 2
 alignment = 1
-theme_override_constants/separation = 20
 
-[node name="PlayBtn" type="Button" parent="BottomBox"]
-custom_minimum_size = Vector2(0, 60)
+[node name="StartBtn" type="Control" parent="CenterGroup/ButtonColumn"]
+custom_minimum_size = Vector2(320, 84)
 layout_mode = 2
-theme_override_font_sizes/font_size = 28
-text = "▶ 开始游戏"
+size_flags_horizontal = 4
+script = ExtResource("6_fbtn")
+color = "orange"
+label = "开始游戏"
+label_font_size = 26
+
+[node name="ShopBtn" type="Control" parent="CenterGroup/ButtonColumn"]
+custom_minimum_size = Vector2(320, 72)
+layout_mode = 2
+size_flags_horizontal = 4
+script = ExtResource("6_fbtn")
+color = "blue"
+label = "商店"
+label_font_size = 22
+
+[node name="QuestBtn" type="Control" parent="CenterGroup/ButtonColumn"]
+custom_minimum_size = Vector2(320, 72)
+layout_mode = 2
+size_flags_horizontal = 4
+script = ExtResource("6_fbtn")
+color = "blue"
+label = "任务"
+label_font_size = 22
+
+[node name="QuitBtn" type="Control" parent="."]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -180.0
+offset_top = -72.0
+offset_right = -24.0
+offset_bottom = -20.0
+grow_horizontal = 0
+grow_vertical = 0
+script = ExtResource("6_fbtn")
+color = "gray"
+label = "退出"
+label_font_size = 18
 
 [node name="ShopPanel" type="Control" parent="."]
 anchors_preset = 15

@@ -1,0 +1,195 @@
+[gd_scene load_steps=5 format=3 uid="uid://ccharsel00001"]
+
+[ext_resource type="Script" path="res://scripts/ui/character_select.gd" id="1_sel"]
+[ext_resource type="Texture2D" uid="uid://bqr114a25xe33" path="res://assets/ui/common/bg_tier_select.webp" id="2_bg"]
+[ext_resource type="Script" path="res://scripts/ui/framed_button.gd" id="3_fbtn"]
+[ext_resource type="Script" path="res://scripts/ui/silver_badge.gd" id="4_badge"]
+
+[node name="CharacterSelect" type="Control"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_sel")
+
+[node name="Bg" type="TextureRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("2_bg")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Header" type="Control" parent="."]
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 96.0
+grow_horizontal = 2
+
+[node name="BackBtn" type="Control" parent="Header"]
+custom_minimum_size = Vector2(180, 56)
+anchors_preset = 4
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_left = 24.0
+offset_top = -28.0
+offset_right = 204.0
+offset_bottom = 28.0
+script = ExtResource("3_fbtn")
+color = "gray"
+label = "返回"
+label_font_size = 20
+
+[node name="Title" type="Label" parent="Header"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -180.0
+offset_top = -22.0
+offset_right = 180.0
+offset_bottom = 22.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 32
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 8
+text = "选择角色"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="SilverBadge" type="Control" parent="Header"]
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = -20.0
+offset_right = -24.0
+offset_bottom = 20.0
+grow_horizontal = 0
+grow_vertical = 2
+script = ExtResource("4_badge")
+
+[node name="Body" type="HBoxContainer" parent="."]
+anchors_preset = 15
+offset_left = 40.0
+offset_top = 108.0
+offset_right = -40.0
+offset_bottom = -200.0
+grow_horizontal = 2
+grow_vertical = 2
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_constants/separation = 24
+
+[node name="Rail" type="VBoxContainer" parent="Body"]
+custom_minimum_size = Vector2(128, 0)
+layout_mode = 2
+theme_override_constants/separation = 14
+alignment = 1
+
+[node name="Center" type="Control" parent="Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.4
+
+[node name="Preview" type="TextureRect" parent="Body/Center"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Detail" type="PanelContainer" parent="Body"]
+custom_minimum_size = Vector2(340, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.0
+
+[node name="Margin" type="MarginContainer" parent="Body/Detail"]
+layout_mode = 2
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="VBox" type="VBoxContainer" parent="Body/Detail/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="NameLabel" type="Label" parent="Body/Detail/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 30
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 8
+text = ""
+horizontal_alignment = 1
+
+[node name="DescLabel" type="Label" parent="Body/Detail/Margin/VBox"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+theme_override_colors/font_color = Color(0.9, 0.92, 0.78, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+autowrap_mode = 3
+text = ""
+
+[node name="TraitTitle" type="Label" parent="Body/Detail/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+theme_override_colors/font_color = Color(1, 0.85, 0.35, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+text = "天赋"
+
+[node name="TraitLabel" type="Label" parent="Body/Detail/Margin/VBox"]
+custom_minimum_size = Vector2(0, 100)
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+theme_override_colors/font_color = Color(0.95, 0.98, 0.75, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+autowrap_mode = 3
+text = ""
+
+[node name="Bottom" type="VBoxContainer" parent="."]
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 40.0
+offset_top = -180.0
+offset_right = -40.0
+offset_bottom = -24.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_constants/separation = 16
+
+[node name="TierRow" type="HBoxContainer" parent="Bottom"]
+custom_minimum_size = Vector2(0, 72)
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 24
+
+[node name="ConfirmBtn" type="Control" parent="Bottom"]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+size_flags_horizontal = 4
+script = ExtResource("3_fbtn")
+color = "yellow"
+label = "确认"
+label_font_size = 30

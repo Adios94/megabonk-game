@@ -8,7 +8,7 @@
  */
 import type { EnemyState } from '../../types.ts';
 import type { AiContext } from '../types.ts';
-import { tryMoveHorizontally } from '../../systems/horizontalMove.ts';
+import { tryMoveHorizontally, type HorizontalMoveOptions, type MovePoint } from '../../systems/horizontalMove.ts';
 import { isBlockedHorizontallyAt, getSupportHeightAt } from '../../systems/levelGeometry.ts';
 import { getTomePower } from '../../data/tomeProgression.ts';
 import { getSlowMultiplier } from '../../systems/statusEffects.ts';
@@ -19,6 +19,13 @@ const DROP_MIN_DELTA = STEP_HEIGHT * 1.2;
 const DROP_ANGLE_OFFSETS = [0, 0.35, -0.35, 0.7, -0.7];
 /** 局部转向避障的试探角度（弧度，左右交替、由窄到宽）。 */
 const STEER_OFFSETS = [0.45, -0.45, 0.9, -0.9, 1.4, -1.4];
+
+// 复用的移动选项 / 落点 scratch：敌人移动每 tick 每怪都跑，避免每次新建 options + {x,z}。
+// _steerBest 与 _steerCand 必须是两个对象：steerAround 跨循环保留 best，若与 cand 同体会被下次调用污染。
+const ENEMY_MOVE_OPTS: HorizontalMoveOptions = { radius: ENEMY_RADIUS, includeClimb: true };
+const _moveOut: MovePoint = { x: 0, z: 0 };
+const _steerCand: MovePoint = { x: 0, z: 0 };
+const _steerBest: MovePoint = { x: 0, z: 0 };
 
 export function applyMovement(enemy: EnemyState, ctx: AiContext): void {
   const dx = enemy.targetX - enemy.x;
@@ -64,7 +71,8 @@ export function applyMovement(enemy: EnemyState, ctx: AiContext): void {
     enemy.x, enemy.z,
     desiredX, desiredZ,
     enemy.y,
-    { radius: ENEMY_RADIUS, includeClimb: true },
+    ENEMY_MOVE_OPTS,
+    _moveOut,
   );
 
   // 直奔被完全挡住（连轴向滑行都不前进）→ 局部转向避障：绕基准航向扇形试探，
@@ -98,29 +106,36 @@ export function applyMovement(enemy: EnemyState, ctx: AiContext): void {
  */
 function steerAround(
   enemy: EnemyState, ctx: AiContext, nx: number, nz: number, actualMove: number,
-): { x: number; z: number } | null {
+): MovePoint | null {
   const baseAngle = Math.atan2(nz, nx);
   const halfMap = (ctx.mapSize + 10) * 0.5;
-  const clamp = (v: number): number => Math.max(-halfMap, Math.min(halfMap, v));
   const tx = enemy.targetX;
   const tz = enemy.targetZ;
-  let best: { x: number; z: number } | null = null;
+  let best: MovePoint | null = null;
   let bestDist = Number.POSITIVE_INFINITY;
   for (const off of STEER_OFFSETS) {
     const a = baseAngle + off;
+    const candX = Math.max(-halfMap, Math.min(halfMap, enemy.x + Math.cos(a) * actualMove));
+    const candZ = Math.max(-halfMap, Math.min(halfMap, enemy.z + Math.sin(a) * actualMove));
     const cand = tryMoveHorizontally(
       ctx.geo,
       enemy.x, enemy.z,
-      clamp(enemy.x + Math.cos(a) * actualMove),
-      clamp(enemy.z + Math.sin(a) * actualMove),
+      candX, candZ,
       enemy.y,
-      { radius: ENEMY_RADIUS, includeClimb: true },
+      ENEMY_MOVE_OPTS,
+      _steerCand,
     );
     if (cand.x === enemy.x && cand.z === enemy.z) continue; // 该航向也动不了
     const dx = tx - cand.x;
     const dz = tz - cand.z;
     const d = dx * dx + dz * dz;
-    if (d < bestDist) { bestDist = d; best = cand; }
+    if (d < bestDist) {
+      bestDist = d;
+      // 拷进独立 scratch：cand(_steerCand) 下次循环会被覆盖，不能直接保留引用。
+      _steerBest.x = cand.x;
+      _steerBest.z = cand.z;
+      best = _steerBest;
+    }
   }
   return best;
 }

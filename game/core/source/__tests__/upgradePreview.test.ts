@@ -22,7 +22,7 @@ function makePlayer(weapons: PlayerState['weapons']): PlayerState {
 }
 
 describe('getUpgradePreviewLines', () => {
-  it('武器升级 common 显示伤害增量', () => {
+  it('武器升级 common 显示升级前后伤害', () => {
     const player = makePlayer([{
       type: 'sword', level: 1, cooldownTimer: 0, growth: emptyWeaponGrowth(),
     }]);
@@ -31,10 +31,10 @@ describe('getUpgradePreviewLines', () => {
       weaponType: 'sword', currentLevel: 1, newLevel: 2,
     };
     const lines = getUpgradePreviewLines(option, player);
-    expect(lines.some(l => l.labelKey === 'upgrade.stat.damage' && l.value === '+4')).toBe(true);
+    expect(lines.some(l => l.labelKey === 'upgrade.stat.damage' && l.value === '16 → 20')).toBe(true);
   });
 
-  it('武器升级 legendary 伤害增量为 common 的 2 倍', () => {
+  it('武器升级 legendary 升级后伤害提升为 common 的 2 倍', () => {
     const player = makePlayer([{
       type: 'sword', level: 1, cooldownTimer: 0, growth: emptyWeaponGrowth(),
     }]);
@@ -48,17 +48,17 @@ describe('getUpgradePreviewLines', () => {
     };
     const commonDmg = getUpgradePreviewLines(common, player).find(l => l.labelKey === 'upgrade.stat.damage')?.value;
     const legDmg = getUpgradePreviewLines(legendary, player).find(l => l.labelKey === 'upgrade.stat.damage')?.value;
-    expect(commonDmg).toBe('+4');
-    expect(legDmg).toBe('+8');
+    expect(commonDmg).toBe('16 → 20');
+    expect(legDmg).toBe('16 → 24');
   });
 
-  it('典籍攻速显示 +10.0%', () => {
+  it('典籍攻速显示升级前后累计值', () => {
     const option: UpgradeOption = {
       id: 't', kind: 'tome', rarity: 'common',
       tomeType: 'attack_speed_tome', currentLevel: 0, newLevel: 1,
     };
     const lines = getUpgradePreviewLines(option, makePlayer([]));
-    expect(lines[0]).toEqual({ labelKey: 'upgrade.stat.attackSpeed', value: '+10.0%' });
+    expect(lines[0]).toEqual({ labelKey: 'upgrade.stat.attackSpeed', value: '0% → 10%' });
   });
 
   it('典籍稀有度影响本次升级数值', () => {
@@ -67,15 +67,15 @@ describe('getUpgradePreviewLines', () => {
       tomeType: 'life_tome', currentLevel: 0, newLevel: 1,
     };
     const lines = getUpgradePreviewLines(option, makePlayer([]));
-    expect(lines[0]).toEqual({ labelKey: 'upgrade.stat.maxHp', value: '+30' });
+    expect(lines[0]).toEqual({ labelKey: 'upgrade.stat.maxHp', value: '0 → 30' });
   });
 
-  it('速度典籍 rare 预览显示 +12.8%', () => {
+  it('速度典籍 rare 预览显示升级前后累计值', () => {
     const option: UpgradeOption = {
       id: 'speed', kind: 'tome', rarity: 'rare',
       tomeType: 'speed_tome', currentLevel: 0, newLevel: 1,
     };
     const lines = getUpgradePreviewLines(option, makePlayer([]));
-    expect(lines[0]).toEqual({ labelKey: 'upgrade.stat.moveSpeed', value: '+12.8%' });
+    expect(lines[0]).toEqual({ labelKey: 'upgrade.stat.moveSpeed', value: '0% → 12.8%' });
   });
 });

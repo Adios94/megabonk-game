@@ -31,6 +31,7 @@ import {
   CHEST_INTERACT_RADIUS,
   CHEST_INTERACT_MAX_Y_DELTA,
   RELICS,
+  ALL_RELIC_IDS,
   BONDS,
   evalBondCounts,
   bondThresholds,
@@ -83,11 +84,13 @@ import {
 } from '@minigame/core';
 import { PlatformInput } from '@minigame/platform';
 import { installThreeHighDpi } from '@minigame/render-adapter';
-import { initI18n, t, getLocale, setLocale, getAvailableLocales, getMode } from '@minigame/i18n';
+import { t, getLocale, setLocale, getAvailableLocales, getMode } from '@minigame/i18n';
 import { CameraOrbit } from './systems/cameraOrbit.ts';
 import { PlayerInvincibilityFx } from './systems/playerFx.ts';
 import { BlobShadowPool } from './systems/blobShadows.ts';
 import { gsapAnimations } from './gsapAnimations.ts';
+import { perfOverlay } from './dev/perfOverlay.ts';
+import { tryScheduleGC } from './dev/gcScheduler.ts';
 import { uiPlainText, uiPlainTextBold, uiColoredText, uiColoredTextBold, UI_PLAIN_TEXT_STYLE, UI_TEXT_OUTLINE_SHADOW, UI_BAR_TEXT_LAYER } from './ui/textStyle.ts';
 import {
   createUpgradeFrameCard,
@@ -109,6 +112,8 @@ import { applyPlatformJoystickSkin } from './ui/joystickSkin.ts';
 import {
   setMobileAltarInteractState,
   setMobileChestInteractState,
+  CHEST_OPEN_BUTTON_IMG,
+  JUMP_BUTTON_IMG,
   removeMobileActionCluster,
   setInGameTouchControlsEnabled,
   setupMobileActionButtons,
@@ -135,7 +140,6 @@ import {
   applyGameStartAudioPolicy,
   fadeOutMenuMusic,
   getAudioSettings,
-  installButtonClickSfx,
   onAudioSettingsChange,
   playCombatMusic,
   playLevelTwoTransitionSfx,
@@ -146,9 +150,8 @@ import {
   toggleSfxMuted,
   type AudioSettings,
 } from './audio/musicManager.ts';
-import type { I18nMode } from '@minigame/i18n';
 import { EventEmitter } from './session/EventEmitter.ts';
-
+import { runBootFlow } from './boot/bootFlow.ts';
 import zhLocale from '../../../i18n/zh.json';
 import enLocale from '../../../i18n/en.json';
 
@@ -162,8 +165,23 @@ const ALTAR_INTERACT_MAX_Y_DELTA = ALTAR_INTERACT_RADIUS;
 // 之所以要设上限：游戏过程中如果某个瞬间有很多敌人/投射物同时存在，池子会被
 // 撑大；当后续不再需要那么多时，多余的实例若不释放，会一直占据内存（材质/
 // 骨架包装器/动画 mixer 都会留在 GPU/JS 堆里），最终触发 Major GC 大暂停。
-const ENEMY_POOL_CAP_PER_TYPE = 24;
-const PROJECTILE_POOL_CAP = 16;
+// 池容量：经堆快照取证后从 24 / 16 砍下。原值同屏同种敌人 100% 池命中，但 1.45M 节点 / 6.6M 边
+// 让 Major GC 单次 ~80-200ms。降到 8 / 6 后命中率 ~90%+，偶尔的"冷起手 clone"≤16ms 远比 GC
+// 大卡顿不可见。节点数砍 ~80k，Major GC 时间 -10ms / Heap -10MB。详见 docs/perf-notes.md 与
+// .cursor/transcripts 里 GC 调查那条链路。
+const ENEMY_POOL_CAP_PER_TYPE = 8;
+const PROJECTILE_POOL_CAP = 6;
+
+// 判定"全屏暂停 UI"phase：进入瞬间适合做 Major GC（玩家在看面板，几十毫秒无感）。
+// 故意不把 'boss_intro' / 'menu' 算进来：前者只是 1-2s 倒计时不能确保用户停在面板上，
+// 后者是切场景，自然会触发 GC。menu/playing 之间的过渡不算。
+function isPausePhaseForGc(phase: GamePhase): boolean {
+  return phase === 'level_up'
+    || phase === 'chest_reward'
+    || phase === 'shrine_reward'
+    || phase === 'paused';
+}
+
 import { OWNED_CLONE_KEY, disposeOwnedResources } from './materials/disposeOwned.ts';
 
 // GPU Curved World (Rolling Horizon) — see materials/curvedWorld.ts
@@ -174,7 +192,6 @@ export { curvedWorldUniforms };
 // Toon / cel-shading — see materials/toon.ts
 import {
   toonGradientMap,
-  stylizedUniforms,
   applyStylizedToonShading,
   convertToToonMaterials,
   brightenWeaponMaterials,
@@ -187,7 +204,6 @@ import {
 
 // Post-process passes — see materials/postProcessPasses.ts
 import {
-  type OutlineMode,
   SceneRenderPass,
   FinalCompositePass,
   ColorGradePass,
@@ -196,7 +212,7 @@ import {
   GRADE_CONTRAST,
   GRADE_BRIGHTNESS,
 } from './materials/postProcessPasses.ts';
-import { getPlatformRenderProfile, type PlatformRenderProfile } from './quality.ts';
+import { computeEnemyLod, getPlatformRenderProfile, type PlatformRenderProfile, type ResolvedEnemyLod } from './quality.ts';
 
 // Billboard VFX pool — see vfx/BillboardPool.ts
 import {
@@ -411,6 +427,13 @@ const RELIC_RARITY_SORT_RANK: Record<RelicRarity, number> = {
   common: 3,
 };
 
+type HudRelicEntry = { id: RelicId; count: number; acquiredIndex: number };
+
+function compareHudRelics(a: HudRelicEntry, b: HudRelicEntry): number {
+  const rarityDelta = RELIC_RARITY_SORT_RANK[RELICS[a.id].rarity] - RELIC_RARITY_SORT_RANK[RELICS[b.id].rarity];
+  return rarityDelta !== 0 ? rarityDelta : a.acquiredIndex - b.acquiredIndex;
+}
+
 // 羁绊档位边框：T1 灰 / T2 橙 / T3 金
 const BOND_TIER_COLORS: Record<number, string> = {
   1: '#aaaaaa',
@@ -472,7 +495,7 @@ const CHARACTER_FULL_PATHS: Record<CharacterType, string> = {
 
 const CHARACTER_LOCKED_OVERLAY_PATH = '/ui/characters/locked_character.png';
 
-import { UI_FONT_FACE, GAME_UI_FONT_FILES, installGameUIFonts, ensureGameUIFontsLoaded } from './ui/fonts.ts';
+import { GAME_UI_FONT_FILES, installGameUIFonts } from './ui/fonts.ts';
 
 const CHARACTER_SELECT_BACK_ICON = '/ui/button/back.svg';
 const LANG_BUTTON_CN = '/ui/button/btn_lang_cn.png';
@@ -536,6 +559,9 @@ const CHARACTER_DETAIL_WEAPON_SLOT = {
   heightPct: (1206 / 4897) * 100,
 } as const;
 
+const CHARACTER_DETAIL_BASE_RENDER_WIDTH = 360;
+const CHARACTER_DETAIL_SCALE_MIN = 0.82;
+const CHARACTER_DETAIL_SCALE_MAX = 1.18;
 const CHARACTER_CONFIRM_BUTTON_WIDTH = '96px';
 
 function characterDetailInsetXPct(value: number): string {
@@ -964,6 +990,7 @@ const HUD_COMBO_SCALE = 2 / 3;
 const HUD_COMBO_FONT_BASE = 28;
 const HUD_COMBO_FONT_PER_STACK = 1.5;
 const HUD_COMBO_FONT_MAX = 56;
+const INITIAL_UI_READY_TIMEOUT_MS = 2500;
 const SILVER_BADGE_BG = '#1a3a6e';
 const SILVER_BADGE_ICON_SIZE = 'clamp(22px,6vw,28px)';
 /** 底框高度（略低于图标） */
@@ -975,6 +1002,407 @@ function backpackRowMaxWidth(slotSizeCss: string, gapCss: string, slots = BACKPA
   const slotTerms = Array.from({ length: slots }, () => slotSizeCss).join(' + ');
   const gapTerms = Array.from({ length: Math.max(0, slots - 1) }, () => gapCss).join(' + ');
   return gapTerms ? `calc(${slotTerms} + ${gapTerms})` : `calc(${slotTerms})`;
+}
+
+const uiImageReadyCache = new Map<string, Promise<void>>();
+
+function waitForAnimationFrames(count: number): Promise<void> {
+  return new Promise((resolve) => {
+    const step = (remaining: number): void => {
+      if (remaining <= 0) {
+        resolve();
+        return;
+      }
+      requestAnimationFrame(() => step(remaining - 1));
+    };
+    step(count);
+  });
+}
+
+function withUiReadyTimeout(work: Promise<void>, ms = INITIAL_UI_READY_TIMEOUT_MS): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(resolve, ms);
+    const finish = (): void => {
+      window.clearTimeout(timer);
+      resolve();
+    };
+    work.then(finish, finish);
+  });
+}
+
+function preloadUiImage(src: string): Promise<void> {
+  const existing = uiImageReadyCache.get(src);
+  if (existing) return existing;
+
+  const ready = withUiReadyTimeout(new Promise<void>((resolve) => {
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => resolve();
+    img.onerror = () => resolve();
+    img.src = src;
+    if (img.complete) {
+      resolve();
+    } else if (typeof img.decode === 'function') {
+      img.decode().then(resolve, resolve);
+    }
+  }));
+  uiImageReadyCache.set(src, ready);
+  return ready;
+}
+
+function waitForDomImageReady(img: HTMLImageElement): Promise<void> {
+  if (!img.currentSrc && !img.src) return Promise.resolve();
+  if (img.complete) return Promise.resolve();
+  if (typeof img.decode === 'function') {
+    return withUiReadyTimeout(img.decode().then(() => undefined, () => undefined));
+  }
+
+  return withUiReadyTimeout(new Promise<void>((resolve) => {
+    img.addEventListener('load', () => resolve(), { once: true });
+    img.addEventListener('error', () => resolve(), { once: true });
+  }));
+}
+
+function initialGameUiAssetPaths(): string[] {
+  return [
+    BAR_ASSETS.hp.track,
+    BAR_ASSETS.hp.fill,
+    BAR_ASSETS.shield.track,
+    BAR_ASSETS.shield.fill,
+    BAR_ASSETS.xp.track,
+    BAR_ASSETS.xp.fill,
+    BAR_ASSETS.boss.track,
+    BAR_ASSETS.boss.fill,
+    HUD_TASK_TRACK_BG,
+    HUD_RELIC_BAR_BG,
+    HUD_RELIC_SLOT_BG,
+    HUD_PAUSE_BUTTON_NORMAL,
+    HUD_RESUME_BUTTON_NORMAL,
+    GOLD_COIN_ICON_PATH,
+    SILVER_COIN_ICON_PATH,
+    KILL_COUNT_ICON_PATH,
+    CHEST_OPEN_BUTTON_IMG,
+    JUMP_BUTTON_IMG,
+    overtimeNoticeImagePath(),
+    finalSwarmNoticeImagePath(),
+  ];
+}
+
+/**
+ * Boot 阶段全量 UI 资源清单：主菜单 / 角色选择 / tier select / 商店 / 任务 /
+ * 暂停 / HUD / 战利品图标，全部塞进去，让 loading overlay 在 100% 之前
+ * 真正把这些图拉完。新增 UI 资产时往这儿补一条即可。
+ *
+ * 注意：路径全部是 public/ 下的绝对静态路径，浏览器会缓存；预加载阶段触发
+ * fetch + decode，进入主菜单时 <img src="..."> 命中 memory cache，不再有空白。
+ */
+function bootUiPreloadPaths(): string[] {
+  const paths = new Set<string>();
+
+  for (const p of initialGameUiAssetPaths()) paths.add(p);
+
+  // 标题 / 通知图（两种语言全预热，切语言时不会闪）
+  for (const p of [
+    TITLE_IMAGE_PATH_ZH,
+    TITLE_IMAGE_PATH_EN,
+    OVERTIME_NOTICE_IMAGE_ZH,
+    OVERTIME_NOTICE_IMAGE_EN,
+    FINAL_SWARM_NOTICE_IMAGE_ZH,
+    FINAL_SWARM_NOTICE_IMAGE_EN,
+  ]) paths.add(p);
+
+  // 主菜单 / 准备页面 / 通用背景
+  for (const p of [
+    LOBBY_BG_PATH,
+    UI_COMMON_BG_PATH,
+    TIER_SELECT_PAGE_BG_IMAGE,
+    SHOP_QUEST_PAGE_BG_IMAGE,
+    CHARACTER_SELECT_PAGE_BG_IMAGE,
+  ]) paths.add(p);
+
+  // 按钮/面板/弹窗
+  for (const p of [
+    MENU_BUTTON_FRAME,
+    MENU_START_BUTTON_FRAME,
+    MENU_START_BUTTON_PRESSED,
+    CHARACTER_CONFIRM_BUTTON_FRAME,
+    TIER_START_BUTTON_FRAME,
+    TIER_START_BUTTON_PRESSED,
+    TIER_SELECT_BUTTON_NORMAL,
+    TIER_SELECT_BUTTON_PRESSED,
+    QUEST_CATEGORY_BUTTON_NORMAL,
+    QUEST_ACTION_BUTTON_ORANGE,
+    QUEST_ACTION_BUTTON_ORANGE_PRESSED,
+    QUEST_ACTION_BUTTON_GREEN,
+    QUEST_ACTION_BUTTON_GREEN_PRESSED,
+    QUEST_ACTION_BUTTON_GRAY,
+    QUEST_ACTION_BUTTON_GRAY_PRESSED,
+    PAUSE_MENU_BUTTON_GREEN,
+    PAUSE_MENU_BUTTON_GREEN_PRESSED,
+    PAUSE_MENU_BUTTON_GRAY,
+    PAUSE_MENU_BUTTON_GRAY_PRESSED,
+    PAUSE_MENU_BUTTON_RED,
+    PAUSE_MENU_BUTTON_RED_PRESSED,
+    SHOP_BUY_BUTTON_FRAME,
+    SHOP_BUY_BUTTON_PRESSED_FRAME,
+    POPUP_CONFIRM_PANEL_BG,
+    BTN_CLOSE_ICON,
+    CHARACTER_SELECT_BACK_ICON,
+    LANG_BUTTON_CN,
+    LANG_BUTTON_EN,
+    CHARACTER_DETAIL_PANEL_BG,
+    CHARACTER_WEAPON_DETAIL_PANEL_BG,
+    SHOP_ITEM_LIST_PANEL_BG,
+    SHOP_ITEM_PANEL_BG,
+    QUEST_LIST_PANEL_BG,
+    QUEST_ITEM_BG,
+  ]) paths.add(p);
+
+  // 菜单按钮图标
+  for (const p of Object.values(MENU_BUTTON_ICONS)) paths.add(p);
+
+  // 角色立绘 / 头像 / 头像描边 / 锁定遮罩
+  for (const p of Object.values(CHARACTER_AVATAR_PATHS)) paths.add(p);
+  for (const p of Object.values(CHARACTER_FULL_PATHS)) paths.add(p);
+  for (const f of Object.values(CHARACTER_AVATAR_FRAME_PATHS)) {
+    paths.add(f.normal);
+    paths.add(f.selected);
+  }
+  paths.add(CHARACTER_LOCKED_OVERLAY_PATH);
+  paths.add(CHEST_ICON_PATH);
+
+  // Bar 资源全量（quest / stat 系列）
+  paths.add(BAR_ASSETS.quest.track);
+  paths.add(BAR_ASSETS.quest.fill);
+  paths.add(BAR_ASSETS.quest.flag);
+  paths.add(BAR_ASSETS.stat.track);
+  paths.add(BAR_ASSETS.stat.trackSingle);
+  paths.add(BAR_ASSETS.stat.fill);
+  paths.add(BAR_ASSETS.stat.fillGreen);
+
+  // 暂停面板背景 + 物品稀有度框（升级面板/拾取栏都会用）
+  for (const p of [
+    '/ui/panel/svg/panel_pause_data.svg',
+    '/ui/panel/svg/frame_item_common.svg',
+    '/ui/panel/svg/frame_item_uncommon.svg',
+    '/ui/panel/svg/frame_item_rare.svg',
+    '/ui/panel/svg/frame_item_legendary.svg',
+    '/ui/panel/svg/frame_item_bond.svg',
+    '/ui/panel/svg/frame_upgrade_common.svg',
+    '/ui/panel/svg/frame_upgrade_uncommon.svg',
+    '/ui/panel/svg/frame_upgrade_rare.svg',
+    '/ui/panel/svg/frame_upgrade_legendary.svg',
+    '/ui/panel/svg/frame_upgrade_bond.svg',
+    '/ui/panel/svg/difficulty_normal.svg',
+    '/ui/panel/svg/difficulty_hard.svg',
+    '/ui/panel/svg/difficulty_nightmare.svg',
+  ]) paths.add(p);
+
+  // 难度图标 / 音乐音效开关 / 摇杆
+  for (const p of [
+    '/ui/icon/difficulty_normal.png',
+    '/ui/icon/difficulty_hard.png',
+    '/ui/icon/difficulty_nightmare.png',
+    '/ui/button/icon_music_on.png',
+    '/ui/button/icon_music_off.png',
+    '/ui/button/icon_sfx_on.png',
+    '/ui/button/icon_sfx_off.png',
+    '/ui/button/stick_bg.png',
+    '/ui/button/stick_handle.png',
+  ]) paths.add(p);
+
+  // 任务页 tab 图标
+  for (const p of [
+    '/ui/quests/tab_task_all.png',
+    '/ui/quests/tab_task_challenge_normal.png',
+    '/ui/quests/tab_task_grow.png',
+    '/ui/quests/tab_task_wealth.png',
+    '/ui/quests/tab_task_weapon.png',
+  ]) paths.add(p);
+
+  // 商店升级卡背景
+  for (const p of [
+    '/ui/shop/shop_item_armor.png',
+    '/ui/shop/shop_item_atk.png',
+    '/ui/shop/shop_item_crit.png',
+    '/ui/shop/shop_item_exp.png',
+    '/ui/shop/shop_item_hp.png',
+    '/ui/shop/shop_item_lv.png',
+    '/ui/shop/shop_item_range.png',
+    '/ui/shop/shop_item_spd.png',
+  ]) paths.add(p);
+
+  // 武器 / 典籍 / 遗物 / 羁绊 / 神龛奖励 / 消耗品图标（升级面板、拾取掉落都即点即显）
+  for (const p of [
+    '/ui/icon/weapon/axe.png',
+    '/ui/icon/weapon/bone_bouncer.png',
+    '/ui/icon/weapon/flame_ring.png',
+    '/ui/icon/weapon/lightning_staff.png',
+    '/ui/icon/weapon/paralysis_gun.png',
+    '/ui/icon/weapon/pistol.png',
+    '/ui/icon/weapon/poison_bomb.png',
+    '/ui/icon/weapon/ray_gun.png',
+    '/ui/icon/weapon/scorch_boots.png',
+    '/ui/icon/weapon/shotgun.png',
+    '/ui/icon/weapon/sword.png',
+    '/ui/icon/weapon/void_ripple.png',
+    '/ui/icon/tome/attack_speed_tome.png',
+    '/ui/icon/tome/attraction_tome.png',
+    '/ui/icon/tome/consumable_tome.png',
+    '/ui/icon/tome/curse_tome.png',
+    '/ui/icon/tome/knockback_tome.png',
+    '/ui/icon/tome/life_tome.png',
+    '/ui/icon/tome/luck_tome.png',
+    '/ui/icon/tome/precision_tome.png',
+    '/ui/icon/tome/shield_tome.png',
+    '/ui/icon/tome/speed_tome.png',
+    '/ui/icon/tome/thorns_tome.png',
+    '/ui/icon/tome/xp_gain_tome.png',
+    '/ui/icon/artifact/arsenal_badge.png',
+    '/ui/icon/artifact/blood_fang.png',
+    '/ui/icon/artifact/elite_writ.png',
+    '/ui/icon/artifact/hourglass.png',
+    '/ui/icon/artifact/iron_heart.png',
+    '/ui/icon/artifact/keen_lens.png',
+    '/ui/icon/artifact/magazine_expander.png',
+    '/ui/icon/artifact/pact_coin.png',
+    '/ui/icon/artifact/regen_core.png',
+    '/ui/icon/artifact/small_shield_charm.png',
+    '/ui/icon/bond/arc_conductor.png',
+    '/ui/icon/bond/arcane.png',
+    '/ui/icon/bond/bone_crush.png',
+    '/ui/icon/bond/ember_trail.png',
+    '/ui/icon/bond/hunter_mark.png',
+    '/ui/icon/bond/iron_blood.png',
+    '/ui/icon/bond/poison_master.png',
+    '/ui/icon/bond/volley.png',
+    '/ui/icon/bond/zero_range.png',
+    '/ui/icon/Shrine_Reward/attack_speed.png',
+    '/ui/icon/Shrine_Reward/crit_damage.png',
+    '/ui/icon/Shrine_Reward/damage.png',
+    '/ui/icon/Shrine_Reward/difficulty.png',
+    '/ui/icon/Shrine_Reward/duration.png',
+    '/ui/icon/Shrine_Reward/elite_damage.png',
+    '/ui/icon/Shrine_Reward/hp_regen.png',
+    '/ui/icon/Shrine_Reward/jump_height.png',
+    '/ui/icon/Shrine_Reward/knockback.png',
+    '/ui/icon/Shrine_Reward/lifesteal.png',
+    '/ui/icon/Shrine_Reward/luck.png',
+    '/ui/icon/Shrine_Reward/movement_speed.png',
+    '/ui/icon/Shrine_Reward/pickup_range.png',
+    '/ui/icon/Shrine_Reward/powerup_multiplier.png',
+    '/ui/icon/Shrine_Reward/projectile_count.png',
+    '/ui/icon/Shrine_Reward/shield.png',
+    '/ui/icon/consumable_items/craftsman_hammer.png',
+    '/ui/icon/consumable_items/energy_bar.png',
+    '/ui/icon/consumable_items/hard_bread.png',
+    '/ui/icon/consumable_items/hot_soup.png',
+    '/ui/icon/consumable_items/iron_meal.png',
+    '/ui/icon/consumable_items/magnet.png',
+    '/ui/icon/consumable_items/mint_candy.png',
+    '/ui/icon/consumable_items/prophecy_book.png',
+    '/ui/icon/consumable_items/rage_potion.png',
+    '/ui/icon/consumable_items/wild_berry.png',
+  ]) paths.add(p);
+
+  return [...paths];
+}
+
+/**
+ * Boot 期间真等到全部 UI 图片 fetch+decode 完成（不走 INITIAL_UI_READY_TIMEOUT_MS
+ * 的 2.5s 软超时，否则 loading 100% 时图还没回来）。带进度回调可以让
+ * loading 条平滑推进。
+ */
+/**
+ * 同时最多发起的 UI 图片预加载请求数。
+ *
+ * 为什么是 6 而不是无限并发：Android WebView / 微信 / 抖音 等内嵌浏览器内核对单域
+ * 并发连接有上限（默认 6-8），当 boot 一次性 Promise.all 几十张图时，超出部分会被
+ * cancel / queue 超时 / 静默失败，导致"首次进入有图缺失"。改成限流后每张图都能稳
+ * 拿到 connection slot，配合 retry 几乎能保证全部成功。
+ */
+const BOOT_UI_PRELOAD_CONCURRENCY = 6;
+
+/**
+ * 单张 UI 图片预加载失败时的重试次数。
+ * 第一次：立即；第二次：250ms 后；第三次：750ms 后。三次都失败才放弃（不阻塞 boot）。
+ */
+const BOOT_UI_PRELOAD_RETRIES = 2;
+
+function loadOneUiImageWithRetry(src: string, retries: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let attempt = 0;
+    const tryOnce = (): void => {
+      const img = new Image();
+      img.decoding = 'async';
+      const succeed = (): void => {
+        if (typeof img.decode === 'function') img.decode().then(() => resolve(), () => resolve());
+        else resolve();
+      };
+      img.onload = succeed;
+      img.onerror = () => {
+        if (attempt >= retries) {
+          console.warn(`[Boot] UI image preload failed after ${attempt + 1} attempts:`, src);
+          resolve();
+          return;
+        }
+        const backoffMs = 250 * Math.pow(3, attempt);
+        attempt++;
+        setTimeout(tryOnce, backoffMs);
+      };
+      // cache-buster 不要加 —— 我们想命中 HTTP cache；WebView 失败大概率是 connection 层不是 cache 层。
+      img.src = src;
+      if (img.complete && img.naturalWidth > 0) succeed();
+    };
+    tryOnce();
+  });
+}
+
+async function preloadBootUiAssets(
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<void> {
+  const paths = [...new Set(bootUiPreloadPaths())];
+  const total = paths.length;
+  if (total === 0) return;
+
+  let loaded = 0;
+  const reportOne = (): void => {
+    loaded += 1;
+    onProgress?.(loaded, total);
+  };
+
+  // 并发限流：worker pool 模式 —— N 个 worker 从队列里取 path 启动 fetch，每完成一个
+  // 立刻拉下一个。关键点：fetch 必须在 worker 里才启动（不能预先 map 出 Promise 数组，
+  // 那样所有 fetch 会立刻同时发出，限流失效）。
+  const queue = paths.slice();
+  const runWorker = async (): Promise<void> => {
+    while (queue.length > 0) {
+      const src = queue.shift();
+      if (src === undefined) break;
+      // 复用 cache：另一处（preloadUiImage）已经在 fetch 同张图就等它就好，不再起新 Image
+      let task = uiImageReadyCache.get(src);
+      if (!task) {
+        task = loadOneUiImageWithRetry(src, BOOT_UI_PRELOAD_RETRIES);
+        uiImageReadyCache.set(src, task);
+      }
+      try { await task; } catch { /* loadOneUiImageWithRetry 永远 resolve，这里只是兜底 */ }
+      reportOne();
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(BOOT_UI_PRELOAD_CONCURRENCY, paths.length) }, runWorker),
+  );
+}
+
+async function waitForInitialGameUiReady(root: HTMLElement): Promise<void> {
+  const imagePaths = [...new Set(initialGameUiAssetPaths())];
+  const domImages = Array.from(root.querySelectorAll('img'));
+  await Promise.all([
+    ...imagePaths.map(preloadUiImage),
+    ...domImages.map(waitForDomImageReady),
+  ]);
+  // 等 CSS background 解码、字体度量与 DOM append 后的布局/绘制落到屏幕。
+  await waitForAnimationFrames(2);
 }
 
 function createSilverBadge(count: number, prefix = ''): HTMLDivElement {
@@ -1208,282 +1636,6 @@ function createLanguageSwitcherButton(): HTMLButtonElement | null {
   return btn;
 }
 
-// =============================================================================
-/**
- * 游戏内风格化调参面板（仅 dev）。把 stylizedUniforms + 雾 + bloom 全部接上滑块，实时拖动即时生效，
- * 不用改代码重编译。GM Tool 打开时点右上角按钮开关。"复制参数"把当前值导成可粘回代码的片段。
- */
-function createStylizedDebugPanel(opts: {
-  scene: THREE.Scene;
-  bloom: UnrealBloomPass | null;
-  renderer: THREE.WebGLRenderer;
-  colorGrade: ColorGradePass | null;
-  darkComic?: DarkComicPass | null;
-  cameraOrbit?: CameraOrbit | null;
-  onSkyModeChange?: (mode: 'photo' | 'color') => void;
-}): void {
-  if (document.getElementById('stylized-debug-panel')) return; // 幂等
-  const u = stylizedUniforms;
-  const fog = opts.scene.fog instanceof THREE.Fog ? opts.scene.fog : null;
-  const bloom = opts.bloom;
-  const renderer = opts.renderer;
-  const colorGrade = opts.colorGrade;
-  const darkComic = opts.darkComic ?? null;
-  const cameraOrbit = opts.cameraOrbit;
-
-  type Ctl = { label: string; min: number; max: number; step: number; get: () => number; set: (v: number) => void };
-  const vec3ctls = (v: THREE.Vector3, min: number, max: number, prefix = ''): Ctl[] => {
-    const p = prefix ? `${prefix} ` : '';
-    return [
-      { label: `${p}R`, min, max, step: 0.01, get: () => v.x, set: (x) => { v.x = x; } },
-      { label: `${p}G`, min, max, step: 0.01, get: () => v.y, set: (x) => { v.y = x; } },
-      { label: `${p}B`, min, max, step: 0.01, get: () => v.z, set: (x) => { v.z = x; } },
-    ];
-  };
-
-  const sections: { title: string; ctls: Ctl[] }[] = [
-    {
-      title: '关卡视觉与阴影 Scenery', ctls: [
-        {
-          label: 'Scenery 场景材质(0Toon/1PBR)',
-          min: 0, max: 1, step: 1,
-          get: () => sceneryMode === 'pbr' ? 1 : 0,
-          set: (v) => {
-            sceneryMode = v === 1 ? 'pbr' : 'toon';
-            const levelRoot = opts.scene.getObjectByName('LevelRoot');
-            if (levelRoot) {
-              applySceneryMode(levelRoot, sceneryMode);
-            }
-          }
-        },
-        {
-          label: 'Sky 天空背景(0Color/1Photo)',
-          min: 0, max: 1, step: 1,
-          get: () => skyMode === 'photo' ? 1 : 0,
-          set: (v) => {
-            skyMode = v === 1 ? 'photo' : 'color';
-            if (opts.onSkyModeChange) {
-              opts.onSkyModeChange(skyMode);
-            }
-          }
-        },
-        {
-          label: 'Curved World 空间弯曲弯度',
-          min: 0.0, max: 0.04, step: 0.0005,
-          get: () => curvedWorldUniforms.uWarpStrength.value,
-          set: (v) => {
-            curvedWorldUniforms.uWarpStrength.value = v;
-          }
-        },
-        {
-          label: 'Shadows 实时阴影(0Off/1On)',
-          min: 0, max: 1, step: 1,
-          get: () => realTimeShadowsEnabled ? 1 : 0,
-          set: (v) => {
-            realTimeShadowsEnabled = v === 1;
-            const dirLight = opts.scene.getObjectByName('DirectionalLight') as THREE.DirectionalLight;
-            if (dirLight) {
-              dirLight.castShadow = realTimeShadowsEnabled;
-            }
-          }
-        }
-      ]
-    },
-    {
-      title: '整体亮度 Exposure', ctls: [
-        { label: 'Brightness', min: 0.3, max: 2.5, step: 0.01, get: () => renderer.toneMappingExposure, set: (v) => { renderer.toneMappingExposure = v; } },
-      ],
-    },
-    {
-      title: '分层 Stepped', ctls: [
-        { label: 'Steps 台阶数', min: 1, max: 8, step: 1, get: () => u.uSteps.value, set: (v) => { u.uSteps.value = v; } },
-        { label: 'Smooth 过渡', min: 0, max: 0.5, step: 0.01, get: () => u.uStepSmooth.value, set: (v) => { u.uStepSmooth.value = v; } },
-      ],
-    },
-    {
-      title: '网点 Halftone', ctls: [
-        { label: 'Tiling 大小', min: 4, max: 40, step: 0.5, get: () => u.uHalftoneTiling.value, set: (v) => { u.uHalftoneTiling.value = v; } },
-        { label: 'Smooth 脆度', min: 0.01, max: 0.4, step: 0.01, get: () => u.uHalftoneSmooth.value, set: (v) => { u.uHalftoneSmooth.value = v; } },
-        { label: 'Dark 压暗', min: 0, max: 1, step: 0.01, get: () => u.uHalftoneDark.value, set: (v) => { u.uHalftoneDark.value = v; } },
-        { label: 'Blend 强度', min: 0, max: 1, step: 0.01, get: () => u.uHalftoneBlend.value, set: (v) => { u.uHalftoneBlend.value = v; } },
-        { label: 'CutLow 起点', min: 0, max: 1, step: 0.01, get: () => u.uHalftoneCutLow.value, set: (v) => { u.uHalftoneCutLow.value = v; } },
-        { label: 'CutHigh 终点', min: 0, max: 1, step: 0.01, get: () => u.uHalftoneCutHigh.value, set: (v) => { u.uHalftoneCutHigh.value = v; } },
-      ],
-    },
-    { title: '阴影色 ShadowTint (×albedo)', ctls: vec3ctls(u.uShadowTint.value, 0, 1.5) },
-    { title: '受光色 LightTint (×albedo)', ctls: vec3ctls(u.uLightTint.value, 0, 1.5) },
-  ];
-  if (cameraOrbit) {
-    sections.push({
-      title: '极度视角 Camera', ctls: [
-        { label: 'Cam Dist 镜头距离', min: 1.5, max: 12, step: 0.1, get: () => cameraOrbit.camDistance, set: (v) => { cameraOrbit.camDistance = v; } },
-        { label: 'Cam Height 镜头高度', min: 0.5, max: 8, step: 0.1, get: () => cameraOrbit.camHeightBase, set: (v) => { cameraOrbit.camHeightBase = v; } },
-      ],
-    });
-  }
-  if (colorGrade) {
-    sections.push({
-      title: '美漫调色 ColorGrade', ctls: [
-        { label: 'Saturation 饱和', min: 0.5, max: 2.5, step: 0.01, get: () => colorGrade.saturation, set: (v) => { colorGrade.saturation = v; } },
-        { label: 'Contrast 对比', min: 0.5, max: 2.0, step: 0.01, get: () => colorGrade.contrast, set: (v) => { colorGrade.contrast = v; } },
-        { label: 'Brightness 亮度', min: 0.5, max: 2.0, step: 0.01, get: () => colorGrade.brightness, set: (v) => { colorGrade.brightness = v; } },
-      ],
-    });
-  }
-  if (darkComic) {
-    sections.push({
-      title: '暗黑漫画 DarkComic (Final Swarm)', ctls: [
-        { label: 'Enabled 开关', min: 0, max: 1, step: 1, get: () => darkComic.enabled ? 1 : 0, set: (v) => { darkComic.enabled = v >= 0.5; } },
-        { label: '去饱和最大值', min: 0, max: 1, step: 0.01, get: () => darkComic.desaturateMax, set: (v) => { darkComic.desaturateMax = v; } },
-        { label: '噪点最大值', min: 0, max: 0.3, step: 0.005, get: () => darkComic.noiseMax, set: (v) => { darkComic.noiseMax = v; } },
-        { label: '渐变时长(s)', min: 1, max: 120, step: 1, get: () => darkComic.rampDurationSeconds, set: (v) => { darkComic.rampDurationSeconds = v; } },
-        { label: '当前进度 ramp', min: 0, max: 1, step: 0.01, get: () => darkComic.ramp01, set: (v) => { darkComic.ramp01 = v; } },
-      ],
-    });
-  }
-  if (fog) {
-    sections.push({
-      title: '雾 Fog', ctls: [
-        { label: 'Near 起点', min: 0, max: 300, step: 1, get: () => fog.near, set: (v) => { fog.near = v; } },
-        { label: 'Far 终点', min: 10, max: 600, step: 1, get: () => fog.far, set: (v) => { fog.far = v; } },
-      ],
-    });
-  }
-  if (bloom) {
-    sections.push({
-      title: '泛光 Bloom', ctls: [
-        { label: 'Strength 强度', min: 0, max: 2, step: 0.01, get: () => bloom.strength, set: (v) => { bloom.strength = v; } },
-        { label: 'Radius 半径', min: 0, max: 1.5, step: 0.01, get: () => bloom.radius, set: (v) => { bloom.radius = v; } },
-        { label: 'Threshold 阈值', min: 0, max: 1.5, step: 0.01, get: () => bloom.threshold, set: (v) => { bloom.threshold = v; } },
-      ],
-    });
-  }
-
-  const panel = document.createElement('div');
-  panel.id = 'stylized-debug-panel';
-  panel.style.cssText = [
-    'position:fixed', 'top:8px', 'right:8px', 'z-index:99999', 'display:none',
-    'width:268px', 'max-height:88vh', 'overflow-y:auto', 'box-sizing:border-box',
-    'padding:10px 12px', 'background:rgba(12,14,22,0.92)', 'border:1px solid rgba(120,160,255,0.4)',
-    'border-radius:10px', 'color:#dfe6ff', 'font:12px/1.4 ui-monospace,Menlo,Consolas,monospace',
-    'box-shadow:0 6px 24px rgba(0,0,0,0.5)', 'user-select:none',
-  ].join(';');
-
-  const title = document.createElement('div');
-  title.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:700;margin-bottom:8px;color:#9fc0ff;';
-  const titleText = document.createElement('span');
-  titleText.textContent = '🎨 风格化调参';
-  const closeBtn = document.createElement('button');
-  closeBtn.type = 'button';
-  closeBtn.textContent = '×';
-  closeBtn.title = '关闭风格化调参';
-  closeBtn.style.cssText = 'width:22px;height:22px;border:1px solid rgba(159,192,255,0.45);border-radius:6px;background:rgba(30,40,70,0.9);color:#dfe6ff;font-weight:800;line-height:18px;cursor:pointer;';
-  closeBtn.addEventListener('click', () => {
-    panel.style.display = 'none';
-    syncStylizedDebugPanelWithGM(gmPanel !== null);
-  });
-  title.appendChild(titleText);
-  title.appendChild(closeBtn);
-  panel.appendChild(title);
-
-  for (const sec of sections) {
-    const h = document.createElement('div');
-    h.textContent = sec.title;
-    h.style.cssText = 'margin:8px 0 4px;color:#ffd479;font-weight:700;border-bottom:1px solid rgba(255,255,255,0.12);padding-bottom:2px;';
-    panel.appendChild(h);
-    for (const c of sec.ctls) {
-      const row = document.createElement('label');
-      row.style.cssText = 'display:flex;align-items:center;gap:6px;margin:3px 0;';
-      const name = document.createElement('span');
-      name.textContent = c.label;
-      name.style.cssText = 'flex:0 0 96px;color:#cfd8ff;';
-      const slider = document.createElement('input');
-      slider.type = 'range';
-      slider.min = String(c.min);
-      slider.max = String(c.max);
-      slider.step = String(c.step);
-      slider.value = String(c.get());
-      slider.style.cssText = 'flex:1 1 auto;min-width:0;';
-      const val = document.createElement('span');
-      val.textContent = c.get().toFixed(2);
-      val.style.cssText = 'flex:0 0 40px;text-align:right;color:#9fffcf;';
-      slider.addEventListener('input', () => {
-        const v = parseFloat(slider.value);
-        c.set(v);
-        val.textContent = v.toFixed(2);
-      });
-      row.appendChild(name);
-      row.appendChild(slider);
-      row.appendChild(val);
-      panel.appendChild(row);
-    }
-  }
-
-  const copyBtn = document.createElement('button');
-  copyBtn.textContent = '复制参数到剪贴板';
-  copyBtn.style.cssText = 'margin-top:10px;width:100%;padding:6px;background:#3a6;border:none;border-radius:6px;color:#fff;font-weight:700;cursor:pointer;';
-  copyBtn.addEventListener('click', () => {
-    const v3 = (v: THREE.Vector3) => `new THREE.Vector3(${v.x.toFixed(3)}, ${v.y.toFixed(3)}, ${v.z.toFixed(3)})`;
-    const snippet = [
-      `// sceneryMode = '${sceneryMode}'`,
-      `// skyMode = '${skyMode}'`,
-      `// realTimeShadowsEnabled = ${realTimeShadowsEnabled}`,
-      `// renderer.toneMappingExposure = ${renderer.toneMappingExposure.toFixed(3)}`,
-      '// —— stylizedUniforms 初值 ——',
-      `uSteps: { value: ${u.uSteps.value} },`,
-      `uStepSmooth: { value: ${u.uStepSmooth.value} },`,
-      `uHalftoneTiling: { value: ${u.uHalftoneTiling.value} },`,
-      `uHalftoneSmooth: { value: ${u.uHalftoneSmooth.value} },`,
-      `uHalftoneDark: { value: ${u.uHalftoneDark.value} },`,
-      `uHalftoneBlend: { value: ${u.uHalftoneBlend.value} },`,
-      `uShadowTint: { value: ${v3(u.uShadowTint.value)} },`,
-      `uLightTint: { value: ${v3(u.uLightTint.value)} },`,
-      fog ? `// fog: new THREE.Fog('#87CEEB', ${fog.near}, ${fog.far})` : '',
-      bloom ? `// bloom: strength=${bloom.strength}, radius=${bloom.radius}, threshold=${bloom.threshold}` : '',
-      colorGrade ? `// ColorGrade: saturation=${colorGrade.saturation.toFixed(3)}, contrast=${colorGrade.contrast.toFixed(3)}, brightness=${colorGrade.brightness.toFixed(3)}` : '',
-      darkComic ? `// DarkComic: enabled=${darkComic.enabled}, desatMax=${darkComic.desaturateMax.toFixed(2)}, noiseMax=${darkComic.noiseMax.toFixed(3)}, rampDuration=${darkComic.rampDurationSeconds}s, ramp01=${darkComic.ramp01.toFixed(2)}` : '',
-    ].filter(Boolean).join('\n');
-    navigator.clipboard?.writeText(snippet).catch(() => { /* ignore */ });
-    console.log('[stylized] 当前参数：\n' + snippet);
-    copyBtn.textContent = '已复制 ✓（也打印在 Console）';
-    setTimeout(() => { copyBtn.textContent = '复制参数到剪贴板'; }, 1500);
-  });
-  panel.appendChild(copyBtn);
-
-  document.body.appendChild(panel);
-
-  const toggleBtn = document.createElement('button');
-  toggleBtn.id = 'stylized-debug-toggle';
-  toggleBtn.textContent = '🎨';
-  toggleBtn.title = '风格化调参';
-  toggleBtn.style.cssText = [
-    'position:fixed', 'top:8px', 'right:8px', 'z-index:99998', 'display:none', 'width:34px', 'height:34px',
-    'border:none', 'border-radius:8px', 'background:rgba(60,90,160,0.85)', 'color:#fff',
-    'font-size:16px', 'cursor:pointer', 'box-shadow:0 2px 8px rgba(0,0,0,0.4)',
-  ].join(';');
-  const toggle = () => {
-    const show = panel.style.display === 'none';
-    panel.style.display = show ? 'block' : 'none';
-    toggleBtn.style.display = show ? 'none' : 'block';
-  };
-  toggleBtn.addEventListener('click', toggle);
-  document.body.appendChild(toggleBtn);
-}
-
-function syncStylizedDebugPanelWithGM(open: boolean): void {
-  const panel = document.getElementById('stylized-debug-panel') as HTMLDivElement | null;
-  const toggleBtn = document.getElementById('stylized-debug-toggle') as HTMLButtonElement | null;
-  if (!panel || !toggleBtn) return;
-
-  if (!open) {
-    panel.style.display = 'none';
-    toggleBtn.style.display = 'none';
-    return;
-  }
-
-  toggleBtn.style.display = panel.style.display === 'none' ? 'block' : 'none';
-}
-
 const WEATHER_DAY_EXPOSURE = 1.85;
 const WEATHER_NIGHT_EXPOSURE = 1.35;
 const WEATHER_NIGHT_GRADE_SATURATION = 1.04;
@@ -1673,6 +1825,24 @@ const ENEMY_MODEL_MAP: Record<string, keyof LoadedModels> = {
 function getEnemyModelMap(): Record<string, keyof LoadedModels> {
   return ENEMY_MODEL_MAP;
 }
+
+/**
+ * 敌人视觉缩放（目标世界高度，米）—— 模型按实际高度归一化后缩放到此值。
+ * 整体比玩家(1.8)矮一截以凸显角色（约 ×0.8）。
+ *
+ * 注意：所有敌人共享 core 的 ENEMY_RADIUS=0.4 水平碰撞半径，视觉体型 ≫ 该半径时多只
+ * 同类（特别是 charge 行为）会在玩家脚下视觉重叠。各值已按此约束权衡。
+ *
+ * 提到模块顶层（曾每帧 renderEnemies 内重建字面量对象，pickup 多时是 GC 热点之一）。
+ */
+const ENEMY_VISUAL_SCALES: Record<string, number> = {
+  skeleton_soldier: 1.2,   // KayKit 小兵 — 略矮于玩家
+  zombie: 1.1,             // 高 HP 僵尸
+  skeleton_archer: 1.2,    // KayKit 法师 — 落地人形
+  skeleton_knight: 1.6,    // KayKit 战士 — 精英 (再叠 isElite ×1.2 ≈ 1.92m)
+  necromancer: 0.7,        // 法师 — 飘浮幽灵（小巧）
+  gargoyle: 0.7,           // 蝙蝠 — 小型飞行
+};
 
 // 把模型重定位为「脚底贴地(min.y=0) + 水平居中」。渲染路径只克隆+缩放、不再居中，
 // 依赖模型原点在脚底中心；KayKit 导出原点不一定如此，这里统一对齐。
@@ -2469,6 +2639,87 @@ function intersectGeometryAttributes(geos: THREE.BufferGeometry[]): Set<string> 
  *
  * 碰撞文件缺失 = 致命错误，直接抛异常让 boot 挂掉。激进方案下不再有内置 arena 兜底。
  */
+/**
+ * GPU 预热：把所有已加载的关卡 + 模型的 shader/贴图提前推到 GPU。
+ *
+ * 为什么需要：Three.js 的 shader 编译和贴图上传都是 lazy 的——只有 mesh 第一次
+ * 进入摄像机视锥时才会编译。startIntro 黑屏阶段 levelScene.visible=false，
+ * 导致关卡所有 mesh 第一次出现在画面上时（reveal 那帧）才同步编译/上传，
+ * 表现就是"第一次进游戏，场景半天没出"。
+ *
+ * 做法：用一个临时离屏 WebGLRenderer（不污染未来 GameScene 的真 renderer），
+ * 临时 scene 里把关卡 + 玩家 + 已加载的怪物/武器模型挂上去，调用一次
+ * renderer.compile() 触发 program 编译 + 贴图上传，再 render 一帧确保 PSO 落地。
+ *
+ * 注意：clone 资源以避免改动原始引用；warm 完立即 dispose 临时 renderer，
+ * 不再持有 GPU 资源。后续 GameScene 创建真 renderer 时会重新走一次上传，
+ * 但因为浏览器/驱动会缓存编译过的 shader binary（PSO cache），开销已大幅降低。
+ */
+async function warmUpGpuAssets(): Promise<void> {
+  let warmRenderer: THREE.WebGLRenderer | null = null;
+  try {
+    warmRenderer = new THREE.WebGLRenderer({
+      antialias: false,
+      alpha: true,
+      powerPreference: 'low-power',
+    });
+    warmRenderer.setSize(2, 2, false);
+    warmRenderer.shadowMap.enabled = true;
+
+    const warmScene = new THREE.Scene();
+    const warmCamera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+    warmCamera.position.set(0, 5, 10);
+    warmCamera.lookAt(0, 0, 0);
+
+    // 基础灯光（toon 材质需要至少一盏 directional 才能落实最终 program）
+    warmScene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    dir.position.set(5, 10, 5);
+    dir.castShadow = true;
+    warmScene.add(dir);
+
+    const tempObjects: THREE.Object3D[] = [];
+
+    // 关卡（含 batch 后的 mesh、toon 材质）
+    for (const [, lvl] of loadedLevelsByName) {
+      const cloned = cloneSkeleton(lvl.scene) as THREE.Object3D;
+      cloned.visible = true;
+      warmScene.add(cloned);
+      tempObjects.push(cloned);
+    }
+
+    // 怪物 / 角色 / 武器模型
+    for (const model of Object.values(loadedModels)) {
+      if (!model) continue;
+      const cloned = cloneSkeleton(model) as THREE.Object3D;
+      cloned.visible = true;
+      warmScene.add(cloned);
+      tempObjects.push(cloned);
+    }
+
+    // 触发 program link + 贴图上传
+    if (typeof warmRenderer.compileAsync === 'function') {
+      await warmRenderer.compileAsync(warmScene, warmCamera);
+    } else {
+      warmRenderer.compile(warmScene, warmCamera);
+    }
+    // render 一帧让 PSO/upload 真正落地（compile 在部分驱动上只编译 program，
+    // 实际 PSO 还要等首次 draw 才生成）
+    warmRenderer.render(warmScene, warmCamera);
+
+    for (const obj of tempObjects) warmScene.remove(obj);
+  } catch (err) {
+    console.warn('[Warmup] GPU prewarm failed (non-fatal):', err);
+  } finally {
+    try {
+      warmRenderer?.dispose();
+      warmRenderer?.forceContextLoss();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 async function tryLoadLevel(name: string = DEFAULT_LEVEL_NAME): Promise<void> {
   if (loadedLevel && loadedLevelName === name) return;
   const cached = loadedLevelsByName.get(name);
@@ -3002,7 +3253,7 @@ export class GameScene {
   private readonly renderer: THREE.WebGLRenderer;
   private composer: EffectComposer | null = null;
   private sceneRenderPass: SceneRenderPass | null = null;
-  private finalCompositePass: FinalCompositePass | null = null; // 含 screenSpace/none 描边开关（dev perf overlay 可读 mode）
+  private finalCompositePass: FinalCompositePass | null = null;
   private readonly renderProfile: PlatformRenderProfile = getPlatformRenderProfile();
   private bloomPass: UnrealBloomPass | null = null;
   private colorGradePass: ColorGradePass | null = null;
@@ -3019,6 +3270,34 @@ export class GameScene {
   private readonly _dummy = new THREE.Object3D();
   private readonly _tempVec = new THREE.Vector3();
   private readonly _tempColor = new THREE.Color();
+  // 渲染热路径每帧 alloc 复用容器（避免 60Hz × N 元素 Set/Map 创建造成 GC 颠簸；
+  // 见 03:20 截图：mem 100↔178MB 78MB 振幅 / GC 10.9/min）。所有命名形如 _scratch* 的容器，
+  // 使用前必 clear()，使用后允许任意键残留 —— 仅用作"本帧 active id 集合"短暂查询。
+  private readonly _scratchEnemyAlive = new Set<number>();
+  // full-mesh 预算用：每帧把所有敌人到相机的 distSq 填进来排序，取第 N 近作为本帧 mesh↔impostor 切换阈值。
+  // 复用同一 Float64Array（不足时翻倍扩容），sort 走 subarray 视图，避免每帧分配大数组。
+  private _fullMeshDistScratch = new Float64Array(256);
+  private readonly _scratchSilverActive = new Set<number>();
+  private readonly _scratchGoldActive = new Set<number>();
+  private readonly _scratchConsumableActive = new Set<number>();
+  private readonly _scratchConsumableCurrent = new Set<number>();
+  private readonly _scratchAxeActive = new Set<number>();
+  private readonly _scratchWeaponProjActive = new Set<number>();
+  private readonly _scratchBossProjActive = new Set<number>();
+  private readonly _scratchPickupCounts = new Map<THREE.InstancedMesh, number>();
+  private readonly _scratchVisibleChestIds = new Set<number>();
+  private readonly _scratchSeenIds = new Set<number>();
+  private readonly _scratchMarkerAlive = new Set<number>();
+  private readonly _scratchParalysisIds = new Set<number>();
+  private readonly _scratchAliveEnemyGrid = new Set<number>();
+  /** 遗物栏复用条目，保留稀有度和获得顺序，同时避免每帧创建临时数组。 */
+  private readonly _scratchAcquiredRelics: HudRelicEntry[] = [];
+  /**
+   * HUD tome 槽位用：updateHUD 每帧把 player.tomes 按 TOME_HUD_TYPE_RANK 排序展示。
+   * 旧实现用 `.map().sort().map()` 三段链，每帧分配 3 个数组 + N 个 {tome, index} 中间对象。
+   * 复用 scratch + 原地 sort，借 Array.prototype.sort 稳定性保留 tomes 原始顺序作为次序。
+   */
+  private readonly _scratchOrderedTomes: Array<GameState['player']['tomes'][number]> = [];
   // HitFlash 受击 tint 系统 — 见 render/HitFlashSystem.ts
   private hitFlash!: HitFlashSystem;
   // 敌人弹幕火焰 billboard 朝向计算的临时量（避免每帧每弹分配）
@@ -3150,6 +3429,11 @@ export class GameScene {
   // id → 上一帧 x/z + 静止累计时长。core(setInterval 60Hz) 与渲染(rAF, 可能 120/144Hz) 不同步，
   // 很多渲染帧位置没变，故用"距上次位移过了多久"做滞后判定，而非单帧瞬时速度。
   private enemyPrevPos: Map<number, { x: number; z: number; stillTime: number }> = new Map();
+  private enemyImpostorMesh: THREE.InstancedMesh | null = null;
+  private enemyImpostorCount = 0;
+  // 密度自适应 LOD：每帧 renderEnemies 入口按敌人数刷新一次，updateVFX / marker 复用本字段。
+  // 占位初值 = profile.loose 值（少怪宽松档），确保任何渲染都能跑（never NaN/undefined）。
+  private currentEnemyLod: ResolvedEnemyLod = computeEnemyLod(this.renderProfile, 0);
   // modelKey → 把该模型几何高度归一化到 1 单位高的系数（= 1 / 实际包围盒高度）。
   // 用于让来源尺寸各异的敌人模型统一缩放到目标高度（参考玩家），首次用到时按 loadedModels 实测缓存。
   private enemyModelNormHeight: Map<string, number> = new Map();
@@ -3174,10 +3458,12 @@ export class GameScene {
   private areaEffectVfx!: AreaEffectVfx;
   private pickupMeshes: Map<PickupType, THREE.InstancedMesh> = new Map();
   private silverPickupObjects: Map<number, THREE.Object3D> = new Map();
+  private silverPickupPool: THREE.Object3D[] = [];
   private consumableSprites: Map<number, THREE.Sprite> = new Map();
   private lastConsumablePickups: Map<number, { x: number; z: number; attracted: boolean }> = new Map();
   private goldMoteTexture!: THREE.Texture;
   private goldMoteSprites: Map<number, THREE.Sprite> = new Map();
+  private goldMoteSpritePool: THREE.Sprite[] = [];
 
   // === VFX systems ===
   // 点云粒子池（500 槽，shader 点云）+ 各种 emit* 辅助 — 见 vfx/ParticlePool.ts。
@@ -3188,6 +3474,7 @@ export class GameScene {
 
   // DOM overlays
   private hudContainer!: HTMLDivElement;
+  private initialUiReady: Promise<void> = Promise.resolve();
   private hpBar!: HTMLDivElement;
   private hpBarInner!: HTMLImageElement;
   private hpText!: HTMLDivElement;
@@ -3204,8 +3491,6 @@ export class GameScene {
   private killCountEl!: HTMLSpanElement;
   private goldLabel!: HTMLDivElement;
   private silverLabel!: HTMLDivElement;
-  private gmWeaponDamagePanel: HTMLDivElement | null = null;
-  private gmWeaponDamageBody: HTMLDivElement | null = null;
   /** 局内任务条（武器槽下方）。 */
   private questRow!: HTMLDivElement;
   private questLabel!: HTMLDivElement;
@@ -3274,15 +3559,35 @@ export class GameScene {
   private wasOvertime = false;
   private xpFlashTimer = 0;
   private seenChestOpenEvents = new Set<string>();
-  /** 帧率 / Draw Call 调试 overlay（dev 下按 ` 与风格化调参面板同步开关） */
-  private perfStatsEl: HTMLDivElement | null = null;
-  private perfStatsVisible = false;
-  private perfFpsSampleTime = 0;
-  private perfFpsFrameCount = 0;
-  private perfFpsDisplay = 0;
-
   // 渲染帧计数器（动画 LOD 错峰用：不同 id 的敌人在不同帧更新，把降频开销摊开）。
   private frameIndex = 0;
+  /**
+   * Pickup 渲染降采样：拥挤场景下 renderPickups 每 N 帧才更新一次 instance matrix。
+   * 181 个 XP pickup 各 1 次 updateMatrix + setMatrixAt + 整个 instanceBuffer GPU 上传，每帧 1-2ms；
+   * 30Hz 对静态/匀速 pickup 视觉无感（attracted 吸附走 silver/gold/consumable 独立 sprite 路径，不影响）。
+   */
+  private pickupRenderPhase = 0;
+  private nextSlowHudUpdateAt = 0;
+  private lastSlowHudPhase: GamePhase | null = null;
+  // HUD 差分缓存：以**数字输入**为键，避免每帧 template literal 分配字符串再做字符串比较。
+  // 60Hz × 5 个文本 = ~300 string/sec，整数比较是零 alloc。
+  private lastHpInt = -1;
+  private lastMaxHpInt = -1;
+  private lastShieldDisplay = '';
+  private lastShieldInt = -1;
+  private lastMaxShieldInt = -1;
+  private lastLevelNum = -1;
+  private lastTotalSec = -1;
+  private lastKillCountNum = -1;
+  private lastSilverEarned = -1;
+  private lastGold = -1;
+  private vfxEventBudgetRemaining = Number.MAX_SAFE_INTEGER;
+  private currentRenderPixelRatio = 0;
+  private renderCssWidth = 1;
+  private renderCssHeight = 1;
+  private dynamicDprSampleTime = 0;
+  private dynamicDprSampleFrames = 0;
+  private dynamicDprCooldown = 0;
   // 复用的视锥/矩阵，避免每帧分配。renderEnemies 开头由当前相机重建后做点剔除。
   private readonly cullFrustum = new THREE.Frustum();
   private readonly cullMatrix = new THREE.Matrix4();
@@ -3322,15 +3627,14 @@ export class GameScene {
    */
   private weaponSlotsSig = '';
   private weaponCooldownOverlays: Array<HTMLElement | null> = [];
-  private gmWeaponDamageSig = '';
-  private gmWeaponDamageRows = new Map<string, {
-    kills: HTMLSpanElement;
-    dps: HTMLSpanElement;
-    total: HTMLSpanElement;
-  }>();
-  private tomesSig = '';
-  private relicsSig = '';
-  private bondsSig = '';
+  // tomesSig / relicsSig / bondsSig 从字符串 sig 改为 32-bit 数字哈希：避免每帧 `+=` 字符串拼接
+  // 产生临时字符串。模板字面量 `${num}` 仍能拼成最终 cache key，对下游无破坏。
+  // 碰撞概率 ~1/2^32，可接受（最坏后果 = DOM 漏更新一帧，下帧自愈）。
+  private tomesSig = 0;
+  private relicsSig = 0;
+  private bondsSig = 0;
+  /** bondDetailOverlay 当前展示内容的 sig；避免每帧重写 innerHTML（GC 大头之一）。 */
+  private bondDetailSig = '';
   /** 羁绊槽点击展开时使用最近一帧 state，避免 DOM 缓存后闭包拿到旧数值。 */
   private latestHudState?: GameState;
   /**
@@ -3345,10 +3649,6 @@ export class GameScene {
 
   // Boss attack warning elements
   private bossAoeFlashTimer = 0;
-
-  /** GM 调试：碰撞盒可视化层（col_/wall_/climb_/ramp_/spawn_），按需 lazy 构建。 */
-  private collisionDebugGroup: THREE.Group | null = null;
-  private collisionDebugVisible = false;
 
   // Combo HUD elements
   private comboLabel: HTMLDivElement | null = null;
@@ -3393,8 +3693,12 @@ export class GameScene {
       powerPreference: 'high-performance',
       alpha: true, // 允许透明背景，便于支持高质量天空盒/CSS天空背景
     });
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; // 开启高质量实时阴影
+    this.renderer.shadowMap.enabled = this.renderProfile.shadowsEnabled;
+    this.renderer.shadowMap.type = this.renderProfile.shadowMapType;
+    // 关掉 info 自动 reset：默认每次 renderer.render() 调用会清零 info.render.calls/triangles，
+    // 在 EffectComposer 多 pass 链路下只剩最后一个 pass 的统计（FinalComposite=1 quad），
+    // overlay 上看到 draw=1/tris=0 是假象。改为帧首手动 reset，让数据累计整帧所有 pass。
+    this.renderer.info.autoReset = false;
     this.renderer.toneMapping = THREE.NeutralToneMapping; // 更亮、更保饱和（Q 版鲜艳调性，替代偏暗去饱和的 ACES）
     this.renderer.toneMappingExposure = WEATHER_DAY_EXPOSURE; // 曝光：调参面板调定的整体亮度（Q 版鲜亮调性）
     this.renderer.outputColorSpace = THREE.SRGBColorSpace; // 显式 sRGB，保证饱和度正确还原
@@ -3475,6 +3779,7 @@ export class GameScene {
       getQuestProgress().filter(p => p.completed).map(p => p.questId),
     );
     curvedWorldUniforms.uWarpStrength.value = this.renderProfile.curvedWorldStrength;
+    this.renderer.shadowMap.enabled = this.renderProfile.shadowsEnabled;
     this.renderer.shadowMap.type = this.renderProfile.shadowMapType;
     if (import.meta.env.DEV) {
       console.log(`[Render] platform profile: ${this.renderProfile.id}`, this.renderProfile);
@@ -3486,44 +3791,28 @@ export class GameScene {
     this.hitFlash = new HitFlashSystem(WEAPON_VFX_COLORS);
     this.damageNumbers = new DamageNumbersOverlay(this.camera);
     this.setupPlayer();
+    this.setupEnemyImpostorMesh();
     this.setupProjectileMesh();
     this.setupPickupMesh();
     this.setupGoldMoteMesh();
     this.setupVFX();
     this.setupHUD();
-    this.setupPerfStats();
+    this.initialUiReady = waitForInitialGameUiReady(this.hudContainer);
 
     this.removeDisplayListener = installThreeHighDpi({
       renderer: this.renderer,
       container: this.container,
       maxPixelRatio: this.renderProfile.maxPixelRatio,
       onResize: ({ width, height, pixelRatio }) => {
+        this.renderCssWidth = width;
+        this.renderCssHeight = height;
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
-        if (this.composer) {
-          this.composer.setPixelRatio(pixelRatio);
-          this.composer.setSize(width, height);
-        }
+        this.applyRenderPixelRatio(this.chooseResizePixelRatio(pixelRatio), true);
       },
     });
 
     this.setupComposer();
-
-    // Dev-only 风格化调参面板（按 ` 开关），生产构建不创建。
-    if (import.meta.env.DEV) {
-      createStylizedDebugPanel({
-        scene: this.scene,
-        bloom: this.bloomPass,
-        renderer: this.renderer,
-        colorGrade: this.colorGradePass,
-        darkComic: this.darkComicPass,
-        cameraOrbit: this.cameraOrbit,
-        onSkyModeChange: (mode) => {
-          this.applySkyMode(mode);
-        },
-      });
-      this.setupGmWeaponDamagePanel();
-    }
 
     this.sessionUnsubscribers.push(
       this.session.on('game_update', ({ state }) => {
@@ -3538,6 +3827,10 @@ export class GameScene {
     );
 
     this.animate();
+  }
+
+  waitForInitialUiReady(): Promise<void> {
+    return this.initialUiReady;
   }
 
   playStartIntro(onComplete: () => void): void {
@@ -3629,18 +3922,6 @@ export class GameScene {
     }
     this.hideConsumableTooltip();
     this.hudContainer?.remove();
-    this.perfStatsEl?.remove();
-    this.perfStatsEl = null;
-    this.perfStatsVisible = false;
-    if (this.perfKeyHandler) {
-      window.removeEventListener('keydown', this.perfKeyHandler);
-      this.perfKeyHandler = null;
-    }
-    this.gmWeaponDamagePanel?.remove();
-    this.gmWeaponDamagePanel = null;
-    this.gmWeaponDamageBody = null;
-    this.gmWeaponDamageRows.clear();
-    this.gmWeaponDamageSig = '';
     this.upgradePanel?.remove();
     this.gameOverPanel?.remove();
     this.pausePanel?.remove();
@@ -3688,7 +3969,7 @@ export class GameScene {
     const dir = new THREE.DirectionalLight('#FFF5E0', 1.35);
     dir.name = 'DirectionalLight';
     dir.position.set(15, 25, 15);
-    dir.castShadow = true;
+    dir.castShadow = this.renderProfile.shadowsEnabled;
     const shadowSize = this.renderProfile.shadowMapSize;
     dir.shadow.mapSize.width = shadowSize;
     dir.shadow.mapSize.height = shadowSize;
@@ -4098,7 +4379,7 @@ export class GameScene {
    *
    * BLOOM_ENABLED = false（默认关闭，性能优化）：UnrealBloomPass 的半分辨率降采样 +
    * 多次高斯模糊是移动端 / 集显帧率的最大单项开销，关闭后还会释放其 mip render targets 显存。
-   * 移动端 sceneRT 用 UnsignedByteType + uOutlineTapScale=2.0 降带宽；桌面保持 HalfFloat + tap 1.0。
+   * 移动端 sceneRT 用 UnsignedByteType 降带宽；描边厚度按画质档下调，避免低 DPR 手机上黑边过粗。
    */
   private setupComposer(): void {
     const BLOOM_ENABLED = false;
@@ -4148,7 +4429,7 @@ export class GameScene {
       this.renderer,
       pxW,
       pxH,
-      { outlineTapScale: profile.outlineTapScale },
+      { outlineThickness: profile.outlineThickness, outlineTapScale: profile.outlineTapScale },
     );
     finalComposite.renderToScreen = true;
     composer.addPass(finalComposite);
@@ -4158,16 +4439,9 @@ export class GameScene {
   }
 
   private renderFrame(): void {
-    // dev 诊断：渲染提交墙钟耗时(EMA)。不被 vsync(60封顶)掩盖，反映 CPU 端 draw 提交负载——
-    // 这个 ms 越接近 16.6 越接近掉帧临界点。生产构建里 import.meta.env.DEV 恒为 false，整块计时被 tree-shake。
-    const t0 = import.meta.env.DEV ? performance.now() : 0;
     if (this.composer) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
-    if (import.meta.env.DEV) {
-      this.perfRenderMs = this.perfRenderMs * 0.9 + (performance.now() - t0) * 0.1;
-    }
   }
-  private perfRenderMs = 0;
 
   /** GL context 丢失时显示的提示浮层（懒创建，复用同一节点）。 */
   private showContextLostOverlay(): void {
@@ -4203,7 +4477,7 @@ export class GameScene {
     applyStylizedToonShading(baseMat, 0, true); // 地面底板也加风格化 + 网点
     this.groundMesh = new THREE.Mesh(tessellatedGeo, baseMat);
     this.groundMesh.name = 'Ground_Base';
-    this.groundMesh.receiveShadow = true;
+    this.groundMesh.receiveShadow = this.renderProfile.shadowsEnabled;
     this.groundMesh.position.y = -0.5;
     this.scene.add(this.groundMesh);
 
@@ -4621,18 +4895,64 @@ export class GameScene {
   }
 
   private setupVFX(): void {
-    const { billboardCapacity, particleCapacity } = this.renderProfile;
+    const { billboardCapacity, particleCapacity, particleEmissionScale } = this.renderProfile;
     // ─── Billboard VFX：贴图预载 + plane mesh 池（移动 24 / 桌面 64）───
     this.billboardPool = new BillboardPool(this.scene, billboardCapacity);
     // ─── 点云粒子池（移动 250 / 桌面 500）+ shader 自渲染 ───
     //（emitDeathBurst / emitHitSparks 等会同时调 billboardPool，所以必须在它之后）
-    this.particlePool = new ParticlePool(this.scene, this.billboardPool, particleCapacity);
+    this.particlePool = new ParticlePool(this.scene, this.billboardPool, particleCapacity, particleEmissionScale);
     // ─── 武器瞬态 VFX（剑气 / 闪电 / 火环）+ 自带常驻 lightningFlashLight ───
     this.weaponTransientVfx = new WeaponTransientVfx(this.scene, this.billboardPool, this.particlePool);
     // ─── 区域特效（毒气 / 虚空涟漪 / 灼地痕迹 / 激光线）+ 按 kind 对象池 ───
     this.areaEffectVfx = new AreaEffectVfx(this.scene, this.billboardPool, this.particlePool);
     // ─── 羁绊 / 状态 VFX（奥秘头顶数字 / 奥术光球 / bond 事件 / 敌人状态粒子）───
     this.bondStatusVfx = new BondAndStatusVfx(this.scene, this.billboardPool, this.particlePool);
+  }
+
+  private setupEnemyImpostorMesh(): void {
+    if (!this.renderProfile.enemyImpostorEnabled) return;
+
+    const geo = new THREE.BoxGeometry(0.75, 1, 0.75);
+    const mat = new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: toonGradientMap });
+    const mesh = new THREE.InstancedMesh(geo, mat, MAX_ENEMIES);
+    mesh.name = 'EnemyImpostors';
+    mesh.count = 0;
+    mesh.frustumCulled = false;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.scene.add(mesh);
+    this.enemyImpostorMesh = mesh;
+  }
+
+  private placeEnemyImpostor(
+    enemy: EnemyState,
+    targetHeight: number,
+    sizeMultiplier: number,
+    hoverOffset: number,
+    playerPos: GameState['player'],
+  ): void {
+    const mesh = this.enemyImpostorMesh;
+    if (!mesh || this.enemyImpostorCount >= MAX_ENEMIES) return;
+
+    const h = targetHeight * sizeMultiplier;
+    const w = Math.max(0.35, h * 0.45);
+    this._dummy.position.set(enemy.x, enemy.y + hoverOffset + h * 0.5, enemy.z);
+    this._dummy.rotation.set(0, Math.atan2(playerPos.x - enemy.x, playerPos.z - enemy.z), 0);
+    this._dummy.scale.set(w, h, w);
+    this._dummy.updateMatrix();
+    mesh.setMatrixAt(this.enemyImpostorCount, this._dummy.matrix);
+    this._tempColor.setHex(ENEMY_COLORS[enemy.type] ?? 0x888888);
+    mesh.setColorAt(this.enemyImpostorCount, this._tempColor);
+    this.enemyImpostorCount++;
+  }
+
+  private commitEnemyImpostors(): void {
+    const mesh = this.enemyImpostorMesh;
+    if (!mesh) return;
+    mesh.count = this.enemyImpostorCount;
+    if (this.enemyImpostorCount > 0) {
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
   }
 
   // spawnBillboard / updateBillboardVfx 已迁出至 BillboardPool；
@@ -4954,160 +5274,6 @@ export class GameScene {
     this.hudContainer.appendChild(this.comboLabel);
   }
 
-  /**
-   * 左下角 FPS + Draw Call + 分类拆解诊断 overlay（EffectComposer 多 pass 需关闭 autoReset 后手动 reset）。
-   * 仅 dev 构建启用（生产 `import.meta.env.DEV === false` 直接 return，不创建 DOM、不改 renderer.info、不挂键盘）。
-   * 默认隐藏，按 ` 与右上角风格化调参面板同步开关。保留它是为了后续做敌人模型合批时还能用 enemy draws / sig 验证。
-   */
-  private setupPerfStats(): void {
-    if (!import.meta.env.DEV) return;
-    if (this.perfStatsEl) return;
-    this.renderer.info.autoReset = false;
-    const el = document.createElement('div');
-    el.style.cssText = `
-      position:fixed;left:max(8px,env(safe-area-inset-left));bottom:max(8px,env(safe-area-inset-bottom));
-      z-index:150;display:none;pointer-events:none;padding:4px 8px;border-radius:6px;
-      background:rgba(0,0,0,0.55);color:#b8ffb8;font-family:monospace;
-      font-size:11px;line-height:1.45;font-variant-numeric:tabular-nums;
-      text-shadow:0 1px 2px rgba(0,0,0,0.9);white-space:pre;
-    `;
-    el.textContent = 'FPS: --\nDraw: --';
-    document.body.appendChild(el);
-    this.perfStatsEl = el;
-
-    // dev 诊断：按 ` 开关本 overlay。
-    this.perfKeyHandler = (e: KeyboardEvent) => {
-      if (e.code !== 'Backquote') return;
-      this.perfStatsVisible = !this.perfStatsVisible;
-      el.style.display = this.perfStatsVisible ? 'block' : 'none';
-    };
-    window.addEventListener('keydown', this.perfKeyHandler);
-  }
-  private perfKeyHandler: ((e: KeyboardEvent) => void) | null = null;
-
-  private updatePerfStats(dt: number): void {
-    if (!this.perfStatsEl) return;
-    if (!this.perfStatsVisible) {
-      this.renderer.info.reset();
-      return;
-    }
-    this.perfFpsFrameCount += 1;
-    this.perfFpsSampleTime += dt;
-    if (this.perfFpsSampleTime >= 0.25) {
-      this.perfFpsDisplay = Math.round(this.perfFpsFrameCount / this.perfFpsSampleTime);
-      this.perfFpsFrameCount = 0;
-      this.perfFpsSampleTime = 0;
-    }
-    const drawCalls = this.renderer.info.render.calls;
-    const tris = this.renderer.info.render.triangles;
-    // 临时诊断：统计敌人贡献的可见子网格数（= draw call 数），定位 draw call 来源。
-    // 每 0.25s 才重算一次（与 FPS 采样同步），O(敌人数) 遍历，开销可忽略。
-    if (this.perfFpsSampleTime === 0) {
-      let enemyMeshes = 0;
-      let enemyMerged = 0;
-      let enemyMergedSig = 0;
-      for (const obj of this.enemyObjects.values()) {
-        const type = obj.userData['enemyType'] as string | undefined;
-        let stat = type ? this.enemyMeshCountByType.get(type) : undefined;
-        if (stat === undefined) {
-          let meshes = 0;
-          const texes = new Set<string>();
-          const sigs = new Set<string>();
-          obj.traverse((c) => {
-            const m = c as THREE.Mesh;
-            if (!m.isMesh) return;
-            meshes++;
-            const mm = m.material;
-            const arr = Array.isArray(mm) ? mm : [mm];
-            for (const x of arr) {
-              const tm = x as THREE.MeshToonMaterial;
-              const tex = tm?.map?.uuid ?? `color:${tm?.color?.getHexString?.() ?? 'none'}`;
-              texes.add(tex);
-              // 完整材质签名：贴图 + 颜色 + 自发光 + 透明/面向。同签名 = 可直接复用一个材质合并。
-              const sig = `${tex}|${tm?.color?.getHexString?.() ?? '-'}|${tm?.emissiveMap?.uuid ?? '-'}|${tm?.emissive?.getHexString?.() ?? '-'}|${tm?.transparent ? 't' : 'o'}|${tm?.side ?? 0}`;
-              sigs.add(sig);
-            }
-          });
-          stat = { meshes, tex: texes.size, sig: sigs.size };
-          if (type) this.enemyMeshCountByType.set(type, stat);
-        }
-        enemyMeshes += stat.meshes;
-        enemyMerged += stat.tex;
-        enemyMergedSig += stat.sig;
-      }
-      this.perfEnemyMeshes = enemyMeshes;
-      this.perfEnemyMerged = enemyMerged;
-      this.perfEnemyMergedSig = enemyMergedSig;
-      this.perfEnemyCount = this.enemyObjects.size;
-      this.computeDrawBreakdown();
-    }
-    const b = this.perfDrawBreakdown;
-    const bSum = b.enemy + b.shadow + b.level + b.other;
-    // alive 来自 enemyObjects（含 dying 动画前的所有挂载对象），culled = 因 >ENEMY_VISIBLE_CULL_DIST
-    // 被强制 visible=false 的；alive - culled 即「画面附近实际尝试渲染的怪」（再被视锥过滤就是 b.enemy）。
-    const culled = this.perfEnemyCulledFar;
-    this.perfStatsEl.textContent =
-      `FPS: ${this.perfFpsDisplay}\nDraw: ${drawCalls}\nTris: ${(tris / 1000).toFixed(0)}k\n` +
-      `Enemies: ${this.perfEnemyCount} → ${this.perfEnemyMeshes} draws\n` +
-      `  far-culled (>${ENEMY_VISIBLE_CULL_DIST}m): ${culled}\n` +
-      `merge tex→ ${this.perfEnemyMerged} / sig→ ${this.perfEnemyMergedSig}\n` +
-      `real draws (frustum):\n` +
-      `  enemy ${b.enemy}  shadow ${b.shadow}\n` +
-      `  level ${b.level}  other ${b.other}\n` +
-      `  sum ${bSum} (+post ${Math.max(0, drawCalls - bSum)})\n` +
-      `outline: ${this.finalCompositePass?.mode ?? 'off'}\n` +
-      `profile: ${this.renderProfile.id}\n` +
-      `render: ${this.perfRenderMs.toFixed(1)}ms (submit)`;
-    this.renderer.info.reset();
-  }
-
-  /**
-   * 临时诊断：把场景里**实际会渲染**的 draw 按类别拆开（敌人 / blob 阴影 / 地图 / 其它），
-   * 定位 2419 draw 的大头。带视锥剔除 + 祖先 visible 判断 + 多材质 group 计数，
-   * 四类之和应 ≈ renderer.calls（差额 = 后处理 pass / shadowmap 等）。每 0.25s 算一次。
-   */
-  private computeDrawBreakdown(): void {
-    this.cullMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
-    this.cullFrustum.setFromProjectionMatrix(this.cullMatrix);
-    let enemy = 0, shadow = 0, level = 0, other = 0;
-    this.scene.traverse((obj) => {
-      const m = obj as THREE.Mesh;
-      if (!m.isMesh || !m.visible) return;
-      // 祖先任一不可见 → 不渲染
-      for (let p = m.parent; p; p = p.parent) if (!p.visible) return;
-      // 视锥剔除（frustumCulled=false 的强制渲染，如 blob 阴影）
-      if (m.frustumCulled && !this.cullFrustum.intersectsObject(m)) return;
-      // draw 数：多材质按 geometry.groups 拆，否则 1
-      const groups = (m.geometry as THREE.BufferGeometry | undefined)?.groups;
-      const draws = Array.isArray(m.material) && groups && groups.length > 0 ? groups.length : 1;
-      // 归类：沿 parent 链找标记
-      let cat = 3; // 0 enemy / 1 shadow / 2 level / 3 other
-      for (let p: THREE.Object3D | null = m; p; p = p.parent) {
-        if (p.userData && p.userData['enemyType'] !== undefined) { cat = 0; break; }
-        if (p.name === 'BlobShadow') { cat = 1; break; }
-        if (p.name === 'LevelRoot') { cat = 2; break; }
-      }
-      if (cat === 0) enemy += draws;
-      else if (cat === 1) shadow += draws;
-      else if (cat === 2) level += draws;
-      else other += draws;
-    });
-    this.perfDrawBreakdown.enemy = enemy;
-    this.perfDrawBreakdown.shadow = shadow;
-    this.perfDrawBreakdown.level = level;
-    this.perfDrawBreakdown.other = other;
-  }
-  private enemyMeshCountByType = new Map<string, { meshes: number; tex: number; sig: number }>();
-  private perfEnemyMeshes = 0;
-  private perfEnemyMerged = 0;
-  private perfEnemyMergedSig = 0;
-  private perfEnemyCount = 0;
-  // 每帧 updateEnemyObjects 累加：被 ENEMY_VISIBLE_CULL_DIST 远距剔除掉的敌人数。
-  // 写在 perf 字段里方便 overlay 立刻显示「活着但不可见」的怪有多少 —— 帮玩家分辨
-  // 「真的没怪」vs「怪都在 35m 外被剔除」。
-  private perfEnemyCulledFar = 0;
-  private perfDrawBreakdown = { enemy: 0, shadow: 0, level: 0, other: 0 };
-
   // ===========================================================================
   // Camera Effects — Layered Shake & Hit Stop
   // ===========================================================================
@@ -5124,144 +5290,71 @@ export class GameScene {
     this.hitStopTimer = duration;
   }
 
-  // GM debug: 强制在指定坐标劈一道闪电（测试用）
-  debugSpawnLightning(x: number, y: number, z: number): void {
-    this.weaponTransientVfx.spawnLightningBolt(x, y, z);
+  private getRenderPixelRatioCap(): number {
+    const raw = Number.isFinite(window.devicePixelRatio) ? window.devicePixelRatio : 1;
+    const cap = Math.min(raw || 1, this.renderProfile.maxPixelRatio);
+    return Math.max(this.renderProfile.minPixelRatio, cap);
   }
 
-  /**
-   * GM debug：切换碰撞盒可视化层。
-   *
-   * 颜色编码（透明 wireframe）：
-   *   - 绿 col_  : 可站立平台（顶面 = 可走面）
-   *   - 红 wall_ : 实心遮挡（横向阻挡 + 头顶下穿）
-   *   - 蓝 climb_: 攀爬体（按 jump 抓墙）
-   *   - 黄 ramp_ : 可行走斜坡（线性插值高度）
-   *   - 品红 spawn_player/boss/altar/chest 标记球
-   *
-   * 数据源：客户端 `loadedLevel.data`（LevelLoader 解析的 LevelData）。
-   * 走到这里时 loadedLevel 必非 null（boot 失败会先抛错）。
-   */
-  debugToggleCollisionViz(): boolean {
-    if (this.collisionDebugGroup) {
-      this.collisionDebugVisible = !this.collisionDebugVisible;
-      this.collisionDebugGroup.visible = this.collisionDebugVisible;
-      return this.collisionDebugVisible;
-    }
-    if (!loadedLevel) {
-      console.warn('[GM] loadedLevel 为空（理论上不该发生）。');
-      return false;
-    }
-    this.collisionDebugGroup = this.buildCollisionDebugGroup(loadedLevel.data);
-    this.scene.add(this.collisionDebugGroup);
-    this.collisionDebugVisible = true;
-    return true;
+  private clampRenderPixelRatio(value: number): number {
+    const min = this.renderProfile.minPixelRatio;
+    const max = this.getRenderPixelRatioCap();
+    return Math.max(min, Math.min(value, max));
   }
 
-  private buildCollisionDebugGroup(data: LevelData): THREE.Group {
-    const group = new THREE.Group();
-    group.name = 'CollisionDebug';
+  private chooseResizePixelRatio(pixelRatio: number): number {
+    if (!this.renderProfile.dynamicPixelRatioEnabled || this.currentRenderPixelRatio <= 0) {
+      return pixelRatio;
+    }
+    return this.currentRenderPixelRatio;
+  }
 
-    // 加色实心 fill（占据体积感，加色让重叠处更亮）
-    const fillMat = (color: number, opacity: number) =>
-      new THREE.MeshBasicMaterial({
-        color, transparent: true, opacity,
-        depthWrite: false, depthTest: false, // 永远置顶（debug overlay）
-        blending: THREE.AdditiveBlending,
-        side: THREE.DoubleSide,
-      });
+  private applyRenderPixelRatio(pixelRatio: number, force = false): void {
+    const next = this.clampRenderPixelRatio(pixelRatio);
+    if (!force && Math.abs(next - this.currentRenderPixelRatio) < 0.01) return;
 
-    // 高亮 wireframe 边缘（用 EdgesGeometry，比 wireframe:true 干净）
-    const edgeMat = (color: number) =>
-      new THREE.LineBasicMaterial({
-        color, transparent: true, opacity: 0.95,
-        depthWrite: false, depthTest: false,
-      });
+    const width = this.renderCssWidth || this.container.clientWidth || window.innerWidth || 1;
+    const height = this.renderCssHeight || this.container.clientHeight || window.innerHeight || 1;
+    this.renderer.setPixelRatio(next);
+    this.renderer.setSize(width, height);
+    if (this.composer) {
+      this.composer.setPixelRatio(next);
+      this.composer.setSize(width, height);
+    }
+    this.currentRenderPixelRatio = next;
+    this.dynamicDprSampleTime = 0;
+    this.dynamicDprSampleFrames = 0;
+  }
 
-    // 给一个 box 加一组 fill + edge，自动放进 group 并提高 renderOrder。
-    const addBox = (
-      cx: number, cy: number, cz: number,
-      sx: number, sy: number, sz: number,
-      color: number, fillOpacity: number,
-    ) => {
-      const geo = new THREE.BoxGeometry(sx, sy, sz);
-      const fill = new THREE.Mesh(geo, fillMat(color, fillOpacity));
-      fill.position.set(cx, cy, cz);
-      fill.renderOrder = 9999;
-      group.add(fill);
-      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat(color));
-      edges.position.set(cx, cy, cz);
-      edges.renderOrder = 10000;
-      group.add(edges);
-    };
+  private updateDynamicPixelRatio(dt: number): void {
+    const profile = this.renderProfile;
+    if (!profile.dynamicPixelRatioEnabled || this.currentRenderPixelRatio <= 0) return;
 
-    // col_: 绿色（顶面 = 可走面；baseY 缺省 = height - 1 即视觉厚 1 单位）
-    for (const r of data.collisionRects) {
-      const baseY = r.baseY ?? r.height - 1;
-      const sy = Math.max(r.height - baseY, 0.01);
-      addBox(r.cx, (baseY + r.height) / 2, r.cz, r.halfW * 2, sy, r.halfD * 2, 0x00ff44, 0.18);
+    this.dynamicDprCooldown = Math.max(0, this.dynamicDprCooldown - dt);
+    this.dynamicDprSampleTime += dt;
+    this.dynamicDprSampleFrames++;
+    if (this.dynamicDprSampleTime < profile.dynamicPixelRatioSampleSeconds) return;
+
+    const fps = this.dynamicDprSampleFrames / Math.max(this.dynamicDprSampleTime, 0.001);
+    this.dynamicDprSampleTime = 0;
+    this.dynamicDprSampleFrames = 0;
+    if (this.dynamicDprCooldown > 0) return;
+
+    const cap = this.getRenderPixelRatioCap();
+    let next = this.currentRenderPixelRatio;
+    if (fps < profile.dynamicPixelRatioLowFps) {
+      next = Math.max(profile.minPixelRatio, this.currentRenderPixelRatio - profile.dynamicPixelRatioStep);
+    } else if (fps > profile.dynamicPixelRatioHighFps) {
+      next = Math.min(cap, this.currentRenderPixelRatio + profile.dynamicPixelRatioStep);
     }
 
-    // wall_: 红色（亮一点的 fill 凸显挡墙）
-    for (const w of data.walls ?? []) {
-      const sy = Math.max(w.topY - w.bottomY, 0.01);
-      addBox(w.cx, (w.bottomY + w.topY) / 2, w.cz, w.halfW * 2, sy, w.halfD * 2, 0xff3355, 0.28);
+    if (Math.abs(next - this.currentRenderPixelRatio) >= 0.01) {
+      this.applyRenderPixelRatio(next);
+      this.dynamicDprCooldown = profile.dynamicPixelRatioCooldownSeconds;
+      if (import.meta.env.DEV) {
+        console.log(`[Render] dynamic DPR ${this.currentRenderPixelRatio.toFixed(2)} (${fps.toFixed(1)} fps)`);
+      }
     }
-
-    // climb_: 蓝色
-    for (const c of data.climbVolumes ?? []) {
-      const sy = Math.max(c.topY - c.bottomY, 0.01);
-      addBox(c.cx, (c.bottomY + c.topY) / 2, c.cz, c.halfW * 2, sy, c.halfD * 2, 0x33aaff, 0.25);
-    }
-
-    // ramp_: 黄色——按 slopeDir 旋转的盒子，对齐真实斜面 footprint
-    for (const r of data.ramps ?? []) {
-      const sy = Math.max(r.highY - r.lowY, 0.01);
-      const cy = (r.lowY + r.highY) / 2;
-      const rotY = Math.atan2(-r.slopeDirZ, r.slopeDirX); // 对齐 local +X 到 slopeDir
-      const geo = new THREE.BoxGeometry(r.halfSlope * 2, sy, r.halfPerp * 2);
-      const fill = new THREE.Mesh(geo, fillMat(0xffcc00, 0.20));
-      fill.position.set(r.cx, cy, r.cz);
-      fill.rotation.y = rotY;
-      fill.renderOrder = 9999;
-      group.add(fill);
-      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat(0xffcc00));
-      edges.position.set(r.cx, cy, r.cz);
-      edges.rotation.y = rotY;
-      edges.renderOrder = 10000;
-      group.add(edges);
-    }
-
-    // spawn 点：品红色发光大球（半径 0.7，永远置顶）
-    const spawnFillMat = new THREE.MeshBasicMaterial({
-      color: 0xff33ff, transparent: true, opacity: 0.9,
-      depthWrite: false, depthTest: false,
-      blending: THREE.AdditiveBlending,
-    });
-    const markSpawn = (x: number, z: number, label: string) => {
-      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 12), spawnFillMat);
-      ball.position.set(x, 0.7, z);
-      ball.name = `Spawn_${label}`;
-      ball.renderOrder = 10001;
-      group.add(ball);
-      // 顶上加一根细立柱（高 5 单位）让远处也能看见
-      const pillarGeo = new THREE.CylinderGeometry(0.06, 0.06, 5, 8);
-      const pillar = new THREE.Mesh(pillarGeo, spawnFillMat);
-      pillar.position.set(x, 2.5, z);
-      pillar.renderOrder = 10001;
-      group.add(pillar);
-    };
-    for (const p of data.spawnPoints?.players ?? []) markSpawn(p.x, p.z, 'player');
-    for (const p of data.spawnPoints?.bosses ?? []) markSpawn(p.x, p.z, 'boss');
-    for (const a of data.spawnPoints?.altars ?? []) markSpawn(a.x, a.z, 'altar');
-    for (const c of data.chestSpawns ?? []) markSpawn(c.x, c.z, 'chest');
-
-    console.log(
-      `[GM] CollisionDebug: ${data.collisionRects.length} col, ${data.walls?.length ?? 0} wall, ` +
-      `${data.climbVolumes?.length ?? 0} climb, ${data.ramps?.length ?? 0} ramp, ` +
-      `${(data.spawnPoints?.players?.length ?? 0) + (data.spawnPoints?.bosses?.length ?? 0) + (data.spawnPoints?.altars?.length ?? 0) + (data.chestSpawns?.length ?? 0)} spawn`,
-    );
-    return group;
   }
 
   // ===========================================================================
@@ -5274,19 +5367,21 @@ export class GameScene {
     // GL context 丢失期间停止一切渲染 / 状态读取（GPU 资源已失效），保留 rAF 循环以便恢复后续跑。
     if (this.contextLost) return;
 
+    perfOverlay.markFrameStart();
+
     this.frameIndex++;
 
     const now = performance.now();
     const dt = this.lastTime > 0 ? Math.min((now - this.lastTime) / 1000, 0.05) : 1 / 60;
     this.lastTime = now;
     this.frameDt = dt;
+    this.updateDynamicPixelRatio(dt);
 
     // Hit Stop / Freeze Frame (顿帧) — skip rendering updates while timer active
     if (this.hitStopTimer > 0) {
       this.hitStopTimer -= dt;
       // Still render the frozen frame
       this.renderFrame();
-      this.updatePerfStats(dt);
       return;
     }
 
@@ -5299,7 +5394,6 @@ export class GameScene {
     if (introRenderMode === 'introOnly') {
       this.renderStartIntroFrame(state);
       this.renderFrame();
-      this.updatePerfStats(dt);
       return;
     }
     const introFullWorld = introRenderMode === 'fullWorld';
@@ -5404,7 +5498,18 @@ export class GameScene {
     this.updateHUD(state, eventsFresh);
 
     this.renderFrame();
-    this.updatePerfStats(dt);
+
+    perfOverlay.frame({
+      renderer: this.renderer,
+      enemyCount: state.enemies.length,
+      projectileCount: state.projectiles.length,
+      pickupCount: state.pickups.length + (state.consumablePickups?.length ?? 0) + (state.goldMotes?.length ?? 0),
+      vfxAreaCount: state.areaEffects.length,
+      lodDensity: this.currentEnemyLod.density,
+      lodImpostorDist: this.currentEnemyLod.impostorDistance,
+      lodCullDist: this.currentEnemyLod.cullDistance,
+      pixelRatio: this.currentRenderPixelRatio,
+    });
   }
 
   // ===========================================================================
@@ -5560,6 +5665,21 @@ export class GameScene {
       this.spawnLevelUpBurst(p.x, p.y, p.z);
       this.triggerScreenFlash('#ffcc00', 0.2);
     }
+
+    // 进入"全屏暂停 UI"那一刻做两件事，把 Major GC 卡顿挪到玩家不感知的暂停期：
+    //  1) tryScheduleGC: Chrome + --expose-gc 才有效；直接强制走一次 Mark-Sweep。
+    //  2) drainPoolsForPause: WebView 友好的替代方案 —— 把 enemy / projectile 对象池
+    //     抽空到一半，让被抽掉的 mesh + 材质 + mixer 整体变成 unreachable。下次 V8
+    //     自然 Major GC 时存活集变小，GC 自身耗时下降，间接降低战斗中卡顿。
+    // 两条腿一起走：开了 --expose-gc 的 Chrome 调试时双重收益；WebView 真机也至少
+    // 拿到 drain 的那一部分。
+    if (
+      isPausePhaseForGc(state.phase)
+      && !isPausePhaseForGc(this.lastPhase)
+    ) {
+      this.drainPoolsForPause();
+      tryScheduleGC(state.phase);
+    }
     this.lastPhase = state.phase;
 
     if (this.levelUpAnimTimer > 0 && p.alive && this.deathAnimTimer <= 0) {
@@ -5582,8 +5702,12 @@ export class GameScene {
     }
 
     // Ring pulse when many pickups attracted
+    // 手写计数避免 state.pickups.filter() 每帧分配新数组（pickups 多时是 GC 热点）。
     const ringMat = this.playerRing.material as THREE.MeshBasicMaterial;
-    const attractedCount = state.pickups.filter(pk => pk.attracted).length;
+    let attractedCount = 0;
+    for (let i = 0; i < state.pickups.length; i++) {
+      if (state.pickups[i].attracted) attractedCount++;
+    }
     if (attractedCount > 5) {
       const pulse = 0.7 + Math.sin(time * 8) * 0.3;
       ringMat.opacity = pulse;
@@ -5745,6 +5869,43 @@ export class GameScene {
     gsapAnimations.screenFlash(color, duration);
   }
 
+  /**
+   * 暂停瞬间把对象池抽空到一半，释放掉的 mesh 走 scene.remove + disposeOwnedResources。
+   *
+   * 目的：降低 V8 自然 Major GC 的"存活集"，从而缩短下次 GC 自身耗时（Mark-Sweep
+   * 是 O(live nodes)）。这是 WebView 友好的 GC 优化路径 —— 不需要 window.gc，纯靠
+   * "把暂停期产生的可回收对象塞给 V8 待回收"。
+   *
+   * 触发时机：进入 level_up / chest_reward / shrine_reward / paused 的瞬间，玩家正
+   * 在看面板，~10-30ms 的 dispose 工作完全不可见。
+   *
+   * 取舍：drain 后池命中率从 ~95% 降到 ~80%，第一次回到战斗时可能多 1-2 次 cold
+   * clone (~16ms/次)，发生在战斗刚开始没人会注意。每池保底留 2 个避免完全 cold。
+   */
+  private drainPoolsForPause(): void {
+    let drained = 0;
+
+    const drainArr = (pool: THREE.Object3D[], minKeep: number): void => {
+      const target = Math.max(minKeep, pool.length >> 1);
+      while (pool.length > target) {
+        const obj = pool.pop();
+        if (!obj) break;
+        this.scene.remove(obj);
+        disposeOwnedResources(obj);
+        drained++;
+      }
+    };
+
+    for (const pool of this.enemyPool.values()) drainArr(pool, 2);
+    for (const pool of this.weaponPool.values()) drainArr(pool, 1);
+    drainArr(this.axePool, 1);
+    drainArr(this.bossProjPool, 1);
+
+    if (drained > 0 && import.meta.env.DEV) {
+      console.log(`[gc] drained ${drained} pooled meshes on pause`);
+    }
+  }
+
   // ─── Hit flash delegates — 实现已迁至 render/HitFlashSystem.ts ───
   private cloneHitFlashMaterial(mat: THREE.Material): THREE.Material {
     return this.hitFlash.cloneMaterial(mat);
@@ -5756,7 +5917,8 @@ export class GameScene {
     this.hitFlash.cacheBases(root);
   }
   private applyObjectHitFlashTint(root: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
-    this.hitFlash.applyTint(root, weaponType, hitFlashColor);
+    // 敌人走共享基础材质 + 染色材质池的 swap 版（不再每只私有 clone）。
+    this.hitFlash.applyEnemyTint(root, weaponType, hitFlashColor);
   }
   private setEnemyHitFlashTint(enemyId: number, obj: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
     this.hitFlash.setEnemyTint(enemyId, obj, weaponType, hitFlashColor);
@@ -5775,6 +5937,23 @@ export class GameScene {
   }
 
   private renderEnemies(enemies: EnemyState[], damageEvents: readonly DamageEvent[]): void {
+    // 每帧第一步：按当前敌人数算 LOD（impostor 距离 / cull 距离 / stride / hitFx / marker / statusVfx
+    // 全部在 loose↔tight 间 smoothstep 插值）。后续 updateVFX、bondStatusVfx、marker 直接读 currentEnemyLod。
+    const prevDensity = this.currentEnemyLod.density;
+    this.currentEnemyLod = computeEnemyLod(this.renderProfile, enemies.length);
+    const lod = this.currentEnemyLod;
+    if (import.meta.env.DEV && Math.abs(lod.density - prevDensity) > 0.25) {
+      console.log(`[LOD] density=${lod.density.toFixed(2)} enemies=${enemies.length} impostor=${lod.impostorDistance.toFixed(1)}m cull=${lod.cullDistance.toFixed(1)}m stride=${lod.impostorUpdateStride}`);
+    }
+    const enemyImpostorUpdateDue = !this.renderProfile.enemyImpostorEnabled
+      || this.enemyImpostorCount === 0
+      || this.frameIndex % lod.impostorUpdateStride === 0;
+    if (enemyImpostorUpdateDue) this.enemyImpostorCount = 0;
+    const enemyImpostorDistSq = lod.impostorDistanceSq;
+    const enemyVisibleCullSq = this.renderProfile.enemyImpostorEnabled
+      ? lod.cullDistanceSq
+      : ENEMY_VISIBLE_CULL_SQ;
+    const enemyHitFxDistSq = lod.hitFxDistanceSq;
     // 动画 LOD：每帧重建一次视锥（点剔除）+ 缓存相机位置，循环内据此对 mixer 降频。
     this.cullMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
     this.cullFrustum.setFromProjectionMatrix(this.cullMatrix);
@@ -5782,14 +5961,44 @@ export class GameScene {
     const camY = this.camera.position.y;
     const camZ = this.camera.position.z;
 
-    // 每帧重置远距剔除计数（用于 perf overlay 显示「活着但 >35m 不渲染」的怪数）
-    this.perfEnemyCulledFar = 0;
-
     // 玩家坐标（敌人朝向用）只需每帧读一次，避免在循环内对每个敌人重复 getRenderState。
     const playerPos = this.session.getRenderState().player;
 
-    // Track which enemy IDs are alive this frame
-    const aliveIds = new Set<number>();
+    // ── full-mesh 预算：只让最近的 N 只怪用骨骼网格，其余近身怪也强制转 impostor。──
+    //    impostor 分支会 `continue` 跳过后面的 mixer.update + 蒙皮，因此该预算同时压住
+    //    渲染/蒙皮/动画三块 GC（后期怪海近身才是真正的分配大头）。
+    //    做法：算出第 budget 近的 distSq，与 impostorDistSq 取 min 作为本帧切换阈值——
+    //    主循环里原有的 `cullDistSq > 阈值` 判定无需改动逻辑形态，零额外每怪分支。
+    let effectiveImpostorDistSq = enemyImpostorDistSq;
+    const fullMeshBudget = this.renderProfile.enemyFullMeshBudget;
+    if (
+      this.renderProfile.enemyImpostorEnabled
+      && Number.isFinite(fullMeshBudget)
+      && enemies.length > fullMeshBudget
+    ) {
+      const n = enemies.length;
+      if (this._fullMeshDistScratch.length < n) {
+        let cap = this._fullMeshDistScratch.length;
+        while (cap < n) cap *= 2;
+        this._fullMeshDistScratch = new Float64Array(cap);
+      }
+      const dist = this._fullMeshDistScratch;
+      for (let i = 0; i < n; i++) {
+        const e = enemies[i];
+        const ddx = e.x - camX;
+        const ddy = (e.y + 1) - camY;
+        const ddz = e.z - camZ;
+        dist[i] = ddx * ddx + ddy * ddy + ddz * ddz;
+      }
+      // 升序排序前 n 个（typed array 数值排序，原地、无比较器分配）。
+      dist.subarray(0, n).sort();
+      const cutoffSq = dist[fullMeshBudget - 1];
+      if (cutoffSq < effectiveImpostorDistSq) effectiveImpostorDistSq = cutoffSq;
+    }
+
+    // Track which enemy IDs are alive this frame（复用 scratch Set，避免每帧新建 / GC）
+    const aliveIds = this._scratchEnemyAlive;
+    aliveIds.clear();
     for (const enemy of enemies) {
       aliveIds.add(enemy.id);
     }
@@ -5847,18 +6056,8 @@ export class GameScene {
     // Map enemy types to model keys（见 ENEMY_MODEL_MAP）
     const enemyModelMap = getEnemyModelMap();
 
-    // 目标世界高度（米）—— 模型按实际高度归一化后缩放到此值。整体比玩家(1.8)矮一截以凸显角色（约 ×0.8）。
-    // 注意：所有敌人共享 core 的 ENEMY_RADIUS=0.4 水平碰撞半径，视觉体型 ≫ 该半径时多只
-    // 同类（特别是 charge 行为）会在玩家脚下视觉重叠。各值已按此约束权衡。
-    const enemyScales: Record<string, number> = {
-      skeleton_soldier: 1.2,   // KayKit 小兵 — 略矮于玩家
-      zombie: 1.1,             // 高 HP 僵尸
-      skeleton_archer: 1.2,    // KayKit 法师 — 落地人形
-      skeleton_knight: 1.6,    // KayKit 战士 — 精英 (再叠 isElite ×1.2 ≈ 1.92m)：明显大于小兵/法师，
-                               // 又不至于像之前 2.6 那样把 0.4m 碰撞半径远远撑爆、多只冲锋时严重穿模
-      necromancer: 0.7,        // 法师 — 飘浮幽灵（小巧）
-      gargoyle: 0.7,           // 蝙蝠 — 小型飞行
-    };
+    // 敌人视觉缩放表：见 ENEMY_VISUAL_SCALES（已提到模块顶层避免每帧 alloc）。
+    const enemyScales = ENEMY_VISUAL_SCALES;
 
     // Update or create objects for each alive enemy
     for (const enemy of enemies) {
@@ -5880,15 +6079,17 @@ export class GameScene {
             obj = cloneSkeleton(model) as THREE.Object3D;
             // KayKit 角色：武器已烘焙进 SkinnedMesh（详见 scripts/blender/merge-kaykit.py），
             // 不再需要运行时挂载到 handslot.r/.l 骨。
-            this.prepareHitFlashMaterials(obj);
+            // 注意：敌人不再 clone 私有材质，直接共享模型的（已 toon 化的）基础材质——
+            // 受击染色改由 HitFlashSystem 在闪烁时"借料 swap"实现（见 applyEnemyTint）。
+            // 共享材质让 cloneSkeleton 出的新怪复用已编译 program，省掉后期成片的
+            // getParameters/getProgramCacheKey 分配（堆采样实测占比最高的一块）。
             // 首次创建：在 obj.userData 上建立 mixer/actions 缓存，未来池复用直接重用
             this.setupEnemyAnimationsFor(obj, enemy.id, enemy.type);
           } else {
-            // Fallback: colored box
+            // Fallback: colored box（同样共享自身材质，闪烁时借料 swap）。
             const geo = new THREE.BoxGeometry(0.9, 1.2, 0.9);
             const mat = new THREE.MeshToonMaterial({ color: ENEMY_COLORS[enemy.type] ?? 0x888888, gradientMap: toonGradientMap });
             obj = new THREE.Mesh(geo, mat);
-            this.prepareHitFlashMaterials(obj);
           }
           obj.name = `Enemy_${enemy.type}_${enemy.id}`;
           obj.userData['enemyType'] = enemy.type;
@@ -5927,9 +6128,21 @@ export class GameScene {
       const cullDy = (enemy.y + 1) - camY;
       const cullDz = enemy.z - camZ;
       const cullDistSq = cullDx * cullDx + cullDy * cullDy + cullDz * cullDz;
-      if (cullDistSq > ENEMY_VISIBLE_CULL_SQ) {
+      if (cullDistSq > enemyVisibleCullSq) {
         if (obj.visible) obj.visible = false;
-        this.perfEnemyCulledFar++;
+        continue;
+      }
+
+      if (
+        this.renderProfile.enemyImpostorEnabled
+        && this.enemyImpostorMesh
+        && cullDistSq > effectiveImpostorDistSq
+        && !enemy.isMiniBoss
+      ) {
+        if (obj.visible) obj.visible = false;
+        if (enemyImpostorUpdateDue) {
+          this.placeEnemyImpostor(enemy, targetHeight, sizeMultiplier, hoverOffset, playerPos);
+        }
         continue;
       }
       obj.visible = true;
@@ -5962,12 +6175,13 @@ export class GameScene {
         prevPos.z = enemy.z;
       }
       const isMoving = prevPos.stillTime < 0.2;
-      const hitFlashWeaponType = enemy.hitFlashTimer > 0 ? enemy.hitFlashWeaponType : undefined;
-      const hitFlashColor = enemy.hitFlashTimer > 0 ? enemy.hitFlashColor : undefined;
+      const enemyHitFxEnabled = cullDistSq <= enemyHitFxDistSq;
+      const hitFlashWeaponType = enemy.hitFlashTimer > 0 && enemyHitFxEnabled ? enemy.hitFlashWeaponType : undefined;
+      const hitFlashColor = enemy.hitFlashTimer > 0 && enemyHitFxEnabled ? enemy.hitFlashColor : undefined;
       this.setEnemyHitFlashTint(enemy.id, obj, hitFlashWeaponType, hitFlashColor);
 
       // Choose enemy animation based on state
-      if (enemy.hitFlashTimer > 0) {
+      if (enemy.hitFlashTimer > 0 && this.renderProfile.enemyHitReactEnabled) {
         this.playEnemyAnim(enemy.id, 'HitReact');
         obj.visible = hitFlashWeaponType || hitFlashColor !== undefined ? true : Math.sin(performance.now() * 0.03) > 0;
       } else if (enemy.chargeState === 'charging') {
@@ -6036,12 +6250,21 @@ export class GameScene {
       }
     }
 
-    this.updateParalysisTriangleSprites(enemies);
-    this.updateBondEnemyMarkers(enemies);
+    if (enemyImpostorUpdateDue) this.commitEnemyImpostors();
+    this.updateParalysisTriangleSprites(enemies, playerPos);
+    this.updateBondEnemyMarkers(enemies, playerPos);
   }
 
-  private updateParalysisTriangleSprites(enemies: EnemyState[]): void {
-    const markedIds = new Set<number>();
+  private shouldRenderEnemyMarker(enemy: EnemyState, playerPos: GameState['player']): boolean {
+    const dx = enemy.x - playerPos.x;
+    const dz = enemy.z - playerPos.z;
+    const maxDist = this.currentEnemyLod.markerDistance;
+    return dx * dx + dz * dz <= maxDist * maxDist;
+  }
+
+  private updateParalysisTriangleSprites(enemies: EnemyState[], playerPos: GameState['player']): void {
+    const markedIds = this._scratchParalysisIds;
+    markedIds.clear();
     const offsets = [
       { x: 0.0, y: 1.45, z: 0.0, scale: 0.46, phase: 0.0 },
       { x: -0.34, y: 1.15, z: 0.18, scale: 0.36, phase: 1.2 },
@@ -6053,6 +6276,7 @@ export class GameScene {
 
     for (const enemy of enemies) {
       if (enemy.hp <= 0 || (enemy.slowTimer ?? 0) <= 0) continue;
+      if (!this.shouldRenderEnemyMarker(enemy, playerPos)) continue;
       markedIds.add(enemy.id);
 
       let sprites = this.paralysisTriangleSprites.get(enemy.id);
@@ -6100,15 +6324,19 @@ export class GameScene {
   /** 维护单精灵覆盖标记（neuro / hunter / conductor），随敌人位置浮动并脉冲。 */
   private updateSingleMarkerSprites(
     enemies: EnemyState[],
+    playerPos: GameState['player'],
     store: Map<number, THREE.Sprite>,
     makeTexture: () => THREE.Texture,
     predicate: (e: EnemyState) => boolean,
     cfg: { y: number; scale: number; renderOrder: number; additive: boolean; baseOpacity: number },
   ): void {
-    const alive = new Set<number>();
+    // 复用 scratch Set：本 helper 在 renderEnemies 末尾依次给 3 种 marker 调用，每次进来先 clear。
+    const alive = this._scratchMarkerAlive;
+    alive.clear();
     const time = performance.now() * 0.004;
     for (const e of enemies) {
       if (e.hp <= 0 || !predicate(e)) continue;
+      if (!this.shouldRenderEnemyMarker(e, playerPos)) continue;
       alive.add(e.id);
       let sprite = store.get(e.id);
       if (!sprite) {
@@ -6141,19 +6369,19 @@ export class GameScene {
   }
 
   /** 羁绊敌人覆盖标记：毒师墨绿倒三角 / 猎标红色瞄准圈 / 弧光导体蓝色发光。 */
-  private updateBondEnemyMarkers(enemies: EnemyState[]): void {
+  private updateBondEnemyMarkers(enemies: EnemyState[], playerPos: GameState['player']): void {
     this.updateSingleMarkerSprites(
-      enemies, this.neuroMarkerSprites, getNeuroTriangleTexture,
+      enemies, playerPos, this.neuroMarkerSprites, getNeuroTriangleTexture,
       (e) => (e.neuroStacks ?? 0) > 0,
       { y: 1.5, scale: 0.5, renderOrder: 6, additive: false, baseOpacity: 0.9 },
     );
     this.updateSingleMarkerSprites(
-      enemies, this.hunterMarkerSprites, getHunterCrosshairTexture,
+      enemies, playerPos, this.hunterMarkerSprites, getHunterCrosshairTexture,
       (e) => e.hunterBranded === true,
       { y: 1.9, scale: 0.55, renderOrder: 7, additive: false, baseOpacity: 0.95 },
     );
     this.updateSingleMarkerSprites(
-      enemies, this.conductorGlowSprites, getConductorGlowTexture,
+      enemies, playerPos, this.conductorGlowSprites, getConductorGlowTexture,
       (e) => (e.conductorMarkTimer ?? 0) > 0,
       { y: 0.9, scale: 1.8, renderOrder: 2, additive: true, baseOpacity: 0.8 },
     );
@@ -6163,11 +6391,13 @@ export class GameScene {
     let count = 0;
     let enemyCount = 0;
     const time = performance.now() * 0.005;
-    const activeAxeIds = new Set<number>();
-    const activeWeaponIds = new Set<number>();
-    const activeBossProjIds = new Set<number>();
+    const activeAxeIds = this._scratchAxeActive; activeAxeIds.clear();
+    const activeWeaponIds = this._scratchWeaponProjActive; activeWeaponIds.clear();
+    const activeBossProjIds = this._scratchBossProjActive; activeBossProjIds.clear();
     // 敌人弹幕火焰 billboard 需要相机世界坐标做朝向计算
     this.camera.getWorldPosition(this._camWorldPos);
+    // 循环外取一次 player 引用，避免 axe/hammer 分支内每个投射物都 getRenderState() 走 facade。
+    const projPlayer = this.session.getRenderState().player;
 
     // Helper: get the model for a weapon type
     const getWeaponModel = (weaponType: string): THREE.Group | null => {
@@ -6213,8 +6443,7 @@ export class GameScene {
           this.axeObjects.set(proj.id, axeObj);
         }
         axeObj.position.set(proj.x, proj.y, proj.z);
-        const state = this.session.getRenderState();
-        const angleFromPlayer = Math.atan2(proj.x - state.player.x, proj.z - state.player.z);
+        const angleFromPlayer = Math.atan2(proj.x - projPlayer.x, proj.z - projPlayer.z);
         axeObj.rotation.set(0, 0, 0);
         axeObj.rotation.order = 'YXZ';
         axeObj.rotation.x = Math.PI / 2;
@@ -6246,8 +6475,7 @@ export class GameScene {
           this.weaponObjects.set(proj.id, obj);
         }
         obj.position.set(proj.x, proj.y, proj.z);
-        const state = this.session.getRenderState();
-        const angleFromPlayer = Math.atan2(proj.x - state.player.x, proj.z - state.player.z);
+        const angleFromPlayer = Math.atan2(proj.x - projPlayer.x, proj.z - projPlayer.z);
         obj.rotation.set(0, 0, 0);
         obj.rotation.order = 'YXZ';
         obj.rotation.x = Math.PI / 2;
@@ -6479,7 +6707,8 @@ export class GameScene {
 
   private renderConsumablePickups(pickups: NonNullable<GameState['consumablePickups']>): void {
     const time = performance.now() * 0.004;
-    const active = new Set<number>();
+    const active = this._scratchConsumableActive;
+    active.clear();
     for (const pickup of pickups) {
       if (active.size >= MAX_CONSUMABLE_PICKUPS) break;
       active.add(pickup.id);
@@ -6522,7 +6751,8 @@ export class GameScene {
 
   private playConsumablePickupSfx(state: GameState): void {
     const pickups = state.consumablePickups ?? [];
-    const current = new Set<number>();
+    const current = this._scratchConsumableCurrent;
+    current.clear();
     for (const pickup of pickups) current.add(pickup.id);
 
     for (const [id, previous] of this.lastConsumablePickups) {
@@ -6534,20 +6764,46 @@ export class GameScene {
       }
     }
 
-    this.lastConsumablePickups = new Map(
-      pickups.map(pickup => [pickup.id, {
-        x: pickup.x,
-        z: pickup.z,
-        attracted: pickup.attracted,
-      }]),
-    );
+    // 复用同一 Map：原地 update / delete 失效条目，避免每帧 new Map + new 每个 entry 对象
+    // （旧实现每帧 alloc N 个 {x, z, attracted} 字面量 + 一个新 Map，pickups 多时是 GC 主犯）
+    const last = this.lastConsumablePickups;
+    for (const pickup of pickups) {
+      const existing = last.get(pickup.id);
+      if (existing) {
+        existing.x = pickup.x;
+        existing.z = pickup.z;
+        existing.attracted = pickup.attracted;
+      } else {
+        last.set(pickup.id, { x: pickup.x, z: pickup.z, attracted: pickup.attracted });
+      }
+    }
+    for (const id of last.keys()) {
+      if (!current.has(id)) last.delete(id);
+    }
   }
+
+  /** Pickup LOD：pickups 数超过此阈值时 renderPickups 走 stride（30Hz 更新 instanceMatrix）。 */
+  private static readonly PICKUP_STRIDE_THRESHOLD = 60;
+  /** Stride 步长：2 = 每 2 帧一次（30Hz @ 60fps）。 */
+  private static readonly PICKUP_STRIDE = 2;
 
   private renderPickups(pickups: PickupState[]): void {
     const time = performance.now() * 0.004; // Faster spin
 
+    // 拥挤场景降采样：> 阈值时每 N 帧才完整更新 instance matrix，跳过的帧保留上次 buffer。
+    // 视觉上 pickup 短暂停顿 16ms，玩家无感（XP/普通拾取多为静态或缓慢匀速移动）。
+    // 一旦 pickup 数回落，立即回到 60Hz（重置 phase 确保下次拥挤起始帧不会被跳）。
+    if (pickups.length > GameScene.PICKUP_STRIDE_THRESHOLD) {
+      this.pickupRenderPhase = (this.pickupRenderPhase + 1) % GameScene.PICKUP_STRIDE;
+      if (this.pickupRenderPhase !== 0) return;
+    } else {
+      this.pickupRenderPhase = 0;
+    }
+
     // 每个类型 mesh 独立计数（同 geometry 的 xp 四档也各自一个 mesh）
-    const counts: Map<THREE.InstancedMesh, number> = new Map();
+    // 复用 scratch Map：clear() 而非 new Map() —— pickups 多时这里每帧分配是 GC 主犯之一
+    const counts = this._scratchPickupCounts;
+    counts.clear();
     for (const mesh of this.pickupMeshes.values()) counts.set(mesh, 0);
 
     for (const pickup of pickups) {
@@ -6586,7 +6842,8 @@ export class GameScene {
 
   private renderSilverPickups(pickups: PickupState[]): void {
     const time = performance.now() * 0.004;
-    const active = new Set<number>();
+    const active = this._scratchSilverActive;
+    active.clear();
 
     for (const pickup of pickups) {
       if (pickup.type !== 'silver') continue;
@@ -6595,12 +6852,16 @@ export class GameScene {
 
       let obj = this.silverPickupObjects.get(pickup.id);
       if (!obj) {
-        if (!silverCoinModel) continue;
-        obj = silverCoinModel.clone();
+        obj = this.silverPickupPool.pop();
+        if (!obj) {
+          if (!silverCoinModel) continue;
+          obj = silverCoinModel.clone();
+          this.scene.add(obj);
+        }
         obj.name = `SilverPickup_${pickup.id}`;
-        this.scene.add(obj);
         this.silverPickupObjects.set(pickup.id, obj);
       }
+      obj.visible = true;
 
       const bob = Math.sin(time * 1.5 + pickup.id) * 0.3;
       obj.position.set(pickup.x, pickup.y + 0.2 + bob, pickup.z);
@@ -6615,32 +6876,43 @@ export class GameScene {
 
     for (const [id, obj] of this.silverPickupObjects) {
       if (active.has(id)) continue;
-      this.scene.remove(obj);
+      obj.visible = false;
+      if (this.silverPickupPool.length < MAX_PICKUPS) {
+        this.silverPickupPool.push(obj);
+      } else {
+        this.scene.remove(obj);
+        disposeOwnedResources(obj);
+      }
       this.silverPickupObjects.delete(id);
     }
   }
 
   private renderGoldMotes(goldMotes: GoldMoteState[]): void {
     const time = performance.now() * 0.004;
-    const active = new Set<number>();
+    const active = this._scratchGoldActive;
+    active.clear();
     for (const mote of goldMotes) {
       active.add(mote.id);
       let sprite = this.goldMoteSprites.get(mote.id);
       if (!sprite) {
-        const mat = new THREE.SpriteMaterial({
-          map: this.goldMoteTexture,
-          color: 0xffffff,
-          transparent: true,
-          opacity: 1,
-          depthWrite: false,
-          depthTest: true,
-          toneMapped: false,
-        });
-        sprite = new THREE.Sprite(mat);
+        sprite = this.goldMoteSpritePool.pop();
+        if (!sprite) {
+          const mat = new THREE.SpriteMaterial({
+            map: this.goldMoteTexture,
+            color: 0xffffff,
+            transparent: true,
+            opacity: 1,
+            depthWrite: false,
+            depthTest: true,
+            toneMapped: false,
+          });
+          sprite = new THREE.Sprite(mat);
+          this.scene.add(sprite);
+        }
         sprite.name = `GoldMote_${mote.id}`;
-        this.scene.add(sprite);
         this.goldMoteSprites.set(mote.id, sprite);
       }
+      sprite.visible = true;
       const pulse = 0.85 + Math.sin(time * 9 + mote.id) * 0.25;
       sprite.position.set(mote.x, mote.y, mote.z);
       sprite.scale.set(0.36 * pulse, 0.36 * pulse, 0.36 * pulse);
@@ -6648,8 +6920,13 @@ export class GameScene {
     }
     for (const [id, sprite] of this.goldMoteSprites) {
       if (active.has(id)) continue;
-      this.scene.remove(sprite);
-      sprite.material.dispose();
+      sprite.visible = false;
+      if (this.goldMoteSpritePool.length < MAX_PICKUPS) {
+        this.goldMoteSpritePool.push(sprite);
+      } else {
+        this.scene.remove(sprite);
+        sprite.material.dispose();
+      }
       this.goldMoteSprites.delete(id);
     }
   }
@@ -7380,7 +7657,8 @@ export class GameScene {
     const chests = state.chests;
     // 当前正在等待玩家选择奖励的宝箱 id（chest_reward 阶段）。
     const pendingChestId = state.pendingChestReward?.chestId ?? null;
-    const visibleChestIds = new Set<number>();
+    const visibleChestIds = this._scratchVisibleChestIds;
+    visibleChestIds.clear();
     const time = performance.now() * 0.001;
 
     for (const chest of chests) {
@@ -7494,7 +7772,8 @@ export class GameScene {
    */
   private renderShrines(shrines: ShrineState[], playerX: number, playerZ: number): void {
     const time = performance.now() * 0.001;
-    const seenIds = new Set<number>();
+    const seenIds = this._scratchSeenIds;
+    seenIds.clear();
 
     for (const shrine of shrines) {
       seenIds.add(shrine.id);
@@ -7807,12 +8086,24 @@ export class GameScene {
 
   // 奥秘头顶数字 / 奥术光球 / bond 事件 / 敌人状态粒子 已迁出至 vfx/BondAndStatusVfx.ts。
 
+  private resetVfxEventBudget(): void {
+    this.vfxEventBudgetRemaining = this.renderProfile.vfxEventBudgetPerTick;
+  }
+
+  private consumeVfxEventBudget(cost = 1): boolean {
+    if (this.vfxEventBudgetRemaining < cost) return false;
+    this.vfxEventBudgetRemaining -= cost;
+    return true;
+  }
+
   private updateVFX(state: GameState, dt: number, eventsFresh = true): void {
     const enemies = state.enemies;
     const player = state.player;
+    const continuousVfxDue = this.frameIndex % this.renderProfile.continuousVfxFrameStride === 0;
+    if (eventsFresh) this.resetVfxEventBudget();
 
     this.areaEffectVfx.update(state, eventsFresh);
-    if (eventsFresh) this.bondStatusVfx.updateEnemyStatusVfx(state);
+    if (eventsFresh) this.bondStatusVfx.updateEnemyStatusVfx(state, this.currentEnemyLod.statusVfxDistance);
     this.bondStatusVfx.updateMysteryNumber(state, this.frameDt);
     // 事件驱动的羁绊 VFX 只在新 tick 消费一次（高刷屏去重）。
     if (eventsFresh) {
@@ -7827,29 +8118,67 @@ export class GameScene {
 
     // Hit sparks from damage events（事件驱动，仅新 tick 消费）
     if (eventsFresh) {
-    for (const event of state.damageEvents) {
-      if (event.isPlayerDamage) continue;
-      playSfx('hit');
-
-      // Death detection
-      const isDeath = event.damage > 10 && !enemies.some(e =>
-        e.hp > 0 && Math.abs(e.x - event.x) < 0.5 && Math.abs(e.z - event.z) < 0.5
-      );
-
-      if (isDeath) {
-        this.particlePool.emitDeathBurst(event.x, event.y - 1.0, event.z, 'generic');
-      } else {
-        // Prefer the event's source weapon for spark color; fall back to first equipped weapon
-        const weaponType = event.weaponType
-          ?? (player.weapons.length > 0 ? player.weapons[0].type : 'sword');
-        this.particlePool.emitHitSparks(event.x, event.y + 0.5, event.z, weaponType);
+      // 死亡检测原本对每个 damage event 调用 enemies.some()（O(events × enemies)，怪海段 ≥1800 次/帧）。
+      // 改为先把活敌人按 0.5m 网格分桶（O(enemies)），事件查 ±1 格共 9 个 key（O(9)）。
+      // 网格 key 用 int32 位掩码（避免字符串 hashing 开销）：(gx & 0xffff) << 16 | (gz & 0xffff)。
+      // 仅当本 tick 真有 damageEvents 时才构建（无伤害的间隔帧零开销）。
+      // 复用 scratch Set；null 表示本帧无伤害事件，不需要构建（间隔帧零开销）。
+      let aliveEnemyGrid: Set<number> | null = null;
+      if (state.damageEvents.length > 0) {
+        aliveEnemyGrid = this._scratchAliveEnemyGrid;
+        aliveEnemyGrid.clear();
+        for (const e of enemies) {
+          if (e.hp <= 0) continue;
+          const gx = Math.round(e.x * 2) & 0xffff;
+          const gz = Math.round(e.z * 2) & 0xffff;
+          aliveEnemyGrid.add((gx << 16) | gz);
+        }
       }
 
-      // Lightning staff: drop a column at each strike
-      if (event.weaponType === 'lightning_staff') {
-        this.weaponTransientVfx.spawnLightningBolt(event.x, event.y - 1.0, event.z);
+      for (const event of state.damageEvents) {
+        if (event.isPlayerDamage) continue;
+        playSfx('hit');
+
+        // Death detection：±0.5m 范围内若无活敌人则判定为击杀帧（与原 some() 几何含义等价）。
+        let isDeath = event.damage > 10;
+        if (isDeath && aliveEnemyGrid) {
+          const cgx = Math.round(event.x * 2);
+          const cgz = Math.round(event.z * 2);
+          for (let dx = -1; dx <= 1 && isDeath; dx++) {
+            for (let dz = -1; dz <= 1; dz++) {
+              const key = (((cgx + dx) & 0xffff) << 16) | ((cgz + dz) & 0xffff);
+              if (aliveEnemyGrid.has(key)) { isDeath = false; break; }
+            }
+          }
+        }
+
+        if (isDeath) {
+          // 移动端跳过敌人死亡粒子爆裂以省 fill-rate / 粒子预算（Death 动画 + 沉地仍保留）。
+          if (this.renderProfile.id !== 'mobile' && this.consumeVfxEventBudget(2)) {
+            this.particlePool.emitDeathBurst(event.x, event.y - 1.0, event.z, 'generic');
+          }
+        } else {
+          // 移动端 hit sparks 二级门限：距玩家 > enemyHitFxDistance 直接丢弃（与敌人 mesh 的 hit react
+          // 同距，看不见的怪反正没人在意火花）。怪海密度档收紧时该距离自动变小（见 currentEnemyLod）。
+          let allowSpark = true;
+          if (this.renderProfile.id === 'mobile') {
+            const sdx = event.x - player.x;
+            const sdz = event.z - player.z;
+            if (sdx * sdx + sdz * sdz > this.currentEnemyLod.hitFxDistanceSq) allowSpark = false;
+          }
+          if (allowSpark && this.consumeVfxEventBudget()) {
+            // Prefer the event's source weapon for spark color; fall back to first equipped weapon
+            const weaponType = event.weaponType
+              ?? (player.weapons.length > 0 ? player.weapons[0].type : 'sword');
+            this.particlePool.emitHitSparks(event.x, event.y + 0.5, event.z, weaponType);
+          }
+        }
+
+        // Lightning staff: drop a column at each strike
+        if (event.weaponType === 'lightning_staff' && this.consumeVfxEventBudget(2)) {
+          this.weaponTransientVfx.spawnLightningBolt(event.x, event.y - 1.0, event.z);
+        }
       }
-    }
     }
 
     // Continuous weapon effects
@@ -7861,8 +8190,10 @@ export class GameScene {
         const table = WEAPON_STATS.flame_ring;
         const idx = Math.max(0, Math.min(weapon.level - 1, table.length - 1));
         flameRingRadius = table[idx]?.aoeRadius ?? 3.5;
-        // 火焰粒子沿真实判定边界喷出，而非固定 2.5。
-        this.particlePool.emitFlameRingParticles(player.x, player.y, player.z, flameRingRadius);
+        // 火焰粒子沿真实判定边界喷出，而非固定 2.5；移动端按 profile 降频。
+        if (continuousVfxDue) {
+          this.particlePool.emitFlameRingParticles(player.x, player.y, player.z, flameRingRadius);
+        }
         hasFlameRing = true;
       }
     }
@@ -7883,7 +8214,7 @@ export class GameScene {
         if (!proj.fromPlayer) continue;
 
         // Other player projectiles: short trail dot every 2 ticks
-        if (state.tick % 2 === 0) {
+        if (state.tick % this.renderProfile.projectileTrailTickStride === 0 && this.consumeVfxEventBudget()) {
           const color = WEAPON_VFX_COLORS[proj.weaponType] ?? [1, 1, 1];
           // Shotgun: brighter, larger trail to read as buckshot
           const isShotgun = proj.weaponType === 'shotgun';
@@ -7945,9 +8276,10 @@ export class GameScene {
           this.weaponTransientVfx.spawnSlashSector(player.x, player.y + 0.05, player.z, sweepAngle, swordRange);
         }
 
-        // 12 lightweight particles streaking along the arc for extra punch
-        for (let i = 0; i < 12; i++) {
-          const arcAngle = slashAngle + (i - 5.5) * 0.18;
+        const slashParticleCount = this.renderProfile.swordSlashParticleCount;
+        for (let i = 0; i < slashParticleCount; i++) {
+          const centerOffset = (slashParticleCount - 1) / 2;
+          const arcAngle = slashAngle + (i - centerOffset) * 0.18;
           const dist = 1.5 + Math.random() * 0.6;
           const px = player.x + Math.sin(arcAngle) * dist;
           const pz = player.z + Math.cos(arcAngle) * dist;
@@ -8029,10 +8361,23 @@ export class GameScene {
   // HUD Update
   // ===========================================================================
 
+  private shouldRunSlowHudUpdate(now: number, phase: GamePhase): boolean {
+    if (this.renderProfile.id !== 'mobile') return true;
+    if (phase !== this.lastSlowHudPhase) {
+      this.lastSlowHudPhase = phase;
+      this.nextSlowHudUpdateAt = now + this.renderProfile.hudSlowUpdateIntervalMs;
+      return true;
+    }
+    if (now < this.nextSlowHudUpdateAt) return false;
+    this.nextSlowHudUpdateAt = now + this.renderProfile.hudSlowUpdateIntervalMs;
+    return true;
+  }
+
   private updateHUD(state: GameState, eventsFresh = true): void {
     const p = state.player;
     const time = performance.now();
     this.latestHudState = state;
+    const slowHudUpdate = this.shouldRunSlowHudUpdate(time, state.phase);
 
     // HP bar with GSAP animation + numeric label (current / max)
     const hpPercent = Math.max(0, Math.min(100, (p.hp / p.maxHp) * 100));
@@ -8040,19 +8385,37 @@ export class GameScene {
       setSvgBarPercent(this.hpBarInner, hpPercent);
       this.lastHpPercent = hpPercent;
     }
-    this.hpText.textContent = `${Math.max(0, Math.ceil(p.hp))} / ${Math.ceil(p.maxHp)}`;
+    const hpInt = Math.max(0, Math.ceil(p.hp));
+    const maxHpInt = Math.ceil(p.maxHp);
+    if (hpInt !== this.lastHpInt || maxHpInt !== this.lastMaxHpInt) {
+      this.lastHpInt = hpInt;
+      this.lastMaxHpInt = maxHpInt;
+      this.hpText.textContent = `${hpInt} / ${maxHpInt}`;
+    }
     this.updateLowHealthFx(p);
 
     // Shield bar (only shown when player has shield capacity)
     const maxShield = p.maxShield ?? 0;
     const shield = p.shield ?? 0;
     if (maxShield > 0) {
-      this.shieldBar.style.display = 'block';
+      if (this.lastShieldDisplay !== 'block') {
+        this.shieldBar.style.display = 'block';
+        this.lastShieldDisplay = 'block';
+      }
       const shieldPercent = Math.max(0, Math.min(100, (shield / maxShield) * 100));
       setSvgBarPercent(this.shieldBarInner, shieldPercent);
-      this.shieldText.textContent = `${Math.max(0, Math.ceil(shield))} / ${Math.ceil(maxShield)}`;
+      const shieldInt = Math.max(0, Math.ceil(shield));
+      const maxShieldInt = Math.ceil(maxShield);
+      if (shieldInt !== this.lastShieldInt || maxShieldInt !== this.lastMaxShieldInt) {
+        this.lastShieldInt = shieldInt;
+        this.lastMaxShieldInt = maxShieldInt;
+        this.shieldText.textContent = `${shieldInt} / ${maxShieldInt}`;
+      }
     } else {
-      this.shieldBar.style.display = 'none';
+      if (this.lastShieldDisplay !== 'none') {
+        this.shieldBar.style.display = 'none';
+        this.lastShieldDisplay = 'none';
+      }
     }
 
     // XP bar with GSAP animation
@@ -8062,8 +8425,12 @@ export class GameScene {
       this.lastXpPercent = xpPercent;
     }
 
-    // Level label straddles XP bar top edge with GSAP pulse animation
-    this.levelLabel.textContent = t('hud.level', { level: String(p.level) });
+    // Level label straddles XP bar top edge with GSAP pulse animation.
+    // 数字缓存：仅在等级变化时才走 i18n 插值（i18n 调用本身分配对象 + 字符串）。
+    if (p.level !== this.lastLevelNum) {
+      this.lastLevelNum = p.level;
+      this.levelLabel.textContent = t('hud.level', { level: String(p.level) });
+    }
     if (this.levelCompPulseTimer > 0) {
       this.levelCompPulseTimer -= 1 / 60;
       if (!this.levelPulseAnimation) {
@@ -8080,16 +8447,33 @@ export class GameScene {
     }
 
     // Difficulty / timer / silver / kills
+    if (slowHudUpdate) {
+      this.setTierBadge(state.tier);
+      this.setStageBadge(state.stage);
+    }
+    // 计时器：秒级粒度。totalSec 是 number，每秒最多变 1 次 → template literal 也只调 1 次/秒。
     const totalSec = Math.floor(state.gameTime);
-    const minutes = Math.floor(totalSec / 60);
-    const seconds = totalSec % 60;
-    const timeStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-    this.setTierBadge(state.tier);
-    this.setStageBadge(state.stage);
-    this.timerTimeEl.textContent = timeStr;
-    this.killCountEl.textContent = String(state.stats.killCount);
-    setSilverBadgeAmount(this.silverLabel, state.stats.silverEarned);
-    setGoldBadgeAmount(this.goldLabel, p.gold);
+    if (totalSec !== this.lastTotalSec) {
+      this.lastTotalSec = totalSec;
+      const minutes = Math.floor(totalSec / 60);
+      const seconds = totalSec % 60;
+      this.timerTimeEl.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+    // 击杀数：直接以 number 比较，避免每帧 String() 转换。
+    if (state.stats.killCount !== this.lastKillCountNum) {
+      this.lastKillCountNum = state.stats.killCount;
+      this.killCountEl.textContent = String(state.stats.killCount);
+    }
+    if (state.stats.silverEarned !== this.lastSilverEarned) {
+      setSilverBadgeAmount(this.silverLabel, state.stats.silverEarned);
+      this.lastSilverEarned = state.stats.silverEarned;
+    }
+    if (p.gold !== this.lastGold) {
+      setGoldBadgeAmount(this.goldLabel, p.gold);
+      this.lastGold = p.gold;
+    }
+
+    if (slowHudUpdate) {
 
     // --- Quest track: dismiss once altar boss is defeated (portal_ready / portal_used) ---
     this.updateQuestHudTrack(state);
@@ -8099,20 +8483,25 @@ export class GameScene {
 
     // --- Weapon slots (top-left): fixed grid of maxWeaponSlots + a locked 6th slot ---
     this.renderWeaponSlots(p);
-    this.renderGmWeaponDamagePanel(state);
 
     // --- Tome stack (top-right second column): grouped by tome type, stable within each group ---
     // 仅在法书集合 / 等级变化时重建（旧实现每帧全量重建 DOM）。
-    const orderedTomes = p.tomes
-      .map((tome, index) => ({ tome, index }))
-      .sort((a, b) => {
-        const ar = TOME_HUD_TYPE_RANK.get(a.tome.type) ?? Number.MAX_SAFE_INTEGER;
-        const br = TOME_HUD_TYPE_RANK.get(b.tome.type) ?? Number.MAX_SAFE_INTEGER;
-        return ar - br || a.index - b.index;
-      })
-      .map(entry => entry.tome);
-    let tomesSig = '';
-    for (const tome of orderedTomes) tomesSig += `${tome.type}:${tome.level}|`;
+    // 复用 scratch；Array.prototype.sort 在现代引擎是 stable，原始 p.tomes 顺序自然成为次序键。
+    const orderedTomes = this._scratchOrderedTomes;
+    orderedTomes.length = 0;
+    for (let ti = 0; ti < p.tomes.length; ti++) orderedTomes.push(p.tomes[ti]);
+    orderedTomes.sort((a, b) => {
+      const ar = TOME_HUD_TYPE_RANK.get(a.type) ?? Number.MAX_SAFE_INTEGER;
+      const br = TOME_HUD_TYPE_RANK.get(b.type) ?? Number.MAX_SAFE_INTEGER;
+      return ar - br;
+    });
+    // 数字哈希：rank * 1000 + level 一定唯一（level 通常 < 100），用 (h * 33) ^ x 累积。
+    let tomesSig = orderedTomes.length | 0;
+    for (let ti = 0; ti < orderedTomes.length; ti++) {
+      const tome = orderedTomes[ti];
+      const rank = TOME_HUD_TYPE_RANK.get(tome.type) ?? 9999;
+      tomesSig = ((tomesSig * 33) ^ (rank * 1000 + tome.level)) | 0;
+    }
     if (tomesSig !== this.tomesSig) {
       this.tomesSig = tomesSig;
       this.tomesSlotsContainer.innerHTML = '';
@@ -8132,31 +8521,53 @@ export class GameScene {
         this.tomesSlotsContainer.appendChild(slot);
       }
     }
-    // DOM 不重建时仍刷新 tooltip，避免 growth / 文案里的动态数值停留在旧快照。
+    // DOM 不重建时仍刷新 tooltip，但走 sig 缓存：type/level/growth 是 tome tooltip 唯一依赖，
+    // 任一变化才重生成 HTML，避免每帧 createTomeTooltipHtml() 产生 KB 级临时字符串。
     for (let i = 0; i < orderedTomes.length; i++) {
       const slot = this.tomesSlotsContainer.children[i] as HTMLElement | undefined;
-      if (slot) this.setItemTooltip(slot, this.createTomeTooltipHtml(orderedTomes[i]));
+      const tome = orderedTomes[i];
+      if (!slot) continue;
+      const sig = `${tome.type}:${tome.level}:${tome.growth ?? -1}`;
+      this.setItemTooltipCached(slot, sig, () => this.createTomeTooltipHtml(tome));
     }
 
-    // --- Relic bar (bottom): always show 10 slots; filled left → right by rarity, then acquisition order. ---
-    const acquiredRelics = (Object.entries(p.relicStacks ?? {}) as Array<[RelicId, number]>)
-      .map(([id, count], acquiredIndex) => ({ id, count, acquiredIndex, relic: RELICS[id] }))
-      .filter(entry => entry.count > 0 && entry.relic)
-      .sort((a, b) => {
-        const rarityDelta = RELIC_RARITY_SORT_RANK[a.relic.rarity] - RELIC_RARITY_SORT_RANK[b.relic.rarity];
-        return rarityDelta !== 0 ? rarityDelta : a.acquiredIndex - b.acquiredIndex;
-      });
-    const visibleRelics = acquiredRelics.slice(0, HUD_RELIC_BAR_SLOT_COUNT);
-    // 仅在排序后的可见遗物 / 数量变化时重建；空槽常显，超出 10 个不渲染。
-    let relicsSig = `slots:${HUD_RELIC_BAR_SLOT_COUNT}`;
-    for (const { id, count } of visibleRelics) relicsSig += `|${id}:${count}`;
+    // --- Relic bar (bottom): rarity first, then acquisition order. ---
+    const acquiredRelics = this._scratchAcquiredRelics;
+    let acquiredCount = 0;
+    let acquiredIndex = 0;
+    for (const rawId in p.relicStacks) {
+      const id = rawId as RelicId;
+      const count = p.relicStacks[id] ?? 0;
+      if (count > 0 && RELICS[id]) {
+        const entry = acquiredRelics[acquiredCount];
+        if (entry) {
+          entry.id = id;
+          entry.count = count;
+          entry.acquiredIndex = acquiredIndex;
+        } else {
+          acquiredRelics.push({ id, count, acquiredIndex });
+        }
+        acquiredCount++;
+      }
+      acquiredIndex++;
+    }
+    acquiredRelics.length = acquiredCount;
+    acquiredRelics.sort(compareHudRelics);
+    const visibleRelicCount = Math.min(acquiredCount, HUD_RELIC_BAR_SLOT_COUNT);
+    // 数字签名只覆盖可见槽位，避免每帧拼接字符串。
+    let relicsSig = visibleRelicCount | 0;
+    for (let i = 0; i < visibleRelicCount; i++) {
+      const entry = acquiredRelics[i];
+      const idIndex = ALL_RELIC_IDS.indexOf(entry.id);
+      relicsSig = ((relicsSig * 33) ^ (idIndex * 10000 + entry.count)) | 0;
+    }
     if (relicsSig !== this.relicsSig) {
       this.relicsSig = relicsSig;
       this.relicSlotsContainer.innerHTML = '';
       for (let i = 0; i < HUD_RELIC_BAR_SLOT_COUNT; i++) {
-        const entry = visibleRelics[i] ?? null;
+        const entry = i < visibleRelicCount ? acquiredRelics[i] : null;
         const slot = document.createElement('div');
-        const borderColor = entry ? (RARITY_COLORS[entry.relic.rarity] ?? '#aaaaaa') : 'rgba(255,255,255,0.16)';
+        const borderColor = entry ? (RARITY_COLORS[RELICS[entry.id].rarity] ?? '#aaaaaa') : 'rgba(255,255,255,0.16)';
         const slotCenterX = HUD_RELIC_SLOT_VIEWBOX.x + HUD_RELIC_SLOT_VIEWBOX.w / 2 + i * HUD_RELIC_SLOT_VIEWBOX.pitch;
         slot.style.cssText = `
           position:absolute;
@@ -8173,7 +8584,8 @@ export class GameScene {
           this.relicSlotsContainer.appendChild(slot);
           continue;
         }
-        const { id, count, relic } = entry;
+        const { id, count } = entry;
+        const relic = RELICS[id];
         this.setItemTooltip(slot, this.createRelicTooltipHtml(id, count, state));
         const icon = document.createElement('span');
         icon.style.cssText = 'font-size:clamp(13px,3.4vw,16px);';
@@ -8186,11 +8598,15 @@ export class GameScene {
         this.relicSlotsContainer.appendChild(slot);
       }
     }
-    // 部分遗物 tooltip 依赖当前武器等级 / overtime 秒数，结构不变时也需要刷新。
-    for (let i = 0; i < visibleRelics.length; i++) {
+    // 部分遗物 tooltip 依赖当前武器等级（arsenal_badge）/ overtime 秒数（hourglass），结构不变时也需要刷新。
+    // sig 用 weaponSlotsSig 覆盖武器变化、用整秒粒度的 overtime 覆盖 hourglass —— 仅二者改变才重生成。
+    const overtimeBucket = Math.floor(state.overtimeSeconds);
+    for (let i = 0; i < visibleRelicCount; i++) {
       const slot = this.relicSlotsContainer.children[i] as HTMLElement | undefined;
-      const { id, count } = visibleRelics[i];
-      if (slot) this.setItemTooltip(slot, this.createRelicTooltipHtml(id, count, state));
+      if (!slot) continue;
+      const { id, count } = acquiredRelics[i];
+      const sig = `${id}:${count}|${this.weaponSlotsSig}|${overtimeBucket}`;
+      this.setItemTooltipCached(slot, sig, () => this.createRelicTooltipHtml(id, count, state));
     }
 
     // --- Bond slots (right of buff row); tap to expand a detail layer ---
@@ -8251,8 +8667,7 @@ export class GameScene {
     const chestInRange = nearestChest != null
       && nearestChest.dist <= CHEST_INTERACT_RADIUS
       && Math.abs((p.y ?? 0) - (nearestChest.chest.y ?? 0)) <= CHEST_INTERACT_MAX_Y_DELTA;
-    // 简易移动端判定：能 hover 的设备视作 PC，不显示按钮（避免 PC 用户看到双重 UI）
-    const isMobile = !window.matchMedia('(hover: hover)').matches;
+    const isMobile = this.renderProfile.id === 'mobile';
     if (chargeIndicatorVisible) {
       gsapAnimations.animateTeleporterIndicator(this.teleporterIndicator, false, 0.2);
     // [DISABLED] 局内飞碟位置显示
@@ -8369,6 +8784,7 @@ export class GameScene {
       }
       this.timerLabel.style.color = '#ffffff';
       this.killLabel.style.color = '#ffffff';
+    }
     }
 
     // Damage numbers
@@ -8487,6 +8903,8 @@ export class GameScene {
     }
 
     // 每帧只更新冷却遮罩高度（结构不变，避免重建整排 DOM）。
+    // tooltip 走 sig 缓存：武器 type/level + tomes/relics 影响计算属性，未变则跳过 HTML 生成。
+    // 冷却秒数那行文案不进 sig（见 setItemTooltipCached），由独立的 overlay 高度可视化。
     for (let i = 0; i < TOTAL_SLOTS; i++) {
       const weapon = p.weapons[i];
       const overlay = this.weaponCooldownOverlays[i];
@@ -8495,7 +8913,9 @@ export class GameScene {
       overlay.style.height = `${pct}%`;
       const slot = overlay.parentElement;
       if (slot instanceof HTMLElement) {
-        this.setItemTooltip(slot, this.createWeaponTooltipHtml(weapon));
+        // sig 覆盖所有可能改变武器有效属性的来源：自身 type/level + tomes/relics/bonds 三类 buff 源。
+        const sig = `${weapon.type}:${weapon.level}|${this.tomesSig}|${this.relicsSig}|${this.bondsSig}`;
+        this.setItemTooltipCached(slot, sig, () => this.createWeaponTooltipHtml(weapon));
       }
     }
   }
@@ -8541,124 +8961,7 @@ export class GameScene {
     }
   }
 
-  private setupGmWeaponDamagePanel(): void {
-    const debugPanel = document.getElementById('stylized-debug-panel');
-    if (!debugPanel) return;
-
-    this.gmWeaponDamagePanel?.remove();
-    this.gmWeaponDamageRows.clear();
-    this.gmWeaponDamageSig = '';
-
-    this.gmWeaponDamagePanel = document.createElement('div');
-    this.gmWeaponDamagePanel.style.cssText = `
-      margin:10px 0 8px;padding:8px 0 0;border-top:1px solid rgba(255,255,255,0.14);
-      color:#eaf3ff;font-variant-numeric:tabular-nums;
-    `;
-
-    const gmTitle = document.createElement('div');
-    gmTitle.style.cssText = 'margin:0 0 6px;color:#9fd0ff;font-weight:800;';
-    gmTitle.textContent = 'GM Tools - Weapon Damage';
-
-    this.gmWeaponDamageBody = document.createElement('div');
-    this.gmWeaponDamageBody.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
-
-    this.gmWeaponDamagePanel.appendChild(gmTitle);
-    this.gmWeaponDamagePanel.appendChild(this.gmWeaponDamageBody);
-    debugPanel.appendChild(this.gmWeaponDamagePanel);
-  }
-
-  private renderGmWeaponDamagePanel(state: GameState): void {
-    if (!this.gmWeaponDamageBody) return;
-
-    const statsByWeapon = new Map((state.weaponDamageStats ?? []).map(s => [s.weaponType, s]));
-    const weaponRows = state.player.weapons.map((weapon) => {
-      const stat = statsByWeapon.get(weapon.type) ?? {
-        weaponType: weapon.type,
-        killCount: 0,
-        totalDamage: 0,
-        dps: 0,
-      };
-      return {
-        id: `weapon:${weapon.type}`,
-        label: `${WEAPON_ICONS[weapon.type] ?? '?'} ${t(`upgrade.weapon.${weapon.type}`)}`,
-        killCount: stat.killCount,
-        totalDamage: stat.totalDamage,
-        dps: stat.dps,
-        isBond: false,
-      };
-    });
-    const bondRows = (state.bondDamageStats ?? [])
-      .filter(stat => stat.totalDamage > 0 || stat.killCount > 0)
-      .map(stat => {
-        const bond = BONDS[stat.bondId];
-        return {
-          id: `bond:${stat.bondId}`,
-          label: `${bond?.icon ?? '🔗'} ${bond ? t(bond.nameKey) : stat.bondId}`,
-          killCount: stat.killCount,
-          totalDamage: stat.totalDamage,
-          dps: stat.dps,
-          isBond: true,
-        };
-      });
-    const orderedStats = [...weaponRows, ...bondRows];
-
-    const sig = orderedStats.map(s => s.id).join('|');
-    if (sig !== this.gmWeaponDamageSig) {
-      this.gmWeaponDamageSig = sig;
-      this.gmWeaponDamageRows.clear();
-      this.gmWeaponDamageBody.innerHTML = '';
-
-      const header = document.createElement('div');
-      header.style.cssText = 'display:grid;grid-template-columns:minmax(92px,1fr) 38px 54px 58px;gap:6px;align-items:center;color:rgba(215,232,255,0.68);font-size:9px;text-transform:uppercase;';
-      for (const label of ['Weapon', 'Kills', 'DPS', 'Total']) {
-        const cell = document.createElement('span');
-        cell.textContent = label;
-        cell.style.textAlign = label === 'Weapon' ? 'left' : 'right';
-        header.appendChild(cell);
-      }
-      this.gmWeaponDamageBody.appendChild(header);
-
-      for (const stat of orderedStats) {
-        this.createGmWeaponDamageRow(stat.id, stat.label, stat.isBond);
-      }
-    }
-
-    for (const stat of orderedStats) {
-      const row = this.gmWeaponDamageRows.get(stat.id);
-      if (!row) continue;
-      row.kills.textContent = String(stat.killCount);
-      row.dps.textContent = this.formatGmDamageNumber(stat.dps, 1);
-      row.total.textContent = this.formatGmDamageNumber(stat.totalDamage, 0);
-    }
-  }
-
-  private createGmWeaponDamageRow(rowId: string, label: string, isBond: boolean): void {
-    const row = document.createElement('div');
-    row.style.cssText = 'display:grid;grid-template-columns:minmax(92px,1fr) 38px 54px 58px;gap:6px;align-items:center;min-height:18px;border-top:1px solid rgba(255,255,255,0.06);padding-top:3px;';
-
-    const name = document.createElement('span');
-    name.style.cssText = `overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${isBond ? '#ffd966' : '#ffffff'};font-weight:700;`;
-    name.textContent = label;
-    row.appendChild(name);
-
-    const kills = this.createGmWeaponDamageValue();
-    const dps = this.createGmWeaponDamageValue();
-    const total = this.createGmWeaponDamageValue();
-    row.appendChild(kills);
-    row.appendChild(dps);
-    row.appendChild(total);
-
-    this.gmWeaponDamageBody?.appendChild(row);
-    this.gmWeaponDamageRows.set(rowId, { kills, dps, total });
-  }
-
-  private createGmWeaponDamageValue(): HTMLSpanElement {
-    const value = document.createElement('span');
-    value.style.cssText = 'text-align:right;color:#bfe5ff;';
-    return value;
-  }
-
-  private formatGmDamageNumber(value: number, decimals: number): string {
+  private formatDamageNumber(value: number, decimals: number): string {
     if (!Number.isFinite(value)) return '0';
     const abs = Math.abs(value);
     if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
@@ -8954,8 +9257,17 @@ export class GameScene {
     }
 
     // 仅在羁绊集合 / 档位变化时重建槽位（旧实现每帧重建 + 每帧重绑 pointerdown 监听）。
-    let bondsSig = '';
-    for (const prog of bonds) bondsSig += `${prog.bondId}:${prog.tier}|`;
+    // 数字哈希：bondId 字符串 hash + tier 累积。bondId 用 stringHashCode 转 int 后混入。
+    let bondsSig = bonds.length | 0;
+    for (let bi = 0; bi < bonds.length; bi++) {
+      const prog = bonds[bi];
+      // 简易字符串哈希：FNV-1a-lite，避免每帧 charCodeAt 数百次（bondId 通常 ≤ 16 chars）。
+      let h = 2166136261 | 0;
+      for (let ci = 0; ci < prog.bondId.length; ci++) {
+        h = ((h ^ prog.bondId.charCodeAt(ci)) * 16777619) | 0;
+      }
+      bondsSig = ((bondsSig * 33) ^ (h ^ prog.tier)) | 0;
+    }
     if (bondsSig !== this.bondsSig) {
       this.bondsSig = bondsSig;
       this.bondSlotsContainer.innerHTML = '';
@@ -8994,22 +9306,32 @@ export class GameScene {
         this.bondSlotsContainer.appendChild(slot);
       }
     }
-    // 羁绊 tooltip 展示已持有武器等级等动态内容，槽位未重建时也刷新。
+    // 羁绊 tooltip 展示已持有武器等级等动态内容，槽位未重建时也刷新；走 sig 缓存。
+    // bond 文案依赖 player.weapons[*].level —— weaponSlotsSig 已包含该字段，直接复用。
     for (let i = 0; i < bonds.length; i++) {
       const prog = bonds[i];
       const slot = this.bondSlotsContainer.children[i] as HTMLElement | undefined;
-      if (slot) this.setItemTooltip(slot, this.createBondTooltipHtml(prog.bondId, prog.tier, state));
+      if (!slot) continue;
+      const sig = `${prog.bondId}:${prog.tier}|${this.weaponSlotsSig}`;
+      this.setItemTooltipCached(slot, sig, () => this.createBondTooltipHtml(prog.bondId, prog.tier, state));
     }
 
-    // 浮层若已打开，刷新其内容（数值会随游戏推进变化）
+    // 浮层若已打开，刷新其内容（数值会随游戏推进变化）；同样走 sig 缓存避免每帧 innerHTML 重写。
     if (this.openBondId) {
       const prog = bonds.find(b => b.bondId === this.openBondId);
-      if (prog) this.bondDetailOverlay.innerHTML = this.createBondTooltipHtml(prog.bondId, prog.tier, state);
+      if (prog) {
+        const sig = `${prog.bondId}:${prog.tier}|${this.weaponSlotsSig}`;
+        if (this.bondDetailSig !== sig) {
+          this.bondDetailSig = sig;
+          this.bondDetailOverlay.innerHTML = this.createBondTooltipHtml(prog.bondId, prog.tier, state);
+        }
+      }
     }
   }
 
   private openBondDetail(bondId: BondId, tier: BondTier, state: GameState, anchor: HTMLElement): void {
     this.openBondId = bondId;
+    this.bondDetailSig = `${bondId}:${tier}|${this.weaponSlotsSig}`;
     this.bondDetailOverlay.innerHTML = this.createBondTooltipHtml(bondId, tier, state);
     this.bondDetailOverlay.style.display = 'block';
     // 定位到锚点正上方，避免超出视口
@@ -9041,6 +9363,7 @@ export class GameScene {
 
   private closeBondDetail(): void {
     this.openBondId = null;
+    this.bondDetailSig = '';
     this.bondDetailOverlay.style.display = 'none';
     if (this.bondDetailOutsideHandler) {
       window.removeEventListener('pointerdown', this.bondDetailOutsideHandler);
@@ -9122,6 +9445,23 @@ export class GameScene {
   private setItemTooltip(el: HTMLElement, html: string): void {
     el.dataset.tooltipItem = 'true';
     this.itemTooltipContent.set(el, html);
+  }
+
+  /**
+   * 缓存版：sig 与上次一致就跳过 factory 调用 + WeakMap 写入。
+   *
+   * 用途：HUD 每帧调用的 tooltip 刷新热路径（武器槽 / 法书 / 遗物 / 羁绊）。
+   * 旧实现每帧无条件 createXxxTooltipHtml() 生成 1-5KB 字符串再扔掉，全程 GC 颠簸的主因
+   * （见 docs/perf 03:20 截图：mem 102 → 160MB 反复，每分钟 6 次 Major GC pause）。
+   *
+   * sig 应包含影响 tooltip 文案的所有动态字段；故意省略每帧变化的过场数值（如冷却倒计时秒数），
+   * 那行文案会延迟 1 帧到几秒同步，玩家在悬停查看时游戏一般已暂停，无感。
+   */
+  private setItemTooltipCached(el: HTMLElement, sig: string, factory: () => string): void {
+    el.dataset.tooltipItem = 'true';
+    if (el.dataset.tooltipSig === sig) return;
+    el.dataset.tooltipSig = sig;
+    this.itemTooltipContent.set(el, factory());
   }
 
   private showItemTooltip(html: string, event: MouseEvent): void {
@@ -9887,7 +10227,7 @@ export class GameScene {
 
       const dmg = document.createElement('span');
       dmg.style.cssText = uiPlainText(`text-align:left;font-size:${cellFont};font-variant-numeric:tabular-nums;white-space:nowrap;color:${isMvp ? '#ffd700' : '#f3f3ff'};${cellPad}`);
-      dmg.textContent = this.formatGmDamageNumber(stat.totalDamage, 0);
+      dmg.textContent = this.formatDamageNumber(stat.totalDamage, 0);
       table.appendChild(dmg);
 
       const kills = document.createElement('span');
@@ -10500,6 +10840,8 @@ function syncCharacterSelectDetailLayout(): void {
   const scaleOuter = card?.querySelector('[data-region="detail-scale"]') as HTMLElement | null;
   const contentWrap = card?.querySelector('[data-region="detail-content"]') as HTMLElement | null;
   const confirmSection = card?.querySelector('[data-region="detail-confirm"]') as HTMLElement | null;
+  const weaponPanel = card?.querySelector('[data-region="detail-weapon-panel"]') as HTMLElement | null;
+  const weaponContent = card?.querySelector('[data-region="detail-weapon-content"]') as HTMLElement | null;
   if (!stage || !host || !card || !bodyArea || !scaleOuter || !contentWrap || !confirmSection) return;
 
   const stageHeight = stage.getBoundingClientRect().height;
@@ -10537,6 +10879,11 @@ function syncCharacterSelectDetailLayout(): void {
   card.style.maxWidth = '100%';
   card.style.maxHeight = 'none';
   card.style.flex = '0 0 auto';
+  const detailScale = Math.max(
+    CHARACTER_DETAIL_SCALE_MIN,
+    Math.min(cardW / CHARACTER_DETAIL_BASE_RENDER_WIDTH, CHARACTER_DETAIL_SCALE_MAX),
+  );
+  card.style.setProperty('--character-detail-scale', detailScale.toFixed(3));
 
   contentWrap.style.transform = 'none';
   contentWrap.style.width = '100%';
@@ -10554,6 +10901,24 @@ function syncCharacterSelectDetailLayout(): void {
     contentWrap.style.transform = `scale(${scale})`;
     contentWrap.style.width = `${(100 / scale).toFixed(4)}%`;
     contentWrap.style.maxWidth = `${(100 / scale).toFixed(4)}%`;
+  }
+
+  if (weaponPanel && weaponContent) {
+    weaponContent.style.transform = 'none';
+    weaponContent.style.width = '100%';
+    weaponContent.style.maxWidth = '100%';
+
+    const availableW = weaponPanel.clientWidth;
+    const availableH = weaponPanel.clientHeight;
+    const contentW = weaponContent.scrollWidth;
+    const contentH = weaponContent.scrollHeight;
+    if (availableW > 0 && availableH > 0 && (contentW > availableW + 0.5 || contentH > availableH + 0.5)) {
+      const scale = Math.min(availableW / contentW, availableH / contentH);
+      weaponContent.style.transformOrigin = 'center center';
+      weaponContent.style.transform = `scale(${scale})`;
+      weaponContent.style.width = `${(100 / scale).toFixed(4)}%`;
+      weaponContent.style.maxWidth = `${(100 / scale).toFixed(4)}%`;
+    }
   }
 }
 
@@ -10775,7 +11140,7 @@ function createFramedLabelButton(
   const labelEl = document.createElement('span');
   labelEl.textContent = label;
   labelEl.style.cssText = uiPlainText(`
-    position:absolute;left:0;top:1.6%;width:100%;height:92%;
+    position:absolute;left:0;top:-6%;width:100%;height:92%;
     display:flex;align-items:center;justify-content:center;
     font-size:clamp(${uiPx(9)}px,2.6vmin,${uiPx(12)}px);font-weight:bold;line-height:1.2;
     padding:0 clamp(4px,1.2vmin,8px);box-sizing:border-box;text-align:center;
@@ -11194,18 +11559,24 @@ function refreshCharacterSelectDetail(): void {
   `;
 
   const weaponPanel = document.createElement('div');
+  weaponPanel.dataset.region = 'detail-weapon-panel';
   weaponPanel.style.cssText = `
     box-sizing:border-box;width:${weaponPanelWidth};max-width:100%;height:100%;
     display:flex;align-items:center;
-    padding:clamp(6px,1.5vw,12px) clamp(10px,2.4vw,20px);
+    padding:clamp(4px,calc(8px * var(--character-detail-scale,1)),12px)
+      clamp(8px,calc(14px * var(--character-detail-scale,1)),20px);
+    min-height:0;overflow:hidden;
   `;
 
   const weaponRow = document.createElement('div');
+  weaponRow.dataset.region = 'detail-weapon-content';
   weaponRow.style.cssText = `
-    display:flex;align-items:center;gap:clamp(4px,1vw,7px);width:100%;box-sizing:border-box;
+    display:flex;align-items:center;gap:clamp(4px,calc(6px * var(--character-detail-scale,1)),8px);
+    width:100%;height:auto;
+    min-height:0;box-sizing:border-box;overflow:hidden;
   `;
 
-  const weaponBoxSize = 'clamp(56px,14vw,84px)';
+  const weaponBoxSize = 'clamp(48px,calc(64px * var(--character-detail-scale,1)),84px)';
   const weaponImgWrap = document.createElement('div');
   weaponImgWrap.style.cssText = `
     flex-shrink:0;display:flex;align-items:center;justify-content:center;
@@ -11238,21 +11609,29 @@ function refreshCharacterSelectDetail(): void {
   const weaponTextCol = document.createElement('div');
   const weaponTextMarginTop = weapon === 'axe' ? '-6px' : '0';
   weaponTextCol.style.cssText = `
-    flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;margin-top:${weaponTextMarginTop};
+    flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;
+    gap:clamp(1px,calc(2px * var(--character-detail-scale,1)),3px);
+    margin-top:${weaponTextMarginTop};overflow:hidden;
   `;
 
   const weaponNameEl = document.createElement('div');
-  weaponNameEl.style.cssText = detailFont('clamp(9px,2.2vw,12px)', 'font-weight:bold;');
+  weaponNameEl.style.cssText = detailFont('clamp(9px,calc(12px * var(--character-detail-scale,1)),14px)', 'font-weight:bold;line-height:1.2;flex:0 0 auto;');
   weaponNameEl.textContent = t(`upgrade.weapon.${weapon}`);
   weaponTextCol.appendChild(weaponNameEl);
 
   const weaponDescEl = document.createElement('p');
-  weaponDescEl.style.cssText = detailFont('clamp(8px,1.9vw,10px)', 'font-weight:bold;margin-top:1px;margin-bottom:0;');
+  weaponDescEl.style.cssText = detailFont(
+    'clamp(8px,calc(10px * var(--character-detail-scale,1)),12px)',
+    'font-weight:bold;line-height:1.22;margin-top:1px;margin-bottom:0;flex:0 1 auto;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;',
+  );
   weaponDescEl.textContent = t(`upgrade.weapon.${weapon}_desc`);
   weaponTextCol.appendChild(weaponDescEl);
 
   const weaponStatsEl = document.createElement('div');
-  weaponStatsEl.style.cssText = detailFont('clamp(7px,1.7vw,9px)', 'display:flex;flex-direction:column;gap:0;');
+  weaponStatsEl.style.cssText = detailFont(
+    'clamp(7px,calc(9px * var(--character-detail-scale,1)),10.5px)',
+    'display:flex;flex-direction:column;gap:0;line-height:1.18;min-height:0;overflow:hidden;',
+  );
   for (const line of formatWeaponStatLines(weapon)) {
     const row = document.createElement('div');
     row.textContent = line;
@@ -11525,7 +11904,7 @@ function showTierSelectScreen(): void {
       playTransition(
         () => {
           destroyTierSelectScreen();
-          startGame(character);
+          void startGame(character);
         },
         { duration: 800 },
       );
@@ -12661,7 +13040,7 @@ function formatQuestReward(reward: { type: string; value: string | number }): st
 
 let activeScene: GameScene | null = null;
 
-function startGame(character: CharacterType = 'megachad'): void {
+async function startGame(character: CharacterType = 'megachad'): Promise<void> {
   if (activeScene) {
     activeScene.destroy();
     activeScene = null;
@@ -12693,8 +13072,9 @@ function startGame(character: CharacterType = 'megachad'): void {
   const session = new LocalGameSession(config);
   const scene = new GameScene(session);
   activeScene = scene;
-  setGMSession(session);
   scene.start();
+  await scene.waitForInitialUiReady();
+  if (activeScene !== scene) return;
   session.start({ startTickLoop: false });
   scene.playStartIntro(() => session.startTicks());
 
@@ -12706,479 +13086,16 @@ function startGame(character: CharacterType = 'megachad'): void {
 // Bootstrap
 // =============================================================================
 
-// =============================================================================
-// 启动 loading 进度条
-// =============================================================================
-// 旧行为：boot 期间（加载所有模型 + 关卡）整屏停在 index.html 的纯蓝背景，无任何反馈，
-// 手机慢网下几十秒白屏，用户易以为卡死退出。这里加一个进度浮层，由 bootLoadingManager
-// 的 onProgress 汇总「已加载/总数」驱动，进度只增不减（新 load 入队会抬高 total，避免回跳）。
-let bootLoadingOverlay: HTMLDivElement | null = null;
-let bootLoadingBar: HTMLDivElement | null = null;
-let bootLoadingPct = 0;
-
-function showBootLoadingOverlay(): void {
-  const overlay = document.createElement('div');
-  overlay.id = 'boot-loading';
-  overlay.style.cssText =
-    'position:fixed;inset:0;z-index:5000;display:flex;flex-direction:column;align-items:center;' +
-    'justify-content:center;gap:18px;background:#87ceeb;color:#fff;' +
-    `font-family:${UI_FONT_FACE};`;
-
-  const title = document.createElement('div');
-  title.textContent = t('game.title');
-  // 主菜单游戏标题（loading 屏 / 大 logo 字）：32–64px 用 2px 8 向描边统一卡通厚度感。
-  title.style.cssText = uiPlainTextBold('font-size:clamp(32px,10vw,64px);font-weight:700;letter-spacing:2px;');
-
-  const track = document.createElement('div');
-  track.style.cssText =
-    'width:min(70vw,420px);height:14px;border:3px solid rgba(0,0,0,0.5);border-radius:8px;' +
-    'background:rgba(0,0,0,0.2);overflow:hidden;';
-  const bar = document.createElement('div');
-  bar.style.cssText = 'width:0%;height:100%;background:#ffd93b;transition:width 0.2s ease-out;';
-  track.appendChild(bar);
-
-  const hint = document.createElement('div');
-  hint.textContent = t('boot.loading');
-  hint.style.cssText = 'font-size:clamp(8px,2.5vw,11px);opacity:0.85;';
-
-  overlay.appendChild(title);
-  overlay.appendChild(track);
-  overlay.appendChild(hint);
-  document.body.appendChild(overlay);
-
-  bootLoadingOverlay = overlay;
-  bootLoadingBar = bar;
-  bootLoadingPct = 0;
-}
-
-function setBootLoadingProgress(pct: number): void {
-  // 单调不减：load 队列 total 会随阶段增长导致比例回跳，这里取历史最大值平滑显示。
-  const clamped = Math.max(bootLoadingPct, Math.min(100, Math.round(pct)));
-  bootLoadingPct = clamped;
-  if (bootLoadingBar) bootLoadingBar.style.width = `${clamped}%`;
-}
-
-function hideBootLoadingOverlay(): void {
-  setBootLoadingProgress(100);
-  const overlay = bootLoadingOverlay;
-  if (!overlay) return;
-  bootLoadingOverlay = null;
-  bootLoadingBar = null;
-  overlay.style.transition = 'opacity 0.35s ease-out';
-  overlay.style.opacity = '0';
-  window.setTimeout(() => overlay.remove(), 400);
-}
-
-/** 平台生命周期：资源加载完毕、主菜单可交互时通知一次（duko / KubeeClient）。 */
-let kubeeGameLoadedSent = false;
-function notifyKubeeGameLoaded(): void {
-  if (kubeeGameLoadedSent) return;
-  const client = globalThis.KubeeClient;
-  if (!client?.game?.loaded) return;
-  try {
-    client.game.loaded();
-    kubeeGameLoadedSent = true;
-  } catch (err) {
-    console.warn('[Boot] KubeeClient.game.loaded() failed:', err);
-  }
-}
-
-async function main(): Promise<void> {
-  const i18nMode = (import.meta.env.VITE_I18N_MODE as I18nMode | undefined) ?? 'locked';
-  const i18nLocale = import.meta.env.VITE_I18N_LOCALE as string | undefined;
-
-  await ensureGameUIFontsLoaded();
-
-  initI18n({
-    locales: { zh: zhLocale, en: enLocale },
-    defaultLocale: 'en',
-    fallbackLocale: 'en',
-    mode: i18nMode,
-    locale: i18nLocale,
-  });
-  installButtonClickSfx();
-
-  showBootLoadingOverlay();
-  // 进度封顶 95%，留最后 5% 给关卡解析 / 主菜单构建，hide 时补满到 100%。
-  bootLoadingManager.onProgress = (_url, loaded, total) => {
-    if (total > 0) setBootLoadingProgress((loaded / total) * 95);
-  };
-  bootLoadingManager.onError = (url) => console.warn('[Boot] asset failed:', url);
-
-  try {
-    await loadModels();
-    // 默认关卡（whitebox）必须加载成功。
-    await tryLoadLevel(DEFAULT_LEVEL_NAME);
-    // Hard 测试关（stage2）尽力预加载；缺失时不阻塞启动。
-    try {
-      await tryLoadLevel(HARD_TEST_LEVEL_NAME);
-    } catch (error) {
-      console.warn(`[Level] Optional hard test level "${HARD_TEST_LEVEL_NAME}" preload failed:`, error);
-    }
-    // 菜单默认回到第一关关卡上下文。
-    await tryLoadLevel(DEFAULT_LEVEL_NAME);
-  } finally {
-    hideBootLoadingOverlay();
-  }
-
-  showMainMenu();
-  notifyKubeeGameLoaded();
-}
-
 export function bootGameClient(): void {
-  void main().catch((error) => {
+  void runBootFlow({
+    loadModels,
+    tryLoadLevel,
+    preloadUiAssets: preloadBootUiAssets,
+    warmUpGpuAssets,
+    defaultLevelName: DEFAULT_LEVEL_NAME,
+    hardTestLevelName: HARD_TEST_LEVEL_NAME,
+    showMainMenu,
+  }).catch((error) => {
     console.error('[MegaBonk] Boot failed:', error);
   });
 }
-
-// =============================================================================
-// GM Tool (Debug Panel) — press ` (backtick) to toggle
-// =============================================================================
-
-let gmPanel: HTMLDivElement | null = null;
-let gmSession: LocalGameSession | null = null;
-let gmGodModeSnapshot: { hp: number; maxHp: number } | null = null;
-
-function setupGMTool(): void {
-  window.addEventListener('keydown', (e) => {
-    if (e.key === '`' || e.key === '~') {
-      toggleGMPanel();
-    }
-  });
-
-  // Expose to console
-  (window as any).__gm = {
-    get state() { return gmSession?.getRenderState(); },
-    levelUp() { gmLevelUp(); },
-    addXp(amount: number = 999) { gmAddXp(amount); },
-    heal() { gmHeal(); },
-    kill() { gmKillAllEnemies(); },
-    silver(amount: number = 1000) { gmAddSilver(amount); },
-    spawnBoss() { gmSpawnBoss(); },
-    godMode() { gmGodMode(); },
-    disableGodMode() { gmDisableGodMode(); },
-    zeroHp() { gmZeroPlayerHp(); },
-    skipTo(minutes: number) { gmSkipTime(minutes); },
-    giveWeapon(type: string, level: number = 1) { gmGiveWeapon(type, level); },
-    giveAllWeapons() { gmGiveAllWeapons(); },
-    unlockAllCharacters() { gmUnlockAllCharacters(); },
-    listWeapons() { console.log('[GM] 可选武器:\n' + ALL_WEAPON_TYPES.map((t) => `  ${t.padEnd(16)} ${GM_WEAPON_LABELS[t]}`).join('\n')); },
-    testLightning() { gmTestLightning(); },
-    showCollision() { gmToggleCollisionViz(); },
-    help() {
-      console.log(`
-GM Commands (window.__gm):
-  .state              — 当前游戏状态
-  .levelUp()          — 直接升级
-  .addXp(999)         — 加经验
-  .heal()             — 满血
-  .kill()             — 杀死所有敌人
-  .silver(1000)       — 加银币
-  .spawnBoss()        — 召唤Boss
-  .godMode()          — 无敌模式
-  .disableGodMode()   — 关闭无敌模式
-  .zeroHp()           — 玩家血量清零
-  .skipTo(5)          — 跳到第5分钟
-  .giveWeapon(type, level=1)
-                      — 加指定武器（type 见 .listWeapons()，槽位不足自动扩容）
-  .listWeapons()      — 列出全部 12 把可选武器（id + 中文名）
-  .giveAllWeapons()   — 一键塞满全部武器
-  .unlockAllCharacters()
-                    — 解锁全部角色
-  .testLightning()    — 在玩家头顶劈一道电（VFX 测试）
-  .showCollision()    — 切换碰撞盒可视化（绿 col_ / 红 wall_ /
-                        蓝 climb_ / 黄 ramp_ / 品红 spawn_*）
-      `);
-    },
-  };
-}
-
-function setGMSession(session: LocalGameSession): void {
-  gmSession = session;
-  gmGodModeSnapshot = null;
-}
-
-function gmLevelUp(): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  state.player.xp = state.player.xpToNext;
-}
-
-function gmAddXp(amount: number): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  state.player.xp += amount;
-}
-
-function gmHeal(): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  state.player.hp = state.player.maxHp;
-}
-
-function gmKillAllEnemies(): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  for (const enemy of state.enemies) {
-    enemy.hp = 0;
-  }
-}
-
-function gmAddSilver(amount: number): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  state.stats.silverEarned += amount;
-}
-
-function gmSpawnBoss(): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  (state as any).gameTime = 540; // Force boss spawn time
-}
-
-function gmGodMode(): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  if (!gmGodModeSnapshot) {
-    gmGodModeSnapshot = {
-      hp: state.player.hp,
-      maxHp: state.player.maxHp,
-    };
-  }
-  state.player.maxHp = 99999;
-  state.player.hp = 99999;
-  state.player.invincibleTimer = 99999;
-}
-
-function gmDisableGodMode(): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  state.player.invincibleTimer = 0;
-  if (gmGodModeSnapshot) {
-    state.player.maxHp = gmGodModeSnapshot.maxHp;
-    state.player.hp = Math.min(gmGodModeSnapshot.hp, state.player.maxHp);
-    gmGodModeSnapshot = null;
-  } else {
-    state.player.hp = Math.min(state.player.hp, state.player.maxHp);
-  }
-}
-
-function gmZeroPlayerHp(): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  state.player.hp = 0;
-  state.player.invincibleTimer = 0;
-  state.player.alive = false;
-  state.phase = 'defeat';
-  state.finished = true;
-  state.running = false;
-}
-
-function gmSkipTime(minutes: number): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  (state as any).gameTime = minutes * 60;
-}
-
-const ALL_WEAPON_TYPES = [
-  'sword',
-  'bone_bouncer',
-  'axe',
-  'pistol',
-  'lightning_staff',
-  'flame_ring',
-  'shotgun',
-  'ray_gun',
-  'poison_bomb',
-  'paralysis_gun',
-  'void_ripple',
-  'scorch_boots',
-] as const;
-
-const GM_WEAPON_LABELS: Record<(typeof ALL_WEAPON_TYPES)[number], string> = {
-  sword: '大剑',
-  bone_bouncer: '弹射骨头',
-  axe: '旋转飞斧',
-  pistol: '手枪',
-  lightning_staff: '闪电法杖',
-  flame_ring: '烈焰环',
-  shotgun: '霰弹枪',
-  ray_gun: '射线枪',
-  poison_bomb: '毒气弹',
-  paralysis_gun: '麻痹枪',
-  void_ripple: '虚空涟漪',
-  scorch_boots: '灼地靴',
-};
-
-function gmGiveWeapon(type: string, level: number = 1): void {
-  if (!gmSession) return;
-  if (!ALL_WEAPON_TYPES.includes(type as typeof ALL_WEAPON_TYPES[number])) {
-    console.warn(`[GM] Unknown weapon type: ${type}. Valid: ${ALL_WEAPON_TYPES.join(', ')}`);
-    return;
-  }
-  const state = gmSession.getRenderState();
-  const player = state.player;
-  const existing = player.weapons.find((w) => w.type === type);
-  if (existing) {
-    existing.level = Math.max(existing.level, level);
-    console.log(`[GM] ${type} → level ${existing.level}`);
-    return;
-  }
-  // GM 工具：槽位不足时自动扩容，保证选中的武器一定能加上
-  if (player.weapons.length >= player.maxWeaponSlots) {
-    player.maxWeaponSlots = player.weapons.length + 1;
-  }
-  player.weapons.push({
-    type: type as typeof ALL_WEAPON_TYPES[number],
-    level,
-    cooldownTimer: 0,
-  });
-  console.log(`[GM] +${type} (level ${level})`);
-}
-
-function gmGiveAllWeapons(): void {
-  if (!gmSession) return;
-  const state = gmSession.getRenderState();
-  const player = state.player;
-  // Bump slot cap so all 7 fit
-  if (player.maxWeaponSlots < ALL_WEAPON_TYPES.length) {
-    player.maxWeaponSlots = ALL_WEAPON_TYPES.length;
-  }
-  for (const type of ALL_WEAPON_TYPES) {
-    const existing = player.weapons.find((w) => w.type === type);
-    if (!existing) {
-      player.weapons.push({ type, level: 1, cooldownTimer: 0 });
-    }
-  }
-  console.log(`[GM] All weapons granted (${player.weapons.length}/${player.maxWeaponSlots})`);
-}
-
-function gmUnlockAllCharacters(): void {
-  const save = loadSave();
-  save.charactersUnlocked = [...CHARACTER_ORDER];
-  saveSave(save);
-  if (characterSelectSlotsHost) mountCharacterSelectSlots(characterSelectSlotsHost);
-  refreshCharacterSelectUI();
-  console.log('[GM] All characters unlocked');
-}
-
-function gmTestLightning(): void {
-  if (!gmSession || !activeScene) {
-    console.warn('[GM] No active scene');
-    return;
-  }
-  const state = gmSession.getRenderState();
-  const p = state.player;
-  // 在玩家头顶劈一道（不依赖敌人，纯视觉测试）
-  activeScene.debugSpawnLightning(p.x, 0, p.z);
-  console.log(`[GM] 强制劈电 @ (${p.x.toFixed(1)}, 0, ${p.z.toFixed(1)})`);
-}
-
-function gmToggleCollisionViz(): void {
-  if (!activeScene) {
-    console.warn('[GM] No active scene');
-    return;
-  }
-  const visible = activeScene.debugToggleCollisionViz();
-  console.log(`[GM] Collision viz: ${visible ? 'ON' : 'OFF'}`);
-}
-
-function toggleGMPanel(): void {
-  if (gmPanel) {
-    gmPanel.remove();
-    gmPanel = null;
-    syncStylizedDebugPanelWithGM(false);
-    return;
-  }
-
-  gmPanel = document.createElement('div');
-  gmPanel.dataset.cameraBlock = 'true';
-  gmPanel.style.cssText = 'position:fixed;top:60px;left:10px;background:rgba(0,0,0,0.85);color:#0f0;font-family:monospace;font-size:12px;padding:10px;border-radius:8px;z-index:9999;display:flex;flex-direction:column;gap:6px;max-width:160px;border:1px solid #0f0;';
-
-  const title = document.createElement('div');
-  title.style.cssText = 'color:#ff0;font-weight:bold;font-size:13px;margin-bottom:4px;';
-  title.textContent = 'GM TOOL (`)';
-  gmPanel.appendChild(title);
-
-  const buttons: [string, () => void][] = [
-    ['升级 +1', gmLevelUp],
-    ['加 XP ×999', () => gmAddXp(999)],
-    ['满血', gmHeal],
-    ['杀全部敌人', gmKillAllEnemies],
-    ['加 1000 银币', () => gmAddSilver(1000)],
-    ['召唤 Boss', gmSpawnBoss],
-    ['无敌模式', gmGodMode],
-    ['关闭无敌模式', gmDisableGodMode],
-    ['玩家血量清零', gmZeroPlayerHp],
-    ['跳到 5 分钟', () => gmSkipTime(5)],
-    ['跳到 8 分钟', () => gmSkipTime(8)],
-    ['+闪电法杖 (Lv5)', () => gmGiveWeapon('lightning_staff', 5)],
-    ['+剑 (Lv5)', () => gmGiveWeapon('sword', 5)],
-    ['+火焰环 (Lv5)', () => gmGiveWeapon('flame_ring', 5)],
-    ['给我所有武器', gmGiveAllWeapons],
-    ['解锁全部角色', gmUnlockAllCharacters],
-    ['⚡测试闪电特效⚡', gmTestLightning],
-    ['🟩 切换碰撞盒可视化', gmToggleCollisionViz],
-  ];
-
-  for (const [label, fn] of buttons) {
-    const btn = document.createElement('button');
-    btn.style.cssText = 'background:#222;color:#0f0;border:1px solid #0f0;padding:4px 8px;border-radius:4px;cursor:pointer;font-family:monospace;font-size:11px;text-align:left;';
-    btn.textContent = label;
-    btn.addEventListener('click', fn);
-    btn.addEventListener('mouseenter', () => { btn.style.background = '#0f0'; btn.style.color = '#000'; });
-    btn.addEventListener('mouseleave', () => { btn.style.background = '#222'; btn.style.color = '#0f0'; });
-    gmPanel.appendChild(btn);
-  }
-
-  // ── 自选武器（任意武器 + 任意等级）──
-  const picker = document.createElement('div');
-  picker.style.cssText = 'margin-top:6px;padding-top:6px;border-top:1px dashed #0f0;display:flex;flex-direction:column;gap:4px;';
-
-  const pickerTitle = document.createElement('div');
-  pickerTitle.style.cssText = 'color:#ff0;font-size:11px;';
-  pickerTitle.textContent = '自选武器';
-  picker.appendChild(pickerTitle);
-
-  const weaponSelect = document.createElement('select');
-  weaponSelect.style.cssText = 'background:#222;color:#0f0;border:1px solid #0f0;border-radius:4px;font-family:monospace;font-size:11px;padding:3px;';
-  for (const type of ALL_WEAPON_TYPES) {
-    const opt = document.createElement('option');
-    opt.value = type;
-    opt.textContent = `${GM_WEAPON_LABELS[type]} (${type})`;
-    weaponSelect.appendChild(opt);
-  }
-  picker.appendChild(weaponSelect);
-
-  const levelRow = document.createElement('div');
-  levelRow.style.cssText = 'display:flex;align-items:center;gap:4px;';
-  const levelLabel = document.createElement('span');
-  levelLabel.style.cssText = 'font-size:11px;';
-  levelLabel.textContent = '等级';
-  const levelInput = document.createElement('input');
-  levelInput.type = 'number';
-  levelInput.min = '1';
-  levelInput.value = '5';
-  levelInput.style.cssText = 'width:48px;background:#222;color:#0f0;border:1px solid #0f0;border-radius:4px;font-family:monospace;font-size:11px;padding:3px;';
-  levelRow.appendChild(levelLabel);
-  levelRow.appendChild(levelInput);
-  picker.appendChild(levelRow);
-
-  const addBtn = document.createElement('button');
-  addBtn.style.cssText = 'background:#222;color:#0f0;border:1px solid #0f0;padding:4px 8px;border-radius:4px;cursor:pointer;font-family:monospace;font-size:11px;text-align:center;font-weight:bold;';
-  addBtn.textContent = '＋ 添加该武器';
-  addBtn.addEventListener('click', () => {
-    const level = Math.max(1, Math.floor(Number(levelInput.value) || 1));
-    gmGiveWeapon(weaponSelect.value, level);
-  });
-  addBtn.addEventListener('mouseenter', () => { addBtn.style.background = '#0f0'; addBtn.style.color = '#000'; });
-  addBtn.addEventListener('mouseleave', () => { addBtn.style.background = '#222'; addBtn.style.color = '#0f0'; });
-  picker.appendChild(addBtn);
-
-  gmPanel.appendChild(picker);
-
-  document.body.appendChild(gmPanel);
-  syncStylizedDebugPanelWithGM(true);
-}
-
-setupGMTool();

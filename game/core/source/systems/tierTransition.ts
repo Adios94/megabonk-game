@@ -19,6 +19,8 @@
 import type { Engine } from './types.ts';
 import { consumePortalUsed, generateAltars } from './altars.ts';
 import { generateChests, nextChestId, nextChestRespawnDelay } from './chests.ts';
+import { recyclePickupArrays } from './pickups.ts';
+import { recycleConsumablePickups } from './consumables.ts';
 
 export function tickTierTransition(engine: Engine): void {
   if (!consumePortalUsed(engine)) return;
@@ -30,12 +32,11 @@ export function tickTierTransition(engine: Engine): void {
   state.stage = Math.min(2, (state.stage ?? 1) + 1) as 1 | 2;
   state.tier = config.tier;
 
-  // 清场
+  // 清场（pickups / goldMotes / consumablePickups 归还对象池后就地清空，避免清场制造 GC 尖刺）
   state.enemies = [];
   state.projectiles = [];
-  state.pickups = [];
-  state.consumablePickups = [];
-  state.goldMotes = [];
+  recyclePickupArrays(state);
+  recycleConsumablePickups(state);
   state.damageEvents = [];
   state.levelUpCompensationEvents = [];
   state.xpPickupEvents = [];

@@ -26,6 +26,10 @@ import type { EnemyState } from '../types.ts';
 
 const CHAIN_DECAY = 0.7;
 
+// 复用 scratch Set —— lightning_staff 每次开火都 new Set 会产生持续 alloc。
+// 行为同步执行，无并发，单 Set 可共享；进入函数时 clear 即可。
+const hitIdsScratch = new Set<number>();
+
 export function lightningChain(_world: GameWorld, ctx: BehaviorContext): void {
   const { player, enemies, boss, weapon, def, stats, effects } = ctx;
 
@@ -47,7 +51,8 @@ export function lightningChain(_world: GameWorld, ctx: BehaviorContext): void {
 
   // 链：从主目标位置出发，跳到最近的未命中 enemy。
   // 若主目标是 boss，链不再"反弹回 boss"（boss 已在主命中扣血）。
-  const hitIds = new Set<number>();
+  const hitIds = hitIdsScratch;
+  hitIds.clear();
   if (!targetIsBoss) hitIds.add((target as EnemyState).id);
   let currentX = target.x;
   let currentY = target.y;

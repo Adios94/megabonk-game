@@ -16,6 +16,7 @@ import { getTomePower } from '../data/tomeProgression.ts';
 import { applyCharacterTrait } from '../stats/applyCharacterTrait.ts';
 import { addDamageEvent, checkPlayerDeath } from './helpers.ts';
 import { onPlayerHitBonds } from './bonds.ts';
+import { ObjectPool } from '../helpers/objectPool.ts';
 import type { ConsumableId, ConsumablePickupState, EnemyState } from '../types.ts';
 import type { Engine } from './types.ts';
 
@@ -23,6 +24,19 @@ const XP_PICKUP_TYPES = new Set(['xp_green', 'xp_blue', 'xp_purple', 'xp_orange'
 const CONSUMABLE_ATTRACT_RADIUS = 0.65;
 const CONSUMABLE_COLLECT_RADIUS = 0.32;
 const CONSUMABLE_SURFACE_OFFSET_Y = 0.35;
+
+// 对象池：ConsumablePickupState 字段全必填、无 optional，acquire 后逐字段覆盖即可。
+const consumablePickupPool = new ObjectPool<ConsumablePickupState>('consumablePickup', () => ({
+  id: 0, consumableId: 'wild_berry', x: 0, y: 0, z: 0, lifetime: 0, attracted: false,
+}));
+
+/** 清场：把 consumablePickups 全部归还池后就地清空。 */
+export function recycleConsumablePickups(state: Engine['state']): void {
+  for (let i = 0; i < state.consumablePickups.length; i++) {
+    consumablePickupPool.release(state.consumablePickups[i]);
+  }
+  state.consumablePickups.length = 0;
+}
 
 export function spawnConsumablesFromEnemy(engine: Engine, enemy: EnemyState): void {
   const player = engine.state.player;
@@ -55,15 +69,15 @@ function pushConsumablePickup(
   y: number,
   z: number,
 ): void {
-  engine.state.consumablePickups.push({
-    id: engine.nextPickupId++,
-    consumableId,
-    x,
-    y,
-    z,
-    lifetime: PICKUP_LIFETIME,
-    attracted: false,
-  });
+  const pickup = consumablePickupPool.acquire();
+  pickup.id = engine.nextPickupId++;
+  pickup.consumableId = consumableId;
+  pickup.x = x;
+  pickup.y = y;
+  pickup.z = z;
+  pickup.lifetime = PICKUP_LIFETIME;
+  pickup.attracted = false;
+  engine.state.consumablePickups.push(pickup);
 }
 
 export function tickConsumablePickups(engine: Engine, dt: number): void {
@@ -76,6 +90,7 @@ export function tickConsumablePickups(engine: Engine, dt: number): void {
     pickup.lifetime -= dt;
     if (pickup.lifetime <= 0) {
       pickups.splice(i, 1);
+      consumablePickupPool.release(pickup);
       continue;
     }
 
@@ -83,6 +98,7 @@ export function tickConsumablePickups(engine: Engine, dt: number): void {
     if (dist < CONSUMABLE_COLLECT_RADIUS) {
       applyConsumable(engine, pickup.consumableId);
       pickups.splice(i, 1);
+      consumablePickupPool.release(pickup);
       continue;
     }
 
@@ -102,6 +118,7 @@ export function tickConsumablePickups(engine: Engine, dt: number): void {
       if (newDist < CONSUMABLE_COLLECT_RADIUS) {
         applyConsumable(engine, pickup.consumableId);
         pickups.splice(i, 1);
+        consumablePickupPool.release(pickup);
       }
     }
   }

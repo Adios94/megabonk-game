@@ -58,9 +58,9 @@ import { tickProjectiles } from './systems/projectiles.ts';
 import { processCollisions } from './systems/collisions.ts';
 import { tickStatusEffects } from './systems/statusEffects.ts';
 import { tickAreaEffects } from './systems/areaEffects.ts';
-import { processDeaths, tickPickups, tickThorns } from './systems/pickups.ts';
+import { processDeaths, tickPickups, tickThorns, recyclePickupArrays } from './systems/pickups.ts';
 import { recordWeaponDamage, refreshAllWeaponDps } from './systems/weaponDamageStats.ts';
-import { applyPlayerHit, tickConsumableEffects, tickConsumablePickups } from './systems/consumables.ts';
+import { applyPlayerHit, tickConsumableEffects, tickConsumablePickups, recycleConsumablePickups } from './systems/consumables.ts';
 import { tickSpawning, checkBossSpawn, getBossOvertimeGrowthContext } from './systems/spawning.ts';
 import { tickAltars, generateAltars } from './systems/altars.ts';
 import { tickChests, generateChests, nextChestId, nextChestRespawnDelay } from './systems/chests.ts';
@@ -69,12 +69,16 @@ import { tickOvertime } from './systems/overtime.ts';
 import { tickTierTransition } from './systems/tierTransition.ts';
 import { tickShrines, generateShrines, applyShrineReward } from './systems/shrines.ts';
 import { tickEnemySeparation } from './systems/enemySeparation.ts';
-import { addDamageEvent, applyKnockback, checkGameOver } from './systems/helpers.ts';
+import { addDamageEvent, applyKnockback, checkGameOver, resetDamageEventPool } from './systems/helpers.ts';
+import { acquireHitIds } from './helpers/hitIdsPool.ts';
 import { pickRandomOne } from './factories/spawnPick.ts';
 
 export class GameInstance {
   private engine: Engine;
   private resultSettled = false;
+  // 复用 AiContext 对象，避免每 tick 创建新对象 + 新箭头闭包（每秒 60-120 次）。
+  // getTerrainHeight 闭包内部读 engine.geo 是 live ref，关卡切换无需重建。
+  private aiContext!: AiContext;
 
   constructor(config: GameConfig) {
     const world = createWorld();
@@ -150,6 +154,19 @@ export class GameInstance {
 
     engine.effects = makeEffects(engine);
     this.engine = engine;
+    this.aiContext = {
+      player: state.player,
+      enemies: state.enemies,
+      boss: state.boss,
+      dt: 0,
+      gameTime: 0,
+      mapSize: config.mapSize,
+      aiGroup: 0,
+      finalSwarm: false,
+      getTerrainHeight: (x, z) => getTerrainHeightAt(engine.geo, x, z),
+      geo: engine.geo,
+      effects: engine.effects,
+    };
 
     this.applyLevelConfig();
   }
@@ -196,9 +213,9 @@ export class GameInstance {
     state.enemies = [];
     state.projectiles = [];
     state.areaEffects = [];
-    state.pickups = [];
-    state.consumablePickups = [];
-    state.goldMotes = [];
+    // pickups / goldMotes / consumablePickups 归还对象池后清空（重开时复用上一局对象壳）
+    recyclePickupArrays(state);
+    recycleConsumablePickups(state);
     state.damageEvents = [];
     state.bondVfxEvents = [];
     state.levelUpCompensationEvents = [];
@@ -271,12 +288,12 @@ export class GameInstance {
     }
 
     // 娓呬笂涓€甯т簨浠讹紙client 鍦ㄤ袱甯т箣闂磋锛?
-    state.damageEvents = [];
-    state.bondVfxEvents = [];
-    state.levelUpCompensationEvents = [];
-    state.xpPickupEvents = [];
-    state.fallDamageEvents = [];
-    state.chestOpenEvents = [];
+    resetDamageEventPool(engine);
+    state.bondVfxEvents.length = 0;
+    state.levelUpCompensationEvents.length = 0;
+    state.xpPickupEvents.length = 0;
+    state.fallDamageEvents.length = 0;
+    state.chestOpenEvents.length = 0;
 
     state.gameTime += dt;
     state.tick++;
@@ -285,7 +302,7 @@ export class GameInstance {
     tickPlayerMovement(engine, dt);
     tickDash(engine, dt);
     tickTimers(engine, dt);
-    tickEnemyAi(state.enemies, makeAiContext(engine, dt));
+    tickEnemyAi(state.enemies, this.refreshAiContext(dt));
     // 鏁屼汉涔嬮棿杞垎绂?鈥斺€?AI 鍐冲畾鎰忓浘浣嶇Щ鍚庯紝鎶婅创鑴?閲嶅彔鐨勫悓浼存帹寮€锛堝甯ц蒋鎺掓枼锛屽皧閲嶅浣擄級銆?
     tickEnemySeparation(engine);
     tickWeapons(engine, dt);
@@ -306,7 +323,7 @@ export class GameInstance {
     if ((state.phase as GameState['phase']) === 'chest_reward') return false;
     checkBossSpawn(engine);
     if (state.boss && state.phase === 'boss_fight') {
-      tickBossAi(state.boss, makeAiContext(engine, dt));
+      tickBossAi(state.boss, this.refreshAiContext(dt));
     }
     tickThorns(engine);
     checkGameOver(engine);
@@ -446,6 +463,28 @@ export class GameInstance {
     return this.engine.state;
   }
 
+  /**
+   * 刷新缓存的 AiContext —— 只更新会随帧变化的字段，复用对象。
+   * enemies / player 引用稳定（始终是 engine.state 上的同名数组/对象），
+   * 不需要每帧重新赋值，但 boss 会在 spawn/死亡时切换 null↔实例，必须同步。
+   * geo 在关卡切换后才变，同步成本极低。
+   */
+  private refreshAiContext(dt: number): AiContext {
+    const ctx = this.aiContext;
+    const { state, config } = this.engine;
+    ctx.player = state.player;
+    ctx.enemies = state.enemies;
+    ctx.boss = state.boss;
+    ctx.dt = dt;
+    ctx.gameTime = state.gameTime;
+    ctx.mapSize = config.mapSize;
+    ctx.aiGroup = this.engine.aiGroup;
+    ctx.finalSwarm = state.finalSwarm;
+    ctx.geo = this.engine.geo;
+    ctx.effects = this.engine.effects;
+    return ctx;
+  }
+
   getResult(): GameResult {
     const { engine } = this;
     const { state, config } = engine;
@@ -511,22 +550,6 @@ function applyTomeUpgradeSteps(tome: TomeState, rarity: UpgradeRarity, targetLev
   }
 }
 
-function makeAiContext(engine: Engine, dt: number): AiContext {
-  return {
-    player: engine.state.player,
-    enemies: engine.state.enemies,
-    boss: engine.state.boss,
-    dt,
-    gameTime: engine.state.gameTime,
-    mapSize: engine.config.mapSize,
-    aiGroup: engine.aiGroup,
-    finalSwarm: engine.state.finalSwarm,
-    // 闂寘缁戝畾 engine.geo 鈥斺€?鍏冲崱鍒囨崲鍚庝笅涓€甯у氨璇诲埌鏂板嚑浣?
-    getTerrainHeight: (x, z) => getTerrainHeightAt(engine.geo, x, z),
-    geo: engine.geo,
-    effects: engine.effects,
-  };
-}
 
 /**
  * 鏋勯€?AiEffects 鈥斺€?缁?AI / 姝﹀櫒 behavior 鎻愪緵鍓綔鐢ㄥ叆鍙ｃ€侲ngine 宸插氨缁悗璋冧竴娆°€?
@@ -544,7 +567,12 @@ function makeEffects(engine: Engine): AiEffects {
     },
     spawnProjectile: (p) => {
       if (!p.fromPlayer) {
-        const enemyProjectileCount = engine.state.projectiles.filter(proj => !proj.fromPlayer).length;
+        // 原 .filter().length 每次 spawn 分配新数组 + 闭包；改为 for-loop 计数零 alloc。
+        let enemyProjectileCount = 0;
+        const projectiles = engine.state.projectiles;
+        for (let i = 0; i < projectiles.length; i++) {
+          if (!projectiles[i].fromPlayer) enemyProjectileCount++;
+        }
         if (enemyProjectileCount >= 10) return null;
       }
       if (engine.state.projectiles.length >= MAX_PROJECTILES) return null;
@@ -552,7 +580,7 @@ function makeEffects(engine: Engine): AiEffects {
       const durationMult = p.fromPlayer ? (engine.state.player.durationMult ?? 1) : 1;
       engine.state.projectiles.push({
         id,
-        hitEnemyIds: [],
+        hitEnemyIds: acquireHitIds(),
         ...p,
         lifetime: p.lifetime * durationMult,
       });

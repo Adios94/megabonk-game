@@ -16,10 +16,13 @@ import type { BossState, EnemyState, WeaponType } from '../types.ts';
 import type { Engine } from './types.ts';
 import { onBossDefeated } from './altars.ts';
 import { spawnBossChests } from './chests.ts';
-import { tryMoveHorizontally } from './horizontalMove.ts';
+import { tryMoveHorizontally, type HorizontalMoveOptions, type MovePoint } from './horizontalMove.ts';
 
 /** 敌人横向碰撞半径（与 _move.ts 一致）。 */
 const ENEMY_RADIUS = 0.4;
+// 击退每次命中每怪都可能触发，复用选项 / 落点 scratch（结果立即写回 enemy.x/z）。
+const KNOCKBACK_MOVE_OPTS: HorizontalMoveOptions = { radius: ENEMY_RADIUS, includeClimb: true };
+const _knockbackOut: MovePoint = { x: 0, z: 0 };
 const BOSS_XP_REWARD = 100;
 const BOSS_XP_PICKUP_OFFSET_Y = 0.2;
 
@@ -111,6 +114,37 @@ export function findEnemyById(engine: Engine, id: number): EnemyState | null {
   return null;
 }
 
+// ─── DamageEvent 对象池 ─────────────────────────────────────────────────
+// 战斗密集时每秒可达数百次命中，每次原本 push({...9 props}) 都新建对象。
+// 池化后所有事件对象在第一次使用后被永久复用；tick 末尾不释放（事件数组本身被
+// `state.damageEvents.length = 0` 清空，但池索引由 `resetDamageEventPool` 单独重置）。
+//
+// 安全前提：client 在 RAF 内同步遍历 state.damageEvents 后即不再持有引用。
+// 跨 tick 复用是安全的，因为下一次 tick 开始前 RAF 已读完。
+//
+// 内存上限：池只增不减，长度等于"游戏运行过程中单 tick 命中数的历史峰值"。
+// 实际游戏中最大值约 50-200，每对象 ≈ 80 字节 → 永久占用 < 16 KB，可忽略。
+const damageEventPool: DamageEventPoolEntry[] = [];
+let damageEventCursor = 0;
+
+interface DamageEventPoolEntry {
+  x: number;
+  y: number;
+  z: number;
+  damage: number;
+  isCrit: boolean;
+  isPlayerDamage: boolean;
+  weaponType: WeaponType | undefined;
+  isShield: boolean | undefined;
+  hitFlashColor: number | undefined;
+}
+
+/** 在每 tick 开始时调用一次：清空逻辑数组并重置池游标。 */
+export function resetDamageEventPool(engine: Engine): void {
+  engine.state.damageEvents.length = 0;
+  damageEventCursor = 0;
+}
+
 export function addDamageEvent(
   engine: Engine,
   x: number, y: number, z: number,
@@ -121,7 +155,26 @@ export function addDamageEvent(
   isShield?: boolean,
   hitFlashColor?: number,
 ): void {
-  engine.state.damageEvents.push({ x, y, z, damage, isCrit, isPlayerDamage, weaponType, isShield, hitFlashColor });
+  let evt: DamageEventPoolEntry;
+  if (damageEventCursor < damageEventPool.length) {
+    evt = damageEventPool[damageEventCursor];
+  } else {
+    evt = {
+      x: 0, y: 0, z: 0, damage: 0,
+      isCrit: false, isPlayerDamage: false,
+      weaponType: undefined, isShield: undefined, hitFlashColor: undefined,
+    };
+    damageEventPool.push(evt);
+  }
+  damageEventCursor++;
+  evt.x = x; evt.y = y; evt.z = z;
+  evt.damage = damage;
+  evt.isCrit = isCrit;
+  evt.isPlayerDamage = isPlayerDamage;
+  evt.weaponType = weaponType;
+  evt.isShield = isShield;
+  evt.hitFlashColor = hitFlashColor;
+  engine.state.damageEvents.push(evt);
 }
 
 /**
@@ -148,10 +201,7 @@ export function applyKnockback(
   const targetX = Math.max(-halfMap, Math.min(halfMap, enemy.x + dir.x * force));
   const targetZ = Math.max(-halfMap, Math.min(halfMap, enemy.z + dir.z * force));
   // 击退尊重墙体：撞墙停 / 沿墙滑，不再把怪塞进墙里（gargoyle 飞行也按此，影响可忽略）。
-  const moved = tryMoveHorizontally(engine.geo, enemy.x, enemy.z, targetX, targetZ, enemy.y, {
-    radius: ENEMY_RADIUS,
-    includeClimb: true,
-  });
+  const moved = tryMoveHorizontally(engine.geo, enemy.x, enemy.z, targetX, targetZ, enemy.y, KNOCKBACK_MOVE_OPTS, _knockbackOut);
   enemy.x = moved.x;
   enemy.z = moved.z;
 }

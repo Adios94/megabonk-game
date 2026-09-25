@@ -27,6 +27,8 @@ export type HitFlashMaterial = THREE.Material & {
 
 const HIT_FLASH_BASE_COLOR_KEY = '__hitFlashBaseColor';
 const HIT_FLASH_BASE_EMISSIVE_KEY = '__hitFlashBaseEmissive';
+/** mesh.userData：被换成染色材质前的原始（共享基础）材质数组，用于闪烁结束后还原。 */
+const TINT_BASES_KEY = '__hitTintBases';
 export const HIT_FLASH_TINT_INTENSITY = 0.88;
 export const HIT_FLASH_EMISSIVE_STRENGTH = 0.2;
 export const PLAYER_SHIELD_HIT_FLASH_COLOR = 0x9edcff;
@@ -47,6 +49,22 @@ export class HitFlashSystem {
   playerTint: number | null = null;
 
   private readonly scratch = new THREE.Color();
+
+  /**
+   * 敌人染色材质缓存：tintCache[基础材质][颜色key] = 一份共享的染色材质。
+   *
+   * 关键设计——按「(基础材质, 颜色)」共享，而不是「每只闪的怪一份」：
+   *   同一种怪被同一武器（同色）打时，几十只可以共用同一份染色材质（颜色完全一致、视觉无差），
+   *   各自只在 mesh 上把 material 引用 swap 过去。于是染色材质总数 ≈ 怪种数 × 出现过的武器色数
+   *   （十几份），全部"一次创建、永久复用"——闪结束只是把 mesh.material 换回基础材质，不销毁、
+   *   不归还、零再分配。
+   *
+   * 旧版"每只私有 + 池上限"在后期怪海里几乎每只可见怪都持续在闪 → 同时在闪数远超池容量 →
+   * 超 cap 的染色材质被 dispose、下一帧又冷 clone → 稳态每帧十几次 clone()+needsUpdate →
+   * getParameters/getProgramCacheKey churn（探针实测每帧约 12 个 MeshToonMaterial 被标脏）。
+   * 共享后稳态 needsUpdate 归零。
+   */
+  private readonly tintCache = new Map<THREE.Material, Map<string, HitFlashMaterial>>();
 
   constructor(private readonly weaponVfxColors: WeaponVfxColorTable) {}
 
@@ -146,12 +164,96 @@ export class HitFlashSystem {
     });
   }
 
+  /** tint 去重 / 缓存用的颜色 key（与 setEnemyTint 的记账 key 一致）。null = 无 tint。 */
+  private tintKeyFor(weaponType?: string, hitFlashColor?: number): string | null {
+    return hitFlashColor !== undefined ? `color:${hitFlashColor}` : (weaponType ?? null);
+  }
+
+  /**
+   * 取「(基础材质, 颜色key)」对应的共享染色材质：缓存命中直接返回（零分配），
+   * 未命中才 clone 一次基础材质、挂回 stylized、按基色 mix 目标色后永久缓存。
+   * 由于同 key 的颜色恒定，染色材质的 color/emissive 只在创建时写一次，之后帧帧复用。
+   */
+  private getSharedTint(base: THREE.Material, key: string, color: THREE.Color): HitFlashMaterial {
+    let byColor = this.tintCache.get(base);
+    if (!byColor) { byColor = new Map(); this.tintCache.set(base, byColor); }
+    let tint = byColor.get(key);
+    if (!tint) {
+      tint = this.createTintMaterial(base);
+      const baseColor = (base as HitFlashMaterial).color;
+      if (tint.color && baseColor) tint.color.copy(baseColor).lerp(color, HIT_FLASH_TINT_INTENSITY);
+      if (tint.emissive) tint.emissive.copy(color).multiplyScalar(HIT_FLASH_EMISSIVE_STRENGTH);
+      byColor.set(key, tint);
+    }
+    return tint;
+  }
+
+  /**
+   * 克隆基础材质做染色材质。clone() 不带 onBeforeCompile，故对 toon 材质重新挂一遍 stylized
+   * （与 cloneMaterial 同款），customProgramCacheKey 相同 → 复用已编译 program。仅在某「(base,色)」
+   * 组合首次出现时调用一次（之后永久缓存复用），故 needsUpdate 只触发一次、不再 churn。
+   */
+  private createTintMaterial(base: THREE.Material): HitFlashMaterial {
+    const tint = base.clone() as HitFlashMaterial;
+    tint.userData = {};
+    if (tint instanceof THREE.MeshToonMaterial) {
+      applyStylizedToonShading(tint, tint.name.startsWith('Weapon') ? 0.35 : 0, true);
+    }
+    tint.userData[OWNED_CLONE_KEY] = true;
+    return tint;
+  }
+
+  /**
+   * 敌人染色（共享基础材质 + 共享染色材质 swap 版）。
+   * - 需要 tint：把该怪每个 mesh 的材质换成「(基础材质, 颜色key)」对应的共享染色材质
+   *   （首次记下原基础材质到 userData）。
+   * - 取消 tint：把材质换回基础材质（共享染色材质留在缓存里，不销毁）。
+   * 平时所有同种怪共享同一基础材质；闪烁时同种怪 + 同色也共享同一份染色材质。
+   */
+  applyEnemyTint(root: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
+    const key = this.tintKeyFor(weaponType, hitFlashColor);
+    let hasColor = false;
+    if (hitFlashColor !== undefined) {
+      this.scratch.setHex(hitFlashColor);
+      hasColor = true;
+    } else if (weaponType) {
+      const c = this.weaponVfxColors[weaponType];
+      if (c) { this.scratch.setRGB(c[0], c[1], c[2]); hasColor = true; }
+    }
+    const tintOn = key !== null && hasColor;
+
+    root.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.material) return;
+      let bases = mesh.userData[TINT_BASES_KEY] as THREE.Material[] | undefined;
+
+      if (tintOn) {
+        if (!bases) {
+          // 首次进入闪烁：快照当前（共享）基础材质，供闪完还原。
+          bases = Array.isArray(mesh.material) ? mesh.material.slice() : [mesh.material];
+          mesh.userData[TINT_BASES_KEY] = bases;
+        }
+        if (bases.length === 1) {
+          mesh.material = this.getSharedTint(bases[0], key, this.scratch);
+        } else {
+          const arr: THREE.Material[] = [];
+          for (let i = 0; i < bases.length; i++) arr.push(this.getSharedTint(bases[i], key, this.scratch));
+          mesh.material = arr;
+        }
+      } else if (bases) {
+        // 取消 tint：换回基础材质（共享染色材质留缓存复用，不销毁）。
+        mesh.material = bases.length === 1 ? bases[0] : bases;
+        delete mesh.userData[TINT_BASES_KEY];
+      }
+    });
+  }
+
   /** 设置敌人 tint（同 key 跳过；避免每帧重复写材质）。 */
   setEnemyTint(enemyId: number, obj: THREE.Object3D, weaponType?: string, hitFlashColor?: number): void {
-    const next = hitFlashColor !== undefined ? `color:${hitFlashColor}` : (weaponType ?? null);
+    const next = this.tintKeyFor(weaponType, hitFlashColor);
     if ((this.enemyTints.get(enemyId) ?? null) === next) return;
     this.enemyTints.set(enemyId, next);
-    this.applyTint(obj, weaponType, hitFlashColor);
+    this.applyEnemyTint(obj, weaponType, hitFlashColor);
   }
 
   /** 设置 Boss tint（同 key 跳过）。 */

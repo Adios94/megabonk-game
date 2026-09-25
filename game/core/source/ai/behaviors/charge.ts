@@ -12,9 +12,12 @@
  */
 import type { EnemyBehaviorFn } from '../types.ts';
 import { applyMovement } from './_move.ts';
-import { tryMoveHorizontally } from '../../systems/horizontalMove.ts';
+import { tryMoveHorizontally, type HorizontalMoveOptions, type MovePoint } from '../../systems/horizontalMove.ts';
 
 const CHARGE_RADIUS = 0.4; // 与 _move.ts 的 ENEMY_RADIUS 一致
+// 复用的冲撞移动选项 / 落点 scratch（结果立即写回 enemy.x/z）。
+const CHARGE_MOVE_OPTS: HorizontalMoveOptions = { radius: CHARGE_RADIUS, includeClimb: true };
+const _chargeOut: MovePoint = { x: 0, z: 0 };
 const COOLDOWN_DURATION = 3.0;
 /**
  * 冷却起始的"收招/挥击"窗口：cooldown 进入后 STRIKE_RECOVERY 秒内 enemy 站定不动，
@@ -81,10 +84,7 @@ export const charge: EnemyBehaviorFn = (enemy, ctx, i) => {
         const targetX = Math.max(-halfMap, Math.min(halfMap, enemy.x + nx * actualMove));
         const targetZ = Math.max(-halfMap, Math.min(halfMap, enemy.z + nz * actualMove));
         // 冲撞尊重墙体：撞墙停 / 沿墙滑，不再冲进墙里（仍由 chargeTimer 收尾进 cooldown）
-        const moved = tryMoveHorizontally(ctx.geo, enemy.x, enemy.z, targetX, targetZ, enemy.y, {
-          radius: CHARGE_RADIUS,
-          includeClimb: true,
-        });
+        const moved = tryMoveHorizontally(ctx.geo, enemy.x, enemy.z, targetX, targetZ, enemy.y, CHARGE_MOVE_OPTS, _chargeOut);
         enemy.x = moved.x;
         enemy.z = moved.z;
       }

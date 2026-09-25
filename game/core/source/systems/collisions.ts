@@ -18,6 +18,7 @@ import {
   findNearestTargetExcluding,
 } from './helpers.ts';
 import { applyPlayerHit } from './consumables.ts';
+import { releaseHitIds } from '../helpers/hitIdsPool.ts';
 import { applyRelicTargetDamage } from './relics.ts';
 import { applyPoison, applySlow } from './statusEffects.ts';
 import { onBondWeaponHit } from './bonds.ts';
@@ -151,6 +152,7 @@ export function processCollisions(engine: Engine): void {
     }
 
     if (consumed) {
+      releaseHitIds(proj.hitEnemyIds);
       engine.state.projectiles.splice(i, 1);
     }
   }
@@ -194,6 +196,7 @@ export function processCollisions(engine: Engine): void {
       const yDist = Math.abs(proj.y - (player.y + PLAYER_HIT_CENTER_OFFSET_Y));
       if (distSq < hitRange * hitRange && yDist < PROJECTILE_HIT_MAX_Y_DELTA) {
         applyPlayerHit(engine, proj.damage);
+        releaseHitIds(proj.hitEnemyIds);
         engine.state.projectiles.splice(i, 1);
         break;
       }

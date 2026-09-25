@@ -42,6 +42,17 @@ interface LightningBolt {
   flickerTimer: number;
 }
 
+/** slash 扇形 mesh 池容量上限；同屏并发剑气很少，32 足矣。 */
+const SLASH_POOL_CAP = 32;
+/** 闪电 rig（core+glow+ring 一组）池容量上限。 */
+const LIGHTNING_POOL_CAP = 24;
+
+interface LightningRig {
+  core: THREE.Mesh;
+  glow: THREE.Mesh;
+  ring: THREE.Mesh;
+}
+
 export class WeaponTransientVfx {
   readonly lightningFlashLight: THREE.PointLight;
 
@@ -50,6 +61,20 @@ export class WeaponTransientVfx {
   private flameRingDisk: THREE.Group | null = null;
   private flameRingLayers: THREE.Mesh[] = [];
   private flameRingTime = 0;
+
+  // ── VFX 对象池（避免每次挥砍/闪电 new Geometry + new Material 的 GC churn）──
+  // slash 几何体按 range 量化缓存（range 是武器属性，离散且少，命中率极高）；
+  // mesh+material 走对象池复用。原实现每挥一刀都建 RingGeometry+颜色缓冲+材质再 dispose，
+  // 是后期 GC 毛刺的主要来源之一（堆采样实测 ~7% + RingGeometry 占比最高）。
+  private readonly slashGeoCache = new Map<number, THREE.BufferGeometry>();
+  private readonly slashMeshPool: THREE.Mesh[] = [];
+
+  // 闪电几何体全部是固定尺寸（glow 3.4×8 / core 1.7×8 / ring 0.3-0.5），三块共享几何体只建一次；
+  // core+glow+ring 作为一个 rig 整体走对象池复用其网格与材质。
+  private lightningGlowGeo: THREE.BufferGeometry | null = null;
+  private lightningCoreGeo: THREE.BufferGeometry | null = null;
+  private lightningRingGeo: THREE.BufferGeometry | null = null;
+  private readonly lightningRigPool: LightningRig[] = [];
 
   private readonly _lightningCamPos = new THREE.Vector3();
 
@@ -73,10 +98,32 @@ export class WeaponTransientVfx {
    * 0.18s 生命，由 {@link updateTransient} 渐隐回收。
    */
   spawnSlashSector(x: number, y: number, z: number, angle: number, range: number): void {
+    const geo = this.getSlashGeometry(range);
+    const mesh = this.acquireSlashMesh();
+    mesh.geometry = geo;
+    mesh.position.set(x, y, z);
+    mesh.rotation.set(0, angle - Math.PI / 2, 0);
+    mesh.renderOrder = 2;
+    mesh.visible = true;
+    (mesh.material as THREE.MeshBasicMaterial).opacity = 1.0;
+    if (!mesh.parent) this.scene.add(mesh);
+    this.slashSectors.push({ mesh, life: 0.32, maxLife: 0.32, baseOpacity: 1.0 });
+  }
+
+  /**
+   * 取（或惰性构建）某个 range 的剑气扇形几何体。
+   * range 量化到 0.25m 一档作为缓存键 —— 武器 range 离散且变动稀少，命中率极高，
+   * 几乎杜绝每次挥砍 new RingGeometry + 颜色缓冲 的分配。多个并发剑气可共享同一几何体。
+   */
+  private getSlashGeometry(range: number): THREE.BufferGeometry {
+    const key = Math.max(0.25, Math.round(range * 4) / 4);
+    const cached = this.slashGeoCache.get(key);
+    if (cached) return cached;
+
     const thetaLength = Math.PI * 0.944;
     const thetaSegs = 48;
     const phiSegs = 8;
-    const geo = new THREE.RingGeometry(0.2, range, thetaSegs, phiSegs, -thetaLength / 2, thetaLength);
+    const geo = new THREE.RingGeometry(0.2, key, thetaSegs, phiSegs, -thetaLength / 2, thetaLength);
 
     const ANG_FEATHER = 0.18;
     const OUT_FEATHER = 0.30;
@@ -98,6 +145,14 @@ export class WeaponTransientVfx {
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 4));
     geo.rotateX(-Math.PI / 2);
+    this.slashGeoCache.set(key, geo);
+    return geo;
+  }
+
+  /** 取一个剑气 mesh（池复用其 material；几何体由 spawn 时按 range 赋值）。 */
+  private acquireSlashMesh(): THREE.Mesh {
+    const pooled = this.slashMeshPool.pop();
+    if (pooled) return pooled;
 
     const SLASH_SECTOR_TEXTURE: VfxTextureKey = 'portal_swirl';
     const mat = new THREE.MeshBasicMaterial({
@@ -111,12 +166,54 @@ export class WeaponTransientVfx {
       depthWrite: false,
     });
     applyCelShade(mat);
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x, y, z);
-    mesh.rotation.y = angle - Math.PI / 2;
-    mesh.renderOrder = 2;
-    this.scene.add(mesh);
-    this.slashSectors.push({ mesh, life: 0.32, maxLife: 0.32, baseOpacity: 1.0 });
+    // 占位几何体，spawn 时会按 range 覆盖为缓存几何体。
+    return new THREE.Mesh(undefined, mat);
+  }
+
+  /** 取一个闪电 rig（core+glow+ring）；池为空时用共享几何体新建一组。 */
+  private acquireLightningRig(): LightningRig {
+    const pooled = this.lightningRigPool.pop();
+    if (pooled) return pooled;
+
+    const height = 8;
+    if (!this.lightningGlowGeo) this.lightningGlowGeo = new THREE.PlaneGeometry(3.4, height);
+    if (!this.lightningCoreGeo) this.lightningCoreGeo = new THREE.PlaneGeometry(1.7, height);
+    if (!this.lightningRingGeo) this.lightningRingGeo = new THREE.RingGeometry(0.3, 0.5, 32);
+
+    const tex = this.billboards.textures.spark ?? null;
+    const makeBolt = (geo: THREE.BufferGeometry, color: number, name: string): THREE.Mesh => {
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex,
+        color,
+        transparent: true,
+        opacity: 1.0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      applyCelShade(mat);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.name = name;
+      return mesh;
+    };
+
+    const glow = makeBolt(this.lightningGlowGeo, 0x66bbff, 'LightningGlow');
+    const core = makeBolt(this.lightningCoreGeo, 0xffffff, 'LightningCore');
+
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xaaddff,
+      transparent: true,
+      opacity: 1.0,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    applyCelShade(ringMat);
+    const ring = new THREE.Mesh(this.lightningRingGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.name = 'LightningRing';
+
+    return { core, glow, ring };
   }
 
   /**
@@ -129,50 +226,26 @@ export class WeaponTransientVfx {
     const height = 8;
     const maxLife = 0.42;
 
-    const tex = this.billboards.textures.spark ?? null;
-    const makeBolt = (width: number, color: number, opacity: number, name: string): THREE.Mesh => {
-      const geo = new THREE.PlaneGeometry(width, height);
-      const mat = new THREE.MeshBasicMaterial({
-        map: tex,
-        color,
-        transparent: true,
-        opacity,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      });
-      applyCelShade(mat);
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(x, y + height / 2, z);
-      mesh.name = name;
-      if (Math.random() < 0.5) mesh.scale.x = -1;
-      return mesh;
-    };
-
-    const glow = makeBolt(3.4, 0x66bbff, 1.0, 'LightningGlow');
-    const core = makeBolt(1.7, 0xffffff, 1.0, 'LightningCore');
+    const { core, glow, ring } = this.acquireLightningRig();
+    glow.position.set(x, y + height / 2, z);
+    glow.scale.set(Math.random() < 0.5 ? -1 : 1, 1, 1);
+    (glow.material as THREE.MeshBasicMaterial).opacity = 1.0;
+    glow.visible = true;
+    core.position.set(x, y + height / 2, z);
+    core.scale.set(Math.random() < 0.5 ? -1 : 1, 1, 1);
+    (core.material as THREE.MeshBasicMaterial).opacity = 1.0;
+    core.visible = true;
+    ring.position.set(x, y + 0.02, z);
+    ring.scale.set(0.3, 0.3, 1);
+    (ring.material as THREE.MeshBasicMaterial).opacity = 1.0;
+    ring.visible = true;
 
     this.lightningFlashLight.position.set(x, y + 0.5, z);
     this.lightningFlashLight.intensity = 6;
 
-    const ringGeo = new THREE.RingGeometry(0.3, 0.5, 32);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: 0xaaddff,
-      transparent: true,
-      opacity: 1.0,
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    applyCelShade(ringMat);
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.set(x, y + 0.02, z);
-    ring.name = 'LightningRing';
-
-    this.scene.add(glow);
-    this.scene.add(core);
-    this.scene.add(ring);
+    if (!glow.parent) this.scene.add(glow);
+    if (!core.parent) this.scene.add(core);
+    if (!ring.parent) this.scene.add(ring);
 
     this.lightningBolts.push({
       core, glow, ring,
@@ -310,8 +383,13 @@ export class WeaponTransientVfx {
       e.life -= dt;
       if (e.life <= 0) {
         this.scene.remove(e.mesh);
-        e.mesh.geometry.dispose();
-        (e.mesh.material as THREE.Material).dispose();
+        e.mesh.visible = false;
+        // 几何体（按 range 缓存共享）与材质（随 mesh 复用）都不 dispose，回收 mesh 进池。
+        if (this.slashMeshPool.length < SLASH_POOL_CAP) {
+          this.slashMeshPool.push(e.mesh);
+        } else {
+          (e.mesh.material as THREE.Material).dispose();
+        }
         this.slashSectors.splice(i, 1);
         continue;
       }
@@ -331,12 +409,17 @@ export class WeaponTransientVfx {
         this.scene.remove(e.core);
         this.scene.remove(e.glow);
         this.scene.remove(e.ring);
-        e.core.geometry.dispose();
-        (e.core.material as THREE.Material).dispose();
-        e.glow.geometry.dispose();
-        (e.glow.material as THREE.Material).dispose();
-        e.ring.geometry.dispose();
-        (e.ring.material as THREE.Material).dispose();
+        e.core.visible = false;
+        e.glow.visible = false;
+        e.ring.visible = false;
+        // 几何体共享、材质随 rig 复用，都不 dispose；rig 整组回收进池。
+        if (this.lightningRigPool.length < LIGHTNING_POOL_CAP) {
+          this.lightningRigPool.push({ core: e.core, glow: e.glow, ring: e.ring });
+        } else {
+          (e.core.material as THREE.Material).dispose();
+          (e.glow.material as THREE.Material).dispose();
+          (e.ring.material as THREE.Material).dispose();
+        }
         this.lightningBolts.splice(i, 1);
         continue;
       }

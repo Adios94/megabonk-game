@@ -25,11 +25,45 @@ import { getTomePower } from '../data/tomeProgression.ts';
 import { applyRelicKillEffects, getRelicBonusGoldOnKill, rollGoldForEnemy } from './relics.ts';
 import { getXpPickupRadius, isXpPickupType, spawnConsumablesFromEnemy } from './consumables.ts';
 import { recordBondKill, recordWeaponKill } from './weaponDamageStats.ts';
-import type { EnemyState, PickupState, PickupType } from '../types.ts';
+import { ObjectPool } from '../helpers/objectPool.ts';
+import type { EnemyState, GoldMoteState, PickupState, PickupType } from '../types.ts';
 import type { Engine } from './types.ts';
 
 const PICKUP_SURFACE_OFFSET_Y = 0.2;
 const GOLD_MOTE_OFFSET_Y = 0.7;
+
+// ─── 对象池（降后期 GC churn；见 helpers/objectPool.ts）──────────────────────
+// PickupState / GoldMoteState 字段全必填、无 optional，acquire 后逐字段覆盖即可，
+// 无“状态残留”风险。客户端按 id 引用、id 单调递增，回收对象壳安全。
+const pickupPool = new ObjectPool<PickupState>('pickup', () => ({
+  id: 0, type: 'xp_green', x: 0, y: 0, z: 0, value: 0, lifetime: 0, attracted: false,
+}));
+const goldMotePool = new ObjectPool<GoldMoteState>('goldMote', () => ({
+  id: 0, x: 0, y: 0, z: 0, value: 0, lifetime: 0,
+}));
+
+/** 从池取一个 Pickup 并写满字段。 */
+export function acquirePickup(
+  id: number, type: PickupType, x: number, y: number, z: number, value: number,
+): PickupState {
+  const p = pickupPool.acquire();
+  p.id = id; p.type = type; p.x = x; p.y = y; p.z = z; p.value = value;
+  p.lifetime = PICKUP_LIFETIME; p.attracted = false;
+  return p;
+}
+
+/** Pickup 归还池（移除/清场调用）。 */
+export function releasePickup(p: PickupState): void {
+  pickupPool.release(p);
+}
+
+/** 清场：把 pickups + goldMotes 全部归还池后就地清空（不重建数组）。 */
+export function recyclePickupArrays(state: Engine['state']): void {
+  for (let i = 0; i < state.pickups.length; i++) pickupPool.release(state.pickups[i]);
+  state.pickups.length = 0;
+  for (let i = 0; i < state.goldMotes.length; i++) goldMotePool.release(state.goldMotes[i]);
+  state.goldMotes.length = 0;
+}
 
 export function processDeaths(engine: Engine): void {
   const enemies = engine.state.enemies;
@@ -70,51 +104,41 @@ function spawnPickupFromEnemy(engine: Engine, enemy: EnemyState): void {
   else pickupType = 'xp_green';
 
   if (engine.state.pickups.length < MAX_PICKUPS) {
-    engine.state.pickups.push({
-      id: engine.nextPickupId++,
-      type: pickupType,
-      x: enemy.x, y: dropY, z: enemy.z,
-      value: xpReward,
-      lifetime: PICKUP_LIFETIME,
-      attracted: false,
-    });
+    engine.state.pickups.push(
+      acquirePickup(engine.nextPickupId++, pickupType, enemy.x, dropY, enemy.z, xpReward),
+    );
   }
 
   // Elite 掉 silver
   if (enemy.isElite && engine.state.pickups.length < MAX_PICKUPS) {
-    engine.state.pickups.push({
-      id: engine.nextPickupId++,
-      type: 'silver',
-      x: enemy.x + (Math.random() - 0.5),
-      y: dropY,
-      z: enemy.z + (Math.random() - 0.5),
-      value: 5,
-      lifetime: PICKUP_LIFETIME,
-      attracted: false,
-    });
+    engine.state.pickups.push(
+      acquirePickup(
+        engine.nextPickupId++, 'silver',
+        enemy.x + (Math.random() - 0.5), dropY, enemy.z + (Math.random() - 0.5),
+        5,
+      ),
+    );
   }
 
   // 随机生命掉落
   if (engine.state.pickups.length < MAX_PICKUPS) {
     const roll = Math.random();
     if (roll < HEALTH_DROP_CHANCE) {
-      engine.state.pickups.push({
-        id: engine.nextPickupId++,
-        type: 'health',
-        x: enemy.x + (Math.random() - 0.5),
-        y: dropY,
-        z: enemy.z + (Math.random() - 0.5),
-        value: 50, lifetime: PICKUP_LIFETIME, attracted: false,
-      });
+      engine.state.pickups.push(
+        acquirePickup(
+          engine.nextPickupId++, 'health',
+          enemy.x + (Math.random() - 0.5), dropY, enemy.z + (Math.random() - 0.5),
+          50,
+        ),
+      );
     } else if (roll < HEALTH_DROP_CHANCE + HEALTH_SMALL_DROP_CHANCE) {
-      engine.state.pickups.push({
-        id: engine.nextPickupId++,
-        type: 'health_small',
-        x: enemy.x + (Math.random() - 0.5),
-        y: dropY,
-        z: enemy.z + (Math.random() - 0.5),
-        value: 25, lifetime: PICKUP_LIFETIME, attracted: false,
-      });
+      engine.state.pickups.push(
+        acquirePickup(
+          engine.nextPickupId++, 'health_small',
+          enemy.x + (Math.random() - 0.5), dropY, enemy.z + (Math.random() - 0.5),
+          25,
+        ),
+      );
     }
   }
 }
@@ -122,14 +146,14 @@ function spawnPickupFromEnemy(engine: Engine, enemy: EnemyState): void {
 function spawnGoldMoteFromEnemy(engine: Engine, enemy: EnemyState): void {
   const value = rollGoldForEnemy(engine, enemy) + getRelicBonusGoldOnKill(engine);
   if (value <= 0) return;
-  engine.state.goldMotes.push({
-    id: engine.nextPickupId++,
-    x: enemy.x,
-    y: enemy.y + GOLD_MOTE_OFFSET_Y,
-    z: enemy.z,
-    value,
-    lifetime: 1.5,
-  });
+  const mote = goldMotePool.acquire();
+  mote.id = engine.nextPickupId++;
+  mote.x = enemy.x;
+  mote.y = enemy.y + GOLD_MOTE_OFFSET_Y;
+  mote.z = enemy.z;
+  mote.value = value;
+  mote.lifetime = 1.5;
+  engine.state.goldMotes.push(mote);
 }
 
 export function tickPickups(engine: Engine, dt: number): void {
@@ -145,6 +169,7 @@ export function tickPickups(engine: Engine, dt: number): void {
 
     if (pickup.lifetime <= 0) {
       pickups.splice(i, 1);
+      releasePickup(pickup);
       continue;
     }
 
@@ -173,6 +198,7 @@ export function tickPickups(engine: Engine, dt: number): void {
       if (newDist < 0.5) {
         collectPickup(engine, pickup);
         pickups.splice(i, 1);
+        releasePickup(pickup);
       }
     }
   }
@@ -236,6 +262,7 @@ function tickGoldMotes(engine: Engine, dt: number): void {
     if (dist < 0.45 || mote.lifetime <= 0) {
       player.gold += mote.value;
       motes.splice(i, 1);
+      goldMotePool.release(mote);
     }
   }
 }
